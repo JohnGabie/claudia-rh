@@ -1,0 +1,41 @@
+:root {
+  --bg-base: #FAF9F7;
+  --bg-surface: #FFFFFF;
+  --bg-sunken: #F1EFEA;
+  --border: #E4E1D9;
+  --text-primary: #1F1D18;
+  --text-secondary: #6B6759;
+  --text-tertiary: #9D9889;
+  --accent: #D97757;
+  --accent-strong: #B85C3E;
+  --accent-soft: #F5E4DB;
+  --success: #3B7A52;
+  --warning: #B8862E;
+  --danger: #B8473D;
+
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background-color: var(--bg-base);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
