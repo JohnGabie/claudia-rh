@@ -185,6 +185,52 @@
 
 ---
 
+## Configuração da extensão Claude in Chrome — passo crítico
+
+> **Sem este passo o agente não consegue controlar o browser e não faz nada.**<br/>
+> *Without this step the agent cannot control the browser and will do nothing.*
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Instalar a extensão / Install the extension
+
+1. Abrir o Chrome e ir à **Chrome Web Store**
+2. Pesquisar por **"Claude"** (extensão oficial da Anthropic)
+3. Instalar a extensão **Claude** no Chrome
+
+> ⚠️ **A conta Google/Claude usada no Chrome tem de ser exactamente a mesma que está autenticada no Claude Code CLI.** Se forem contas diferentes, a ligação falha silenciosamente.
+>
+> *The Google/Claude account used in Chrome must be exactly the same one authenticated in the Claude Code CLI. If they differ, the connection fails silently.*
+
+</td>
+<td width="50%" valign="top">
+
+### Activar o modo Chrome / Enable Chrome mode
+
+Depois de instalada a extensão, abre um terminal e corre o Claude Code:
+
+```bash
+claude
+```
+
+Dentro da sessão, escreve:
+
+```
+/chrome
+```
+
+Quando aparecer a opção **"Enable by default"**, selecciona **Yes**.
+
+Fecha o Claude, abre de novo — a partir daí o Chrome fica ligado automaticamente em cada sessão.
+
+</td>
+</tr>
+</table>
+
+---
+
 ## Instalação / Installation
 
 ```bash
