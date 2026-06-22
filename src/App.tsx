@@ -27,14 +27,24 @@ function App() {
     refreshFeedbackSugestao();
     refreshPendenciasCount();
 
-    const unlistenFeedback = listen("feedback-output-done", () => setSugerirFeedback(false));
-    const unlistenNova = listen("nova-pendencia", refreshPendenciasCount);
-    const unlistenResolvida = listen("pendencia-resolvida", refreshPendenciasCount);
+    let active = true;
+    const unlisteners: (() => void)[] = [];
+
+    Promise.all([
+      listen("feedback-output-done", () => setSugerirFeedback(false)),
+      listen("nova-pendencia", refreshPendenciasCount),
+      listen("pendencia-resolvida", refreshPendenciasCount),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
+      }
+    });
 
     return () => {
-      unlistenFeedback.then((f) => f());
-      unlistenNova.then((f) => f());
-      unlistenResolvida.then((f) => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, []);
 
@@ -47,7 +57,7 @@ function App() {
 
           {/* Dashboard */}
           <div style={{ display: view === "dashboard" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-            <Dashboard />
+            <Dashboard onNavigate={(tab) => setView(tab as View)} />
           </div>
 
           {/* Perfil */}

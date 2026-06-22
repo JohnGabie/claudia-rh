@@ -16,6 +16,7 @@ use commands::estado::{
     abrir_pasta, atividade_recente, candidaturas_hoje, contar_pendencias, contar_propostas,
     listar_candidaturas, listar_pendencias, listar_vagas, pular_pendencia, resolver_pendencia,
     resumo_memoria_recente, vaga_atual_sessao,
+    vagas_analisadas_hoje, vagas_analisadas_total, tempo_sessoes_hoje,
 };
 use commands::feedback::{
     agregar_dados_feedback, gerar_feedback, listar_feedbacks, marcar_resultado_candidatura,
@@ -28,7 +29,7 @@ use commands::perfil::{
     ler_estrategia, ler_search_variants,
 };
 use commands::pty::{escrever_pty, iniciar_pty, parar_pty, redimensionar_pty};
-use commands::sessao::{configurar_disparo, disparar_sessao, obter_config_disparo};
+use commands::sessao::{configurar_disparo, configurar_limite_diario, disparar_sessao, obter_config_disparo};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -39,11 +40,27 @@ use tauri::Manager;
 
 pub struct DbState(pub Arc<Mutex<Connection>>);
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct JanelaAgendamento {
+    pub dia_semana: u8,   // 0=Dom, 1=Seg, …, 6=Sab
+    pub inicio: String,   // "09:00"
+    pub fim: String,      // "17:00"
+    pub ativo: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct IdleConfig {
     pub ativo: bool,
     pub limiar_minutos: u32,
+    #[serde(default = "default_limite_diario")]
+    pub limite_diario: u32,
+    #[serde(default)]
+    pub limite_tempo_minutos: u32,
+    #[serde(default)]
+    pub janelas: Vec<JanelaAgendamento>,
 }
+
+fn default_limite_diario() -> u32 { 10 }
 
 pub struct IdleState(pub Arc<Mutex<IdleConfig>>);
 
@@ -62,7 +79,7 @@ fn load_idle_config(data_dir: &std::path::Path) -> IdleConfig {
             return cfg;
         }
     }
-    IdleConfig { ativo: true, limiar_minutos: 15 }
+    IdleConfig { ativo: true, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, janelas: vec![] }
 }
 
 #[tauri::command]
@@ -194,6 +211,9 @@ pub fn run() {
             listar_candidaturas,
             contar_propostas,
             vaga_atual_sessao,
+            vagas_analisadas_hoje,
+            vagas_analisadas_total,
+            tempo_sessoes_hoje,
             abrir_pasta,
             ler_candidato_base,
             guardar_candidato_base,
@@ -214,6 +234,7 @@ pub fn run() {
             disparar_sessao,
             obter_config_disparo,
             configurar_disparo,
+            configurar_limite_diario,
             obter_config_notif,
             configurar_notif,
             agregar_dados_feedback,

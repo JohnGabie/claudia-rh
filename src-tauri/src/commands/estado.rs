@@ -87,6 +87,24 @@ pub fn vaga_atual_sessao(state: State<'_, DbState>) -> Result<Option<VagaAtual>,
 }
 
 #[tauri::command]
+pub fn vagas_analisadas_hoje(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::vagas_analisadas_hoje(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn vagas_analisadas_total(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::vagas_analisadas_total(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn tempo_sessoes_hoje(state: State<'_, DbState>) -> Result<f64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::tempo_sessoes_hoje_minutos(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn abrir_pasta(caminho: String) -> Result<(), String> {
     Command::new("explorer")
         .arg(&caminho)

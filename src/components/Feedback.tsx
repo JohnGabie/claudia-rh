@@ -259,26 +259,36 @@ export const Feedback: React.FC = () => {
   useEffect(() => {
     carregar();
 
-    const setupListeners = async () => {
-      const u1 = await listen<string>("feedback-output", (ev) => {
+    let active = true;
+
+    Promise.all([
+      listen<string>("feedback-output", (ev) => {
         if (!firstChunkRef.current) {
           firstChunkRef.current = true;
           setOutputAtual(ev.payload);
         } else {
           setOutputAtual(prev => (prev ?? "") + ev.payload);
         }
-      });
-      const u2 = await listen("feedback-output-done", () => {
+      }),
+      listen("feedback-output-done", () => {
         firstChunkRef.current = false;
         setGerando(false);
         setOutputAtual(null);
         carregar();
-      });
-      unlistenRef.current = [u1, u2];
-    };
-    setupListeners();
+      }),
+    ]).then((fns) => {
+      if (active) {
+        unlistenRef.current = fns;
+      } else {
+        fns.forEach((f) => f());
+      }
+    });
 
-    return () => { unlistenRef.current.forEach(f => f()); };
+    return () => {
+      active = false;
+      unlistenRef.current.forEach(f => f());
+      unlistenRef.current = [];
+    };
   }, []);
 
   const gerarFeedback = async (gatilho: "manual" | "marco") => {

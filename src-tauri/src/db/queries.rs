@@ -71,35 +71,36 @@ pub struct VagaPulada {
 }
 
 pub fn listar_vagas(conn: &Connection, filtro: Option<String>) -> Result<Vec<Vaga>> {
-    let sql = if let Some(ref f) = filtro {
-        if f.is_empty() || f == "todas" {
-            "SELECT id,titulo,empresa,plataforma,url,localizacao,modelo_trabalho,idioma,descoberta_em,status,motivo_status,match_score FROM vagas ORDER BY descoberta_em DESC LIMIT 200".to_string()
-        } else {
-            format!("SELECT id,titulo,empresa,plataforma,url,localizacao,modelo_trabalho,idioma,descoberta_em,status,motivo_status,match_score FROM vagas WHERE status='{}' ORDER BY descoberta_em DESC LIMIT 200", f)
-        }
-    } else {
-        "SELECT id,titulo,empresa,plataforma,url,localizacao,modelo_trabalho,idioma,descoberta_em,status,motivo_status,match_score FROM vagas ORDER BY descoberta_em DESC LIMIT 200".to_string()
-    };
+    const BASE: &str = "SELECT id,titulo,empresa,plataforma,url,localizacao,modelo_trabalho,idioma,descoberta_em,status,motivo_status,match_score FROM vagas";
+    let map_row = |row: &rusqlite::Row<'_>| Ok(Vaga {
+        id: row.get(0)?,
+        titulo: row.get(1)?,
+        empresa: row.get(2)?,
+        plataforma: row.get(3)?,
+        url: row.get(4)?,
+        localizacao: row.get(5)?,
+        modelo_trabalho: row.get(6)?,
+        idioma: row.get(7)?,
+        descoberta_em: row.get(8)?,
+        status: row.get(9)?,
+        motivo_status: row.get(10)?,
+        match_score: row.get(11)?,
+    });
 
-    let mut stmt = conn.prepare(&sql)?;
-    let vagas = stmt.query_map([], |row| {
-        Ok(Vaga {
-            id: row.get(0)?,
-            titulo: row.get(1)?,
-            empresa: row.get(2)?,
-            plataforma: row.get(3)?,
-            url: row.get(4)?,
-            localizacao: row.get(5)?,
-            modelo_trabalho: row.get(6)?,
-            idioma: row.get(7)?,
-            descoberta_em: row.get(8)?,
-            status: row.get(9)?,
-            motivo_status: row.get(10)?,
-            match_score: row.get(11)?,
-        })
-    })?
-    .collect::<Result<Vec<_>>>()?;
-    Ok(vagas)
+    let use_filter = filtro.as_deref().map(|f| !f.is_empty() && f != "todas").unwrap_or(false);
+
+    if use_filter {
+        let f = filtro.unwrap();
+        let sql = format!("{} WHERE status=? ORDER BY descoberta_em DESC LIMIT 200", BASE);
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([&f], map_row)?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    } else {
+        let sql = format!("{} ORDER BY descoberta_em DESC LIMIT 200", BASE);
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], map_row)?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
 }
 
 pub fn listar_pendencias(conn: &Connection, apenas_nao_resolvidas: bool) -> Result<Vec<Pendencia>> {
@@ -237,6 +238,32 @@ pub fn vaga_candidatando(conn: &Connection) -> Result<Option<VagaAtual>> {
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e),
     }
+}
+
+pub fn vagas_analisadas_hoje(conn: &Connection) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM vagas WHERE date(descoberta_em)=date('now') AND status NOT IN ('descoberta')",
+        [],
+        |r| r.get(0),
+    )
+}
+
+pub fn vagas_analisadas_total(conn: &Connection) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM vagas WHERE status NOT IN ('descoberta')",
+        [],
+        |r| r.get(0),
+    )
+}
+
+pub fn tempo_sessoes_hoje_minutos(conn: &Connection) -> Result<f64> {
+    conn.query_row(
+        "SELECT COALESCE(SUM(
+            (julianday(COALESCE(terminada_em, datetime('now'))) - julianday(iniciada_em)) * 1440
+         ), 0.0) FROM sessoes WHERE date(iniciada_em) = date('now')",
+        [],
+        |r| r.get(0),
+    )
 }
 
 pub fn atividade_recente(conn: &Connection) -> Result<Vec<Vaga>> {

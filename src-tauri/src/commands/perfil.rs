@@ -214,10 +214,11 @@ fn estrategia_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// Shared parsing logic for candidate_base.yaml — no eprintln debug output.
 pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, String> {
     let path = candidato_base_path(app)?;
-    if !path.exists() {
-        return Ok(CandidatoBase::default());
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(CandidatoBase::default()),
+        Err(e) => return Err(e.to_string()),
+    };
 
     // Normalize `key: null` to `key: ""` so legacy Claude-generated YAMLs don't fail
     let content: String = raw
@@ -254,12 +255,6 @@ pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, St
 
 #[tauri::command]
 pub fn ler_candidato_base(app: AppHandle) -> Result<CandidatoBase, String> {
-    let path = candidato_base_path(&app)?;
-    eprintln!("[ler_candidato_base] path: {:?}", path);
-    if !path.exists() {
-        eprintln!("[ler_candidato_base] file not found, returning default");
-        return Ok(CandidatoBase::default());
-    }
     eprintln!("[ler_candidato_base] parsing via parse_candidato_base_interno");
     match parse_candidato_base_interno(&app) {
         Ok(c) => {
@@ -287,10 +282,11 @@ pub fn guardar_candidato_base(app: AppHandle, dados: CandidatoBase) -> Result<()
 #[tauri::command]
 pub fn ler_search_variants(app: AppHandle) -> Result<Vec<SearchVariant>, String> {
     let path = search_variants_path(&app)?;
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e.to_string()),
+    };
     let sv: SearchVariants = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     Ok(sv.variantes)
 }
@@ -308,10 +304,11 @@ pub fn guardar_search_variants(app: AppHandle, variantes: SearchVariants) -> Res
 #[tauri::command]
 pub fn ler_estrategia(app: AppHandle) -> Result<String, String> {
     let path = estrategia_path(&app)?;
-    if !path.exists() {
-        return Ok(String::new());
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
     }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -608,8 +605,11 @@ pub fn escrever_para_perfil_chrome(app: AppHandle, input: String) -> Result<(), 
 #[tauri::command]
 pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<String, f64>) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    if !path.exists() { return Ok(()); }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
     let mut sv: SearchVariants = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     for v in sv.variantes.iter_mut() {
         if let Some(&peso) = pesos.get(&v.id) {
@@ -623,11 +623,10 @@ pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<
 #[tauri::command]
 pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    let mut sv = if path.exists() {
-        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?
-    } else {
-        SearchVariants::default()
+    let mut sv = match std::fs::read_to_string(&path) {
+        Ok(content) => serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SearchVariants::default(),
+        Err(e) => return Err(e.to_string()),
     };
     if let Some(pos) = sv.variantes.iter().position(|v| v.id == variante.id) {
         sv.variantes[pos] = variante;

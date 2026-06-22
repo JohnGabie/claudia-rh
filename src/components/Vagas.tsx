@@ -145,11 +145,24 @@ export const Vagas: React.FC = () => {
   }, [subView, filtro]);
 
   useEffect(() => {
-    const unsub = listen("db-atualizada", () => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    listen("db-atualizada", () => {
       if (subView === "historico") carregarCandidaturas();
       else carregarVagas();
+    }).then((fn) => {
+      if (active) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
     });
-    return () => { unsub.then((f) => f()); };
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [subView, filtro]);
 
   const pill = (active: boolean, onClick: () => void, label: string) => (

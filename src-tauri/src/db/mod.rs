@@ -9,9 +9,13 @@ pub fn init(db_path: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     conn.execute_batch(SCHEMA)?;
-    // Idempotent migrations
-    let _ = conn.execute_batch("ALTER TABLE vagas ADD COLUMN variante_id TEXT;");
-    let _ = conn.execute_batch("ALTER TABLE candidaturas ADD COLUMN resultado TEXT;");
+    // Idempotent migrations — "duplicate column" errors are expected and safe to ignore
+    if let Err(e) = conn.execute_batch("ALTER TABLE vagas ADD COLUMN variante_id TEXT;") {
+        if !e.to_string().contains("duplicate column") { eprintln!("[db migration] vagas.variante_id: {e}"); }
+    }
+    if let Err(e) = conn.execute_batch("ALTER TABLE candidaturas ADD COLUMN resultado TEXT;") {
+        if !e.to_string().contains("duplicate column") { eprintln!("[db migration] candidaturas.resultado: {e}"); }
+    }
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS feedbacks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

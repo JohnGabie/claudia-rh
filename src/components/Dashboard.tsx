@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square } from "lucide-react";
+import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Calendar } from "lucide-react";
 
 interface Vaga {
   id: number;
@@ -18,6 +18,21 @@ interface VagaAtual {
   empresa: string;
   url: string;
   etapa: string | null;
+}
+
+interface JanelaAgendamento {
+  dia_semana: number;
+  inicio: string;
+  fim: string;
+  ativo: boolean;
+}
+
+interface ConfigDisparo {
+  ativo: boolean;
+  limiar_minutos: number;
+  limite_diario: number;
+  limite_tempo_minutos: number;
+  janelas: JanelaAgendamento[];
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,6 +55,8 @@ const STATUS_STYLE: Record<string, { background: string; color: string }> = {
   bloqueada: { background: "#F7E2DF", color: "var(--danger)" },
 };
 
+const DIAS_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
 function tempoRelativo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -50,19 +67,57 @@ function tempoRelativo(iso: string): string {
   return `há ${Math.floor(hours / 24)}d`;
 }
 
-const BUDGET = 10;
+function formatarTempo(minutos: number): string {
+  const h = Math.floor(minutos / 60);
+  const m = Math.round(minutos % 60);
+  if (h === 0) return `${m}min`;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
 
-export const Dashboard: React.FC = () => {
-  const [candidaturasHoje, setCandidaturasHoje] = useState<number>(0);
+function calcularProximaJanela(janelas: JanelaAgendamento[]): string | null {
+  if (janelas.length === 0) return null;
+  const agora = new Date();
+  const dia = agora.getDay();
+  const hhmm = `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
+
+  if (janelas.some(j => j.ativo && j.dia_semana === dia && hhmm >= j.inicio && hhmm < j.fim)) {
+    return "ATIVO_AGORA";
+  }
+
+  const mesmoDia = janelas
+    .filter(j => j.ativo && j.dia_semana === dia && j.inicio > hhmm)
+    .sort((a, b) => a.inicio.localeCompare(b.inicio));
+  if (mesmoDia.length > 0) return `hoje às ${mesmoDia[0].inicio}`;
+
+  for (let d = 1; d <= 7; d++) {
+    const nd = (dia + d) % 7;
+    const next = janelas.filter(j => j.ativo && j.dia_semana === nd).sort((a, b) => a.inicio.localeCompare(b.inicio));
+    if (next.length > 0) return `${DIAS_LABEL[nd]} às ${next[0].inicio}`;
+  }
+  return "Sem janelas ativas";
+}
+
+const CFG_DEFAULT: ConfigDisparo = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, janelas: [] };
+
+export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onNavigate }) => {
+  const [candidaturasHoje, setCandidaturasHoje] = useState(0);
+  const [vagasHoje, setVagasHoje] = useState(0);
+  const [vagasTotal, setVagasTotal] = useState(0);
+  const [tempoMinutos, setTempoMinutos] = useState(0);
+  const [config, setConfig] = useState<ConfigDisparo>(CFG_DEFAULT);
   const [atividade, setAtividade] = useState<Vaga[]>([]);
   const [vagaAtual, setVagaAtual] = useState<VagaAtual | null>(null);
-  const [pendenciasCount, setPendenciasCount] = useState<number>(0);
-  const [propostas, setPropostas] = useState<number>(0);
+  const [pendenciasCount, setPendenciasCount] = useState(0);
+  const [propostas, setPropostas] = useState(0);
   const [sessionActive, setSessionActive] = useState(false);
   const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [disparando, setDisparando] = useState(false);
   const [disparado, setDisparado] = useState(false);
+
+  const [editandoLimite, setEditandoLimite] = useState(false);
+  const [limiteInput, setLimiteInput] = useState(10);
+  const limiteInputRef = useRef<HTMLInputElement>(null);
 
   const carregar = () =>
     Promise.all([
@@ -71,50 +126,59 @@ export const Dashboard: React.FC = () => {
       invoke<VagaAtual | null>("vaga_atual_sessao"),
       invoke<number>("contar_pendencias"),
       invoke<number>("contar_propostas"),
-    ]).then(([count, vagas, atual, pendencias, propsCount]) => {
-      setCandidaturasHoje(count);
+      invoke<number>("vagas_analisadas_hoje"),
+      invoke<number>("vagas_analisadas_total"),
+      invoke<number>("tempo_sessoes_hoje"),
+      invoke<ConfigDisparo>("obter_config_disparo"),
+    ]).then(([cands, vagas, atual, pend, props, vagasH, vagasT, tempo, cfg]) => {
+      setCandidaturasHoje(cands);
       setAtividade(vagas);
       setVagaAtual(atual);
-      setPendenciasCount(pendencias);
-      setPropostas(propsCount);
+      setPendenciasCount(pend);
+      setPropostas(props);
+      setVagasHoje(vagasH);
+      setVagasTotal(vagasT);
+      setTempoMinutos(Math.round(tempo));
+      setConfig(cfg);
+      setLimiteInput(cfg.limite_diario);
     }).catch(console.error).finally(() => setLoading(false));
 
   useEffect(() => {
     carregar();
 
-    const unlistenCheckpoint = listen("session-checkpoint-requested", () => {
-      setTimeout(() => {
-        invoke("disparar_sessao", { motivo: "checkpoint" }).catch(console.error);
-      }, 500);
-    });
+    let active = true;
+    const unlisteners: (() => void)[] = [];
 
-    const unlistenStarted = listen("session-started", () => {
-      setSessionActive(true);
-      carregar();
-    });
-
-    const unlistenEnded = listen<string>("session-ended", () => {
-      setSessionActive(false);
-      setPaused(false);
-      carregar();
-    });
-
-    const unlistenDb = listen("db-atualizada", () => {
-      carregar();
-    });
-
-    const unlistenChrome = listen("chrome-reconnect-failed", () => {
-      console.warn("[Claudia RH] Chrome extension reconnection failed — check Pendências");
+    Promise.all([
+      listen("session-checkpoint-requested", () => {
+        setTimeout(() => invoke("disparar_sessao", { motivo: "checkpoint" }).catch(console.error), 500);
+      }),
+      listen("session-started", () => { setSessionActive(true); carregar(); }),
+      listen<string>("session-ended", () => { setSessionActive(false); setPaused(false); carregar(); }),
+      listen("db-atualizada", () => carregar()),
+      listen("chrome-reconnect-failed", () => console.warn("[Claudia RH] Chrome extension reconnection failed")),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
+      }
     });
 
     return () => {
-      unlistenCheckpoint.then((f) => f());
-      unlistenStarted.then((f) => f());
-      unlistenEnded.then((f) => f());
-      unlistenDb.then((f) => f());
-      unlistenChrome.then((f) => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, []);
+
+  // Tick time counter while session is active
+  useEffect(() => {
+    if (!sessionActive) return;
+    const id = setInterval(() => {
+      invoke<number>("tempo_sessoes_hoje").then(t => setTempoMinutos(Math.round(t))).catch(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, [sessionActive]);
 
   const disparar = async () => {
     setDisparando(true);
@@ -123,40 +187,31 @@ export const Dashboard: React.FC = () => {
       setDisparado(true);
       setTimeout(() => setDisparado(false), 3000);
       await carregar();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDisparando(false);
-    }
+    } catch (e) { console.error(e); } finally { setDisparando(false); }
   };
 
-  const pausar = async () => {
+  const pausar = async () => { try { await invoke("escrever_pty", { input: "\x03" }); setPaused(true); } catch (e) { console.error(e); } };
+  const retomar = async () => { try { await invoke("escrever_pty", { input: "continue\r" }); setPaused(false); } catch (e) { console.error(e); } };
+  const interromper = async () => { try { await invoke("parar_pty"); setSessionActive(false); setPaused(false); } catch (e) { console.error(e); } };
+
+  const salvarLimite = async () => {
+    setEditandoLimite(false);
+    if (limiteInput === config.limite_diario || limiteInput < 1) return;
     try {
-      await invoke("escrever_pty", { input: "\x03" });
-      setPaused(true);
+      await invoke("configurar_limite_diario", { limite: limiteInput });
+      setConfig(prev => ({ ...prev, limite_diario: limiteInput }));
     } catch (e) { console.error(e); }
   };
 
-  const retomar = async () => {
-    try {
-      await invoke("escrever_pty", { input: "continue\r" });
-      setPaused(false);
-    } catch (e) { console.error(e); }
-  };
-
-  const interromper = async () => {
-    try {
-      await invoke("parar_pty");
-      setSessionActive(false);
-      setPaused(false);
-    } catch (e) { console.error(e); }
-  };
-
-  const pct = Math.min((candidaturasHoje / BUDGET) * 100, 100);
+  const proximaJanela = useMemo(() => calcularProximaJanela(config.janelas), [config.janelas]);
+  const limiteEsgotado = config.limite_tempo_minutos > 0 && tempoMinutos >= config.limite_tempo_minutos;
+  const pctCandidaturas = Math.min((candidaturasHoje / Math.max(config.limite_diario, 1)) * 100, 100);
+  const pctTempo = config.limite_tempo_minutos > 0 ? Math.min((tempoMinutos / config.limite_tempo_minutos) * 100, 100) : 0;
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
           Dashboard
         </h1>
@@ -165,7 +220,6 @@ export const Dashboard: React.FC = () => {
             <span style={{
               width: 8, height: 8, borderRadius: "50%",
               background: paused ? "var(--warning)" : "var(--success)",
-              boxShadow: paused ? "none" : "0 0 0 0 rgba(34,197,94,0.4)",
               animation: paused ? "none" : "pulse 2s infinite",
               display: "inline-block",
             }} />
@@ -179,110 +233,181 @@ export const Dashboard: React.FC = () => {
       {/* Vaga em curso */}
       {vagaAtual && (
         <div style={{
-          background: "var(--accent-soft)",
-          border: "1px solid var(--accent)",
-          borderRadius: 8,
-          padding: "12px 16px",
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
+          background: "var(--accent-soft)", border: "1px solid var(--accent)",
+          borderRadius: 8, padding: "12px 16px", marginBottom: 12,
+          display: "flex", alignItems: "center", gap: 12,
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "var(--accent-strong)", fontWeight: 500, marginBottom: 2 }}>
-              Agora a candidatar
-            </div>
-            <div style={{
-              fontSize: 14, fontWeight: 500, color: "var(--text-primary)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
+            <div style={{ fontSize: 12, color: "var(--accent-strong)", fontWeight: 500, marginBottom: 2 }}>Agora a candidatar</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {vagaAtual.titulo}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              {vagaAtual.empresa}
-              {vagaAtual.etapa && ` — ${vagaAtual.etapa}`}
+              {vagaAtual.empresa}{vagaAtual.etapa && ` — ${vagaAtual.etapa}`}
             </div>
           </div>
-          <button
-            onClick={() => openUrl(vagaAtual.url).catch(console.error)}
-            style={{
-              background: "transparent", border: "none", cursor: "pointer",
-              padding: 4, color: "var(--accent-strong)", flexShrink: 0,
-              display: "flex", alignItems: "center",
-            }}
-          >
+          <button onClick={() => openUrl(vagaAtual.url).catch(console.error)}
+            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--accent-strong)", flexShrink: 0, display: "flex", alignItems: "center" }}>
             <ExternalLink size={14} />
           </button>
         </div>
       )}
 
-      {/* Pendências warning */}
+      {/* Pendências */}
       {pendenciasCount > 0 && (
         <div style={{
-          background: "#FBEFD9",
-          border: "1px solid var(--warning)",
-          borderRadius: 8,
-          padding: "10px 16px",
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontSize: 13,
-          color: "var(--warning)",
-          fontWeight: 500,
+          background: "#FBEFD9", border: "1px solid var(--warning)", borderRadius: 8,
+          padding: "10px 16px", marginBottom: 12,
+          display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--warning)", fontWeight: 500,
         }}>
           <AlertTriangle size={16} />
-          {pendenciasCount === 1
-            ? "1 pendência aguarda resolução"
-            : `${pendenciasCount} pendências aguardam resolução`}
+          {pendenciasCount === 1 ? "1 pendência aguarda resolução" : `${pendenciasCount} pendências aguardam resolução`}
         </div>
       )}
 
-      {/* Propostas de evolução */}
+      {/* Propostas */}
       {propostas > 0 && (
         <div style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          padding: "10px 16px",
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontSize: 13,
-          color: "var(--text-secondary)",
+          background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
+          padding: "10px 16px", marginBottom: 12,
+          display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-secondary)",
         }}>
           <Lightbulb size={16} style={{ color: "var(--accent)", flexShrink: 0 }} />
-          <span>
-            {propostas === 1
-              ? "1 proposta de evolução do perfil disponível"
-              : `${propostas} propostas de evolução do perfil disponíveis`}
-          </span>
+          <span>{propostas === 1 ? "1 proposta de evolução do perfil disponível" : `${propostas} propostas de evolução do perfil disponíveis`}</span>
         </div>
       )}
 
-      {/* Resumo do dia */}
-      <div style={{
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border)",
-        borderRadius: 8,
-        padding: 16,
-        marginBottom: 16,
-      }}>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
-          Candidaturas hoje
+      {/* ── Grelha de indicadores 2×2 ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+
+        {/* Card 1 — Candidaturas hoje (limite editável) */}
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Candidaturas hoje
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 10 }}>
+            <span style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1 }}>
+              {loading ? "—" : candidaturasHoje}
+            </span>
+            <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>/</span>
+            {editandoLimite ? (
+              <input
+                ref={limiteInputRef}
+                type="number" min={1} max={99} value={limiteInput} autoFocus
+                onChange={e => setLimiteInput(Math.max(1, Math.min(99, parseInt(e.target.value) || 1)))}
+                onBlur={salvarLimite}
+                onKeyDown={e => { if (e.key === "Enter") salvarLimite(); if (e.key === "Escape") setEditandoLimite(false); }}
+                style={{
+                  width: 44, fontSize: 18, fontWeight: 600, color: "var(--accent)",
+                  background: "var(--bg-sunken)", border: "1px solid var(--accent)",
+                  borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
+                  textAlign: "center", outline: "none",
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => { setLimiteInput(config.limite_diario); setEditandoLimite(true); }}
+                title="Editar limite diário"
+                style={{
+                  fontSize: 18, fontWeight: 600, color: "var(--text-secondary)",
+                  background: "transparent", border: "none", cursor: "pointer",
+                  fontFamily: "inherit", padding: 0,
+                  borderBottom: "1px dashed var(--border)",
+                  lineHeight: 1,
+                }}
+              >
+                {config.limite_diario}
+              </button>
+            )}
+          </div>
+          <div style={{ height: 3, background: "var(--bg-sunken)", borderRadius: 2 }}>
+            <div style={{
+              width: `${pctCandidaturas}%`, height: "100%",
+              background: candidaturasHoje >= config.limite_diario ? "var(--success)" : "var(--accent)",
+              borderRadius: 2, transition: "width 0.4s ease",
+            }} />
+          </div>
         </div>
-        <div style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10 }}>
-          {loading ? "—" : candidaturasHoje}{" "}
-          <span style={{ fontSize: 16, fontWeight: 400, color: "var(--text-secondary)" }}>
-            / {BUDGET}
-          </span>
+
+        {/* Card 2 — Vagas analisadas */}
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Vagas analisadas
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1, marginBottom: 6 }}>
+            {loading ? "—" : vagasHoje}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+            hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+          </div>
         </div>
-        <div style={{ height: 4, background: "var(--bg-sunken)", borderRadius: 2 }}>
-          <div style={{
-            width: `${pct}%`, height: "100%", background: "var(--accent)",
-            borderRadius: 2, transition: "width 0.4s ease",
-          }} />
+
+        {/* Card 3 — Tempo de procura */}
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Tempo de procura
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: config.limite_tempo_minutos > 0 ? 10 : 4 }}>
+            <span style={{ fontSize: 22, fontWeight: 600, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1 }}>
+              {formatarTempo(tempoMinutos)}
+            </span>
+            {config.limite_tempo_minutos > 0 && (
+              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                / {formatarTempo(config.limite_tempo_minutos)}
+              </span>
+            )}
+          </div>
+          {config.limite_tempo_minutos > 0 && (
+            <div style={{ height: 3, background: "var(--bg-sunken)", borderRadius: 2 }}>
+              <div style={{
+                width: `${pctTempo}%`, height: "100%",
+                background: limiteEsgotado ? "var(--danger)" : "var(--accent)",
+                borderRadius: 2, transition: "width 0.3s ease",
+              }} />
+            </div>
+          )}
+          {limiteEsgotado && (
+            <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>Limite atingido hoje</div>
+          )}
+          {config.limite_tempo_minutos === 0 && (
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>sem limite configurado</div>
+          )}
+        </div>
+
+        {/* Card 4 — Agendamento */}
+        <div
+          onClick={() => onNavigate?.("configuracoes")}
+          style={{
+            background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
+            padding: "14px 16px", cursor: onNavigate ? "pointer" : "default",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+            <Calendar size={11} style={{ color: "var(--text-tertiary)" }} />
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Agendamento
+            </span>
+          </div>
+          {proximaJanela === null ? (
+            <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Sem janelas configuradas</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{
+                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                  background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)",
+                  display: "inline-block",
+                  animation: proximaJanela === "ATIVO_AGORA" ? "pulse 2s infinite" : "none",
+                }} />
+                <span style={{ fontSize: 13, fontWeight: 500, color: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-primary)" }}>
+                  {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -345,25 +470,14 @@ export const Dashboard: React.FC = () => {
           {atividade.map((v) => {
             const s = STATUS_STYLE[v.status] ?? STATUS_STYLE.descoberta;
             return (
-              <div key={v.id} style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 0", borderBottom: "1px solid var(--border)",
-              }}>
+              <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 500, color: "var(--text-primary)",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {v.titulo}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
-                    {v.empresa}
-                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{v.empresa}</div>
                 </div>
-                <span style={{
-                  fontSize: 12, fontWeight: 500, padding: "2px 8px",
-                  borderRadius: 6, whiteSpace: "nowrap", ...s,
-                }}>
+                <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap", ...s }}>
                   {STATUS_LABELS[v.status] ?? v.status}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
