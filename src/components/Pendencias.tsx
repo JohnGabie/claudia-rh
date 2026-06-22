@@ -60,9 +60,14 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
   const handleResolver = async () => {
     if (isCaptcha) {
       setLoading(true);
-      await invoke("resolver_pendencia", { id: p.id, resolucao: "Captcha resolvido manualmente no Chrome" }).catch(console.error);
-      setLoading(false);
-      onResolved();
+      try {
+        await invoke("resolver_pendencia", { id: p.id, resolucao: "Captcha resolvido manualmente no Chrome" });
+        onResolved();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
     } else {
       setResolving(true);
     }
@@ -71,17 +76,27 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
   const handleSubmit = async () => {
     if (!resolucaoText.trim()) return;
     setLoading(true);
-    await invoke("resolver_pendencia", { id: p.id, resolucao: resolucaoText.trim() }).catch(console.error);
-    setLoading(false);
-    onResolved();
+    try {
+      await invoke("resolver_pendencia", { id: p.id, resolucao: resolucaoText.trim() });
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePular = async () => {
     setLoading(true);
-    setDismissed(true);
-    await invoke("pular_pendencia", { id: p.id }).catch(console.error);
-    setLoading(false);
-    onResolved();
+    try {
+      await invoke("pular_pendencia", { id: p.id });
+      setDismissed(true);
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

@@ -74,8 +74,17 @@ export const TerminalView: React.FC = () => {
       }
     });
 
-    const unlisten = listen<string>("pty-output", (event) => {
-      term.write(event.payload);
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    listen<string>("pty-output", (event) => {
+      xtermRef.current?.write(event.payload);
+    }).then((fn) => {
+      if (active) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
     });
 
     const observer = new ResizeObserver(() => {
@@ -85,7 +94,8 @@ export const TerminalView: React.FC = () => {
     if (containerRef.current) observer.observe(containerRef.current);
 
     return () => {
-      unlisten.then((fn) => fn());
+      active = false;
+      unlisten?.();
       observer.disconnect();
       term.dispose();
       xtermRef.current = null;

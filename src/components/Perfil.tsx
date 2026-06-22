@@ -885,38 +885,46 @@ const ChatView: React.FC<{
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
-    const unlisten = listen<string>("perfil-output", (event) => {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === "assistant" && last.streaming) {
-          return [...prev.slice(0, -1), { ...last, content: last.content + event.payload }];
+    let active = true;
+    const unlisteners: (() => void)[] = [];
+
+    Promise.all([
+      listen<string>("perfil-output", (event) => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, content: last.content + event.payload }];
+          }
+          return [...prev, { id: crypto.randomUUID(), role: "assistant", content: event.payload, streaming: true }];
+        });
+      }),
+      listen("perfil-atualizado", () => {
+        perfilSavedRef.current = true;
+      }),
+      listen("perfil-output-done", () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
+          return prev;
+        });
+        setSending(false);
+        setSessionActive(false);
+
+        if (isChrome && perfilSavedRef.current) {
+          setTimeout(() => onBackRef.current(), 2000);
         }
-        return [...prev, { id: crypto.randomUUID(), role: "assistant", content: event.payload, streaming: true }];
-      });
-    });
-
-    const unlistenSaved = listen("perfil-atualizado", () => {
-      perfilSavedRef.current = true;
-    });
-
-    const unlistenDone = listen("perfil-output-done", () => {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
-        return prev;
-      });
-      setSending(false);
-      setSessionActive(false);
-
-      if (isChrome && perfilSavedRef.current) {
-        setTimeout(() => onBackRef.current(), 2000);
+      }),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
       }
     });
 
     return () => {
-      unlisten.then(f => f());
-      unlistenSaved.then(f => f());
-      unlistenDone.then(f => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, [isChrome]);
 
@@ -1525,23 +1533,34 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   useEffect(() => { carregarLista(); }, [carregarLista]);
 
   useEffect(() => {
-    const unlisten1 = listen<string>("cover-letter-stream", (e) => {
-      setStreamText(prev => prev + e.payload);
-      streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    let active = true;
+    const unlisteners: (() => void)[] = [];
+
+    Promise.all([
+      listen<string>("cover-letter-stream", (e) => {
+        setStreamText(prev => prev + e.payload);
+        streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }),
+      listen<CoverLetterInfo>("cover-letter-done", (e) => {
+        setGerando(false);
+        setLastGenerated(e.payload);
+        carregarLista();
+      }),
+      listen<string>("cover-letter-error", (e) => {
+        setErro(e.payload);
+        setGerando(false);
+      }),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
+      }
     });
-    const unlisten2 = listen<CoverLetterInfo>("cover-letter-done", (e) => {
-      setGerando(false);
-      setLastGenerated(e.payload);
-      carregarLista();
-    });
-    const unlisten3 = listen<string>("cover-letter-error", (e) => {
-      setErro(e.payload);
-      setGerando(false);
-    });
+
     return () => {
-      unlisten1.then(f => f());
-      unlisten2.then(f => f());
-      unlisten3.then(f => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, [carregarLista]);
 
@@ -2488,8 +2507,22 @@ export const Perfil: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const unlisten = listen("perfil-atualizado", loadData);
-    return () => { unlisten.then(f => f()); };
+
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    listen("perfil-atualizado", loadData).then((fn) => {
+      if (active) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [loadData]);
 
   const openChat = (focus?: ChatFocus) => {
