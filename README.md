@@ -11,6 +11,9 @@
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
     <img src="https://img.shields.io/github/stars/JohnGabie/claudia-rh?style=for-the-badge&color=D97757&labelColor=1a1a1a" alt="GitHub stars" />
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge&labelColor=1a1a1a" alt="License: MIT" />
+  </a>
   <img src="https://img.shields.io/badge/Tauri-v2-24C8D8?style=for-the-badge&logo=tauri&logoColor=white&labelColor=1a1a1a" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=1a1a1a" alt="React 19" />
   <img src="https://img.shields.io/badge/Rust-stable-CE422B?style=for-the-badge&logo=rust&logoColor=white&labelColor=1a1a1a" alt="Rust" />
@@ -298,6 +301,10 @@ claudia-rh/
 Issues e PRs são bem-vindos. Antes de abrir um PR grande, abre uma issue para discutir a abordagem.
 
 *Issues and PRs are welcome. Before opening a large PR, open an issue to discuss the approach.*
+
+Lê o [guia de contribuição](CONTRIBUTING.md) para setup do ambiente, convenções de commits e processo de PR. Este projeto segue o [Código de Conduta](CODE_OF_CONDUCT.md) do Contributor Covenant. Para reportar vulnerabilidades de segurança, consulta a [política de segurança](SECURITY.md).
+
+*Read the [contributing guide](CONTRIBUTING.md) for dev setup, commit conventions, and PR process. This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). To report security vulnerabilities, see the [security policy](SECURITY.md).*
 
 ---
 
