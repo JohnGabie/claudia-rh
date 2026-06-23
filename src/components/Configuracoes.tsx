@@ -72,6 +72,7 @@ export const Configuracoes: React.FC = () => {
 
   const [dispaAuto, setDispaAuto] = useState(true);
   const [limiarMinutos, setLimiarMinutos] = useState(15);
+  const [modoAutonomo, setModoAutonomo] = useState(false);
 
   useEffect(() => {
     invoke<string>("ler_estrategia")
@@ -83,10 +84,18 @@ export const Configuracoes: React.FC = () => {
       .then((cfg) => { setDispaAuto(cfg.ativo); setLimiarMinutos(cfg.limiar_minutos); })
       .catch(() => {});
 
+    invoke<boolean>("obter_modo_autonomo")
+      .then((v) => setModoAutonomo(!!v))
+      .catch(() => {});
+
   }, []);
 
   const salvarDisparo = (ativo: boolean, minutos: number) => {
     invoke("configurar_disparo", { ativo, limiarMinutos: minutos }).catch(console.error);
+  };
+
+  const salvarModoAutonomo = (ativo: boolean) => {
+    invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
   };
 
   const guardar = async () => {
@@ -147,6 +156,28 @@ export const Configuracoes: React.FC = () => {
               style={inputStyle}
             />
           </div>
+        )}
+      </Section>
+
+      {/* 1b. Modo autónomo (permissões do agente) */}
+      <Section>
+        <SectionTitle>Modo autónomo do agente</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          Quando <strong>ativo</strong>, o Claude executa ações (navegar, preencher formulários, correr comandos) <strong>sem pedir confirmação</strong> — necessário para sessões totalmente automáticas, mas dá ao agente controlo total sem supervisão. Quando <strong>inativo</strong> (recomendado), o Claude pede permissão no terminal embutido antes de cada ação, e tu manténs o controlo.
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <ToggleSwitch
+            checked={modoAutonomo}
+            onChange={() => { const v = !modoAutonomo; setModoAutonomo(v); salvarModoAutonomo(v); }}
+          />
+          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
+            Pular confirmações de permissão (--dangerously-skip-permissions)
+          </span>
+        </label>
+        {modoAutonomo && (
+          <p style={{ fontSize: 12, color: "var(--accent)", marginTop: 10, lineHeight: 1.5 }}>
+            ⚠️ Com isto ativo, o agente age sozinho e sem travas técnicas — as únicas restrições passam a ser as regras de pausa do prompt. Usa apenas se confias plenamente na estratégia e no perfil configurados.
+          </p>
         )}
       </Section>
 
