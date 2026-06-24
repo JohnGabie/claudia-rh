@@ -32,6 +32,7 @@ interface ConfigDisparo {
   limiar_minutos: number;
   limite_diario: number;
   limite_tempo_minutos: number;
+  limite_vagas_sessao?: number;
   janelas: JanelaAgendamento[];
 }
 
@@ -97,9 +98,9 @@ function calcularProximaJanela(janelas: JanelaAgendamento[]): string | null {
   return "Sem janelas ativas";
 }
 
-const CFG_DEFAULT: ConfigDisparo = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, janelas: [] };
+const CFG_DEFAULT: ConfigDisparo = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, limite_vagas_sessao: 0, janelas: [] };
 
-export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onNavigate }) => {
+export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate }) => {
   const [candidaturasHoje, setCandidaturasHoje] = useState(0);
   const [vagasHoje, setVagasHoje] = useState(0);
   const [vagasTotal, setVagasTotal] = useState(0);
@@ -118,6 +119,14 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
   const [editandoLimite, setEditandoLimite] = useState(false);
   const [limiteInput, setLimiteInput] = useState(10);
   const limiteInputRef = useRef<HTMLInputElement>(null);
+  const [editandoTempo, setEditandoTempo] = useState(false);
+  const [tempoInput, setTempoInput] = useState(0);
+  const tempoInputRef = useRef<HTMLInputElement>(null);
+  const [editandoVagas, setEditandoVagas] = useState(false);
+  const [vagasInput, setVagasInput] = useState(0);
+  const vagasInputRef = useRef<HTMLInputElement>(null);
+  const checkpointTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disparadoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const carregar = () =>
     Promise.all([
@@ -141,6 +150,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
       setTempoMinutos(Math.round(tempo));
       setConfig(cfg);
       setLimiteInput(cfg.limite_diario);
+      setTempoInput(cfg.limite_tempo_minutos);
+      setVagasInput(cfg.limite_vagas_sessao ?? 0);
     }).catch(console.error).finally(() => setLoading(false));
 
   useEffect(() => {
@@ -151,7 +162,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
 
     Promise.all([
       listen("session-checkpoint-requested", () => {
-        setTimeout(() => invoke("disparar_sessao", { motivo: "checkpoint" }).catch(console.error), 500);
+        if (checkpointTimerRef.current) clearTimeout(checkpointTimerRef.current);
+        checkpointTimerRef.current = setTimeout(() => invoke("disparar_sessao", { motivo: "checkpoint" }).catch(console.error), 500);
       }),
       listen("session-started", () => { setSessionActive(true); carregar(); }),
       listen<string>("session-ended", () => { setSessionActive(false); setPaused(false); carregar(); }),
@@ -168,6 +180,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
     return () => {
       active = false;
       unlisteners.forEach((f) => f());
+      if (checkpointTimerRef.current) clearTimeout(checkpointTimerRef.current);
     };
   }, []);
 
@@ -185,7 +198,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
     try {
       await invoke("disparar_sessao", { motivo: "manual" });
       setDisparado(true);
-      setTimeout(() => setDisparado(false), 3000);
+      if (disparadoTimerRef.current) clearTimeout(disparadoTimerRef.current);
+      disparadoTimerRef.current = setTimeout(() => setDisparado(false), 3000);
       await carregar();
     } catch (e) { console.error(e); } finally { setDisparando(false); }
   };
@@ -200,6 +214,46 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
     try {
       await invoke("configurar_limite_diario", { limite: limiteInput });
       setConfig(prev => ({ ...prev, limite_diario: limiteInput }));
+    } catch (e) { console.error(e); }
+  };
+
+  const salvarTempo = async () => {
+    setEditandoTempo(false);
+    const val = Math.max(0, tempoInput);
+    if (val === config.limite_tempo_minutos) return;
+    try {
+      await invoke("configurar_disparo", {
+        ativo: config.ativo,
+        limiarMinutos: config.limiar_minutos,
+        limiteDiario: config.limite_diario,
+        limiteTempoMinutos: val,
+        janelas: config.janelas,
+      });
+      setConfig(prev => ({ ...prev, limite_tempo_minutos: val }));
+    } catch (e) { console.error(e); }
+  };
+
+  const salvarVagas = async () => {
+    setEditandoVagas(false);
+    const val = Math.max(0, vagasInput);
+    if (val === (config.limite_vagas_sessao ?? 0)) return;
+    try {
+      await invoke("configurar_limite_vagas_sessao", { limite: val });
+      setConfig(prev => ({ ...prev, limite_vagas_sessao: val }));
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleAtivo = async () => {
+    const novoAtivo = !config.ativo;
+    try {
+      await invoke("configurar_disparo", {
+        ativo: novoAtivo,
+        limiarMinutos: config.limiar_minutos,
+        limiteDiario: config.limite_diario,
+        limiteTempoMinutos: config.limite_tempo_minutos,
+        janelas: config.janelas,
+      });
+      setConfig(prev => ({ ...prev, ativo: novoAtivo }));
     } catch (e) { console.error(e); }
   };
 
@@ -334,12 +388,80 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
           <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
             Vagas analisadas
           </div>
-          <div style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1, marginBottom: 6 }}>
-            {loading ? "—" : vagasHoje}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 6 }}>
+            <span style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1 }}>
+              {loading ? "—" : vagasHoje}
+            </span>
+            {(config.limite_vagas_sessao ?? 0) > 0 && (
+              <>
+                <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>/</span>
+                {editandoVagas ? (
+                  <input
+                    ref={vagasInputRef}
+                    type="number" min={0} max={999} value={vagasInput} autoFocus
+                    onChange={e => setVagasInput(Math.max(0, parseInt(e.target.value) || 0))}
+                    onBlur={salvarVagas}
+                    onKeyDown={e => { if (e.key === "Enter") salvarVagas(); if (e.key === "Escape") { setEditandoVagas(false); setVagasInput(config.limite_vagas_sessao ?? 0); } }}
+                    style={{
+                      width: 52, fontSize: 18, fontWeight: 600, color: "var(--accent)",
+                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
+                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
+                      textAlign: "center", outline: "none",
+                    }}
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setVagasInput(config.limite_vagas_sessao ?? 0); setEditandoVagas(true); }}
+                    title="Editar limite por sessão"
+                    style={{
+                      fontSize: 18, fontWeight: 600, color: "var(--text-secondary)",
+                      background: "transparent", border: "none", cursor: "pointer",
+                      fontFamily: "inherit", padding: 0,
+                      borderBottom: "1px dashed var(--border)", lineHeight: 1,
+                    }}
+                  >
+                    {config.limite_vagas_sessao}
+                  </button>
+                )}
+              </>
+            )}
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
-          </div>
+          {(config.limite_vagas_sessao ?? 0) === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
+              hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+              {editandoVagas ? (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                  <input
+                    ref={vagasInputRef}
+                    type="number" min={0} max={999} value={vagasInput} autoFocus
+                    onChange={e => setVagasInput(Math.max(0, parseInt(e.target.value) || 0))}
+                    onBlur={salvarVagas}
+                    onKeyDown={e => { if (e.key === "Enter") salvarVagas(); if (e.key === "Escape") { setEditandoVagas(false); setVagasInput(0); } }}
+                    style={{
+                      width: 52, fontSize: 13, fontWeight: 600, color: "var(--accent)",
+                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
+                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
+                      textAlign: "center", outline: "none",
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>por sessão</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setVagasInput(20); setEditandoVagas(true); }}
+                  title="Definir limite por sessão"
+                  style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                >
+                  + limite
+                </button>
+              )}
+            </div>
+          )}
+          {(config.limite_vagas_sessao ?? 0) > 0 && (
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+              hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+            </div>
+          )}
         </div>
 
         {/* Card 3 — Tempo de procura */}
@@ -347,14 +469,45 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
           <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
             Tempo de procura
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: config.limite_tempo_minutos > 0 ? 10 : 4 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: config.limite_tempo_minutos > 0 ? 10 : 4 }}>
             <span style={{ fontSize: 22, fontWeight: 600, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1 }}>
               {formatarTempo(tempoMinutos)}
             </span>
             {config.limite_tempo_minutos > 0 && (
-              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                / {formatarTempo(config.limite_tempo_minutos)}
-              </span>
+              <>
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>/</span>
+                {editandoTempo ? (
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                    <input
+                      ref={tempoInputRef}
+                      type="number" min={0} max={480} value={tempoInput} autoFocus
+                      onChange={e => setTempoInput(Math.max(0, parseInt(e.target.value) || 0))}
+                      onBlur={salvarTempo}
+                      onKeyDown={e => { if (e.key === "Enter") salvarTempo(); if (e.key === "Escape") { setEditandoTempo(false); setTempoInput(config.limite_tempo_minutos); } }}
+                      style={{
+                        width: 52, fontSize: 14, fontWeight: 600, color: "var(--accent)",
+                        background: "var(--bg-sunken)", border: "1px solid var(--accent)",
+                        borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
+                        textAlign: "center", outline: "none",
+                      }}
+                    />
+                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>min</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setTempoInput(config.limite_tempo_minutos); setEditandoTempo(true); }}
+                    title="Editar limite de tempo"
+                    style={{
+                      fontSize: 14, fontWeight: 600, color: "var(--text-secondary)",
+                      background: "transparent", border: "none", cursor: "pointer",
+                      fontFamily: "inherit", padding: 0,
+                      borderBottom: "1px dashed var(--border)", lineHeight: 1,
+                    }}
+                  >
+                    {formatarTempo(config.limite_tempo_minutos)}
+                  </button>
+                )}
+              </>
             )}
           </div>
           {config.limite_tempo_minutos > 0 && (
@@ -370,29 +523,74 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
             <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>Limite atingido hoje</div>
           )}
           {config.limite_tempo_minutos === 0 && (
-            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>sem limite configurado</div>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
+              {editandoTempo ? (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                  <input
+                    ref={tempoInputRef}
+                    type="number" min={0} max={480} value={tempoInput} autoFocus
+                    onChange={e => setTempoInput(Math.max(0, parseInt(e.target.value) || 0))}
+                    onBlur={salvarTempo}
+                    onKeyDown={e => { if (e.key === "Enter") salvarTempo(); if (e.key === "Escape") { setEditandoTempo(false); setTempoInput(0); } }}
+                    style={{
+                      width: 52, fontSize: 14, fontWeight: 600, color: "var(--accent)",
+                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
+                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
+                      textAlign: "center", outline: "none",
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>min (0 = sem limite)</span>
+                </div>
+              ) : (
+                <>
+                  sem limite
+                  <button
+                    onClick={() => { setTempoInput(60); setEditandoTempo(true); }}
+                    title="Definir limite de tempo"
+                    style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                  >
+                    + definir
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
         {/* Card 4 — Agendamento */}
-        <div
-          onClick={() => onNavigate?.("configuracoes")}
-          style={{
-            background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
-            padding: "14px 16px", cursor: onNavigate ? "pointer" : "default",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
             <Calendar size={11} style={{ color: "var(--text-tertiary)" }} />
-            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", flex: 1 }}>
               Agendamento
             </span>
+            <button
+              onClick={toggleAtivo}
+              title={config.ativo ? "Desativar modo automático" : "Ativar modo automático"}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                border: "none", cursor: "pointer", fontFamily: "inherit",
+                background: config.ativo ? "var(--success)" : "var(--bg-sunken)",
+                color: config.ativo ? "#fff" : "var(--text-tertiary)",
+                transition: "background 0.2s, color 0.2s",
+              }}
+            >
+              {config.ativo ? "Auto" : "Manual"}
+            </button>
           </div>
           {proximaJanela === null ? (
-            <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Sem janelas configuradas</div>
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+              Sem janelas configuradas
+              <button
+                onClick={() => onNavigate?.("configuracoes")}
+                style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+              >
+                Configurar →
+              </button>
+            </div>
           ) : (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                 <span style={{
                   width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
                   background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)",
@@ -403,8 +601,14 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string) => void }> = ({ on
                   {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
                 {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
+                <button
+                  onClick={() => onNavigate?.("configuracoes")}
+                  style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                >
+                  Editar →
+                </button>
               </div>
             </>
           )}

@@ -2472,7 +2472,7 @@ const SectionEditModal: React.FC<{
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export const Perfil: React.FC = () => {
+export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled?: () => void }> = ({ initialSection, onSectionHandled }) => {
   const [mode, setMode] = useState<Mode>("resumo");
   const [chatFocus, setChatFocus] = useState<ChatFocus | null>(null);
   const [profileData, setProfileData] = useState<CandidateBase | null>(null);
@@ -2524,6 +2524,22 @@ export const Perfil: React.FC = () => {
       unlisten?.();
     };
   }, [loadData]);
+
+  useEffect(() => {
+    if (!initialSection) return;
+    const sectionTargets: Record<string, EditTarget> = {
+      dados_pessoais: { kind: "dados_pessoais" },
+      experiencia:    { kind: "experiencia" },
+      projetos:       { kind: "projetos" },
+      formacao:       { kind: "formacao" },
+      competencias:   { kind: "competencias" },
+      idiomas:        { kind: "idiomas" },
+    };
+    const target = sectionTargets[initialSection];
+    if (!target) return;
+    setEditTarget(target);
+    onSectionHandled?.();
+  }, [initialSection, onSectionHandled]);
 
   const openChat = (focus?: ChatFocus) => {
     setChatFocus(focus ?? null);

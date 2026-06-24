@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./styles/tokens.css";
@@ -16,6 +16,8 @@ function App() {
   const [view, setView] = useState<View>("dashboard");
   const [sugerirFeedback, setSugerirFeedback] = useState(false);
   const [pendenciasCount, setPendenciasCount] = useState(0);
+  const [perfilSection, setPerfilSection] = useState<string | null>(null);
+  const handlePerfilSectionHandled = useCallback(() => setPerfilSection(null), []);
 
   const refreshFeedbackSugestao = () =>
     invoke<{ sugerir: boolean }>("sugerir_feedback").then(s => setSugerirFeedback(s.sugerir)).catch(() => {});
@@ -57,12 +59,12 @@ function App() {
 
           {/* Dashboard */}
           <div style={{ display: view === "dashboard" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-            <Dashboard onNavigate={(tab) => setView(tab as View)} />
+            <Dashboard onNavigate={(tab, section) => { setView(tab as View); if (section) setPerfilSection(section); }} />
           </div>
 
           {/* Perfil */}
           <div style={{ display: view === "perfil" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-            <Perfil />
+            <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} />
           </div>
 
           {/* Terminal — nunca desmontado */}
