@@ -53,7 +53,7 @@ pub fn iniciar_sessao(
 
     pty_manager::iniciar_claude(
         app.clone(),
-        "claude".to_string(),
+        crate::commands::claude_program(),
         vec![
             "--dangerously-skip-permissions".to_string(),
             "--chrome".to_string(),

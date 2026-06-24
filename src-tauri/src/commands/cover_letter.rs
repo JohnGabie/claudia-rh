@@ -286,7 +286,7 @@ fn spawn_cover_letter_claude(
             msg.push_str(&format!("\n\nAdditional context:\n{nota_extra}"));
         }
 
-        let mut child = match std::process::Command::new("claude")
+        let mut child = match std::process::Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",
