@@ -184,14 +184,14 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     };
   }, []);
 
-  // Tick time counter while session is active
+  // Tick time counter while session is active and not paused
   useEffect(() => {
-    if (!sessionActive) return;
+    if (!sessionActive || paused) return;
     const id = setInterval(() => {
       invoke<number>("tempo_sessoes_hoje").then(t => setTempoMinutos(Math.round(t))).catch(() => {});
     }, 60000);
     return () => clearInterval(id);
-  }, [sessionActive]);
+  }, [sessionActive, paused]);
 
   const disparar = async () => {
     setDisparando(true);
@@ -204,8 +204,21 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     } catch (e) { console.error(e); } finally { setDisparando(false); }
   };
 
-  const pausar = async () => { try { await invoke("escrever_pty", { input: "\x03" }); setPaused(true); } catch (e) { console.error(e); } };
-  const retomar = async () => { try { await invoke("escrever_pty", { input: "continue\r" }); setPaused(false); } catch (e) { console.error(e); } };
+  const pausar = async () => {
+    try {
+      await invoke("escrever_pty", { input: "\x03" });
+      invoke("registar_pausa_sessao").catch(console.error);
+      setPaused(true);
+    } catch (e) { console.error(e); }
+  };
+  const retomar = async () => {
+    try {
+      await invoke("escrever_pty", { input: "continue\r" });
+      invoke("registar_retoma_sessao").catch(console.error);
+      setPaused(false);
+      invoke<number>("tempo_sessoes_hoje").then(t => setTempoMinutos(Math.round(t))).catch(() => {});
+    } catch (e) { console.error(e); }
+  };
   const interromper = async () => { try { await invoke("parar_pty"); setSessionActive(false); setPaused(false); } catch (e) { console.error(e); } };
 
   const salvarLimite = async () => {

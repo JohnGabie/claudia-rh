@@ -16,6 +16,12 @@ pub fn init(db_path: &Path) -> Result<Connection> {
     if let Err(e) = conn.execute_batch("ALTER TABLE candidaturas ADD COLUMN resultado TEXT;") {
         if !e.to_string().contains("duplicate column") { eprintln!("[db migration] candidaturas.resultado: {e}"); }
     }
+    if let Err(e) = conn.execute_batch("ALTER TABLE sessoes ADD COLUMN tempo_pausado_segundos INTEGER DEFAULT 0;") {
+        if !e.to_string().contains("duplicate column") { eprintln!("[db migration] sessoes.tempo_pausado_segundos: {e}"); }
+    }
+    if let Err(e) = conn.execute_batch("ALTER TABLE sessoes ADD COLUMN pausada_em TEXT;") {
+        if !e.to_string().contains("duplicate column") { eprintln!("[db migration] sessoes.pausada_em: {e}"); }
+    }
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS feedbacks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

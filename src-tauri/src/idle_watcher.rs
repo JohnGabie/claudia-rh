@@ -64,6 +64,10 @@ fn pode_disparar(db: &Arc<Mutex<rusqlite::Connection>>, config: &IdleConfig) -> 
             .query_row(
                 "SELECT COALESCE(SUM(
                     (julianday(COALESCE(terminada_em, datetime('now'))) - julianday(iniciada_em)) * 1440
+                    - COALESCE(tempo_pausado_segundos, 0) / 60.0
+                    - CASE WHEN pausada_em IS NOT NULL AND terminada_em IS NULL
+                        THEN (julianday(datetime('now')) - julianday(pausada_em)) * 1440
+                        ELSE 0 END
                  ), 0.0) FROM sessoes WHERE date(iniciada_em) = date('now')",
                 [],
                 |r| r.get(0),

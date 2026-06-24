@@ -32,6 +32,7 @@ use commands::pty::{escrever_pty, iniciar_pty, parar_pty, redimensionar_pty};
 use commands::sessao::{
     configurar_disparo, configurar_limite_diario, configurar_modo_autonomo,
     disparar_sessao, obter_config_disparo, obter_modo_autonomo,
+    registar_pausa_sessao, registar_retoma_sessao,
 };
 
 use rusqlite::Connection;
@@ -240,6 +241,8 @@ pub fn run() {
             configurar_limite_diario,
             obter_modo_autonomo,
             configurar_modo_autonomo,
+            registar_pausa_sessao,
+            registar_retoma_sessao,
             obter_config_notif,
             configurar_notif,
             agregar_dados_feedback,

@@ -98,6 +98,31 @@ pub fn configurar_modo_autonomo(app: AppHandle, ativo: bool) -> Result<(), Strin
 }
 
 #[tauri::command]
+pub fn registar_pausa_sessao(state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sessoes SET pausada_em = datetime('now')
+         WHERE id = (SELECT id FROM sessoes WHERE terminada_em IS NULL AND pausada_em IS NULL ORDER BY id DESC LIMIT 1)",
+        [],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn registar_retoma_sessao(state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sessoes SET
+            tempo_pausado_segundos = COALESCE(tempo_pausado_segundos, 0) +
+                CAST((julianday(datetime('now')) - julianday(pausada_em)) * 86400 AS INTEGER),
+            pausada_em = NULL
+         WHERE id = (SELECT id FROM sessoes WHERE terminada_em IS NULL AND pausada_em IS NOT NULL ORDER BY id DESC LIMIT 1)",
+        [],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn disparar_sessao(
     app: AppHandle,
     state: State<'_, DbState>,
