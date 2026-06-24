@@ -44,9 +44,19 @@ pub fn iniciar_sessao(
         prompt::montar_prompt_sistema(&conn, &data_dir, &db_path)
     };
 
+    let skip_permissions = ler_skip_permissions(&data_dir);
+    let mut args: Vec<String> = Vec::new();
+    if skip_permissions {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
+    args.push("--chrome".to_string());
+    args.push("--system-prompt".to_string());
+    args.push(sys_prompt);
+
+    let modo_txt = if skip_permissions { "autónomo" } else { "supervisionado" };
     let notice = format!(
-        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m A iniciar sessão Claude (motivo: {})…\r\n",
-        motivo
+        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m A iniciar sessão Claude (motivo: {} · modo: {})…\r\n",
+        motivo, modo_txt
     );
     app.emit("pty-output", notice).ok();
     app.emit("session-started", session_id).ok();
@@ -54,12 +64,7 @@ pub fn iniciar_sessao(
     pty_manager::iniciar_claude(
         app.clone(),
         "claude".to_string(),
-        vec![
-            "--dangerously-skip-permissions".to_string(),
-            "--chrome".to_string(),
-            "--system-prompt".to_string(),
-            sys_prompt,
-        ],
+        args,
         24,
         80,
         session_id,
@@ -67,6 +72,29 @@ pub fn iniciar_sessao(
         workspace.to_string_lossy().into_owned(),
         "Inicia a sessao de candidaturas.".to_string(),
     )
+}
+
+pub fn ler_skip_permissions(data_dir: &std::path::Path) -> bool {
+    std::fs::read_to_string(data_dir.join("modo_autonomo.json"))
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|v| v.get("skip_permissions").and_then(|x| x.as_bool()))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn obter_modo_autonomo(app: AppHandle) -> Result<bool, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(ler_skip_permissions(&data_dir))
+}
+
+#[tauri::command]
+pub fn configurar_modo_autonomo(app: AppHandle, ativo: bool) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string(&serde_json::json!({ "skip_permissions": ativo }))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(data_dir.join("modo_autonomo.json"), content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

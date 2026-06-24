@@ -29,7 +29,10 @@ use commands::perfil::{
     ler_estrategia, ler_search_variants,
 };
 use commands::pty::{escrever_pty, iniciar_pty, parar_pty, redimensionar_pty};
-use commands::sessao::{configurar_disparo, configurar_limite_diario, disparar_sessao, obter_config_disparo};
+use commands::sessao::{
+    configurar_disparo, configurar_limite_diario, configurar_modo_autonomo,
+    disparar_sessao, obter_config_disparo, obter_modo_autonomo,
+};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -235,6 +238,8 @@ pub fn run() {
             obter_config_disparo,
             configurar_disparo,
             configurar_limite_diario,
+            obter_modo_autonomo,
+            configurar_modo_autonomo,
             obter_config_notif,
             configurar_notif,
             agregar_dados_feedback,

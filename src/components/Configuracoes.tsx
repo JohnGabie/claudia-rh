@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ExternalLink, FolderOpen, Plus, Trash2 } from "lucide-react";
 
@@ -82,10 +82,12 @@ export const Configuracoes: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Disparo automático
   const [dispaAuto, setDispaAuto] = useState(true);
   const [limiarMinutos, setLimiarMinutos] = useState(15);
+  const [modoAutonomo, setModoAutonomo] = useState(false);
 
   // Agendamento
   const [limiteDiario, setLimiteDiario] = useState(10);
@@ -113,7 +115,13 @@ export const Configuracoes: React.FC = () => {
         setJanelas(cfg.janelas ?? []);
       })
       .catch(() => {});
+
+    invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
   }, []);
+
+  const salvarModoAutonomo = (ativo: boolean) => {
+    invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
+  };
 
   const salvarDisparo = (ativo: boolean, minutos: number) => {
     invoke("configurar_disparo", { ativo, limiarMinutos: minutos }).catch(console.error);
@@ -157,7 +165,8 @@ export const Configuracoes: React.FC = () => {
     try {
       await invoke("guardar_estrategia", { conteudo: estrategia });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
     } finally {
@@ -358,7 +367,29 @@ export const Configuracoes: React.FC = () => {
         </button>
       </Section>
 
-      {/* 3. Estratégia de busca */}
+      {/* 3. Modo autónomo */}
+      <Section>
+        <SectionTitle>Modo autónomo do agente</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          Quando <strong>inativo</strong> (recomendado), o Claude pede confirmação no terminal antes de cada ação. Quando <strong>ativo</strong>, age sem interrupções — necessário para sessões completamente não supervisionadas.
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <ToggleSwitch
+            checked={modoAutonomo}
+            onChange={() => { const v = !modoAutonomo; setModoAutonomo(v); salvarModoAutonomo(v); }}
+          />
+          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
+            Pular confirmações de permissão (--dangerously-skip-permissions)
+          </span>
+        </label>
+        {modoAutonomo && (
+          <p style={{ fontSize: 12, color: "var(--warning)", marginTop: 10, lineHeight: 1.5 }}>
+            ⚠️ Com isto ativo, o agente age sem travas técnicas. As únicas restrições passam a ser as regras do prompt — certifica-te de que a estratégia e o perfil estão bem configurados.
+          </p>
+        )}
+      </Section>
+
+      {/* 4. Estratégia de busca */}
       <Section>
         <SectionTitle>Estratégia de busca</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>

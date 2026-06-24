@@ -31,6 +31,7 @@ search_variants.yaml
 strategy.md
 disparo.json
 notif.json
+modo_autonomo.json
 
 # SQLite runtime databases
 *.db
