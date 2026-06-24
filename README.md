@@ -4,8 +4,7 @@
 
 <h1>Claudia RH</h1>
 
-<p><strong>Candidatura automática a empregos, orquestrada por IA.</strong><br/>
-<em>Automated job-application agent powered by Claude + Chrome.</em></p>
+<p><strong>Automated job-application agent powered by Claude + Chrome.</strong></p>
 
 <p>
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
@@ -22,18 +21,15 @@
 
 <br/>
 
-> ⭐ **Se este projeto te inspirou ou ajudou, considera deixar uma estrela — faz diferença!**<br/>
-> *If this project inspired or helped you, please consider leaving a star — it really matters!*
+> ⭐ **If this project inspired or helped you, please consider leaving a star — it really matters!**
 
 </div>
 
 ---
 
-## O que é isto? / What is this?
+## What is this?
 
-**Claudia RH** é uma aplicação desktop Windows que automatiza a procura e candidatura a vagas de emprego. Em vez de passar horas a copiar o CV de site em site, lança uma sessão de IA que navega, analisa e submete candidaturas por si — enquanto você faz outra coisa.
-
-*Claudia RH is a Windows desktop app that automates job searching and application. Instead of spending hours copy-pasting your CV across job sites, it launches an AI session that browses, analyses, and submits applications on your behalf.*
+**Claudia RH** is a Windows desktop app that automates job searching and application. Instead of spending hours copy-pasting your CV across job sites, it launches an AI session that browses, analyses, and submits applications on your behalf — while you do something else.
 
 <br/>
 
@@ -41,32 +37,32 @@
 <tr>
 <td width="50%" valign="top">
 
-### Como funciona / How it works
+### How it works
 
-1. **Perfil conversacional** — conta ao Claude quem és, colas o CV, defines variantes de pesquisa (ex: "dev sénior remoto" vs "líder técnico híbrido")
-2. **Disparo automático** — a app deteta quando estás inativo e lança uma sessão Claude Code ligada ao Chrome
-3. **Análise de vaga** — o agente lê cada oferta, cruza com o teu perfil e decide se candidata
-4. **Geração de documentos** — CV e carta de apresentação adaptados para cada vaga, com honestidade forçada
-5. **Pendências e notificações** — captchas, campos obrigatórios e outros bloqueios surgem como notificações Windows para resolução manual
-6. **Feedback** — análise periódica dos resultados com sugestões de melhoria
+1. **Conversational profile** — tell Claude who you are, paste your CV, define search variants (e.g. "senior remote dev" vs "hybrid tech lead")
+2. **Automatic triggering** — the app detects when you're idle and launches a Claude Code session connected to Chrome
+3. **Job analysis** — the agent reads each listing, cross-references your profile, and decides whether to apply
+4. **Document generation** — CV and cover letter tailored to each job, with honesty enforced
+5. **Pending actions & notifications** — captchas, required fields, and other blockers appear as Windows notifications for manual resolution
+6. **Feedback** — periodic analysis of results with improvement suggestions
 
 </td>
 <td width="50%" valign="top">
 
-### Funcionalidades / Features
+### Features
 
-| | Funcionalidade |
+| | Feature |
 |---|---|
-| 🤖 | Agente Claude Code com acesso ao Chrome |
-| 📄 | CV e carta gerados por IA por vaga |
-| 🔍 | Múltiplas variantes de pesquisa simultâneas |
-| 🔔 | Notificações Windows para captchas/bloqueios |
-| 💤 | Disparo automático por inatividade |
-| 🔐 | Credenciais no Windows Credential Manager |
-| 📊 | Dashboard com estatísticas em tempo real |
-| 💬 | Perfil gerido por chat conversacional |
-| 📈 | Aba de Feedback com gráficos de tendência |
-| 🖥️ | Terminal PTY integrado |
+| 🤖 | Claude Code agent with Chrome access |
+| 📄 | AI-generated CV and cover letter per job |
+| 🔍 | Multiple simultaneous search variants |
+| 🔔 | Windows notifications for captchas / blockers |
+| 💤 | Automatic triggering on user inactivity |
+| 🔐 | Credentials stored in Windows Credential Manager |
+| 📊 | Dashboard with real-time statistics |
+| 💬 | Profile managed via conversational chat |
+| 📈 | Feedback tab with trend charts |
+| 🖥️ | Integrated PTY terminal |
 
 </td>
 </tr>
@@ -74,15 +70,15 @@
 
 ---
 
-## Arquitetura / Architecture
+## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    Claudia RH (Tauri)                     │
 │                                                          │
 │  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐  │
-│  │Dashboard │  │ Perfil │  │Pendências│  │ Feedback │  │
-│  │          │  │ (chat) │  │          │  │ (graphs) │  │
+│  │Dashboard │  │Profile │  │ Pending  │  │ Feedback │  │
+│  │          │  │ (chat) │  │ actions  │  │ (graphs) │  │
 │  └──────────┘  └────────┘  └──────────┘  └──────────┘  │
 │                                                          │
 │       React 19 + TypeScript + xterm.js                   │
@@ -94,92 +90,92 @@
 │  │                   (Claude Code CLI)   Extension  │    │
 │  └─────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
-         ↕ eventos Tauri (SQLite watcher, idle watcher)
-    SQLite DB: vagas · candidaturas · pendências · sessões
+         ↕ Tauri events (SQLite watcher, idle watcher)
+    SQLite DB: jobs · applications · pending actions · sessions
 ```
 
 ---
 
-## Stack técnica / Tech stack
+## Tech stack
 
 <table>
 <tr>
-<th>Camada</th>
-<th>Tecnologia</th>
-<th>Versão</th>
-<th>Para quê</th>
+<th>Layer</th>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
 </tr>
 <tr>
 <td>Desktop shell</td>
 <td><img src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white" /></td>
 <td>v2</td>
-<td>App nativa Windows sem Electron</td>
+<td>Native Windows app without Electron</td>
 </tr>
 <tr>
 <td>Frontend</td>
 <td><img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" /></td>
 <td>19.1</td>
-<td>UI reativa</td>
+<td>Reactive UI</td>
 </tr>
 <tr>
-<td>Linguagem UI</td>
+<td>UI language</td>
 <td><img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" /></td>
 <td>5.8</td>
-<td>Type-safety no frontend</td>
+<td>Type-safety on the frontend</td>
 </tr>
 <tr>
 <td>Backend</td>
 <td><img src="https://img.shields.io/badge/Rust-stable-CE422B?logo=rust&logoColor=white" /></td>
 <td>2021 edition</td>
-<td>Lógica de sistema, PTY, SQLite, credenciais</td>
+<td>System logic, PTY, SQLite, credentials</td>
 </tr>
 <tr>
-<td>Base de dados</td>
+<td>Database</td>
 <td><img src="https://img.shields.io/badge/SQLite-bundled-003B57?logo=sqlite&logoColor=white" /></td>
 <td>via rusqlite</td>
-<td>Vagas, candidaturas, sessões, pendências</td>
+<td>Jobs, applications, sessions, pending actions</td>
 </tr>
 <tr>
 <td>Terminal</td>
 <td><code>xterm.js + portable-pty</code></td>
 <td>6.x</td>
-<td>PTY real dentro da app</td>
+<td>Real PTY embedded inside the app</td>
 </tr>
 <tr>
-<td>IA</td>
+<td>AI</td>
 <td><img src="https://img.shields.io/badge/Claude_Code-CLI-D97757" /></td>
 <td>latest</td>
-<td>Agente de candidatura com acesso ao Chrome</td>
+<td>Application agent with Chrome access</td>
 </tr>
 <tr>
-<td>Credenciais</td>
+<td>Credentials</td>
 <td><code>keyring v3</code></td>
 <td>3.x</td>
-<td>Windows Credential Manager — nunca em texto simples</td>
+<td>Windows Credential Manager — never plain text</td>
 </tr>
 </table>
 
 ---
 
-## Pré-requisitos / Prerequisites
+## Prerequisites
 
 <table>
 <tr>
 <td>
 
-**Obrigatório / Required**
+**Required**
 - Windows 11 (build ≥ 26200)
-- [Claude Code CLI](https://claude.ai/code) instalado e autenticado
-- Extensão **Claude in Chrome** instalada no Chrome
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated
+- **Claude in Chrome** extension installed in Chrome
 - Rust toolchain (`rustup`)
 - Node.js 20+
 
 </td>
 <td>
 
-**Recomendado / Recommended**
-- Conta Claude Pro ou Team (para volumes de sessões)
-- Chrome como browser principal
+**Recommended**
+- Claude Pro or Team account (for session volume)
+- Chrome as your primary browser
 - 8 GB RAM+
 
 </td>
@@ -188,45 +184,42 @@
 
 ---
 
-## Configuração da extensão Claude in Chrome — passo crítico
+## Claude in Chrome extension setup — critical step
 
-> **Sem este passo o agente não consegue controlar o browser e não faz nada.**<br/>
-> *Without this step the agent cannot control the browser and will do nothing.*
+> **Without this step the agent cannot control the browser and will do nothing.**
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-### Instalar a extensão / Install the extension
+### Install the extension
 
-1. Abrir o Chrome e ir à **Chrome Web Store**
-2. Pesquisar por **"Claude"** (extensão oficial da Anthropic)
-3. Instalar a extensão **Claude** no Chrome
+1. Open Chrome and go to the **Chrome Web Store**
+2. Search for **"Claude"** (official Anthropic extension)
+3. Install the **Claude** extension in Chrome
 
-> ⚠️ **A conta Google/Claude usada no Chrome tem de ser exactamente a mesma que está autenticada no Claude Code CLI.** Se forem contas diferentes, a ligação falha silenciosamente.
->
-> *The Google/Claude account used in Chrome must be exactly the same one authenticated in the Claude Code CLI. If they differ, the connection fails silently.*
+> ⚠️ **The Google/Claude account used in Chrome must be exactly the same one authenticated in the Claude Code CLI.** If they differ, the connection fails silently.
 
 </td>
 <td width="50%" valign="top">
 
-### Activar o modo Chrome / Enable Chrome mode
+### Enable Chrome mode
 
-Depois de instalada a extensão, abre um terminal e corre o Claude Code:
+After installing the extension, open a terminal and run Claude Code:
 
 ```bash
 claude
 ```
 
-Dentro da sessão, escreve:
+Inside the session, type:
 
 ```
 /chrome
 ```
 
-Quando aparecer a opção **"Enable by default"**, selecciona **Yes**.
+When the **"Enable by default"** option appears, select **Yes**.
 
-Fecha o Claude, abre de novo — a partir daí o Chrome fica ligado automaticamente em cada sessão.
+Close Claude, reopen it — from then on Chrome connects automatically in every session.
 
 </td>
 </tr>
@@ -234,89 +227,81 @@ Fecha o Claude, abre de novo — a partir daí o Chrome fica ligado automaticame
 
 ---
 
-## Instalação / Installation
+## Installation
 
 ```bash
-# 1. Clonar / Clone
+# 1. Clone
 git clone https://github.com/JohnGabie/claudia-rh.git
 cd claudia-rh
 
-# 2. Instalar dependências / Install dependencies
+# 2. Install dependencies
 npm install
 
-# 3. Desenvolver / Dev mode
+# 3. Dev mode
 npm run tauri dev
 
-# 4. Build de produção / Production build
+# 4. Production build
 npm run tauri build
 ```
 
-O instalador `.msi` fica em `src-tauri/target/release/bundle/msi/`.
+The `.msi` installer will be at `src-tauri/target/release/bundle/msi/`.
 
 ---
 
-## Estrutura do projeto / Project structure
+## Project structure
 
 ```
 claudia-rh/
-├── src/                        # Frontend React
+├── src/                        # React frontend
 │   ├── components/
-│   │   ├── Dashboard.tsx       # Estatísticas e controlo de sessão
-│   │   ├── Perfil.tsx          # Chat conversacional de perfil
-│   │   ├── Vagas.tsx           # Histórico de vagas e candidaturas
-│   │   ├── Pendencias.tsx      # Bloqueios pendentes (captcha, etc.)
-│   │   ├── Feedback.tsx        # Análise de resultados + gráficos
-│   │   ├── Configuracoes.tsx   # Credenciais, disparo, estratégia
-│   │   ├── Terminal.tsx        # Terminal PTY integrado
-│   │   └── Sidebar.tsx         # Navegação + badges
-│   └── styles/tokens.css       # Tokens de design (cores, tipografia)
+│   │   ├── Dashboard.tsx       # Statistics and session control
+│   │   ├── Perfil.tsx          # Conversational profile chat
+│   │   ├── Vagas.tsx           # Job history and applications
+│   │   ├── Pendencias.tsx      # Pending blockers (captcha, etc.)
+│   │   ├── Feedback.tsx        # Results analysis + charts
+│   │   ├── Configuracoes.tsx   # Credentials, triggering, strategy
+│   │   ├── Terminal.tsx        # Integrated PTY terminal
+│   │   └── Sidebar.tsx         # Navigation + badges
+│   └── styles/tokens.css       # Design tokens (colours, typography)
 │
-└── src-tauri/src/              # Backend Rust
+└── src-tauri/src/              # Rust backend
     ├── commands/
     │   ├── perfil.rs           # candidate_base.yaml + search_variants.yaml
-    │   ├── sessao.rs           # Disparo e gestão de sessões
-    │   ├── curriculos.rs       # Geração de CV
-    │   ├── cover_letter.rs     # Geração de carta
-    │   ├── feedback.rs         # Análise de feedback
+    │   ├── sessao.rs           # Session triggering and management
+    │   ├── curriculos.rs       # CV generation
+    │   ├── cover_letter.rs     # Cover letter generation
+    │   ├── feedback.rs         # Feedback analysis
     │   ├── credenciais.rs      # Keyring (Windows Credential Manager)
-    │   └── estado.rs           # Queries de estatísticas
-    ├── db/schema.sql           # Schema SQLite completo
-    ├── pty_manager.rs          # Gestão do processo PTY + sinais da sessão
-    ├── idle_watcher.rs         # Deteção de inatividade (Win32 GetLastInputInfo)
-    └── notificacoes.rs         # Notificações Windows (plugin Tauri)
+    │   └── estado.rs           # Statistics queries
+    ├── db/schema.sql           # Full SQLite schema
+    ├── pty_manager.rs          # PTY process management + session signals
+    ├── idle_watcher.rs         # Inactivity detection (Win32 GetLastInputInfo)
+    └── notificacoes.rs         # Windows notifications (Tauri plugin)
 ```
 
 ---
 
-## Aviso legal / Disclaimer
+## Disclaimer
 
-> Esta ferramenta automatiza ações no browser em seu nome. Certifica-te de que os termos de serviço das plataformas de emprego que utilizas permitem automação. O autor não se responsabiliza por bloqueios de conta ou outros efeitos decorrentes do uso desta ferramenta.
-
-*This tool automates browser actions on your behalf. Ensure the terms of service of the job platforms you use allow automation. The author is not responsible for account bans or other effects resulting from using this tool.*
+This tool automates browser actions on your behalf. Ensure the terms of service of the job platforms you use allow automation. The author is not responsible for account bans or other effects resulting from using this tool.
 
 ---
 
-## Contribuir / Contributing
+## Contributing
 
-Issues e PRs são bem-vindos. Antes de abrir um PR grande, abre uma issue para discutir a abordagem.
+Issues and PRs are welcome. Before opening a large PR, open an issue to discuss the approach.
 
-*Issues and PRs are welcome. Before opening a large PR, open an issue to discuss the approach.*
-
-Lê o [guia de contribuição](CONTRIBUTING.md) para setup do ambiente, convenções de commits e processo de PR. Este projeto segue o [Código de Conduta](CODE_OF_CONDUCT.md) do Contributor Covenant. Para reportar vulnerabilidades de segurança, consulta a [política de segurança](SECURITY.md).
-
-*Read the [contributing guide](CONTRIBUTING.md) for dev setup, commit conventions, and PR process. This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). To report security vulnerabilities, see the [security policy](SECURITY.md).*
+Read the [contributing guide](CONTRIBUTING.md) for dev setup, commit conventions, and PR process. This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). To report security vulnerabilities, see the [security policy](SECURITY.md).
 
 ---
 
 <div align="center">
 
-Feito com ☕ e demasiadas candidaturas rejeitadas.<br/>
-*Built with ☕ and way too many rejected applications.*
+Built with ☕ and way too many rejected applications.
 
 <br/>
 
-**Se chegaste até aqui e achaste útil — uma estrela faz diferença! ⭐**<br/>
-*If you made it this far and found it useful — a star makes a difference!*
+**If you made it this far and found it useful — a star makes a difference! ⭐**
 
 <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
   <img src="https://img.shields.io/github/stars/JohnGabie/claudia-rh?style=social" alt="Star on GitHub" />
