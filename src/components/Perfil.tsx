@@ -2480,6 +2480,7 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const hasLoadedOnce = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -2489,6 +2490,7 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
       ]);
       setProfileData(base);
       setVariants(vars ?? []);
+      hasLoadedOnce.current = true;
       setHasProfile(
         Boolean(base?.dados_pessoais?.nome_completo) ||
         Boolean(base?.dados_pessoais?.email) ||
@@ -2499,7 +2501,8 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
       );
     } catch (e) {
       console.error("[Perfil] loadData error:", e);
-      setHasProfile(false);
+      // Se já tínhamos dados carregados, manter o estado — não apagar o perfil por erro de parse
+      if (!hasLoadedOnce.current) setHasProfile(false);
     } finally {
       setLoading(false);
     }
