@@ -127,6 +127,21 @@ pub struct FonteUsada {
     #[serde(default)] pub consultado_em: String,
 }
 
+// Aceita tanto [{tipo,referencia,consultado_em}] como ["url1","url2"] — Claude por vezes
+// escreve strings simples em vez de objectos.
+fn deserialize_fontes<'de, D>(d: D) -> Result<Vec<FonteUsada>, D::Error>
+where D: serde::Deserializer<'de> {
+    let val: serde_yaml::Value = serde::Deserialize::deserialize(d)?;
+    let seq = match val {
+        serde_yaml::Value::Sequence(s) => s,
+        _ => return Ok(vec![]),
+    };
+    Ok(seq.into_iter().map(|v| match v {
+        serde_yaml::Value::String(s) => FonteUsada { referencia: s, ..Default::default() },
+        other => serde_yaml::from_value(other).unwrap_or_default(),
+    }).collect())
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct CandidatoBase {
     #[serde(default)] pub dados_pessoais: DadosPessoais,
@@ -139,7 +154,7 @@ pub struct CandidatoBase {
     #[serde(default)] pub gaps_conhecidos: Vec<GapConhecido>,
     #[serde(default)] pub respostas_modelo: RespostasModelo,
     #[serde(default)] pub ultima_atualizacao: String,
-    #[serde(default)] pub fontes_usadas: Vec<FonteUsada>,
+    #[serde(default, deserialize_with = "deserialize_fontes")] pub fontes_usadas: Vec<FonteUsada>,
 }
 
 // ── search_variants.yaml structs ──────────────────────────────────────────────
