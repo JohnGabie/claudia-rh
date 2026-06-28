@@ -426,32 +426,18 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
           <span style={{ fontSize: 13 }}>Sem notificações por resolver</span>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {pendencias.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
-                Pendências · {pendencias.length}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pendencias.map((p) => (
-                  <NotifItem key={p.id} p={p} onResolved={carregar} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {propostas.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
-                Sugestões de perfil · {propostas.length}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {propostas.map((p) => (
-                  <PropostaItem key={p.id} p={p} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
-                ))}
-              </div>
-            </div>
-          )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[
+            ...pendencias.map((p) => ({ tipo: "pendencia" as const, criada_em: p.criada_em, item: p })),
+            ...propostas.map((p) => ({ tipo: "proposta" as const, criada_em: p.criada_em, item: p })),
+          ]
+            .sort((a, b) => new Date(b.criada_em).getTime() - new Date(a.criada_em).getTime())
+            .map((entry) =>
+              entry.tipo === "pendencia"
+                ? <NotifItem key={`p-${entry.item.id}`} p={entry.item as Pendencia} onResolved={carregar} />
+                : <PropostaItem key={`s-${entry.item.id}`} p={entry.item as Proposta} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
+            )
+          }
         </div>
       )}
     </div>
