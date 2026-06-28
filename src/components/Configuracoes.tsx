@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ExternalLink, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { Check, ExternalLink, FolderOpen } from "lucide-react";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -34,18 +34,7 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
   </button>
 );
 
-// ── types ─────────────────────────────────────────────────────────────────────
-
-interface JanelaAgendamento {
-  dia_semana: number;
-  inicio: string;
-  fim: string;
-  ativo: boolean;
-}
-
 // ── constants ─────────────────────────────────────────────────────────────────
-
-const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 const PROMPTS = [
   {
@@ -84,15 +73,7 @@ export const Configuracoes: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Disparo automático
-  const [dispaAuto, setDispaAuto] = useState(true);
-  const [limiarMinutos, setLimiarMinutos] = useState(15);
   const [modoAutonomo, setModoAutonomo] = useState(false);
-
-  // Agendamento
-  const [limiteDiario, setLimiteDiario] = useState(10);
-  const [limiteTempoMinutos, setLimiteTempoMinutos] = useState(0);
-  const [janelas, setJanelas] = useState<JanelaAgendamento[]>([]);
 
   useEffect(() => {
     invoke<string>("ler_estrategia")
@@ -100,64 +81,11 @@ export const Configuracoes: React.FC = () => {
       .catch(console.error)
       .finally(() => setLoading(false));
 
-    invoke<{
-      ativo: boolean;
-      limiar_minutos: number;
-      limite_diario: number;
-      limite_tempo_minutos: number;
-      janelas: JanelaAgendamento[];
-    }>("obter_config_disparo")
-      .then((cfg) => {
-        setDispaAuto(cfg.ativo);
-        setLimiarMinutos(cfg.limiar_minutos);
-        setLimiteDiario(cfg.limite_diario ?? 10);
-        setLimiteTempoMinutos(cfg.limite_tempo_minutos ?? 0);
-        setJanelas(cfg.janelas ?? []);
-      })
-      .catch(() => {});
-
     invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
   }, []);
 
   const salvarModoAutonomo = (ativo: boolean) => {
     invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
-  };
-
-  const salvarDisparo = (ativo: boolean, minutos: number) => {
-    invoke("configurar_disparo", { ativo, limiarMinutos: minutos }).catch(console.error);
-  };
-
-  const salvarLimiteDiario = (v: number) => {
-    invoke("configurar_limite_diario", { limite: v }).catch(console.error);
-  };
-
-  const salvarJanelas = (novasJanelas: JanelaAgendamento[], tempoMins?: number) => {
-    invoke("configurar_disparo", {
-      ativo: dispaAuto,
-      limiarMinutos: limiarMinutos,
-      limiteDiario: limiteDiario,
-      limiteTempoMinutos: tempoMins ?? limiteTempoMinutos,
-      janelas: novasJanelas,
-    }).catch(console.error);
-  };
-
-  const adicionarJanela = () => {
-    const nova: JanelaAgendamento = { dia_semana: 1, inicio: "09:00", fim: "17:00", ativo: true };
-    const novas = [...janelas, nova];
-    setJanelas(novas);
-    salvarJanelas(novas);
-  };
-
-  const removerJanela = (i: number) => {
-    const novas = janelas.filter((_, idx) => idx !== i);
-    setJanelas(novas);
-    salvarJanelas(novas);
-  };
-
-  const atualizarJanela = (i: number, patch: Partial<JanelaAgendamento>) => {
-    const novas = janelas.map((j, idx) => idx === i ? { ...j, ...patch } : j);
-    setJanelas(novas);
-    salvarJanelas(novas);
   };
 
   const guardar = async () => {
@@ -178,17 +106,6 @@ export const Configuracoes: React.FC = () => {
     return <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>;
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: 100, padding: "7px 10px", borderRadius: 4,
-    border: "1px solid var(--border)", background: "var(--bg-surface)",
-    color: "var(--text-primary)", fontSize: 14, fontFamily: "inherit", outline: "none",
-  };
-
-  const smallInputStyle: React.CSSProperties = {
-    padding: "5px 8px", borderRadius: 4,
-    border: "1px solid var(--border)", background: "var(--bg-surface)",
-    color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", outline: "none",
-  };
 
   return (
     <div style={{ padding: 24, paddingBottom: 80 }}>
@@ -196,178 +113,7 @@ export const Configuracoes: React.FC = () => {
         Configurações
       </h1>
 
-      {/* 1. Disparo automático */}
-      <Section>
-        <SectionTitle>Disparo automático</SectionTitle>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          Quando ativo, inicia uma sessão automaticamente após o sistema estar inativo pelo limiar configurado.
-        </p>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: dispaAuto ? 16 : 0 }}>
-          <ToggleSwitch
-            checked={dispaAuto}
-            onChange={() => { const v = !dispaAuto; setDispaAuto(v); salvarDisparo(v, limiarMinutos); }}
-          />
-          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
-            Disparar ao detetar inatividade do sistema
-          </span>
-        </label>
-        {dispaAuto && (
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-              Limiar de inatividade (minutos)
-            </label>
-            <input
-              type="number" min={1} max={120} value={limiarMinutos}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(120, parseInt(e.target.value) || 15));
-                setLimiarMinutos(v); salvarDisparo(dispaAuto, v);
-              }}
-              style={inputStyle}
-            />
-          </div>
-        )}
-      </Section>
-
-      {/* 2. Agendamento de sessões */}
-      <Section>
-        <SectionTitle>Agendamento de sessões</SectionTitle>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-          Limites e janelas de tempo para as sessões automáticas. O disparo por inatividade só ocorre dentro das janelas ativas.
-        </p>
-
-        {/* Limites */}
-        <div style={{ display: "flex", gap: 32, marginBottom: 24, flexWrap: "wrap" }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-              Limite diário de candidaturas
-            </label>
-            <input
-              type="number" min={1} max={99} value={limiteDiario}
-              onChange={(e) => setLimiteDiario(Math.max(1, Math.min(99, parseInt(e.target.value) || 10)))}
-              onBlur={() => salvarLimiteDiario(limiteDiario)}
-              style={{ ...inputStyle, width: 80 }}
-            />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-              Limite de tempo por dia (minutos, 0 = sem limite)
-            </label>
-            <input
-              type="number" min={0} max={480} value={limiteTempoMinutos}
-              onChange={(e) => setLimiteTempoMinutos(Math.max(0, Math.min(480, parseInt(e.target.value) || 0)))}
-              onBlur={() => salvarJanelas(janelas, limiteTempoMinutos)}
-              style={{ ...inputStyle, width: 110 }}
-            />
-          </div>
-        </div>
-
-        {/* Janelas */}
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 10 }}>
-          Janelas de atividade
-        </div>
-
-        {janelas.length === 0 ? (
-          <div style={{
-            padding: "16px 20px", borderRadius: 8, border: "1px dashed var(--border)",
-            color: "var(--text-tertiary)", fontSize: 13, marginBottom: 12,
-          }}>
-            Sem janelas configuradas — o disparo pode ocorrer em qualquer hora do dia.
-          </div>
-        ) : (
-          <div style={{
-            border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 12,
-          }}>
-            {/* Header */}
-            <div style={{
-              display: "grid", gridTemplateColumns: "110px 90px 90px 60px 36px",
-              gap: 8, padding: "8px 12px",
-              background: "var(--bg-sunken)",
-              borderBottom: "1px solid var(--border)",
-            }}>
-              {["Dia", "Início", "Fim", "Ativo", ""].map((h, i) => (
-                <div key={i} style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  {h}
-                </div>
-              ))}
-            </div>
-
-            {/* Rows */}
-            {janelas.map((j, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "grid", gridTemplateColumns: "110px 90px 90px 60px 36px",
-                  gap: 8, padding: "8px 12px", alignItems: "center",
-                  borderBottom: i < janelas.length - 1 ? "1px solid var(--border)" : "none",
-                  background: j.ativo ? "var(--bg-surface)" : "var(--bg-sunken)",
-                  opacity: j.ativo ? 1 : 0.7,
-                }}
-              >
-                <select
-                  value={j.dia_semana}
-                  onChange={(e) => atualizarJanela(i, { dia_semana: parseInt(e.target.value) })}
-                  style={{ ...smallInputStyle, width: "100%" }}
-                >
-                  {DIAS.map((d, idx) => (
-                    <option key={idx} value={idx}>{d}</option>
-                  ))}
-                </select>
-
-                <input
-                  type="time" value={j.inicio}
-                  onChange={(e) => atualizarJanela(i, { inicio: e.target.value })}
-                  style={{ ...smallInputStyle, width: "100%" }}
-                />
-
-                <input
-                  type="time" value={j.fim}
-                  onChange={(e) => atualizarJanela(i, { fim: e.target.value })}
-                  style={{ ...smallInputStyle, width: "100%" }}
-                />
-
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <ToggleSwitch
-                    checked={j.ativo}
-                    onChange={() => atualizarJanela(i, { ativo: !j.ativo })}
-                  />
-                </div>
-
-                <button
-                  onClick={() => removerJanela(i)}
-                  title="Remover"
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 28, height: 28, borderRadius: 4, border: "none",
-                    background: "transparent", cursor: "pointer",
-                    color: "var(--text-tertiary)",
-                  }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--danger)")}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-tertiary)")}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <button
-          onClick={adicionarJanela}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "7px 14px", borderRadius: 6,
-            border: "1px solid var(--border)", background: "var(--bg-surface)",
-            color: "var(--text-secondary)", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
-          }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-secondary)")}
-        >
-          <Plus size={13} />
-          Adicionar janela
-        </button>
-      </Section>
-
-      {/* 3. Modo autónomo */}
+      {/* 1. Modo autónomo */}
       <Section>
         <SectionTitle>Modo autónomo do agente</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>

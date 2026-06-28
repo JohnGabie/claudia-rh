@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Calendar } from "lucide-react";
+import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface Vaga {
   id: number;
@@ -75,6 +75,14 @@ function formatarTempo(minutos: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}min`;
 }
 
+function formatTempoCompact(m: number): string {
+  if (m === 0) return "∞";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h${rem}m`;
+}
+
 function calcularProximaJanela(janelas: JanelaAgendamento[]): string | null {
   if (janelas.length === 0) return null;
   const agora = new Date();
@@ -100,7 +108,415 @@ function calcularProximaJanela(janelas: JanelaAgendamento[]): string | null {
 
 const CFG_DEFAULT: ConfigDisparo = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, limite_vagas_sessao: 0, janelas: [] };
 
-export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate }) => {
+// Picker value sets
+const VALS_CANDIDATURAS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30];
+const VALS_VAGAS = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+const VALS_TEMPO = [0, 15, 30, 45, 60, 90, 120, 150, 180, 210, 240, 300, 360, 420, 480];
+
+// ── DrumPicker ────────────────────────────────────────────────────────────────
+const ITEM_H = 52;
+
+const DrumPicker: React.FC<{
+  values: number[];
+  selectedValue: number;
+  onChange: (v: number) => void;
+  formatValue: (v: number) => string;
+}> = ({ values, selectedValue, onChange, formatValue }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedIdx = Math.max(0, values.indexOf(selectedValue));
+
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = selectedIdx * ITEM_H;
+    }
+  }, []);
+
+  const handleScroll = () => {
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      if (!containerRef.current) return;
+      const idx = Math.round(containerRef.current.scrollTop / ITEM_H);
+      const clamped = Math.max(0, Math.min(values.length - 1, idx));
+      onChange(values[clamped]);
+    }, 80);
+  };
+
+  return (
+    <div style={{ position: "relative", height: ITEM_H * 5, userSelect: "none" }}>
+      {/* Selection band */}
+      <div style={{
+        position: "absolute", top: ITEM_H * 2, height: ITEM_H,
+        left: 0, right: 0, pointerEvents: "none", zIndex: 0,
+        background: "var(--accent-soft)",
+        borderTop: "2px solid var(--accent)",
+        borderBottom: "2px solid var(--accent)",
+        borderRadius: 8,
+      }} />
+      {/* Top fade */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0,
+        height: ITEM_H * 2.4,
+        background: "linear-gradient(to bottom, var(--bg-surface) 15%, transparent)",
+        pointerEvents: "none", zIndex: 2,
+      }} />
+      {/* Bottom fade */}
+      <div style={{
+        position: "absolute", bottom: 0, left: 0, right: 0,
+        height: ITEM_H * 2.4,
+        background: "linear-gradient(to top, var(--bg-surface) 15%, transparent)",
+        pointerEvents: "none", zIndex: 2,
+      }} />
+      {/* Scroll container */}
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        style={{
+          height: "100%",
+          overflowY: "scroll",
+          scrollSnapType: "y mandatory",
+          scrollbarWidth: "none",
+        }}
+      >
+        <div style={{ height: ITEM_H * 2 }} />
+        {values.map((v) => {
+          const isSel = v === selectedValue;
+          return (
+            <div
+              key={v}
+              onClick={() => {
+                onChange(v);
+                const i = values.indexOf(v);
+                containerRef.current?.scrollTo({ top: i * ITEM_H, behavior: "smooth" });
+              }}
+              style={{
+                height: ITEM_H,
+                scrollSnapAlign: "center",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", position: "relative", zIndex: 1,
+              }}
+            >
+              <span style={{
+                fontSize: isSel ? 30 : 20,
+                fontWeight: isSel ? 700 : 400,
+                color: isSel ? "var(--accent-strong)" : "var(--text-tertiary)",
+                letterSpacing: isSel ? "-0.04em" : "-0.01em",
+                fontVariantNumeric: "tabular-nums",
+                transition: "font-size 0.12s ease, color 0.12s ease",
+              }}>
+                {formatValue(v)}
+              </span>
+            </div>
+          );
+        })}
+        <div style={{ height: ITEM_H * 2 }} />
+      </div>
+    </div>
+  );
+};
+
+// ── LimitModal ────────────────────────────────────────────────────────────────
+interface ModalCfg {
+  titulo: string;
+  subtitulo: string;
+  valores: number[];
+  valorAtual: number;
+  formatValue: (v: number) => string;
+  onSave: (v: number) => void;
+}
+
+const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ cfg, onClose }) => {
+  const [valor, setValor] = useState(cfg.valorAtual);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Enter") { cfg.onSave(valor); onClose(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [valor]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(31, 29, 24, 0.35)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backdropFilter: "blur(3px)",
+        animation: "fadeIn 0.15s ease",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
+          width: 272,
+          boxShadow: "0 24px 64px rgba(31,29,24,0.18), 0 4px 16px rgba(31,29,24,0.08)",
+          overflow: "hidden",
+          animation: "slideUp 0.18s cubic-bezier(0.34,1.56,0.64,1)",
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+            {cfg.titulo}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+            {cfg.subtitulo}
+          </div>
+        </div>
+
+        {/* Drum picker */}
+        <div style={{ padding: "4px 20px" }}>
+          <DrumPicker
+            values={cfg.valores}
+            selectedValue={valor}
+            onChange={setValor}
+            formatValue={cfg.formatValue}
+          />
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8,
+              border: "1px solid var(--border)", background: "var(--bg-sunken)",
+              color: "var(--text-secondary)", fontSize: 14, fontWeight: 500,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => { cfg.onSave(valor); onClose(); }}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8,
+              border: "none", background: "var(--accent)",
+              color: "#fff", fontSize: 14, fontWeight: 600,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── ToggleSwitch ──────────────────────────────────────────────────────────────
+const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
+  <button
+    role="switch" aria-checked={checked}
+    onMouseDown={(e) => { e.preventDefault(); onChange(); }}
+    style={{
+      width: 40, height: 22, borderRadius: 11, flexShrink: 0, padding: 0,
+      background: checked ? "var(--accent)" : "var(--bg-sunken)",
+      border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+      cursor: "pointer", position: "relative", transition: "background 0.2s, border-color 0.2s",
+    }}
+  >
+    <span style={{
+      position: "absolute", top: 2, left: checked ? 20 : 2, width: 16, height: 16,
+      borderRadius: "50%", background: checked ? "#fff" : "var(--text-tertiary)",
+      transition: "left 0.2s, background 0.2s", display: "block",
+    }} />
+  </button>
+);
+
+const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+// ── AgendamentoModal ──────────────────────────────────────────────────────────
+const AgendamentoModal: React.FC<{
+  config: ConfigDisparo;
+  onSave: (ativo: boolean, limiar: number, janelas: JanelaAgendamento[]) => void;
+  onClose: () => void;
+}> = ({ config, onSave, onClose }) => {
+  const [ativo, setAtivo] = useState(config.ativo);
+  const [limiar, setLimiar] = useState(config.limiar_minutos);
+  const [janelas, setJanelas] = useState<JanelaAgendamento[]>(config.janelas);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const adicionar = () => {
+    setJanelas(prev => [...prev, { dia_semana: 1, inicio: "09:00", fim: "23:59", ativo: true }]);
+  };
+  const remover = (i: number) => setJanelas(prev => prev.filter((_, idx) => idx !== i));
+  const atualizar = (i: number, patch: Partial<JanelaAgendamento>) =>
+    setJanelas(prev => prev.map((j, idx) => idx === i ? { ...j, ...patch } : j));
+
+  const smallInput: React.CSSProperties = {
+    padding: "5px 8px", borderRadius: 4,
+    border: "1px solid var(--border)", background: "var(--bg-surface)",
+    color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", outline: "none",
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(31, 29, 24, 0.35)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backdropFilter: "blur(3px)",
+        animation: "fadeIn 0.15s ease",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
+          width: 420,
+          maxHeight: "80vh",
+          display: "flex", flexDirection: "column",
+          boxShadow: "0 24px 64px rgba(31,29,24,0.18), 0 4px 16px rgba(31,29,24,0.08)",
+          overflow: "hidden",
+          animation: "slideUp 0.18s cubic-bezier(0.34,1.56,0.64,1)",
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Agendamento</div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>disparo automático e janelas de atividade</div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
+          {/* Toggle */}
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 16 }}>
+            <ToggleSwitch checked={ativo} onChange={() => setAtivo(v => !v)} />
+            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>Disparar ao detetar inatividade</span>
+          </label>
+
+          {ativo && (
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
+                Limiar de inatividade (minutos)
+              </label>
+              <input
+                type="number" min={1} max={120} value={limiar}
+                onChange={e => setLimiar(Math.max(1, Math.min(120, parseInt(e.target.value) || 15)))}
+                style={{ ...smallInput, width: 80 }}
+              />
+            </div>
+          )}
+
+          {/* Janelas */}
+          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 10 }}>
+            Janelas de atividade
+          </div>
+
+          {janelas.length === 0 ? (
+            <div style={{
+              padding: "12px 16px", borderRadius: 8, border: "1px dashed var(--border)",
+              color: "var(--text-tertiary)", fontSize: 13, marginBottom: 12,
+            }}>
+              Sem janelas — o disparo pode ocorrer a qualquer hora.
+            </div>
+          ) : (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
+              <div style={{
+                display: "grid", gridTemplateColumns: "1fr 90px 48px 32px",
+                gap: 6, padding: "6px 10px",
+                background: "var(--bg-sunken)", borderBottom: "1px solid var(--border)",
+              }}>
+                {["Dia", "Início", "Ativo", ""].map((h, i) => (
+                  <div key={i} style={{ fontSize: 10, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {h}
+                  </div>
+                ))}
+              </div>
+              {janelas.map((j, i) => (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "1fr 90px 48px 32px",
+                  gap: 6, padding: "7px 10px", alignItems: "center",
+                  borderBottom: i < janelas.length - 1 ? "1px solid var(--border)" : "none",
+                  background: j.ativo ? "var(--bg-surface)" : "var(--bg-sunken)",
+                  opacity: j.ativo ? 1 : 0.65,
+                }}>
+                  <select value={j.dia_semana} onChange={e => atualizar(i, { dia_semana: parseInt(e.target.value) })} style={{ ...smallInput, width: "100%" }}>
+                    {DIAS.map((d, idx) => <option key={idx} value={idx}>{d}</option>)}
+                  </select>
+                  <input type="time" value={j.inicio} onChange={e => atualizar(i, { inicio: e.target.value })} style={{ ...smallInput, width: "100%" }} />
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <ToggleSwitch checked={j.ativo} onChange={() => atualizar(i, { ativo: !j.ativo })} />
+                  </div>
+                  <button
+                    onClick={() => remover(i)}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 26, height: 26, borderRadius: 4, border: "none",
+                      background: "transparent", cursor: "pointer", color: "var(--text-tertiary)",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "var(--danger)")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={adicionar}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px", borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--bg-surface)",
+              color: "var(--text-secondary)", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--text-primary)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-secondary)")}
+          >
+            <Plus size={13} /> Adicionar janela
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8,
+              border: "1px solid var(--border)", background: "var(--bg-sunken)",
+              color: "var(--text-secondary)", fontSize: 14, fontWeight: 500,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => { onSave(ativo, limiar, janelas); onClose(); }}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8,
+              border: "none", background: "var(--accent)",
+              color: "#fff", fontSize: 14, fontWeight: 600,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate: _onNavigate }) => {
   const [candidaturasHoje, setCandidaturasHoje] = useState(0);
   const [vagasHoje, setVagasHoje] = useState(0);
   const [vagasTotal, setVagasTotal] = useState(0);
@@ -115,16 +531,9 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const [loading, setLoading] = useState(true);
   const [disparando, setDisparando] = useState(false);
   const [disparado, setDisparado] = useState(false);
+  const [modal, setModal] = useState<ModalCfg | null>(null);
+  const [modalAgendamento, setModalAgendamento] = useState(false);
 
-  const [editandoLimite, setEditandoLimite] = useState(false);
-  const [limiteInput, setLimiteInput] = useState(10);
-  const limiteInputRef = useRef<HTMLInputElement>(null);
-  const [editandoTempo, setEditandoTempo] = useState(false);
-  const [tempoInput, setTempoInput] = useState(0);
-  const tempoInputRef = useRef<HTMLInputElement>(null);
-  const [editandoVagas, setEditandoVagas] = useState(false);
-  const [vagasInput, setVagasInput] = useState(0);
-  const vagasInputRef = useRef<HTMLInputElement>(null);
   const checkpointTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disparadoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -149,9 +558,6 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
       setVagasTotal(vagasT);
       setTempoMinutos(Math.round(tempo));
       setConfig(cfg);
-      setLimiteInput(cfg.limite_diario);
-      setTempoInput(cfg.limite_tempo_minutos);
-      setVagasInput(cfg.limite_vagas_sessao ?? 0);
     }).catch(console.error).finally(() => setLoading(false));
 
   useEffect(() => {
@@ -221,18 +627,23 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   };
   const interromper = async () => { try { await invoke("parar_pty"); setSessionActive(false); setPaused(false); } catch (e) { console.error(e); } };
 
-  const salvarLimite = async () => {
-    setEditandoLimite(false);
-    if (limiteInput === config.limite_diario || limiteInput < 1) return;
+  const salvarLimite = async (val: number) => {
+    if (val < 1 || val === config.limite_diario) return;
     try {
-      await invoke("configurar_limite_diario", { limite: limiteInput });
-      setConfig(prev => ({ ...prev, limite_diario: limiteInput }));
+      await invoke("configurar_limite_diario", { limite: val });
+      setConfig(prev => ({ ...prev, limite_diario: val }));
     } catch (e) { console.error(e); }
   };
 
-  const salvarTempo = async () => {
-    setEditandoTempo(false);
-    const val = Math.max(0, tempoInput);
+  const salvarVagas = async (val: number) => {
+    if (val === (config.limite_vagas_sessao ?? 0)) return;
+    try {
+      await invoke("configurar_limite_vagas_sessao", { limite: val });
+      setConfig(prev => ({ ...prev, limite_vagas_sessao: val }));
+    } catch (e) { console.error(e); }
+  };
+
+  const salvarTempo = async (val: number) => {
     if (val === config.limite_tempo_minutos) return;
     try {
       await invoke("configurar_disparo", {
@@ -246,13 +657,16 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     } catch (e) { console.error(e); }
   };
 
-  const salvarVagas = async () => {
-    setEditandoVagas(false);
-    const val = Math.max(0, vagasInput);
-    if (val === (config.limite_vagas_sessao ?? 0)) return;
+  const salvarAgendamento = async (ativo: boolean, limiar: number, janelas: JanelaAgendamento[]) => {
     try {
-      await invoke("configurar_limite_vagas_sessao", { limite: val });
-      setConfig(prev => ({ ...prev, limite_vagas_sessao: val }));
+      await invoke("configurar_disparo", {
+        ativo,
+        limiarMinutos: limiar,
+        limiteDiario: config.limite_diario,
+        limiteTempoMinutos: config.limite_tempo_minutos,
+        janelas,
+      });
+      setConfig(prev => ({ ...prev, ativo, limiar_minutos: limiar, janelas }));
     } catch (e) { console.error(e); }
   };
 
@@ -270,10 +684,40 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     } catch (e) { console.error(e); }
   };
 
+  // Modal openers
+  const abrirCandidaturas = () => setModal({
+    titulo: "Limite de candidaturas",
+    subtitulo: "máximo por dia",
+    valores: VALS_CANDIDATURAS,
+    valorAtual: config.limite_diario,
+    formatValue: (v) => String(v),
+    onSave: salvarLimite,
+  });
+
+  const abrirVagas = () => setModal({
+    titulo: "Limite de vagas",
+    subtitulo: "por sessão  ·  0 = sem limite",
+    valores: VALS_VAGAS,
+    valorAtual: config.limite_vagas_sessao ?? 0,
+    formatValue: (v) => v === 0 ? "∞" : String(v),
+    onSave: salvarVagas,
+  });
+
+  const abrirTempo = () => setModal({
+    titulo: "Limite de tempo",
+    subtitulo: "por dia  ·  0 = sem limite",
+    valores: VALS_TEMPO,
+    valorAtual: config.limite_tempo_minutos,
+    formatValue: formatTempoCompact,
+    onSave: salvarTempo,
+  });
+
   const proximaJanela = useMemo(() => calcularProximaJanela(config.janelas), [config.janelas]);
   const limiteEsgotado = config.limite_tempo_minutos > 0 && tempoMinutos >= config.limite_tempo_minutos;
   const pctCandidaturas = Math.min((candidaturasHoje / Math.max(config.limite_diario, 1)) * 100, 100);
   const pctTempo = config.limite_tempo_minutos > 0 ? Math.min((tempoMinutos / config.limite_tempo_minutos) * 100, 100) : 0;
+  const limVagas = config.limite_vagas_sessao ?? 0;
+  const pctVagas = limVagas > 0 ? Math.min((vagasHoje / limVagas) * 100, 100) : 0;
 
   return (
     <div style={{ padding: 24 }}>
@@ -347,241 +791,127 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
       {/* ── Grelha de indicadores 2×2 ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
 
-        {/* Card 1 — Candidaturas hoje (limite editável) */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Candidaturas hoje
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 10 }}>
-            <span style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1 }}>
-              {loading ? "—" : candidaturasHoje}
-            </span>
-            <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>/</span>
-            {editandoLimite ? (
-              <input
-                ref={limiteInputRef}
-                type="number" min={1} max={99} value={limiteInput} autoFocus
-                onChange={e => setLimiteInput(Math.max(1, Math.min(99, parseInt(e.target.value) || 1)))}
-                onBlur={salvarLimite}
-                onKeyDown={e => { if (e.key === "Enter") salvarLimite(); if (e.key === "Escape") setEditandoLimite(false); }}
-                style={{
-                  width: 44, fontSize: 18, fontWeight: 600, color: "var(--accent)",
-                  background: "var(--bg-sunken)", border: "1px solid var(--accent)",
-                  borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
-                  textAlign: "center", outline: "none",
-                }}
-              />
-            ) : (
-              <button
-                onClick={() => { setLimiteInput(config.limite_diario); setEditandoLimite(true); }}
-                title="Editar limite diário"
-                style={{
-                  fontSize: 18, fontWeight: 600, color: "var(--text-secondary)",
-                  background: "transparent", border: "none", cursor: "pointer",
-                  fontFamily: "inherit", padding: 0,
-                  borderBottom: "1px dashed var(--border)",
-                  lineHeight: 1,
-                }}
-              >
-                {config.limite_diario}
-              </button>
-            )}
-          </div>
-          <div style={{ height: 3, background: "var(--bg-sunken)", borderRadius: 2 }}>
-            <div style={{
-              width: `${pctCandidaturas}%`, height: "100%",
-              background: candidaturasHoje >= config.limite_diario ? "var(--success)" : "var(--accent)",
-              borderRadius: 2, transition: "width 0.4s ease",
-            }} />
-          </div>
-        </div>
+        {/* Card 1 — Candidaturas hoje */}
+        {(() => {
+          const reached = candidaturasHoje >= config.limite_diario;
+          const barColor = reached ? "var(--success)" : pctCandidaturas >= 80 ? "var(--warning)" : "var(--accent)";
+          return (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Candidaturas hoje
+                </span>
+                <button onClick={abrirCandidaturas} title="Editar limite" className="edit-icon-btn">
+                  <Pencil size={11} />
+                </button>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {loading ? "—" : candidaturasHoje}
+                </span>
+                <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                  {config.limite_diario}
+                </span>
+              </div>
+              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                <div style={{ width: `${pctCandidaturas}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                {reached
+                  ? <span style={{ color: "var(--success)", fontWeight: 500 }}>Meta atingida ✓</span>
+                  : <>{config.limite_diario - candidaturasHoje} restantes</>}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Card 2 — Vagas analisadas */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Vagas analisadas
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 6 }}>
-            <span style={{ fontSize: 28, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1 }}>
-              {loading ? "—" : vagasHoje}
-            </span>
-            {(config.limite_vagas_sessao ?? 0) > 0 && (
-              <>
-                <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>/</span>
-                {editandoVagas ? (
-                  <input
-                    ref={vagasInputRef}
-                    type="number" min={0} max={999} value={vagasInput} autoFocus
-                    onChange={e => setVagasInput(Math.max(0, parseInt(e.target.value) || 0))}
-                    onBlur={salvarVagas}
-                    onKeyDown={e => { if (e.key === "Enter") salvarVagas(); if (e.key === "Escape") { setEditandoVagas(false); setVagasInput(config.limite_vagas_sessao ?? 0); } }}
-                    style={{
-                      width: 52, fontSize: 18, fontWeight: 600, color: "var(--accent)",
-                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
-                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
-                      textAlign: "center", outline: "none",
-                    }}
-                  />
-                ) : (
-                  <button
-                    onClick={() => { setVagasInput(config.limite_vagas_sessao ?? 0); setEditandoVagas(true); }}
-                    title="Editar limite por sessão"
-                    style={{
-                      fontSize: 18, fontWeight: 600, color: "var(--text-secondary)",
-                      background: "transparent", border: "none", cursor: "pointer",
-                      fontFamily: "inherit", padding: 0,
-                      borderBottom: "1px dashed var(--border)", lineHeight: 1,
-                    }}
-                  >
-                    {config.limite_vagas_sessao}
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          {(config.limite_vagas_sessao ?? 0) === 0 && (
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
-              hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
-              {editandoVagas ? (
-                <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                  <input
-                    ref={vagasInputRef}
-                    type="number" min={0} max={999} value={vagasInput} autoFocus
-                    onChange={e => setVagasInput(Math.max(0, parseInt(e.target.value) || 0))}
-                    onBlur={salvarVagas}
-                    onKeyDown={e => { if (e.key === "Enter") salvarVagas(); if (e.key === "Escape") { setEditandoVagas(false); setVagasInput(0); } }}
-                    style={{
-                      width: 52, fontSize: 13, fontWeight: 600, color: "var(--accent)",
-                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
-                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
-                      textAlign: "center", outline: "none",
-                    }}
-                  />
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>por sessão</span>
-                </div>
-              ) : (
-                <button
-                  onClick={() => { setVagasInput(20); setEditandoVagas(true); }}
-                  title="Definir limite por sessão"
-                  style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
-                >
-                  + limite
+        {(() => {
+          const reached = limVagas > 0 && vagasHoje >= limVagas;
+          const barColor = reached ? "var(--success)" : pctVagas >= 80 ? "var(--warning)" : "var(--accent)";
+          return (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Vagas analisadas
+                </span>
+                <button onClick={abrirVagas} title="Editar limite" className="edit-icon-btn">
+                  <Pencil size={11} />
                 </button>
-              )}
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {loading ? "—" : vagasHoje}
+                </span>
+                <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: limVagas > 0 ? "var(--text-secondary)" : "var(--text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
+                  {limVagas > 0 ? limVagas : "∞"}
+                </span>
+              </div>
+              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                <div style={{ width: limVagas > 0 ? `${pctVagas}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+              </div>
             </div>
-          )}
-          {(config.limite_vagas_sessao ?? 0) > 0 && (
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Card 3 — Tempo de procura */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Tempo de procura
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: config.limite_tempo_minutos > 0 ? 10 : 4 }}>
-            <span style={{ fontSize: 22, fontWeight: 600, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1 }}>
-              {formatarTempo(tempoMinutos)}
-            </span>
-            {config.limite_tempo_minutos > 0 && (
-              <>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>/</span>
-                {editandoTempo ? (
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                    <input
-                      ref={tempoInputRef}
-                      type="number" min={0} max={480} value={tempoInput} autoFocus
-                      onChange={e => setTempoInput(Math.max(0, parseInt(e.target.value) || 0))}
-                      onBlur={salvarTempo}
-                      onKeyDown={e => { if (e.key === "Enter") salvarTempo(); if (e.key === "Escape") { setEditandoTempo(false); setTempoInput(config.limite_tempo_minutos); } }}
-                      style={{
-                        width: 52, fontSize: 14, fontWeight: 600, color: "var(--accent)",
-                        background: "var(--bg-sunken)", border: "1px solid var(--accent)",
-                        borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
-                        textAlign: "center", outline: "none",
-                      }}
-                    />
-                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>min</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => { setTempoInput(config.limite_tempo_minutos); setEditandoTempo(true); }}
-                    title="Editar limite de tempo"
-                    style={{
-                      fontSize: 14, fontWeight: 600, color: "var(--text-secondary)",
-                      background: "transparent", border: "none", cursor: "pointer",
-                      fontFamily: "inherit", padding: 0,
-                      borderBottom: "1px dashed var(--border)", lineHeight: 1,
-                    }}
-                  >
-                    {formatarTempo(config.limite_tempo_minutos)}
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          {config.limite_tempo_minutos > 0 && (
-            <div style={{ height: 3, background: "var(--bg-sunken)", borderRadius: 2 }}>
-              <div style={{
-                width: `${pctTempo}%`, height: "100%",
-                background: limiteEsgotado ? "var(--danger)" : "var(--accent)",
-                borderRadius: 2, transition: "width 0.3s ease",
-              }} />
+        {(() => {
+          const barColor = limiteEsgotado ? "var(--danger)" : pctTempo >= 85 ? "var(--warning)" : "var(--accent)";
+          return (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Tempo de procura
+                </span>
+                <button onClick={abrirTempo} title="Editar limite" className="edit-icon-btn">
+                  <Pencil size={11} />
+                </button>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                <span style={{ fontSize: 24, fontWeight: 700, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {formatarTempo(tempoMinutos)}
+                </span>
+                <span style={{ fontSize: 14, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                <span style={{ fontSize: 16, fontWeight: 600, color: config.limite_tempo_minutos > 0 ? "var(--text-secondary)" : "var(--text-tertiary)" }}>
+                  {config.limite_tempo_minutos > 0 ? formatTempoCompact(config.limite_tempo_minutos) : "∞"}
+                </span>
+              </div>
+              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                <div style={{ width: config.limite_tempo_minutos > 0 ? `${pctTempo}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+              </div>
+              <div style={{ fontSize: 11 }}>
+                {limiteEsgotado
+                  ? <span style={{ color: "var(--danger)", fontWeight: 500 }}>Limite atingido hoje</span>
+                  : config.limite_tempo_minutos > 0
+                    ? <span style={{ color: "var(--text-tertiary)" }}>{formatarTempo(config.limite_tempo_minutos - tempoMinutos)} restantes</span>
+                    : <span style={{ color: "var(--text-tertiary)" }}>sem limite</span>}
+              </div>
             </div>
-          )}
-          {limiteEsgotado && (
-            <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>Limite atingido hoje</div>
-          )}
-          {config.limite_tempo_minutos === 0 && (
-            <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
-              {editandoTempo ? (
-                <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                  <input
-                    ref={tempoInputRef}
-                    type="number" min={0} max={480} value={tempoInput} autoFocus
-                    onChange={e => setTempoInput(Math.max(0, parseInt(e.target.value) || 0))}
-                    onBlur={salvarTempo}
-                    onKeyDown={e => { if (e.key === "Enter") salvarTempo(); if (e.key === "Escape") { setEditandoTempo(false); setTempoInput(0); } }}
-                    style={{
-                      width: 52, fontSize: 14, fontWeight: 600, color: "var(--accent)",
-                      background: "var(--bg-sunken)", border: "1px solid var(--accent)",
-                      borderRadius: 4, padding: "1px 4px", fontFamily: "inherit",
-                      textAlign: "center", outline: "none",
-                    }}
-                  />
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>min (0 = sem limite)</span>
-                </div>
-              ) : (
-                <>
-                  sem limite
-                  <button
-                    onClick={() => { setTempoInput(60); setEditandoTempo(true); }}
-                    title="Definir limite de tempo"
-                    style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
-                  >
-                    + definir
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Card 4 — Agendamento */}
         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
-            <Calendar size={11} style={{ color: "var(--text-tertiary)" }} />
-            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Agendamento
             </span>
+            <button onClick={() => setModalAgendamento(true)} title="Configurar agendamento" className="edit-icon-btn">
+              <Pencil size={11} />
+            </button>
+          </div>
+          {/* Auto/Manual toggle */}
+          <div style={{ marginBottom: 10 }}>
             <button
               onClick={toggleAtivo}
               title={config.ativo ? "Desativar modo automático" : "Ativar modo automático"}
               style={{
-                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 10,
                 border: "none", cursor: "pointer", fontFamily: "inherit",
                 background: config.ativo ? "var(--success)" : "var(--bg-sunken)",
                 color: config.ativo ? "#fff" : "var(--text-tertiary)",
@@ -594,16 +924,10 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
           {proximaJanela === null ? (
             <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
               Sem janelas configuradas
-              <button
-                onClick={() => onNavigate?.("configuracoes")}
-                style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
-              >
-                Configurar →
-              </button>
             </div>
           ) : (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
                 <span style={{
                   width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
                   background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)",
@@ -614,14 +938,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                   {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
                 {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
-                <button
-                  onClick={() => onNavigate?.("configuracoes")}
-                  style={{ fontSize: 11, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
-                >
-                  Editar →
-                </button>
               </div>
             </>
           )}
@@ -706,12 +1024,52 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
         </div>
       )}
 
+      {/* Drum picker modal */}
+      {modal && <LimitModal cfg={modal} onClose={() => setModal(null)} />}
+
+      {/* Agendamento modal */}
+      {modalAgendamento && (
+        <AgendamentoModal
+          config={config}
+          onSave={salvarAgendamento}
+          onClose={() => setModalAgendamento(false)}
+        />
+      )}
+
       <style>{`
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
           70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
           100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(12px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .edit-icon-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          border-radius: 5px;
+          border: 1px solid transparent;
+          background: transparent;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          padding: 0;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .edit-icon-btn:hover {
+          background: var(--bg-sunken);
+          border-color: var(--border);
+          color: var(--accent);
+        }
+        div[style*="overflowY: scroll"]::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
   );
