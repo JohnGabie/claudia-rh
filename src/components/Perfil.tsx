@@ -11,6 +11,7 @@ import {
   Pencil,
   AlertCircle,
   Loader2,
+  Lightbulb,
   MailOpen,
   X,
 } from "lucide-react";
@@ -622,6 +623,18 @@ const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart
   </div>
 );
 
+// ── Proposta type ──────────────────────────────────────────────────────────
+
+interface Proposta {
+  id: number;
+  vaga_id: number | null;
+  titulo_vaga: string | null;
+  empresa_vaga: string | null;
+  criada_em: string;
+  pergunta: string;
+  contexto: string | null;
+}
+
 // ── Resumo view ────────────────────────────────────────────────────────────
 
 const ResumoView: React.FC<{
@@ -635,6 +648,34 @@ const ResumoView: React.FC<{
 }> = ({ data, variants, onOpenChat, onOpenCurriculos, onOpenCoverLetters, onDirectEdit, onReloadData }) => {
   const [localPesos, setLocalPesos] = useState<Record<string, number>>({});
   const committedPesosRef = useRef<Record<string, number>>({});
+
+  const [propostas, setPropostas] = useState<Proposta[]>([]);
+
+  const carregarPropostas = useCallback(() => {
+    invoke<Proposta[]>("listar_propostas").then(setPropostas).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    carregarPropostas();
+    const unsubs = [
+      listen("nova-proposta", carregarPropostas),
+      listen("proposta-resolvida", carregarPropostas),
+    ];
+    return () => { unsubs.forEach((p) => p.then((f) => f())); };
+  }, [carregarPropostas]);
+
+  const handleAplicarProposta = (p: Proposta) => {
+    onOpenChat({
+      section: "sugestao_perfil",
+      label: "Sugestão de perfil",
+      preMessage: p.pergunta + (p.contexto ? `\n\nContexto: ${p.contexto}` : ""),
+    });
+  };
+
+  const handleIgnorarProposta = async (id: number) => {
+    await invoke("ignorar_proposta", { id }).catch(console.error);
+    carregarPropostas();
+  };
 
   useEffect(() => {
     const map: Record<string, number> = {};
@@ -746,6 +787,65 @@ const ResumoView: React.FC<{
         </div>
       ) : (
         <div style={{ marginBottom: 20 }} />
+      )}
+
+      {/* Propostas de perfil */}
+      {propostas.length > 0 && (
+        <div style={{
+          background: "var(--accent-soft)",
+          border: "1px solid var(--accent)",
+          borderRadius: 10,
+          padding: "14px 16px",
+          marginBottom: 20,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <Lightbulb size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent-strong)" }}>
+              {propostas.length === 1 ? "1 sugestão de melhoria" : `${propostas.length} sugestões de melhoria`}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {propostas.map((p) => (
+              <div key={p.id} style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "10px 12px",
+              }}>
+                {(p.titulo_vaga || p.empresa_vaga) && (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
+                    {[p.titulo_vaga, p.empresa_vaga].filter(Boolean).join(" · ")}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 8 }}>
+                  {p.pergunta}
+                </div>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => handleIgnorarProposta(p.id)}
+                    style={{
+                      padding: "4px 12px", borderRadius: 6, fontSize: 12,
+                      background: "transparent", border: "1px solid var(--border)",
+                      color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    Ignorar
+                  </button>
+                  <button
+                    onClick={() => handleAplicarProposta(p)}
+                    style={{
+                      padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      background: "var(--accent)", border: "none",
+                      color: "#fff", cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    Aplicar no chat
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* CV preview */}

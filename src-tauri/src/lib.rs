@@ -15,8 +15,8 @@ use commands::credenciais::{
 };
 use commands::estado::{
     abrir_pasta, atividade_recente, candidaturas_hoje, contar_pendencias, contar_propostas,
-    listar_candidaturas, listar_pendencias, listar_vagas, pular_pendencia, resolver_pendencia,
-    resumo_memoria_recente, vaga_atual_sessao,
+    ignorar_proposta, listar_candidaturas, listar_pendencias, listar_propostas, listar_vagas,
+    pular_pendencia, resolver_pendencia, resumo_memoria_recente, vaga_atual_sessao,
     vagas_analisadas_hoje, vagas_analisadas_total, tempo_sessoes_hoje,
 };
 use commands::feedback::{
@@ -215,6 +215,8 @@ pub fn run() {
             pular_pendencia,
             listar_candidaturas,
             contar_propostas,
+            listar_propostas,
+            ignorar_proposta,
             vaga_atual_sessao,
             vagas_analisadas_hoje,
             vagas_analisadas_total,

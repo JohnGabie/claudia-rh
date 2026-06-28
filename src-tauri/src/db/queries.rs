@@ -219,6 +219,41 @@ pub fn contar_propostas(conn: &Connection) -> Result<i64> {
     )
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Proposta {
+    pub id: i64,
+    pub vaga_id: Option<i64>,
+    pub titulo_vaga: Option<String>,
+    pub empresa_vaga: Option<String>,
+    pub criada_em: String,
+    pub pergunta: String,
+    pub contexto: Option<String>,
+}
+
+pub fn listar_propostas(conn: &Connection) -> Result<Vec<Proposta>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id, p.vaga_id, v.titulo, v.empresa, p.criada_em, p.pergunta, p.contexto \
+         FROM propostas_perfil p \
+         LEFT JOIN vagas v ON p.vaga_id = v.id \
+         WHERE p.promovida = 0 \
+         ORDER BY p.criada_em DESC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Proposta {
+                id: row.get(0)?,
+                vaga_id: row.get(1)?,
+                titulo_vaga: row.get(2)?,
+                empresa_vaga: row.get(3)?,
+                criada_em: row.get(4)?,
+                pergunta: row.get(5)?,
+                contexto: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn vaga_candidatando(conn: &Connection) -> Result<Option<VagaAtual>> {
     match conn.query_row(
         "SELECT id, titulo, empresa, url, motivo_status FROM vagas \

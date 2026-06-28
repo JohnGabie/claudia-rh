@@ -16,6 +16,7 @@ function App() {
   const [view, setView] = useState<View>("dashboard");
   const [sugerirFeedback, setSugerirFeedback] = useState(false);
   const [pendenciasCount, setPendenciasCount] = useState(0);
+  const [propostasCount, setPropostasCount] = useState(0);
   const [perfilSection, setPerfilSection] = useState<string | null>(null);
   const handlePerfilSectionHandled = useCallback(() => setPerfilSection(null), []);
 
@@ -25,9 +26,13 @@ function App() {
   const refreshPendenciasCount = () =>
     invoke<number>("contar_pendencias").then(setPendenciasCount).catch(() => {});
 
+  const refreshPropostasCount = () =>
+    invoke<number>("contar_propostas").then(setPropostasCount).catch(() => {});
+
   useEffect(() => {
     refreshFeedbackSugestao();
     refreshPendenciasCount();
+    refreshPropostasCount();
 
     let active = true;
     const unlisteners: (() => void)[] = [];
@@ -36,6 +41,8 @@ function App() {
       listen("feedback-output-done", () => setSugerirFeedback(false)),
       listen("nova-pendencia", refreshPendenciasCount),
       listen("pendencia-resolvida", refreshPendenciasCount),
+      listen("nova-proposta", refreshPropostasCount),
+      listen("proposta-resolvida", refreshPropostasCount),
     ]).then((fns) => {
       if (active) {
         unlisteners.push(...fns);
@@ -54,7 +61,7 @@ function App() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <TitleBar />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount} />
+        <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
         <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
           {/* Dashboard */}
@@ -84,7 +91,7 @@ function App() {
 
           {/* Pendências */}
           <div style={{ display: view === "pendencias" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-            <Pendencias />
+            <Pendencias onNavigateToPerfil={() => setView("perfil")} />
           </div>
 
           {/* Configurações */}

@@ -1,4 +1,4 @@
-use crate::db::queries::{self, Candidatura, Pendencia, ResumoMemoria, Vaga, VagaAtual};
+use crate::db::queries::{self, Candidatura, Pendencia, Proposta, ResumoMemoria, Vaga, VagaAtual};
 use crate::DbState;
 use tauri::{AppHandle, Emitter, State};
 use std::process::Command;
@@ -78,6 +78,25 @@ pub fn listar_candidaturas(state: State<'_, DbState>) -> Result<Vec<Candidatura>
 pub fn contar_propostas(state: State<'_, DbState>) -> Result<i64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     queries::contar_propostas(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn listar_propostas(state: State<'_, DbState>) -> Result<Vec<Proposta>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
+    queries::listar_propostas(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ignorar_proposta(state: State<'_, DbState>, app: AppHandle, id: i64) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE propostas_perfil SET promovida = 1, promovida_em = datetime('now') WHERE id = ?1",
+        [id],
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit("proposta-resolvida", id);
+    Ok(())
 }
 
 #[tauri::command]

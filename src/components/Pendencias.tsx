@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle } from "lucide-react";
+import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb } from "lucide-react";
+
+interface Proposta {
+  id: number;
+  vaga_id: number | null;
+  titulo_vaga: string | null;
+  empresa_vaga: string | null;
+  criada_em: string;
+  pergunta: string;
+  contexto: string | null;
+}
 
 interface Pendencia {
   id: number;
@@ -237,6 +247,100 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
   );
 };
 
+const PropostaItem: React.FC<{ p: Proposta; onResolved: () => void; onNavigateToPerfil?: () => void }> = ({ p, onResolved, onNavigateToPerfil }) => {
+  const [loading, setLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  const handleIgnorar = async () => {
+    setLoading(true);
+    try {
+      await invoke("ignorar_proposta", { id: p.id });
+      setDismissed(true);
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        overflow: "hidden",
+        opacity: loading || dismissed ? 0.4 : 1,
+        transition: "opacity 0.2s",
+        pointerEvents: loading || dismissed ? "none" : "auto",
+      }}
+    >
+      <div style={{ width: 3, flexShrink: 0, background: "var(--accent)", borderRadius: "10px 0 0 10px" }} />
+      <div style={{ flex: 1, padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            fontSize: 11, fontWeight: 600,
+            padding: "2px 7px", borderRadius: 5,
+            color: "var(--accent)", background: "var(--accent-soft)",
+            flexShrink: 0,
+          }}>
+            <Lightbulb size={10} />
+            Sugestão de perfil
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto", flexShrink: 0 }}>
+            {tempoDesde(p.criada_em)}
+          </span>
+          <button
+            onClick={handleIgnorar}
+            title="Ignorar"
+            style={{
+              width: 20, height: 20,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "none",
+              borderRadius: 4, cursor: "pointer",
+              color: "var(--text-tertiary)", flexShrink: 0, padding: 0,
+              transition: "color 0.1s, background 0.1s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-primary)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-sunken)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-tertiary)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+
+        {(p.titulo_vaga || p.empresa_vaga) && (
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>
+            {[p.titulo_vaga, p.empresa_vaga].filter(Boolean).join(" · ")}
+          </div>
+        )}
+
+        <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: p.contexto ? 6 : 10 }}>
+          {p.pergunta}
+        </div>
+
+        {p.contexto && (
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4, marginBottom: 10 }}>
+            {p.contexto}
+          </div>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+          <button onClick={handleIgnorar} style={ghostBtnStyle}>Ignorar</button>
+          <button
+            onClick={() => onNavigateToPerfil?.()}
+            style={solidBtnStyle}
+          >
+            Ver no Perfil
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ghostBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
@@ -260,26 +364,33 @@ const solidBtnStyle: React.CSSProperties = {
   padding: "5px 12px",
 };
 
-export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false }) => {
+export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () => void }> = ({ noHeader = false, onNavigateToPerfil }) => {
   const [pendencias, setPendencias] = useState<Pendencia[]>([]);
+  const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [loading, setLoading] = useState(true);
 
   const carregar = () => {
-    invoke<Pendencia[]>("listar_pendencias", { apenasNaoResolvidas: true })
-      .then(setPendencias)
+    Promise.all([
+      invoke<Pendencia[]>("listar_pendencias", { apenasNaoResolvidas: true }),
+      invoke<Proposta[]>("listar_propostas"),
+    ])
+      .then(([p, pr]) => { setPendencias(p); setPropostas(pr); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     carregar();
-    const unsub = listen("nova-pendencia", carregar);
-    const unsubR = listen("pendencia-resolvida", carregar);
-    return () => {
-      unsub.then((f) => f());
-      unsubR.then((f) => f());
-    };
+    const unsubs = [
+      listen("nova-pendencia", carregar),
+      listen("pendencia-resolvida", carregar),
+      listen("nova-proposta", carregar),
+      listen("proposta-resolvida", carregar),
+    ];
+    return () => { unsubs.forEach((p) => p.then((f) => f())); };
   }, []);
+
+  const total = pendencias.length + propostas.length;
 
   return (
     <div style={{ padding: noHeader ? "12px 16px" : "24px 24px" }}>
@@ -288,7 +399,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false 
           <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
             Notificações
           </h1>
-          {pendencias.length > 0 && (
+          {total > 0 && (
             <span style={{
               background: "var(--danger)",
               color: "#fff",
@@ -297,7 +408,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false 
               padding: "2px 8px",
               borderRadius: 6,
             }}>
-              {pendencias.length}
+              {total}
             </span>
           )}
         </div>
@@ -305,20 +416,42 @@ export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false 
 
       {loading ? (
         <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>A carregar…</div>
-      ) : pendencias.length === 0 ? (
+      ) : total === 0 ? (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
           padding: "48px 24px", gap: 10,
           color: "var(--text-tertiary)",
         }}>
           <CheckCircle2 size={32} strokeWidth={1.5} color="var(--success)" />
-          <span style={{ fontSize: 13 }}>Sem pendências por resolver</span>
+          <span style={{ fontSize: 13 }}>Sem notificações por resolver</span>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {pendencias.map((p) => (
-            <NotifItem key={p.id} p={p} onResolved={carregar} />
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {pendencias.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+                Pendências · {pendencias.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {pendencias.map((p) => (
+                  <NotifItem key={p.id} p={p} onResolved={carregar} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {propostas.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+                Sugestões de perfil · {propostas.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {propostas.map((p) => (
+                  <PropostaItem key={p.id} p={p} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
