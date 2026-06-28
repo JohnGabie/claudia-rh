@@ -338,8 +338,6 @@ const AgendamentoModal: React.FC<{
   onSave: (ativo: boolean, limiar: number, janelas: JanelaAgendamento[]) => void;
   onClose: () => void;
 }> = ({ config, onSave, onClose }) => {
-  const [ativo, setAtivo] = useState(config.ativo);
-  const [limiar, setLimiar] = useState(config.limiar_minutos);
   const [janelas, setJanelas] = useState<JanelaAgendamento[]>(config.janelas);
 
   useEffect(() => {
@@ -389,30 +387,11 @@ const AgendamentoModal: React.FC<{
         {/* Header */}
         <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Agendamento</div>
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>disparo automático e janelas de atividade</div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>janelas com horário ativo disparam automaticamente</div>
         </div>
 
         {/* Body */}
         <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
-          {/* Toggle */}
-          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 16 }}>
-            <ToggleSwitch checked={ativo} onChange={() => setAtivo(v => !v)} />
-            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>Disparar ao detetar inatividade</span>
-          </label>
-
-          {ativo && (
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-                Limiar de inatividade (minutos)
-              </label>
-              <input
-                type="number" min={1} max={120} value={limiar}
-                onChange={e => setLimiar(Math.max(1, Math.min(120, parseInt(e.target.value) || 15)))}
-                style={{ ...smallInput, width: 80 }}
-              />
-            </div>
-          )}
-
           {/* Janelas */}
           <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 10 }}>
             Janelas de atividade
@@ -499,7 +478,7 @@ const AgendamentoModal: React.FC<{
             Cancelar
           </button>
           <button
-            onClick={() => { onSave(ativo, limiar, janelas); onClose(); }}
+            onClick={() => { onSave(janelas.some(j => j.ativo), config.limiar_minutos, janelas); onClose(); }}
             style={{
               flex: 1, padding: "10px 0", borderRadius: 8,
               border: "none", background: "var(--accent)",
@@ -670,19 +649,6 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     } catch (e) { console.error(e); }
   };
 
-  const toggleAtivo = async () => {
-    const novoAtivo = !config.ativo;
-    try {
-      await invoke("configurar_disparo", {
-        ativo: novoAtivo,
-        limiarMinutos: config.limiar_minutos,
-        limiteDiario: config.limite_diario,
-        limiteTempoMinutos: config.limite_tempo_minutos,
-        janelas: config.janelas,
-      });
-      setConfig(prev => ({ ...prev, ativo: novoAtivo }));
-    } catch (e) { console.error(e); }
-  };
 
   // Modal openers
   const abrirCandidaturas = () => setModal({
@@ -905,25 +871,9 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               <Pencil size={11} />
             </button>
           </div>
-          {/* Auto/Manual toggle */}
-          <div style={{ marginBottom: 10 }}>
-            <button
-              onClick={toggleAtivo}
-              title={config.ativo ? "Desativar modo automático" : "Ativar modo automático"}
-              style={{
-                fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 10,
-                border: "none", cursor: "pointer", fontFamily: "inherit",
-                background: config.ativo ? "var(--success)" : "var(--bg-sunken)",
-                color: config.ativo ? "#fff" : "var(--text-tertiary)",
-                transition: "background 0.2s, color 0.2s",
-              }}
-            >
-              {config.ativo ? "Auto" : "Manual"}
-            </button>
-          </div>
           {proximaJanela === null ? (
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              Sem janelas configuradas
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+              Nenhum horário definido — clica no lápis para agendar sessões automáticas.
             </div>
           ) : (
             <>
