@@ -26,7 +26,7 @@ fn traduzir_conteudo_en(data: &CandidatoBase) -> CandidatoBase {
 
     let mut translated = data.clone();
 
-    let output = std::process::Command::new("claude")
+    let output = std::process::Command::new(crate::commands::claude_program())
         .args(["--dangerously-skip-permissions", "--print", &prompt])
         .output();
 
