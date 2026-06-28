@@ -74,6 +74,7 @@ export const Configuracoes: React.FC = () => {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [modoAutonomo, setModoAutonomo] = useState(false);
+  const [iniciarComSistema, setIniciarComSistema] = useState(false);
 
   useEffect(() => {
     invoke<string>("ler_estrategia")
@@ -82,10 +83,15 @@ export const Configuracoes: React.FC = () => {
       .finally(() => setLoading(false));
 
     invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
+    invoke<boolean>("obter_iniciar_com_sistema").then((v) => setIniciarComSistema(!!v)).catch(() => {});
   }, []);
 
   const salvarModoAutonomo = (ativo: boolean) => {
     invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
+  };
+
+  const salvarIniciarComSistema = (ativo: boolean) => {
+    invoke("configurar_iniciar_com_sistema", { ativo }).catch(console.error);
   };
 
   const guardar = async () => {
@@ -113,7 +119,24 @@ export const Configuracoes: React.FC = () => {
         Configurações
       </h1>
 
-      {/* 1. Modo autónomo */}
+      {/* 1. Iniciar com o sistema */}
+      <Section>
+        <SectionTitle>Iniciar com o sistema</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          Quando ativo, a Claudia RH abre automaticamente ao iniciar o Windows.
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <ToggleSwitch
+            checked={iniciarComSistema}
+            onChange={() => { const v = !iniciarComSistema; setIniciarComSistema(v); salvarIniciarComSistema(v); }}
+          />
+          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
+            Iniciar Claudia RH ao ligar o computador
+          </span>
+        </label>
+      </Section>
+
+      {/* 2. Modo autónomo */}
       <Section>
         <SectionTitle>Modo autónomo do agente</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>

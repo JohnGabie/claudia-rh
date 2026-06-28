@@ -7,6 +7,7 @@ mod prompt;
 mod pty_manager;
 
 use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
+use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
 use commands::prompts::{abrir_ficheiro_prompt, abrir_pasta_dados};
 use commands::curriculos::{gerar_curriculo, listar_curriculos, abrir_curriculo, apagar_curriculo};
 use commands::credenciais::{
@@ -260,6 +261,8 @@ pub fn run() {
             apagar_cover_letter,
             abrir_ficheiro_prompt,
             abrir_pasta_dados,
+            obter_iniciar_com_sistema,
+            configurar_iniciar_com_sistema,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

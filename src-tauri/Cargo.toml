@@ -31,3 +31,6 @@ chrono = { version = "0.4", features = ["serde"] }
 keyring = "3"
 tauri-plugin-notification = "2"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
