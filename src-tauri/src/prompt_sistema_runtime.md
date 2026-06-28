@@ -132,6 +132,16 @@ Sequência esperada para cada vaga processada:
 5. Se decidires pular, atualiza `status` para `'pulada'` e preenche `motivo_status` com uma frase clara.
 6. Se encontrares uma condição de pausa total, insere uma linha em `pendencias` (categoria correspondente à lista acima, descrição legível do que travou) e atualiza `vagas.status` para `'pendente_revisao'`.
 
+7. **Ao retomar uma vaga em `pendente_revisao`:** antes de continuares, lê a pendência associada para perceber como o utilizador resolveu a situação:
+   ```sql
+   SELECT id, resolucao FROM pendencias WHERE vaga_id = <id> AND resolvida = 0 ORDER BY criada_em DESC LIMIT 1;
+   ```
+   Se `resolucao` estiver preenchido (o utilizador já agiu pela UI), usa esse texto como contexto para continuar. Ao terminares com a vaga (seja a aplicar, pular, ou encontrar nova pausa), marca obrigatoriamente todas as pendências abertas dessa vaga como resolvidas:
+   ```sql
+   UPDATE pendencias SET resolvida = 1, resolvida_em = datetime('now'), resolucao = COALESCE(resolucao, 'Resolvida pelo agente') WHERE vaga_id = <id> AND resolvida = 0;
+   ```
+   A interface do utilizador atualiza-se automaticamente assim que escreveres na base de dados — não precisas de fazer mais nada.
+
 Nunca avances o `status` de uma vaga sem escrever a alteração correspondente na base de dados — o Tauri só sabe o que está a acontecer através destas escritas, não através do teu raciocínio interno.
 
 ## Geração do material de candidatura

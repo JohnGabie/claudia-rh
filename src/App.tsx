@@ -43,6 +43,7 @@ function App() {
       listen("pendencia-resolvida", refreshPendenciasCount),
       listen("nova-proposta", refreshPropostasCount),
       listen("proposta-resolvida", refreshPropostasCount),
+      listen("db-atualizada", () => { refreshPendenciasCount(); refreshPropostasCount(); }),
     ]).then((fns) => {
       if (active) {
         unlisteners.push(...fns);

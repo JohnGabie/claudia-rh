@@ -72,6 +72,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
       setLoading(true);
       try {
         await invoke("resolver_pendencia", { id: p.id, resolucao: "Captcha resolvido manualmente no Chrome" });
+        setDismissed(true);
         onResolved();
       } catch (e) {
         console.error(e);
@@ -88,6 +89,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
     setLoading(true);
     try {
       await invoke("resolver_pendencia", { id: p.id, resolucao: resolucaoText.trim() });
+      setDismissed(true);
       onResolved();
     } catch (e) {
       console.error(e);
@@ -386,6 +388,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
       listen("pendencia-resolvida", carregar),
       listen("nova-proposta", carregar),
       listen("proposta-resolvida", carregar),
+      listen("db-atualizada", carregar),
     ];
     return () => { unsubs.forEach((p) => p.then((f) => f())); };
   }, []);
