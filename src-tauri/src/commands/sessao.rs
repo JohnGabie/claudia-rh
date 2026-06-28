@@ -15,6 +15,10 @@ pub fn iniciar_sessao(
     let session_id = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         conn.execute(
+            "UPDATE sessoes SET terminada_em = datetime('now'), motivo_termino = 'substituída' WHERE terminada_em IS NULL",
+            [],
+        ).map_err(|e| e.to_string())?;
+        conn.execute(
             "INSERT INTO sessoes (iniciada_em, motivo_disparo) VALUES (datetime('now'), ?1)",
             [motivo],
         )

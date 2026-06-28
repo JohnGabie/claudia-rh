@@ -22,6 +22,10 @@ pub fn init(db_path: &Path) -> Result<Connection> {
     if let Err(e) = conn.execute_batch("ALTER TABLE sessoes ADD COLUMN pausada_em TEXT;") {
         if !e.to_string().contains("duplicate column") { eprintln!("[db migration] sessoes.pausada_em: {e}"); }
     }
+    // Close any ghost sessions left open by a previous crash or forced quit
+    let _ = conn.execute_batch(
+        "UPDATE sessoes SET terminada_em = datetime('now'), motivo_termino = 'encerrada_no_arranque' WHERE terminada_em IS NULL;"
+    );
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS feedbacks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

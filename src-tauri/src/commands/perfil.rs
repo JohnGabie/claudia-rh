@@ -744,7 +744,7 @@ perguntas_pendentes: []
         let parsed: SearchVariants = serde_yaml::from_str(yaml).expect("parse failed");
         assert_eq!(parsed.variantes.len(), 2);
         assert_eq!(parsed.variantes[0].id, "backend");
-        assert_eq!(parsed.variantes[0].peso, 60);
+        assert_eq!(parsed.variantes[0].peso, 60.0);
         assert!(parsed.variantes[0].ativa);
         assert_eq!(parsed.variantes[1].nome_exibicao, "Full Stack");
         assert_eq!(parsed.preferencias_globais.faixa_salarial.minimo, Some(45000.0));
@@ -754,7 +754,7 @@ perguntas_pendentes: []
         // Serialize and re-parse
         let out = serde_yaml::to_string(&parsed).expect("serialize failed");
         let reparsed: SearchVariants = serde_yaml::from_str(&out).expect("re-parse failed");
-        assert_eq!(reparsed.variantes[0].peso, 60);
+        assert_eq!(reparsed.variantes[0].peso, 60.0);
     }
 
     #[test]

@@ -279,7 +279,7 @@ Write in English."#;
 
 // ── Core helpers ──────────────────────────────────────────────────────────────
 
-fn prompt_file(data_dir: &Path, id: &str) -> Option<(&'static str, &'static str)> {
+fn prompt_file(_data_dir: &Path, id: &str) -> Option<(&'static str, &'static str)> {
     match id {
         "runtime"          => Some(("runtime.md",          DEFAULT_RUNTIME)),
         "perfil"           => Some(("perfil.md",           DEFAULT_PERFIL)),
