@@ -1,4 +1,5 @@
 use once_cell::sync::OnceCell;
+use rusqlite;
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 use std::process::{Command, Stdio};
@@ -344,6 +345,42 @@ fn perfil_conv() -> &'static Mutex<Vec<(String, String)>> {
     PERFIL_CONV.get_or_init(|| Mutex::new(vec![]))
 }
 
+fn read_open_pendencias(db_path: &std::path::Path) -> String {
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(_) => return "(não foi possível ler pendências)".to_string(),
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT p.id, p.categoria, p.descricao, v.titulo, v.empresa \
+         FROM pendencias p LEFT JOIN vagas v ON p.vaga_id = v.id \
+         WHERE p.resolvida = 0 ORDER BY p.criada_em DESC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return "(sem pendências abertas)".to_string(),
+    };
+    let rows: Vec<String> = stmt
+        .query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let cat: String = row.get(1)?;
+            let desc: String = row.get(2)?;
+            let titulo: Option<String> = row.get(3)?;
+            let empresa: Option<String> = row.get(4)?;
+            Ok(format!(
+                "- ID {id}: [{cat}] {desc} (vaga: {} @ {})",
+                titulo.as_deref().unwrap_or("?"),
+                empresa.as_deref().unwrap_or("?"),
+            ))
+        })
+        .map(|r| r.filter_map(|x| x.ok()).collect())
+        .unwrap_or_default();
+
+    if rows.is_empty() {
+        "(sem pendências abertas)".to_string()
+    } else {
+        rows.join("\n")
+    }
+}
+
 fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
     let base_yaml = std::fs::read_to_string(data_dir.join("candidate_base.yaml"))
@@ -351,6 +388,9 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
         .unwrap_or_else(|_| "(ainda vazio)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
+    let db_path = data_dir.join("claudia_rh.db");
+    let db_path_str = db_path.to_string_lossy().to_string();
+    let pendencias_str = read_open_pendencias(&db_path);
 
     let mut history = String::new();
     if !conv.is_empty() {
@@ -361,11 +401,33 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
         }
     }
 
-    crate::commands::prompts::read_prompt(&data_dir, "perfil")
+    let mut prompt = crate::commands::prompts::read_prompt(&data_dir, "perfil")
         .replace("{{DATA_DIR}}", &data_dir_str)
         .replace("{{CANDIDATE_BASE_YAML}}", &base_yaml)
         .replace("{{SEARCH_VARIANTS_YAML}}", &variants_yaml)
-        .replace("{{CONVERSA_ANTERIOR}}", &history)
+        .replace("{{CONVERSA_ANTERIOR}}", &history);
+
+    // Always append pendências block so the model can resolve them when asked,
+    // regardless of the on-disk prompt version.
+    prompt.push_str(&format!(
+        "\n\n## Pendências abertas do sistema\n\n\
+         {pendencias_str}\n\n\
+         Se o utilizador pedir para marcar uma ou mais pendências como resolvidas \
+         (ex: \"marca como ok\", \"já resolvemos o salário\", \"fecha tudo\"), \
+         usa bash para actualizar a base de dados:\n\
+         ```bash\n\
+         # fechar uma pendência específica (substitui ID e MOTIVO):\n\
+         sqlite3 \"{db_path_str}\" \"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), \
+         resolucao='MOTIVO' WHERE id=ID;\"\n\
+         # fechar TODAS as pendências abertas de uma vez:\n\
+         sqlite3 \"{db_path_str}\" \"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), \
+         resolucao='Marcada como resolvida pelo utilizador' WHERE resolvida=0;\"\n\
+         ```\n\
+         Após executar, confirma ao utilizador quais foram fechadas. \
+         A interface actualiza-se automaticamente.",
+    ));
+
+    prompt
 }
 
 fn spawn_perfil_claude(app: AppHandle, message: String) {
