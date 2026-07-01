@@ -409,20 +409,24 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
 
     // Always append pendências block so the model can resolve them when asked,
     // regardless of the on-disk prompt version.
+    // NOTE: sqlite3 CLI is NOT installed by default on Windows — use Python instead,
+    // which has sqlite3 built-in.
     prompt.push_str(&format!(
         "\n\n## Pendências abertas do sistema\n\n\
          {pendencias_str}\n\n\
          Se o utilizador pedir para marcar uma ou mais pendências como resolvidas \
          (ex: \"marca como ok\", \"já resolvemos o salário\", \"fecha tudo\"), \
-         usa bash para actualizar a base de dados:\n\
-         ```bash\n\
+         usa Python (tem sqlite3 embutido — o CLI sqlite3 NÃO está instalado no Windows):\n\
+         ```python\n\
+         import sqlite3\n\
+         c = sqlite3.connect(r\"{db_path_str}\")\n\
          # fechar uma pendência específica (substitui ID e MOTIVO):\n\
-         sqlite3 \"{db_path_str}\" \"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), \
-         resolucao='MOTIVO' WHERE id=ID;\"\n\
-         # fechar TODAS as pendências abertas de uma vez:\n\
-         sqlite3 \"{db_path_str}\" \"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), \
-         resolucao='Marcada como resolvida pelo utilizador' WHERE resolvida=0;\"\n\
+         c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"MOTIVO\", ID])\n\
+         # OU fechar TODAS de uma vez:\n\
+         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marcado pelo utilizador' WHERE resolvida=0\")\n\
+         c.commit(); c.close()\n\
          ```\n\
+         Guarda o script num ficheiro .py temporário e corre com `python` (ou `python3`). \
          Após executar, confirma ao utilizador quais foram fechadas. \
          A interface actualiza-se automaticamente.",
     ));
@@ -485,6 +489,10 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         }
 
         let _ = child.wait();
+
+        // Notify frontend that the agent may have resolved pendências or updated the DB.
+        let _ = app.emit("db-atualizada", ());
+        let _ = app.emit("pendencia-resolvida", ());
 
         if full_response.contains("PERFIL_ATUALIZADO") {
             let _ = app.emit("perfil-atualizado", ());
@@ -646,6 +654,10 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         }
 
         let _ = child.wait();
+
+        // Notify frontend that the agent may have resolved pendências or updated the DB.
+        let _ = app.emit("db-atualizada", ());
+        let _ = app.emit("pendencia-resolvida", ());
 
         if full_response.contains("PERFIL_ATUALIZADO") {
             let _ = app.emit("perfil-atualizado", ());

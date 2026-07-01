@@ -29,7 +29,10 @@ pub fn start(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 let c_count: i64 = conn
                     .query_row("SELECT COUNT(*) FROM candidaturas", [], |r| r.get(0))
                     .unwrap_or(0);
-                format!("{}-{}", v_ts, c_count)
+                let p_resolved: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM pendencias WHERE resolvida=1", [], |r| r.get(0))
+                    .unwrap_or(0);
+                format!("{}-{}-{}", v_ts, c_count, p_resolved)
             };
 
             if marker != last_marker {
