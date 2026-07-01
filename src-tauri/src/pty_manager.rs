@@ -117,11 +117,17 @@ pub fn iniciar_claude(
     let writer_for_timer = Arc::clone(&writer);
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(5));
+        // Type text into the readline buffer first, flush it...
         if let Ok(mut w) = writer_for_timer.lock() {
-            // \r = carriage return = Enter in terminal/readline context.
-            // \n would insert a newline in the input buffer without submitting.
-            let task_line = format!("{}\r", initial_task);
-            let _ = w.write_all(task_line.as_bytes());
+            let _ = w.write_all(initial_task.as_bytes());
+            let _ = w.flush();
+        }
+        // ...then send Enter as a separate write after readline has processed
+        // all typed characters. Sending text+\r in one atomic write causes \r
+        // to arrive before readline finishes buffering the text, breaking the line.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if let Ok(mut w) = writer_for_timer.lock() {
+            let _ = w.write_all(b"\r");
             let _ = w.flush();
         }
     });

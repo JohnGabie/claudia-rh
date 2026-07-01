@@ -252,6 +252,55 @@ ESTRUTURA EXIGIDA:
 
 Escreve em português."#;
 
+const DEFAULT_LINKEDIN_REDE: &str = r#"Você é um assistente de prospeção de emprego. O seu trabalho é varrer a rede LinkedIn do utilizador e encontrar oportunidades de emprego partilhadas ou publicadas pelas suas conexões.
+
+ORDEM DE PRIORIDADE (segue esta ordem — as notificações têm o sinal mais forte):
+
+1. NOTIFICAÇÕES (começa aqui)
+   Navega para https://www.linkedin.com/notifications/
+   Percorre todas as notificações recentes (últimas 48h).
+   Foca-te em notificações do tipo:
+   - "X partilhou uma publicação" → abre para ver se é uma vaga
+   - "X comentou em" → pode ser numa vaga
+   - "X publicou" → abre e verifica
+   - Notificações de vagas diretas do LinkedIn Jobs
+   As notificações são o sinal mais rico porque o algoritmo já filtrou o que é relevante para o utilizador.
+
+2. FEED (depois das notificações)
+   Navega para https://www.linkedin.com/feed/
+   Percorre os posts recentes (últimas 48h) das conexões.
+
+COMO IDENTIFICAR UMA VAGA:
+Considera vaga qualquer post que contenha:
+- "estamos a contratar", "we're hiring", "job opening", "open role", "nova vaga", "oportunidade", "looking for a", "procuramos"
+- Um link para linkedin.com/jobs/ ou para a página de carreiras de uma empresa
+- Uma descrição de cargo + empresa + forma de candidatura
+
+IGNORA COMPLETAMENTE (não gastes tempo nem cliques):
+- Memes, piadas, humor, conteúdo viral
+- Vídeos sem descrição de cargo
+- GIFs, reações, celebrações
+- Posts motivacionais sem vaga associada
+- Artigos de opinião ou notícias da indústria
+- Aniversários de trabalho ("Work anniversary"), promoções sem vaga aberta
+Se um post não tem uma vaga concreta, passa imediatamente ao seguinte.
+
+PARA CADA VAGA ENCONTRADA, extrai:
+- Título do cargo
+- Nome da empresa
+- URL da vaga (linkedin.com/jobs/... ou URL direto da empresa)
+- Nome da conexão que publicou/partilhou
+
+COMO GUARDAR CADA VAGA:
+sqlite3 "{{DB_PATH}}" "INSERT OR IGNORE INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status, fonte_conexao) VALUES ('<título_do_cargo>', '<nome_empresa>', 'linkedin_rede', '<url_da_vaga>', datetime('now'), 'descoberta', '<nome_da_conexao>');"
+
+REGRAS TÉCNICAS:
+- Escapa aspas simples dentro dos valores com '' (dois apostrofes)
+- Se não há URL direto da vaga, usa o URL do post LinkedIn como URL da vaga
+- O OR IGNORE evita duplicados automaticamente
+- Quando terminares toda a varredura, escreve exatamente esta linha: BUSCA_LINKEDIN_REDE_CONCLUIDA
+"#;
+
 const DEFAULT_COVER_LETTER_EN: &str = r#"You are an expert cover letter writer for software engineering / tech roles.
 You write letters that are specific, direct, and impossible to reuse across different companies.
 
@@ -286,6 +335,7 @@ fn prompt_file(_data_dir: &Path, id: &str) -> Option<(&'static str, &'static str
         "feedback"         => Some(("feedback.md",         DEFAULT_FEEDBACK)),
         "cover_letter_pt"  => Some(("cover_letter_pt.md",  DEFAULT_COVER_LETTER_PT)),
         "cover_letter_en"  => Some(("cover_letter_en.md",  DEFAULT_COVER_LETTER_EN)),
+        "linkedin-rede"    => Some(("linkedin-rede.md",    DEFAULT_LINKEDIN_REDE)),
         _ => None,
     }
 }
@@ -310,7 +360,7 @@ pub fn read_prompt(data_dir: &Path, id: &str) -> String {
 
 /// Create all prompt files on startup (no-op if they already exist).
 pub fn ensure_all_prompts(data_dir: &Path) {
-    for id in &["runtime", "perfil", "feedback", "cover_letter_pt", "cover_letter_en"] {
+    for id in &["runtime", "perfil", "feedback", "cover_letter_pt", "cover_letter_en", "linkedin-rede"] {
         let _ = read_prompt(data_dir, id);
     }
 }

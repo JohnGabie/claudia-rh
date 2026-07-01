@@ -36,6 +36,22 @@ interface ConfigDisparo {
   janelas: JanelaAgendamento[];
 }
 
+interface VagaLinkedinRede {
+  id: number;
+  titulo: string;
+  empresa: string;
+  url: string;
+  fonte_conexao: string | null;
+  descoberta_em: string;
+  status: string;
+}
+
+interface StatusLinkedinRede {
+  ativo: boolean;
+  ultima_busca: string | null;
+  vagas_encontradas: number;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   descoberta: "Descoberta",
   analisada: "Analisada",
@@ -512,9 +528,17 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const [disparado, setDisparado] = useState(false);
   const [modal, setModal] = useState<ModalCfg | null>(null);
   const [modalAgendamento, setModalAgendamento] = useState(false);
+  const [linkedinStatus, setLinkedinStatus] = useState<StatusLinkedinRede>({ ativo: false, ultima_busca: null, vagas_encontradas: 0 });
+  const [linkedinScanning, setLinkedinScanning] = useState(false);
+  const [incluirLinkedinRede, setIncluirLinkedinRede] = useState(false);
 
   const checkpointTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disparadoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const carregarLinkedin = () =>
+    invoke<StatusLinkedinRede>("obter_status_linkedin_rede")
+      .then((status) => { setLinkedinStatus(status); setLinkedinScanning(status.ativo); })
+      .catch(console.error);
 
   const carregar = () =>
     Promise.all([
@@ -541,6 +565,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
 
   useEffect(() => {
     carregar();
+    carregarLinkedin();
 
     let active = true;
     const unlisteners: (() => void)[] = [];
@@ -551,8 +576,15 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
         checkpointTimerRef.current = setTimeout(() => invoke("disparar_sessao", { motivo: "checkpoint" }).catch(console.error), 500);
       }),
       listen("session-started", () => { setSessionActive(true); carregar(); }),
-      listen<string>("session-ended", () => { setSessionActive(false); setPaused(false); carregar(); }),
-      listen("db-atualizada", () => carregar()),
+      listen<string>("session-ended", () => {
+        setSessionActive(false);
+        setPaused(false);
+        setLinkedinScanning(false);
+        carregar();
+        carregarLinkedin();
+      }),
+      listen("linkedin-session-started", () => { setLinkedinScanning(true); setSessionActive(true); }),
+      listen("db-atualizada", () => { carregar(); carregarLinkedin(); }),
       listen("chrome-reconnect-failed", () => console.warn("[Claudia RH] Chrome extension reconnection failed")),
     ]).then((fns) => {
       if (active) {
@@ -581,7 +613,12 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const disparar = async () => {
     setDisparando(true);
     try {
-      await invoke("disparar_sessao", { motivo: "manual" });
+      if (incluirLinkedinRede) {
+        await invoke("iniciar_busca_linkedin_rede");
+        setLinkedinScanning(true);
+      } else {
+        await invoke("disparar_sessao", { motivo: "manual" });
+      }
       setDisparado(true);
       if (disparadoTimerRef.current) clearTimeout(disparadoTimerRef.current);
       disparadoTimerRef.current = setTimeout(() => setDisparado(false), 3000);
@@ -926,19 +963,40 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
           </button>
         </div>
       ) : (
-        <button
-          onClick={disparar}
-          disabled={disparando}
-          style={{
-            width: "100%", padding: "12px 0",
-            background: disparado ? "var(--success)" : "var(--accent)",
-            color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 500,
-            cursor: disparando ? "default" : "pointer", fontFamily: "inherit",
-            marginBottom: 24, transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
-          }}
-        >
-          {disparando ? "A iniciar sessão…" : disparado ? "✓ Sessão iniciada — ver Terminal" : "Procurar vagas agora"}
-        </button>
+        <div style={{ marginBottom: 24 }}>
+          {/* Toggle: modo de procura */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <ToggleSwitch checked={incluirLinkedinRede} onChange={() => setIncluirLinkedinRede(v => !v)} />
+            <span style={{ fontSize: 13, color: incluirLinkedinRede ? "var(--text-primary)" : "var(--text-secondary)" }}>
+              Procurar vagas na rede
+            </span>
+            {incluirLinkedinRede && linkedinStatus.vagas_encontradas > 0 && (
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto" }}>
+                {linkedinStatus.vagas_encontradas} encontradas
+              </span>
+            )}
+          </div>
+          <button
+            onClick={disparar}
+            disabled={disparando}
+            style={{
+              width: "100%", padding: "12px 0",
+              background: disparado ? "var(--success)" : "var(--accent)",
+              color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 500,
+              cursor: disparando ? "default" : "pointer", fontFamily: "inherit",
+              transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}
+          >
+            {disparando
+              ? "A iniciar…"
+              : disparado
+              ? "✓ Sessão iniciada"
+              : incluirLinkedinRede
+              ? "Procurar vagas na rede"
+              : "Procurar vagas agora"}
+          </button>
+        </div>
       )}
 
       {/* Atividade recente */}

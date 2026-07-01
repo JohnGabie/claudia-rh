@@ -4,6 +4,7 @@ pub mod credenciais;
 pub mod curriculos;
 pub mod estado;
 pub mod feedback;
+pub mod linkedin;
 pub mod notif;
 pub mod perfil;
 pub mod prompts;
