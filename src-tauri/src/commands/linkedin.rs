@@ -81,7 +81,7 @@ pub fn iniciar_busca_linkedin_rede(
 
     pty_manager::iniciar_claude(
         app.clone(),
-        "claude".to_string(),
+        crate::commands::claude_program(),
         args,
         24,
         80,
