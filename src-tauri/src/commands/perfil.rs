@@ -439,7 +439,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_system_prompt(&app, &conv);
 
-        let mut child = match Command::new("claude")
+        let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",
@@ -603,7 +603,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_chrome_system_prompt(&app, &conv);
 
-        let mut child = match Command::new("claude")
+        let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",

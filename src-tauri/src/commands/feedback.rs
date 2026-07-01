@@ -316,7 +316,7 @@ fn spawn_feedback_claude(app: AppHandle, db: Arc<Mutex<Connection>>, gatilho: St
         let data_dir = app.path().app_data_dir().unwrap_or_default();
         let system_prompt = crate::commands::prompts::read_prompt(&data_dir, "feedback");
 
-        let mut child = match std::process::Command::new("claude")
+        let mut child = match std::process::Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",

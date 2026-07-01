@@ -67,7 +67,7 @@ pub fn iniciar_sessao(
 
     pty_manager::iniciar_claude(
         app.clone(),
-        "claude".to_string(),
+        crate::commands::claude_program(),
         args,
         24,
         80,
