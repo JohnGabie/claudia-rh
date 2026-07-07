@@ -43,6 +43,44 @@ fn darken_cl(hex: &str, factor: f32) -> String {
     format!("#{:02x}{:02x}{:02x}", blend(r), blend(g), blend(b))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn esc_escapa_html_especial() {
+        assert_eq!(esc("<script>alert(1)</script>"), "&lt;script&gt;alert(1)&lt;/script&gt;");
+        assert_eq!(esc("a & b"), "a &amp; b");
+        assert_eq!(esc(r#"say "hi""#), "say &quot;hi&quot;");
+        assert_eq!(esc("clean"), "clean");
+    }
+
+    #[test]
+    fn hex_to_rgb_cl_parseia_cores_validas() {
+        assert_eq!(hex_to_rgb_cl("#d97757"), (0xd9, 0x77, 0x57));
+        assert_eq!(hex_to_rgb_cl("#000000"), (0, 0, 0));
+        assert_eq!(hex_to_rgb_cl("#ffffff"), (255, 255, 255));
+        assert_eq!(hex_to_rgb_cl("aabbcc"), (0xaa, 0xbb, 0xcc)); // without #
+    }
+
+    #[test]
+    fn hex_to_rgb_cl_hex_invalido_retorna_zero() {
+        assert_eq!(hex_to_rgb_cl(""), (0, 0, 0));
+        assert_eq!(hex_to_rgb_cl("#abc"), (0, 0, 0)); // too short (< 6 chars after #)
+    }
+
+    #[test]
+    fn darken_cl_escurece_branco_cinquenta_porcento() {
+        // (255 * (1 - 0.5)).round() = 127.5 → 128 = 0x80
+        assert_eq!(darken_cl("#ffffff", 0.5), "#808080");
+    }
+
+    #[test]
+    fn darken_cl_preto_permanece_preto() {
+        assert_eq!(darken_cl("#000000", 0.9), "#000000");
+    }
+}
+
 // ── Profile summary for Claude context ───────────────────────────────────────
 
 fn build_profile_context(data: &CandidatoBase) -> String {

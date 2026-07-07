@@ -292,6 +292,139 @@ fn extrair_resumo(texto: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static URL_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    fn mem() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::apply(&conn).unwrap();
+        conn
+    }
+
+    fn insert_vaga(conn: &Connection, status: &str, motivo: Option<&str>) -> i64 {
+        let n = URL_SEQ.fetch_add(1, Ordering::Relaxed);
+        conn.execute(
+            "INSERT INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status, motivo_status) \
+             VALUES ('Dev', 'ACME', 'LinkedIn', ?1, datetime('now'), ?2, ?3)",
+            rusqlite::params![format!("https://fb-test.com/{n}"), status, motivo],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_candidatura(conn: &Connection, vaga_id: i64) {
+        conn.execute(
+            "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
+             VALUES (?1, datetime('now'), '/tmp', 'chrome')",
+            [vaga_id],
+        ).unwrap();
+    }
+
+    // ── extrair_resumo ────────────────────────────────────────────────────────
+
+    #[test]
+    fn extrair_resumo_ignora_linhas_de_cabecalho_markdown() {
+        let texto = "# Título\n\nPrimeira linha.\n\nSegunda linha.\n\nTerceira.";
+        let resumo = extrair_resumo(texto);
+        assert!(!resumo.contains("# Título"), "headers must be stripped");
+        assert!(resumo.contains("Primeira linha"), "content must be kept");
+    }
+
+    #[test]
+    fn extrair_resumo_trunca_em_200_chars_com_reticencias() {
+        let longa = "a".repeat(300);
+        let resumo = extrair_resumo(&longa);
+        assert!(resumo.chars().count() <= 201, "max 200 chars + ellipsis");
+        assert!(resumo.ends_with('…'), "must end with ellipsis");
+    }
+
+    #[test]
+    fn extrair_resumo_texto_curto_retorna_inteiro() {
+        let resumo = extrair_resumo("Feedback breve aqui.");
+        assert_eq!(resumo, "Feedback breve aqui.");
+    }
+
+    // ── agregar ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn agregar_db_vazia_retorna_zeros() {
+        let conn = mem();
+        let d = agregar(&conn).unwrap();
+        assert_eq!(d.candidaturas_total, 0);
+        assert_eq!(d.candidaturas_semana, 0);
+        assert_eq!(d.vagas_analisadas, 0);
+        assert_eq!(d.vagas_puladas, 0);
+        assert_eq!(d.vagas_pendentes, 0);
+        assert!(d.por_variante.is_empty());
+        assert!(d.por_resultado.is_empty());
+        assert!(d.dias_desde_ultimo_feedback.is_none());
+    }
+
+    #[test]
+    fn agregar_conta_candidaturas_e_vagas_por_status() {
+        let conn = mem();
+        let v1 = insert_vaga(&conn, "aplicada", None);
+        insert_vaga(&conn, "pulada", Some("score_baixo: low match"));
+        insert_vaga(&conn, "pendente_revisao", None);
+        insert_candidatura(&conn, v1);
+        insert_candidatura(&conn, v1);
+
+        let d = agregar(&conn).unwrap();
+        assert_eq!(d.candidaturas_total, 2);
+        assert_eq!(d.vagas_analisadas, 3); // aplicada + pulada + pendente_revisao
+        assert_eq!(d.vagas_puladas, 1);
+        assert_eq!(d.vagas_pendentes, 1);
+    }
+
+    // ── formatar_prompt ───────────────────────────────────────────────────────
+
+    #[test]
+    fn formatar_prompt_inclui_totais_e_instrucao_final() {
+        let dados = AgregadosFeedback {
+            candidaturas_total: 15,
+            candidaturas_semana: 5,
+            candidaturas_por_dia: vec![],
+            por_variante: vec![],
+            por_resultado: vec![],
+            vagas_analisadas: 30,
+            vagas_puladas: 10,
+            vagas_pendentes: 2,
+            dias_desde_ultimo_feedback: Some(7),
+            ultimo_feedback_resumo: None,
+            motivos_puladas: vec![],
+            pendencias_por_categoria: vec![],
+        };
+        let prompt = formatar_prompt(&dados);
+        assert!(prompt.contains("15"), "total applications must appear");
+        assert!(prompt.contains("Days since last feedback"), "days since feedback must appear");
+        assert!(prompt.contains("Generate structured feedback"), "must end with instruction");
+    }
+
+    #[test]
+    fn formatar_prompt_sem_feedback_anterior_diz_first_analysis() {
+        let dados = AgregadosFeedback {
+            candidaturas_total: 3,
+            candidaturas_semana: 3,
+            candidaturas_por_dia: vec![],
+            por_variante: vec![],
+            por_resultado: vec![],
+            vagas_analisadas: 5,
+            vagas_puladas: 2,
+            vagas_pendentes: 0,
+            dias_desde_ultimo_feedback: None, // no previous feedback
+            ultimo_feedback_resumo: None,
+            motivos_puladas: vec![],
+            pendencias_por_categoria: vec![],
+        };
+        let prompt = formatar_prompt(&dados);
+        assert!(prompt.contains("first analysis"), "must note this is the first analysis");
+    }
+}
+
 fn spawn_feedback_claude(app: AppHandle, db: Arc<Mutex<Connection>>, gatilho: String) {
     std::thread::spawn(move || {
         let dados = {
