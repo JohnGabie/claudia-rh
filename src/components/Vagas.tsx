@@ -367,7 +367,7 @@ export const Vagas: React.FC = () => {
                         {c.pasta_arquivos && (
                           <button
                             onClick={() => invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch(console.error)}
-                            title="Abrir pasta de ficheiros"
+                            title="Abrir pasta de arquivos"
                             style={{
                               background: "transparent", border: "none", cursor: "pointer",
                               padding: 4, color: "var(--text-tertiary)", display: "flex", alignItems: "center",

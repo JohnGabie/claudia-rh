@@ -322,7 +322,7 @@ const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ cfg, onC
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Guardar
+            Salvar
           </button>
         </div>
       </div>
@@ -506,7 +506,7 @@ const AgendamentoModal: React.FC<{
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Guardar
+            Salvar
           </button>
         </div>
       </div>
