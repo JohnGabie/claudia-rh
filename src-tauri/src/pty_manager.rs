@@ -117,11 +117,17 @@ pub fn iniciar_claude(
     let writer_for_timer = Arc::clone(&writer);
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(5));
+        // Type text into the readline buffer first, flush it...
         if let Ok(mut w) = writer_for_timer.lock() {
-            // \r = carriage return = Enter in terminal/readline context.
-            // \n would insert a newline in the input buffer without submitting.
-            let task_line = format!("{}\r", initial_task);
-            let _ = w.write_all(task_line.as_bytes());
+            let _ = w.write_all(initial_task.as_bytes());
+            let _ = w.flush();
+        }
+        // ...then send Enter as a separate write after readline has processed
+        // all typed characters. Sending text+\r in one atomic write causes \r
+        // to arrive before readline finishes buffering the text, breaking the line.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if let Ok(mut w) = writer_for_timer.lock() {
+            let _ = w.write_all(b"\r");
             let _ = w.flush();
         }
     });
@@ -225,7 +231,7 @@ pub fn escrever(input: String) -> Result<(), String> {
         guard
             .as_ref()
             .map(|s| Arc::clone(&s.writer))
-            .ok_or_else(|| "PTY não inicializado".to_string())?
+            .ok_or_else(|| "PTY not initialized".to_string())?
     };
     let mut w = writer_arc.lock().map_err(|e| e.to_string())?;
     w.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
@@ -240,7 +246,7 @@ pub fn redimensionar(rows: u16, cols: u16) -> Result<(), String> {
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())
     } else {
-        Err("PTY não inicializado".into())
+        Err("PTY not initialized".into())
     }
 }
 

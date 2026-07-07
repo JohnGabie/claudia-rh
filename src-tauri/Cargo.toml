@@ -1,6 +1,6 @@
 [package]
 name = "claudia-rh"
-version = "0.1.0"
+version = "0.2.0"
 description = "Automated job-application agent powered by Claude Code + Chrome"
 authors = ["Claudia RH Contributors"]
 license = "MIT"
@@ -31,4 +31,8 @@ serde_yaml = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
 keyring = "3"
 tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
 

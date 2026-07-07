@@ -10,6 +10,12 @@
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
     <img src="https://img.shields.io/github/stars/JohnGabie/claudia-rh?style=for-the-badge&color=D97757&labelColor=1a1a1a" alt="GitHub stars" />
   </a>
+  <a href="https://github.com/JohnGabie/claudia-rh/releases/latest">
+    <img src="https://img.shields.io/github/v/release/JohnGabie/claudia-rh?style=for-the-badge&color=D97757&labelColor=1a1a1a" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/JohnGabie/claudia-rh/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/JohnGabie/claudia-rh/ci.yml?branch=main&style=for-the-badge&label=CI&labelColor=1a1a1a" alt="CI" />
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge&labelColor=1a1a1a" alt="License: MIT" />
   </a>

@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle } from "lucide-react";
+import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb } from "lucide-react";
+import { useT } from "../i18n";
+
+interface Proposta {
+  id: number;
+  vaga_id: number | null;
+  titulo_vaga: string | null;
+  empresa_vaga: string | null;
+  criada_em: string;
+  pergunta: string;
+  contexto: string | null;
+}
 
 interface Pendencia {
   id: number;
@@ -16,21 +27,6 @@ interface Pendencia {
   resolucao: string | null;
 }
 
-const CATEGORIA_META: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size: number }> }> = {
-  captcha:               { label: "Captcha",            color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: MousePointerClick },
-  dados_sensiveis:       { label: "Dados sensíveis",    color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  inventar_informacao:   { label: "Informação em falta",color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  red_line:              { label: "Red line",            color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  salario:               { label: "Salário fora da faixa",color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-  pergunta_sem_resposta: { label: "Pergunta sem resposta",color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: HelpCircle },
-  dialogo_bloqueante:    { label: "Diálogo bloqueante",  color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-  extensao_chrome:       { label: "Extensão Chrome",     color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-};
-
-function resolveMeta(categoria: string) {
-  const key = Object.keys(CATEGORIA_META).find((k) => categoria.toLowerCase().includes(k));
-  return CATEGORIA_META[key ?? "red_line"] ?? CATEGORIA_META.red_line;
-}
 
 function tempoDesde(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -48,6 +44,22 @@ interface CardProps {
 }
 
 const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
+  const t = useT();
+  const CATEGORIA_META: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size: number }> }> = {
+    captcha:               { label: t.notifications.categories.captcha,               color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: MousePointerClick },
+    dados_sensiveis:       { label: t.notifications.categories.dados_sensiveis,       color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    inventar_informacao:   { label: t.notifications.categories.inventar_informacao,   color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    red_line:              { label: t.notifications.categories.red_line,              color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    salario:               { label: t.notifications.categories.salario,               color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+    pergunta_sem_resposta: { label: t.notifications.categories.pergunta_sem_resposta, color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: HelpCircle },
+    dialogo_bloqueante:    { label: t.notifications.categories.dialogo_bloqueante,    color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+    extensao_chrome:       { label: t.notifications.categories.extensao_chrome,       color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+  };
+  const resolveMeta = (categoria: string) => {
+    const key = Object.keys(CATEGORIA_META).find((k) => categoria.toLowerCase().includes(k));
+    return CATEGORIA_META[key ?? "red_line"] ?? CATEGORIA_META.red_line;
+  };
+
   const [expanded, setExpanded] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [resolucaoText, setResolucaoText] = useState("");
@@ -60,9 +72,15 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
   const handleResolver = async () => {
     if (isCaptcha) {
       setLoading(true);
-      await invoke("resolver_pendencia", { id: p.id, resolucao: "Captcha resolvido manualmente no Chrome" }).catch(console.error);
-      setLoading(false);
-      onResolved();
+      try {
+        await invoke("resolver_pendencia", { id: p.id, resolucao: "Captcha resolvido manualmente no Chrome" });
+        setDismissed(true);
+        onResolved();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
     } else {
       setResolving(true);
     }
@@ -71,17 +89,28 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
   const handleSubmit = async () => {
     if (!resolucaoText.trim()) return;
     setLoading(true);
-    await invoke("resolver_pendencia", { id: p.id, resolucao: resolucaoText.trim() }).catch(console.error);
-    setLoading(false);
-    onResolved();
+    try {
+      await invoke("resolver_pendencia", { id: p.id, resolucao: resolucaoText.trim() });
+      setDismissed(true);
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePular = async () => {
     setLoading(true);
-    setDismissed(true);
-    await invoke("pular_pendencia", { id: p.id }).catch(console.error);
-    setLoading(false);
-    onResolved();
+    try {
+      await invoke("pular_pendencia", { id: p.id });
+      setDismissed(true);
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -119,7 +148,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
           </span>
           <button
             onClick={handlePular}
-            title="Ignorar"
+            title={t.common.ignore}
             style={{
               width: 20, height: 20,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -170,7 +199,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
               autoFocus
               value={resolucaoText}
               onChange={(e) => setResolucaoText(e.target.value)}
-              placeholder="Como resolveste esta pendência?"
+              placeholder={t.notifications.howResolved}
               rows={2}
               style={{
                 width: "100%",
@@ -198,14 +227,14 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
                 onClick={() => setResolving(false)}
                 style={ghostBtnStyle}
               >
-                Cancelar
+                {t.notifications.cancel}
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={!resolucaoText.trim()}
                 style={{ ...solidBtnStyle, opacity: resolucaoText.trim() ? 1 : 0.45 }}
               >
-                Confirmar
+                {t.notifications.confirm}
               </button>
             </>
           ) : (
@@ -213,9 +242,104 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
               onClick={handleResolver}
               style={solidBtnStyle}
             >
-              {isCaptcha ? "Já resolvi no Chrome" : "Resolver"}
+              {isCaptcha ? t.notifications.resolvedInChrome : t.notifications.resolve}
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PropostaItem: React.FC<{ p: Proposta; onResolved: () => void; onNavigateToPerfil?: () => void }> = ({ p, onResolved, onNavigateToPerfil }) => {
+  const t = useT();
+  const [loading, setLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  const handleIgnorar = async () => {
+    setLoading(true);
+    try {
+      await invoke("ignorar_proposta", { id: p.id });
+      setDismissed(true);
+      onResolved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        overflow: "hidden",
+        opacity: loading || dismissed ? 0.4 : 1,
+        transition: "opacity 0.2s",
+        pointerEvents: loading || dismissed ? "none" : "auto",
+      }}
+    >
+      <div style={{ width: 3, flexShrink: 0, background: "var(--accent)", borderRadius: "10px 0 0 10px" }} />
+      <div style={{ flex: 1, padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            fontSize: 11, fontWeight: 600,
+            padding: "2px 7px", borderRadius: 5,
+            color: "var(--accent)", background: "var(--accent-soft)",
+            flexShrink: 0,
+          }}>
+            <Lightbulb size={10} />
+            {t.notifications.profileSuggestion}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto", flexShrink: 0 }}>
+            {tempoDesde(p.criada_em)}
+          </span>
+          <button
+            onClick={handleIgnorar}
+            title={t.common.ignore}
+            style={{
+              width: 20, height: 20,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "none",
+              borderRadius: 4, cursor: "pointer",
+              color: "var(--text-tertiary)", flexShrink: 0, padding: 0,
+              transition: "color 0.1s, background 0.1s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-primary)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-sunken)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-tertiary)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+
+        {(p.titulo_vaga || p.empresa_vaga) && (
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>
+            {[p.titulo_vaga, p.empresa_vaga].filter(Boolean).join(" · ")}
+          </div>
+        )}
+
+        <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: p.contexto ? 6 : 10 }}>
+          {p.pergunta}
+        </div>
+
+        {p.contexto && (
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4, marginBottom: 10 }}>
+            {p.contexto}
+          </div>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+          <button onClick={handleIgnorar} style={ghostBtnStyle}>{t.common.ignore}</button>
+          <button
+            onClick={() => onNavigateToPerfil?.()}
+            style={solidBtnStyle}
+          >
+            {t.notifications.viewInProfile}
+          </button>
         </div>
       </div>
     </div>
@@ -245,35 +369,44 @@ const solidBtnStyle: React.CSSProperties = {
   padding: "5px 12px",
 };
 
-export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false }) => {
+export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () => void }> = ({ noHeader = false, onNavigateToPerfil }) => {
+  const t = useT();
   const [pendencias, setPendencias] = useState<Pendencia[]>([]);
+  const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [loading, setLoading] = useState(true);
 
   const carregar = () => {
-    invoke<Pendencia[]>("listar_pendencias", { apenasNaoResolvidas: true })
-      .then(setPendencias)
+    Promise.all([
+      invoke<Pendencia[]>("listar_pendencias", { apenasNaoResolvidas: true }),
+      invoke<Proposta[]>("listar_propostas"),
+    ])
+      .then(([p, pr]) => { setPendencias(p); setPropostas(pr); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     carregar();
-    const unsub = listen("nova-pendencia", carregar);
-    const unsubR = listen("pendencia-resolvida", carregar);
-    return () => {
-      unsub.then((f) => f());
-      unsubR.then((f) => f());
-    };
+    const unsubs = [
+      listen("nova-pendencia", carregar),
+      listen("pendencia-resolvida", carregar),
+      listen("nova-proposta", carregar),
+      listen("proposta-resolvida", carregar),
+      listen("db-atualizada", carregar),
+    ];
+    return () => { unsubs.forEach((p) => p.then((f) => f())); };
   }, []);
+
+  const total = pendencias.length + propostas.length;
 
   return (
     <div style={{ padding: noHeader ? "12px 16px" : "24px 24px" }}>
       {!noHeader && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-            Notificações
+            {t.notifications.title}
           </h1>
-          {pendencias.length > 0 && (
+          {total > 0 && (
             <span style={{
               background: "var(--danger)",
               color: "#fff",
@@ -282,28 +415,36 @@ export const Pendencias: React.FC<{ noHeader?: boolean }> = ({ noHeader = false 
               padding: "2px 8px",
               borderRadius: 6,
             }}>
-              {pendencias.length}
+              {total}
             </span>
           )}
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>A carregar…</div>
-      ) : pendencias.length === 0 ? (
+        <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>{t.notifications.loading}</div>
+      ) : total === 0 ? (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
           padding: "48px 24px", gap: 10,
           color: "var(--text-tertiary)",
         }}>
           <CheckCircle2 size={32} strokeWidth={1.5} color="var(--success)" />
-          <span style={{ fontSize: 13 }}>Sem pendências por resolver</span>
+          <span style={{ fontSize: 13 }}>{t.notifications.noNotifications}</span>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {pendencias.map((p) => (
-            <NotifItem key={p.id} p={p} onResolved={carregar} />
-          ))}
+          {[
+            ...pendencias.map((p) => ({ tipo: "pendencia" as const, criada_em: p.criada_em, item: p })),
+            ...propostas.map((p) => ({ tipo: "proposta" as const, criada_em: p.criada_em, item: p })),
+          ]
+            .sort((a, b) => new Date(b.criada_em).getTime() - new Date(a.criada_em).getTime())
+            .map((entry) =>
+              entry.tipo === "pendencia"
+                ? <NotifItem key={`p-${entry.item.id}`} p={entry.item as Pendencia} onResolved={carregar} />
+                : <PropostaItem key={`s-${entry.item.id}`} p={entry.item as Proposta} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
+            )
+          }
         </div>
       )}
     </div>

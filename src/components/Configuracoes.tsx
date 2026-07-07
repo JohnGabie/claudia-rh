@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ExternalLink, FolderOpen } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
+import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
+import { useT, useLocale } from "../i18n";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -36,42 +38,29 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
 
 // ── main component ────────────────────────────────────────────────────────────
 
-const PROMPTS = [
-  {
-    id: "runtime",
-    label: "Sessão de execução",
-    desc: "Prompt injetado em cada sessão automática de candidaturas. Contém o perfil, estratégia e regras de comportamento do agente.",
-  },
-  {
-    id: "perfil",
-    label: "Assistente de Perfil",
-    desc: "Instruções para o chat de construção de perfil. Define como a Claudia interpreta e edita candidate_base.yaml e search_variants.yaml.",
-  },
-  {
-    id: "feedback",
-    label: "Análise de Feedback",
-    desc: "Instruções para geração de relatórios de feedback. Define estrutura, tom e regras de inferência a partir dos dados de candidaturas.",
-  },
-  {
-    id: "cover_letter_pt",
-    label: "Cover Letter — Português",
-    desc: "Template para cartas de apresentação em PT. Inclui regras de estilo, estrutura obrigatória e palavras proibidas.",
-  },
-  {
-    id: "cover_letter_en",
-    label: "Cover Letter — English",
-    desc: "Template for cover letters in EN. Same rules as PT variant but in English, with substitution-test enforcement.",
-  },
-];
-
-export const Configuracoes: React.FC = () => {
+export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShowWelcome }) => {
+  const t = useT();
+  const { locale, setLocale } = useLocale();
+  const prompts = [
+    { id: "runtime", label: t.settings.prompts.runtime.label, desc: t.settings.prompts.runtime.desc },
+    { id: "perfil", label: t.settings.prompts.perfil.label, desc: t.settings.prompts.perfil.desc },
+    { id: "feedback", label: t.settings.prompts.feedback.label, desc: t.settings.prompts.feedback.desc },
+    { id: "cover_letter_pt", label: t.settings.prompts.cover_letter_pt.label, desc: t.settings.prompts.cover_letter_pt.desc },
+    { id: "cover_letter_en", label: t.settings.prompts.cover_letter_en.label, desc: t.settings.prompts.cover_letter_en.desc },
+  ];
   const [estrategia, setEstrategia] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [dispaAuto, setDispaAuto] = useState(true);
-  const [limiarMinutos, setLimiarMinutos] = useState(15);
+  const [modoAutonomo, setModoAutonomo] = useState(false);
+  const [iniciarComSistema, setIniciarComSistema] = useState(false);
+
+  const [appVersion, setAppVersion] = useState("");
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "found" | "latest">("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     invoke<string>("ler_estrategia")
@@ -79,14 +68,41 @@ export const Configuracoes: React.FC = () => {
       .catch(console.error)
       .finally(() => setLoading(false));
 
-    invoke<{ ativo: boolean; limiar_minutos: number }>("obter_config_disparo")
-      .then((cfg) => { setDispaAuto(cfg.ativo); setLimiarMinutos(cfg.limiar_minutos); })
-      .catch(() => {});
-
+    invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
+    invoke<boolean>("obter_iniciar_com_sistema").then((v) => setIniciarComSistema(!!v)).catch(() => {});
+    getVersion().then(setAppVersion).catch(() => {});
   }, []);
 
-  const salvarDisparo = (ativo: boolean, minutos: number) => {
-    invoke("configurar_disparo", { ativo, limiarMinutos: minutos }).catch(console.error);
+  const verificarAtualizacao = async () => {
+    setUpdateStatus("checking");
+    try {
+      const info = await invoke<{ version: string; body: string } | null>("verificar_atualizacao");
+      if (info) {
+        setUpdateVersion(info.version);
+        setUpdateStatus("found");
+      } else {
+        setUpdateStatus("latest");
+      }
+    } catch {
+      setUpdateStatus("idle");
+    }
+  };
+
+  const instalarAtualizacao = async () => {
+    setInstalling(true);
+    try {
+      await invoke("instalar_atualizacao");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const salvarModoAutonomo = (ativo: boolean) => {
+    invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
+  };
+
+  const salvarIniciarComSistema = (ativo: boolean) => {
+    invoke("configurar_iniciar_com_sistema", { ativo }).catch(console.error);
   };
 
   const guardar = async () => {
@@ -94,7 +110,8 @@ export const Configuracoes: React.FC = () => {
     try {
       await invoke("guardar_estrategia", { conteudo: estrategia });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
     } finally {
@@ -103,63 +120,96 @@ export const Configuracoes: React.FC = () => {
   };
 
   if (loading) {
-    return <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>;
+    return <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 14 }}>{t.common.loading}</div>;
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: 100, padding: "7px 10px", borderRadius: 4,
-    border: "1px solid var(--border)", background: "var(--bg-surface)",
-    color: "var(--text-primary)", fontSize: 14, fontFamily: "inherit", outline: "none",
-  };
 
   return (
     <div style={{ padding: 24, paddingBottom: 80 }}>
       <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", marginBottom: 24 }}>
-        Configurações
+        {t.settings.title}
       </h1>
 
-      {/* 1. Disparo automático */}
+      {/* 0. Language */}
       <Section>
-        <SectionTitle>Disparo automático</SectionTitle>
+        <SectionTitle>{t.settings.language}</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          Quando ativo, inicia uma sessão automaticamente após o sistema estar inativo pelo limiar configurado.
+          {t.settings.languageDesc}
         </p>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: dispaAuto ? 16 : 0 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {(["en", "pt"] as const).map((l) => {
+            const label = l === "en" ? t.settings.languageEn : t.settings.languagePt;
+            const active = locale === l;
+            return (
+              <button
+                key={l}
+                onClick={() => setLocale(l)}
+                style={{
+                  padding: "7px 18px", borderRadius: 6,
+                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  color: active ? "var(--accent-strong)" : "var(--text-secondary)",
+                  fontSize: 13, fontWeight: active ? 600 : 400,
+                  fontFamily: "inherit", cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* 1. Iniciar com o sistema */}
+      <Section>
+        <SectionTitle>{t.settings.startWithSystem}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.startWithSystemDesc}
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
           <ToggleSwitch
-            checked={dispaAuto}
-            onChange={() => { const v = !dispaAuto; setDispaAuto(v); salvarDisparo(v, limiarMinutos); }}
+            checked={iniciarComSistema}
+            onChange={() => { const v = !iniciarComSistema; setIniciarComSistema(v); salvarIniciarComSistema(v); }}
           />
           <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
-            Disparar ao detetar inatividade do sistema
+            {t.settings.startOnBoot}
           </span>
         </label>
-        {dispaAuto && (
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-              Limiar de inatividade (minutos)
-            </label>
-            <input
-              type="number" min={1} max={120} value={limiarMinutos}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(120, parseInt(e.target.value) || 15));
-                setLimiarMinutos(v); salvarDisparo(dispaAuto, v);
-              }}
-              style={inputStyle}
-            />
-          </div>
+      </Section>
+
+      {/* 2. Modo autónomo */}
+      <Section>
+        <SectionTitle>{t.settings.autonomousMode}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.autonomousModeDesc1} <strong>{t.settings.autonomousModeDescInactive}</strong> {t.settings.autonomousModeDescRecommended},{t.settings.autonomousModeDesc2} <strong>{t.settings.autonomousModeDescActive}</strong>{t.settings.autonomousModeDesc3}
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <ToggleSwitch
+            checked={modoAutonomo}
+            onChange={() => { const v = !modoAutonomo; setModoAutonomo(v); salvarModoAutonomo(v); }}
+          />
+          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>
+            {t.settings.skipPermissions}
+          </span>
+        </label>
+        {modoAutonomo && (
+          <p style={{ fontSize: 12, color: "var(--warning)", marginTop: 10, lineHeight: 1.5 }}>
+            {t.settings.autonomousWarning}
+          </p>
         )}
       </Section>
 
-      {/* 2. Estratégia de busca */}
+      {/* 4. Estratégia de busca */}
       <Section>
-        <SectionTitle>Estratégia de busca</SectionTitle>
+        <SectionTitle>{t.settings.searchStrategy}</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>
-          Texto livre injetado no prompt de execução em cada sessão. Usa para definir foco, restrições temporárias, ou notas para o agente.
+          {t.settings.searchStrategyDesc}
         </p>
         <textarea
           value={estrategia}
           onChange={(e) => setEstrategia(e.target.value)}
-          placeholder={"# Estratégia ativa\n\nFoco atual, restrições, notas para o agente…"}
+          placeholder={t.settings.searchStrategyPlaceholder}
           rows={7}
           style={{
             width: "100%", padding: "7px 10px", borderRadius: 4,
@@ -180,28 +230,28 @@ export const Configuracoes: React.FC = () => {
               display: "flex", alignItems: "center", gap: 6, transition: "background 0.2s",
             }}
           >
-            {saved ? <><Check size={13} /> Guardado</> : saving ? "A guardar…" : "Guardar"}
+            {saved ? <><Check size={13} /> {t.settings.savedBtn}</> : saving ? t.settings.savingBtn : t.settings.saveBtn}
           </button>
         </div>
       </Section>
 
       {/* 4. Prompts do sistema */}
       <Section>
-        <SectionTitle>Prompts do sistema</SectionTitle>
+        <SectionTitle>{t.settings.systemPrompts}</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          Todos os prompts usados pelo Claude estão em ficheiros de texto na pasta de dados. Edita com qualquer editor — as alterações entram em vigor na próxima invocação, sem reiniciar a aplicação.
+          {t.settings.systemPromptsDesc}
         </p>
 
         <div style={{
           border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden",
         }}>
-          {PROMPTS.map((p, i) => (
+          {prompts.map((p, i) => (
             <div
               key={p.id}
               style={{
                 display: "flex", alignItems: "center", gap: 16,
                 padding: "12px 16px",
-                borderBottom: i < PROMPTS.length - 1 ? "1px solid var(--border)" : "none",
+                borderBottom: i < prompts.length - 1 ? "1px solid var(--border)" : "none",
                 background: "var(--bg-surface)",
               }}
             >
@@ -235,7 +285,7 @@ export const Configuracoes: React.FC = () => {
                 }}
               >
                 <ExternalLink size={12} />
-                Abrir
+                {t.common.open}
               </button>
             </div>
           ))}
@@ -256,9 +306,86 @@ export const Configuracoes: React.FC = () => {
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-secondary)")}
         >
           <FolderOpen size={14} />
-          Abrir pasta de dados
+          {t.settings.openDataFolder}
         </button>
       </Section>
+
+      {/* 5. Atualizações */}
+      <Section>
+        <SectionTitle>{t.settings.updates}</SectionTitle>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", borderRadius: 8,
+          border: "1px solid var(--border)", background: "var(--bg-surface)",
+        }}>
+          <div>
+            <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
+              {t.settings.currentVersion}{appVersion ? `: ${appVersion}` : ""}
+            </div>
+            {updateStatus === "latest" && (
+              <div style={{ fontSize: 12, color: "var(--success)", marginTop: 3 }}>
+                {t.settings.upToDate}
+              </div>
+            )}
+            {updateStatus === "found" && (
+              <div style={{ fontSize: 12, color: "var(--warning)", marginTop: 3 }}>
+                {t.settings.updateFound}<strong>v{updateVersion}</strong>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {updateStatus === "found" && (
+              <button
+                onClick={instalarAtualizacao}
+                disabled={installing}
+                style={{
+                  padding: "6px 16px", borderRadius: 6, border: "none",
+                  background: "var(--warning)", color: "#fff",
+                  fontSize: 12, fontWeight: 500, fontFamily: "inherit",
+                  cursor: installing ? "default" : "pointer", opacity: installing ? 0.7 : 1,
+                }}
+              >
+                {installing ? t.app.installing : t.settings.installAndRestart}
+              </button>
+            )}
+            <button
+              onClick={verificarAtualizacao}
+              disabled={updateStatus === "checking"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 6,
+                border: "1px solid var(--border)", background: "var(--bg-base)",
+                color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit",
+                cursor: updateStatus === "checking" ? "default" : "pointer",
+              }}
+            >
+              <RefreshCw size={12} style={{ animation: updateStatus === "checking" ? "spin 1s linear infinite" : "none" }} />
+              {updateStatus === "checking" ? t.settings.checkingUpdates : t.settings.checkUpdates}
+            </button>
+          </div>
+        </div>
+      </Section>
+
+      {onShowWelcome && (
+        <Section>
+          <SectionTitle>Getting started</SectionTitle>
+          <button
+            onClick={onShowWelcome}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 16px", borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "transparent",
+              color: "var(--text-secondary)",
+              fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+            }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-secondary)")}
+          >
+            Show welcome screen
+          </button>
+        </Section>
+      )}
     </div>
   );
 };

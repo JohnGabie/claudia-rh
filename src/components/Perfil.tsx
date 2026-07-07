@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useT } from "../i18n";
 import {
   ArrowLeft,
   Plus,
@@ -11,6 +12,7 @@ import {
   Pencil,
   AlertCircle,
   Loader2,
+  Lightbulb,
   MailOpen,
   X,
 } from "lucide-react";
@@ -107,14 +109,6 @@ type EditTarget =
   | { kind: "idiomas" }
   | { kind: "variante"; id: string }
   | { kind: "nova_variante" };
-
-// ── Templates metadata ─────────────────────────────────────────────────────
-
-const TEMPLATES = [
-  { id: "classic-ats", nome: "Clássico ATS", badge: "95% ATS", desc: "Single column, sem cores. Máxima compatibilidade com Workday, Greenhouse e Taleo." },
-  { id: "hybrid-skills", nome: "Híbrido Competências", badge: "90% ATS · Recomendado 2026", desc: "Competências em destaque no topo. Alinha com filtro skills-first dos ATS modernos." },
-  { id: "dev-compact", nome: "Dev Compacto", badge: "1 página · Tech/Startups", desc: "Layout denso e técnico. GitHub em destaque, badges de tecnologia, formato PAR." },
-];
 
 // ── Logo ───────────────────────────────────────────────────────────────────
 
@@ -220,18 +214,21 @@ function renderMarkdown(text: string): React.ReactNode {
 
 // ── Profile section components ─────────────────────────────────────────────
 
-const EditBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button onClick={onClick} style={{
-    display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
-    cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit",
-    padding: "2px 6px", borderRadius: 4, flexShrink: 0,
-  }}
-  onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-strong)")}
-  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
-  >
-    <Pencil size={11} /> Editar
-  </button>
-);
+const EditBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const t = useT();
+  return (
+    <button onClick={onClick} style={{
+      display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
+      cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit",
+      padding: "2px 6px", borderRadius: 4, flexShrink: 0,
+    }}
+    onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-strong)")}
+    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
+    >
+      <Pencil size={11} /> {t.common.edit}
+    </button>
+  );
+};
 
 const SectionBlock: React.FC<{ title: string; onEdit: () => void; children: React.ReactNode }> = ({ title, onEdit, children }) => (
   <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 20px", marginBottom: 12 }}>
@@ -246,6 +243,7 @@ const SectionBlock: React.FC<{ title: string; onEdit: () => void; children: Reac
 );
 
 const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }> = ({ data, onEdit }) => {
+  const t = useT();
   const dp = data.dados_pessoais;
   const initials = (dp.nome_completo || "?").split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
   const headline = data.experiencia?.[0]
@@ -262,7 +260,7 @@ const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }> = ({ 
         }}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2 }}>
-            {dp.nome_completo || <span style={{ color: "var(--text-tertiary)" }}>Nome não preenchido</span>}
+            {dp.nome_completo || <span style={{ color: "var(--text-tertiary)" }}>{t.profile.nameNotFilled}</span>}
           </div>
           {headline && <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 3 }}>{headline}</div>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 6 }}>
@@ -286,8 +284,10 @@ const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }> = ({ 
   );
 };
 
-const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Experiência profissional" onEdit={onEdit}>
+const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.professionalExperience} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {items.map((exp, i) => (
         <div key={i} style={{ paddingLeft: 14, borderLeft: "2px solid var(--border)" }}>
@@ -298,7 +298,7 @@ const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit
             </div>
             {(exp.inicio || exp.fim) && (
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 2 }}>
-                {exp.inicio}{exp.fim ? ` – ${exp.fim}` : " – presente"}
+                {exp.inicio}{exp.fim ? ` – ${exp.fim}` : ` – ${t.profile.present}`}
               </div>
             )}
           </div>
@@ -323,10 +323,13 @@ const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Projetos" onEdit={onEdit}>
+const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.projects} onEdit={onEdit}>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {items.map((proj, i) => (
         <div key={i} style={{ background: "var(--bg-sunken)", borderRadius: 8, padding: "12px 14px", border: "1px solid var(--border)" }}>
@@ -343,10 +346,13 @@ const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdit: () =
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Formação" onEdit={onEdit}>
+const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.education} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {items.map((f, i) => (
         <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -363,10 +369,13 @@ const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdit: () =
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Competências" onEdit={onEdit}>
+const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.skills} onEdit={onEdit}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {items.map((skill, i) => (
         <span key={i} style={{
@@ -377,15 +386,18 @@ const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void }> = (
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
 const NIVEL_COLOR: Record<string, string> = {
   Nativo: "var(--success)", C2: "var(--success)", C1: "var(--accent)",
   B2: "var(--warning)", B1: "var(--warning)", A2: "var(--text-tertiary)", A1: "var(--text-tertiary)",
 };
 
-const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Idiomas" onEdit={onEdit}>
+const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.languages} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {items.map((lang, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -397,7 +409,8 @@ const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit: () => 
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
 const VariantCard: React.FC<{
   variant: SearchVariant;
@@ -408,6 +421,7 @@ const VariantCard: React.FC<{
   onDragEnd: () => void;
   onToggleAtiva: () => void;
 }> = ({ variant, pct, maxPct, onEdit, onDragBar, onDragEnd, onToggleAtiva }) => {
+  const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   const onDragBarRef = useRef(onDragBar);
   const onDragEndRef = useRef(onDragEnd);
@@ -441,7 +455,7 @@ const VariantCard: React.FC<{
           <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{variant.nome_exibicao}</span>
           <button
             onClick={onToggleAtiva}
-            title={variant.ativa ? "Clica para desativar" : "Clica para ativar"}
+            title={variant.ativa ? t.profile.clickToDeactivate : t.profile.clickToActivate}
             style={{
               fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
               border: `1px solid ${variant.ativa ? "var(--accent)" : "var(--border)"}`,
@@ -450,7 +464,7 @@ const VariantCard: React.FC<{
               fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
             }}
           >
-            {variant.ativa ? "Ativa" : "Inativa"}
+            {variant.ativa ? t.profile.variantActive : t.profile.variantInactive}
           </button>
           <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{displayPct}%</span>
         </div>
@@ -459,7 +473,7 @@ const VariantCard: React.FC<{
         <div
           ref={barRef}
           onMouseDown={startDrag}
-          title="Arrasta para ajustar peso"
+          title={t.profile.dragToAdjustWeight}
           style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, cursor: "ew-resize", position: "relative", userSelect: "none" }}
         >
           <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />
@@ -483,10 +497,10 @@ const VariantCard: React.FC<{
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
         <button onClick={() => onEdit({ kind: "variante", id: variant.id })} style={{ padding: "5px 12px", borderRadius: 6, cursor: "pointer", background: "none", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", fontFamily: "inherit" }}>
-          Editar
+          {t.profile.editVariant}
         </button>
-        <button disabled title="Em breve — requer template" style={{ padding: "5px 12px", borderRadius: 6, cursor: "default", background: "var(--bg-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit" }}>
-          Exportar CV
+        <button disabled title={t.profile.exportCVSoon} style={{ padding: "5px 12px", borderRadius: 6, cursor: "default", background: "var(--bg-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit" }}>
+          {t.profile.exportCV}
         </button>
       </div>
     </div>
@@ -531,30 +545,14 @@ const OptionCard: React.FC<{ option: OptionDef; onStart: (focus: ChatFocus) => v
   );
 };
 
-const EMPTY_OPTIONS: OptionDef[] = [
-  {
-    Icon: ClipboardList,
-    title: "Colar currículo",
-    desc: "Cole o texto do teu CV existente e o Claude estrutura-o automaticamente.",
-    preMessage: "Quero colar o texto do meu currículo para estruturar o perfil.",
-    focus: "colar_curriculo",
-  },
-  {
-    Icon: FileText,
-    title: "Importar ficheiro",
-    desc: "Indica o caminho de um PDF ou DOCX e o Claude lê diretamente.",
-    preMessage: "Quero importar um ficheiro de currículo (PDF ou DOCX).",
-    focus: "importar_ficheiro",
-  },
-];
-
 const GithubLinkedinCard: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => {
+  const t = useT();
   const [hov, setHov] = React.useState(false);
   return (
     <button
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      onClick={() => onStart({ section: "chrome", label: "GitHub / LinkedIn", chromeSessao: true })}
+      onClick={() => onStart({ section: "chrome", label: t.profile.githubLinkedin, chromeSessao: true })}
       style={{
         flex: 1, background: "var(--bg-surface)",
         border: `1px solid ${hov ? "var(--accent)" : "var(--border)"}`,
@@ -566,16 +564,34 @@ const GithubLinkedinCard: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({
     >
       <Link2 size={20} color={hov ? "var(--accent)" : "var(--text-secondary)"} />
       <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginTop: 10, marginBottom: 4 }}>
-        GitHub / LinkedIn
+        {t.profile.githubLinkedin}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-        O Claude acede com a tua sessão autenticada e importa tudo automaticamente.
+        {t.profile.githubLinkedinDesc}
       </div>
     </button>
   );
 };
 
-const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => (
+const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => {
+  const t = useT();
+  const EMPTY_OPTIONS: OptionDef[] = [
+    {
+      Icon: ClipboardList,
+      title: t.profile.pasteResume,
+      desc: t.profile.pasteResumeDesc,
+      preMessage: "Quero colar o texto do meu currículo para estruturar o perfil.",
+      focus: "colar_curriculo",
+    },
+    {
+      Icon: FileText,
+      title: t.profile.importFile,
+      desc: t.profile.importFileDesc,
+      preMessage: "Quero importar um arquivo de currículo (PDF ou DOCX).",
+      focus: "importar_ficheiro",
+    },
+  ];
+  return (
   <div style={{
     flex: 1, display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center",
@@ -594,11 +610,10 @@ const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart
     </div>
 
     <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, marginBottom: 8 }}>
-      Vamos construir o teu perfil
+      {t.profile.emptyStateTitle}
     </h2>
     <p style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 420, lineHeight: 1.6, margin: "0 0 32px" }}>
-      O Claude vai conversar contigo para estruturar a tua experiência profissional.
-      Escolhe como queres começar — podes combinar qualquer uma destas opções.
+      {t.profile.emptyStateDesc}
     </p>
 
     <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 560 }}>
@@ -609,7 +624,7 @@ const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart
     </div>
 
     <button
-      onClick={() => onStart({ section: "geral", label: "Perfil", preMessage: "Olá! Vamos começar a construir o meu perfil." })}
+      onClick={() => onStart({ section: "geral", label: t.profile.title, preMessage: "Olá! Vamos começar a construir o meu perfil." })}
       style={{
         marginTop: 20, padding: "9px 20px",
         background: "transparent", border: "1px solid var(--border)",
@@ -617,10 +632,23 @@ const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart
         cursor: "pointer", fontFamily: "inherit",
       }}
     >
-      Começar conversa diretamente
+      {t.profile.startDirectly}
     </button>
   </div>
-);
+  );
+};
+
+// ── Proposta type ──────────────────────────────────────────────────────────
+
+interface Proposta {
+  id: number;
+  vaga_id: number | null;
+  titulo_vaga: string | null;
+  empresa_vaga: string | null;
+  criada_em: string;
+  pergunta: string;
+  contexto: string | null;
+}
 
 // ── Resumo view ────────────────────────────────────────────────────────────
 
@@ -633,8 +661,37 @@ const ResumoView: React.FC<{
   onDirectEdit: (target: EditTarget) => void;
   onReloadData: () => void;
 }> = ({ data, variants, onOpenChat, onOpenCurriculos, onOpenCoverLetters, onDirectEdit, onReloadData }) => {
+  const t = useT();
   const [localPesos, setLocalPesos] = useState<Record<string, number>>({});
   const committedPesosRef = useRef<Record<string, number>>({});
+
+  const [propostas, setPropostas] = useState<Proposta[]>([]);
+
+  const carregarPropostas = useCallback(() => {
+    invoke<Proposta[]>("listar_propostas").then(setPropostas).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    carregarPropostas();
+    const unsubs = [
+      listen("nova-proposta", carregarPropostas),
+      listen("proposta-resolvida", carregarPropostas),
+    ];
+    return () => { unsubs.forEach((p) => p.then((f) => f())); };
+  }, [carregarPropostas]);
+
+  const handleAplicarProposta = (p: Proposta) => {
+    onOpenChat({
+      section: "sugestao_perfil",
+      label: t.profile.applySuggestion,
+      preMessage: p.pergunta + (p.contexto ? `\n\nContexto: ${p.contexto}` : ""),
+    });
+  };
+
+  const handleIgnorarProposta = async (id: number) => {
+    await invoke("ignorar_proposta", { id }).catch(console.error);
+    carregarPropostas();
+  };
 
   useEffect(() => {
     const map: Record<string, number> = {};
@@ -687,7 +744,7 @@ const ResumoView: React.FC<{
     <div style={{ padding: 24, overflow: "auto", height: "100%" }}>
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, flex: 1 }}>Perfil</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, flex: 1 }}>{t.profile.title}</h1>
         <button
           onClick={() => onDirectEdit({ kind: "nova_variante" })}
           style={{
@@ -699,7 +756,7 @@ const ResumoView: React.FC<{
           }}
         >
           <Plus size={14} />
-          Nova variante
+          {t.profile.newVariant}
         </button>
         <button
           onClick={onOpenCurriculos}
@@ -712,7 +769,7 @@ const ResumoView: React.FC<{
           }}
         >
           <FileText size={14} />
-          Currículos
+          {t.profile.resumes}
         </button>
         <button
           onClick={onOpenCoverLetters}
@@ -725,7 +782,7 @@ const ResumoView: React.FC<{
           }}
         >
           <MailOpen size={14} />
-          Cover Letters
+          {t.profile.coverLetters}
         </button>
         <button
           onClick={() => onOpenChat()}
@@ -737,15 +794,74 @@ const ResumoView: React.FC<{
             fontFamily: "inherit",
           }}
         >
-          Atualizar perfil
+          {t.profile.updateProfile}
         </button>
       </div>
       {atualizadoEm ? (
         <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 20 }}>
-          Última atualização: {atualizadoEm}
+          {t.profile.lastUpdated}{atualizadoEm}
         </div>
       ) : (
         <div style={{ marginBottom: 20 }} />
+      )}
+
+      {/* Propostas de perfil */}
+      {propostas.length > 0 && (
+        <div style={{
+          background: "var(--accent-soft)",
+          border: "1px solid var(--accent)",
+          borderRadius: 10,
+          padding: "14px 16px",
+          marginBottom: 20,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <Lightbulb size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent-strong)" }}>
+              {propostas.length === 1 ? t.profile.suggestions_one : `${propostas.length}${t.profile.suggestions_many}`}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {propostas.map((p) => (
+              <div key={p.id} style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "10px 12px",
+              }}>
+                {(p.titulo_vaga || p.empresa_vaga) && (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
+                    {[p.titulo_vaga, p.empresa_vaga].filter(Boolean).join(" · ")}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 8 }}>
+                  {p.pergunta}
+                </div>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => handleIgnorarProposta(p.id)}
+                    style={{
+                      padding: "4px 12px", borderRadius: 6, fontSize: 12,
+                      background: "transparent", border: "1px solid var(--border)",
+                      color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    {t.profile.ignore}
+                  </button>
+                  <button
+                    onClick={() => handleAplicarProposta(p)}
+                    style={{
+                      padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      background: "var(--accent)", border: "none",
+                      color: "#fff", cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    {t.profile.applySuggestion}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* CV preview */}
@@ -791,9 +907,9 @@ const ResumoView: React.FC<{
       {/* Variants section */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)" }}>Variantes de busca</span>
+          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)" }}>{t.profile.searchVariants}</span>
           <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            {variants.filter(v => v.ativa).length} ativa{variants.filter(v => v.ativa).length !== 1 ? "s" : ""}
+            {variants.filter(v => v.ativa).length} {variants.filter(v => v.ativa).length === 1 ? t.profile.activeCount_one : t.profile.activeCount_many}
           </span>
           <button
             onClick={() => onDirectEdit({ kind: "nova_variante" })}
@@ -807,7 +923,7 @@ const ResumoView: React.FC<{
             }}
           >
             <Plus size={12} />
-            Adicionar nova busca
+            {t.profile.addNewSearch}
           </button>
         </div>
 
@@ -817,7 +933,7 @@ const ResumoView: React.FC<{
             borderRadius: 8, padding: "20px 16px", textAlign: "center",
           }}>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10 }}>
-              Sem variantes ainda. Uma variante define o tipo de vaga que a Claudia vai procurar.
+              {t.profile.noVariantsDesc}
             </div>
             <button
               onClick={() => onDirectEdit({ kind: "nova_variante" })}
@@ -829,7 +945,7 @@ const ResumoView: React.FC<{
               }}
             >
               <Plus size={14} />
-              Criar variante
+              {t.profile.createVariant}
             </button>
           </div>
         ) : (
@@ -860,6 +976,7 @@ const ChatView: React.FC<{
   onBack: () => void;
   data: CandidateBase | null;
 }> = ({ focus, onBack, data }) => {
+  const t = useT();
   const isChrome = focus?.chromeSessao === true;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -885,38 +1002,46 @@ const ChatView: React.FC<{
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
-    const unlisten = listen<string>("perfil-output", (event) => {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === "assistant" && last.streaming) {
-          return [...prev.slice(0, -1), { ...last, content: last.content + event.payload }];
+    let active = true;
+    const unlisteners: (() => void)[] = [];
+
+    Promise.all([
+      listen<string>("perfil-output", (event) => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, content: last.content + event.payload }];
+          }
+          return [...prev, { id: crypto.randomUUID(), role: "assistant", content: event.payload, streaming: true }];
+        });
+      }),
+      listen("perfil-atualizado", () => {
+        perfilSavedRef.current = true;
+      }),
+      listen("perfil-output-done", () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
+          return prev;
+        });
+        setSending(false);
+        setSessionActive(false);
+
+        if (isChrome && perfilSavedRef.current) {
+          setTimeout(() => onBackRef.current(), 2000);
         }
-        return [...prev, { id: crypto.randomUUID(), role: "assistant", content: event.payload, streaming: true }];
-      });
-    });
-
-    const unlistenSaved = listen("perfil-atualizado", () => {
-      perfilSavedRef.current = true;
-    });
-
-    const unlistenDone = listen("perfil-output-done", () => {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
-        return prev;
-      });
-      setSending(false);
-      setSessionActive(false);
-
-      if (isChrome && perfilSavedRef.current) {
-        setTimeout(() => onBackRef.current(), 2000);
+      }),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
       }
     });
 
     return () => {
-      unlisten.then(f => f());
-      unlistenSaved.then(f => f());
-      unlistenDone.then(f => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, [isChrome]);
 
@@ -925,7 +1050,7 @@ const ChatView: React.FC<{
       setMessages([{
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "Que perfis queres importar? Acedo com a tua sessão autenticada — podes selecionar um ou ambos.",
+        content: t.profile.importQuestion,
         streaming: false,
       }]);
       // Don't start the session yet — wait for the user's selection
@@ -934,8 +1059,8 @@ const ChatView: React.FC<{
       startSession(focus.preMessage);
     } else {
       const greeting = data
-        ? "Olá! Vejo que o teu perfil já tem informação. O que queres atualizar ou adicionar?"
-        : "Olá! Ainda não tens perfil construído. Como preferes começar?";
+        ? t.profile.greetingWithProfile
+        : t.profile.greetingNoProfile;
       setMessages([{ id: crypto.randomUUID(), role: "assistant", content: greeting, streaming: false }]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1033,7 +1158,7 @@ const ChatView: React.FC<{
           }}
         >
           <ArrowLeft size={15} />
-          Perfil
+          {t.profile.title}
         </button>
 
         {focus && focus.section !== "geral" && (
@@ -1051,7 +1176,7 @@ const ChatView: React.FC<{
         {sessionActive && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
             <Loader2 size={13} style={{ color: "var(--accent)", animation: "spin 1s linear infinite" }} />
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Claudia a escrever…</span>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.profile.claudiaWriting}</span>
           </div>
         )}
       </div>
@@ -1067,7 +1192,7 @@ const ChatView: React.FC<{
           }}>
             <AlertCircle size={14} />
             <span>
-              Não foi possível iniciar a sessão: {error}. Certifica-te que o backend está implementado.
+              {t.profile.sessionError.replace("{error}", error)}
             </span>
           </div>
         )}
@@ -1147,7 +1272,7 @@ const ChatView: React.FC<{
                 transition: "background 0.15s, color 0.15s",
               }}
             >
-              Importar
+              {t.profile.importBtn}
             </button>
           </div>
         )}
@@ -1172,7 +1297,7 @@ const ChatView: React.FC<{
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Escreve uma mensagem… (Enter para enviar, Shift+Enter para nova linha)"
+            placeholder={t.profile.chatPlaceholder}
             disabled={sending}
             rows={1}
             style={{
@@ -1210,7 +1335,7 @@ const ChatView: React.FC<{
           </button>
         </div>
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginTop: 6, maxWidth: 680, margin: "6px auto 0" }}>
-          Enter para enviar · Shift+Enter para nova linha
+          {t.profile.enterHint}
         </div>
       </div>
 
@@ -1238,6 +1363,12 @@ const PALETTE = [
 type DocLang = "pt" | "en";
 
 const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const t = useT();
+  const TEMPLATES = [
+    { id: "classic-ats", nome: t.profile.templates.classicAts.name, badge: t.profile.templates.classicAts.badge, desc: t.profile.templates.classicAts.desc },
+    { id: "hybrid-skills", nome: t.profile.templates.hybridSkills.name, badge: t.profile.templates.hybridSkills.badge, desc: t.profile.templates.hybridSkills.desc },
+    { id: "dev-compact", nome: t.profile.templates.devCompact.name, badge: t.profile.templates.devCompact.badge, desc: t.profile.templates.devCompact.desc },
+  ];
   const [gerando, setGerando] = useState<string | null>(null);
   const [curriculos, setCurriculos] = useState<CurriculoInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1303,10 +1434,10 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           }}
         >
           <ArrowLeft size={14} />
-          Voltar
+          {t.common.back}
         </button>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Currículos
+          {t.profile.resumesTitle}
         </h1>
       </div>
 
@@ -1328,7 +1459,7 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       }}>
         {/* Language toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Idioma</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.resumeLanguage}</span>
           {(["pt", "en"] as DocLang[]).map(l => (
             <button
               key={l}
@@ -1354,7 +1485,7 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500, flexShrink: 0 }}>
-          Cor do acento
+          {t.profile.accentColor}
         </span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {PALETTE.map(p => (
@@ -1381,7 +1512,7 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             value={selectedColor}
             onChange={e => setSelectedColor(e.target.value)}
             style={{ width: 26, height: 26, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", background: "none" }}
-            title="Cor personalizada"
+            title={t.profile.customColor}
           />
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "monospace" }}>{selectedColor}</span>
         </div>
@@ -1389,41 +1520,41 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       {/* Template cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
-        {TEMPLATES.map(t => (
-          <div key={t.id} style={{
+        {TEMPLATES.map(tmpl => (
+          <div key={tmpl.id} style={{
             flex: "1 1 200px", background: "var(--bg-surface)",
             border: "1px solid var(--border)", borderRadius: 10, padding: 16,
             display: "flex", flexDirection: "column", gap: 8,
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t.nome}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{tmpl.nome}</span>
               <span style={{
                 fontSize: 10, padding: "2px 7px", borderRadius: 10,
                 background: "var(--accent-soft)", color: "var(--accent-strong)", fontWeight: 500,
-              }}>{t.badge}</span>
+              }}>{tmpl.badge}</span>
             </div>
-            <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45, flex: 1 }}>{t.desc}</p>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45, flex: 1 }}>{tmpl.desc}</p>
             <button
-              onClick={() => gerar(t.id)}
+              onClick={() => gerar(tmpl.id)}
               disabled={gerando !== null}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                padding: "7px 14px", background: gerando === t.id ? "var(--bg-sunken)" : selectedColor,
+                padding: "7px 14px", background: gerando === tmpl.id ? "var(--bg-sunken)" : selectedColor,
                 border: "none", borderRadius: 8, fontSize: 13,
-                color: gerando === t.id ? "var(--text-secondary)" : "#fff",
+                color: gerando === tmpl.id ? "var(--text-secondary)" : "#fff",
                 cursor: gerando !== null ? "not-allowed" : "pointer", fontFamily: "inherit",
                 transition: "background 0.15s",
               }}
             >
-              {gerando === t.id ? (
+              {gerando === tmpl.id ? (
                 <>
                   <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                  A gerar…
+                  {t.common.generating}
                 </>
               ) : (
                 <>
                   <FileText size={13} />
-                  Gerar
+                  {t.common.generate}
                 </>
               )}
             </button>
@@ -1433,17 +1564,17 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       {/* Generated CVs list */}
       <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 10 }}>
-        Currículos gerados
+        {t.profile.generatedResumes}
       </div>
       {loading ? (
-        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>A carregar…</div>
+        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{t.common.loading}</div>
       ) : curriculos.length === 0 ? (
         <div style={{
           background: "var(--bg-surface)", border: "1px dashed var(--border)",
           borderRadius: 8, padding: "20px 16px", textAlign: "center",
           fontSize: 13, color: "var(--text-secondary)",
         }}>
-          Ainda não há currículos gerados. Escolhe um template acima para começar.
+          {t.profile.noResumesYet}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1471,7 +1602,7 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   fontFamily: "inherit",
                 }}
               >
-                Abrir
+                {t.common.open}
               </button>
               <button
                 onClick={() => apagar(cv.path)}
@@ -1497,6 +1628,7 @@ const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 // ── Cover Letters view ─────────────────────────────────────────────────────
 
 const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const t = useT();
   const [empresa, setEmpresa] = useState("");
   const [cargo, setCargo] = useState("");
   const [descricaoVaga, setDescricaoVaga] = useState("");
@@ -1525,23 +1657,34 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   useEffect(() => { carregarLista(); }, [carregarLista]);
 
   useEffect(() => {
-    const unlisten1 = listen<string>("cover-letter-stream", (e) => {
-      setStreamText(prev => prev + e.payload);
-      streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    let active = true;
+    const unlisteners: (() => void)[] = [];
+
+    Promise.all([
+      listen<string>("cover-letter-stream", (e) => {
+        setStreamText(prev => prev + e.payload);
+        streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }),
+      listen<CoverLetterInfo>("cover-letter-done", (e) => {
+        setGerando(false);
+        setLastGenerated(e.payload);
+        carregarLista();
+      }),
+      listen<string>("cover-letter-error", (e) => {
+        setErro(e.payload);
+        setGerando(false);
+      }),
+    ]).then((fns) => {
+      if (active) {
+        unlisteners.push(...fns);
+      } else {
+        fns.forEach((f) => f());
+      }
     });
-    const unlisten2 = listen<CoverLetterInfo>("cover-letter-done", (e) => {
-      setGerando(false);
-      setLastGenerated(e.payload);
-      carregarLista();
-    });
-    const unlisten3 = listen<string>("cover-letter-error", (e) => {
-      setErro(e.payload);
-      setGerando(false);
-    });
+
     return () => {
-      unlisten1.then(f => f());
-      unlisten2.then(f => f());
-      unlisten3.then(f => f());
+      active = false;
+      unlisteners.forEach((f) => f());
     };
   }, [carregarLista]);
 
@@ -1593,10 +1736,10 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           }}
         >
           <ArrowLeft size={14} />
-          Voltar
+          {t.common.back}
         </button>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Cover Letters
+          {t.profile.coverLettersTitle}
         </h1>
       </div>
 
@@ -1617,12 +1760,12 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         borderRadius: 10, padding: "18px 20px", marginBottom: 12,
       }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
-          Nova cover letter
+          {t.profile.newCoverLetter}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-              Empresa <span style={{ color: "var(--danger)" }}>*</span>
+              {t.profile.company} <span style={{ color: "var(--danger)" }}>*</span>
             </label>
             <input
               value={empresa}
@@ -1641,7 +1784,7 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
           <div>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-              Cargo <span style={{ color: "var(--danger)" }}>*</span>
+              {t.profile.position} <span style={{ color: "var(--danger)" }}>*</span>
             </label>
             <input
               value={cargo}
@@ -1661,13 +1804,13 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-            Descrição da vaga{" "}
-            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(opcional — melhora a especificidade)</span>
+            {t.profile.jobDescriptionLabel}{" "}
+            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>{t.profile.jobDescriptionOpt}</span>
           </label>
           <textarea
             value={descricaoVaga}
             onChange={e => setDescricaoVaga(e.target.value)}
-            placeholder="Cola aqui o texto da oferta de emprego..."
+            placeholder={t.profile.pasteJobText}
             disabled={gerando}
             rows={5}
             style={{
@@ -1682,13 +1825,13 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
         <div>
           <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-            Nota extra{" "}
-            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(opcional — algo específico que queres mencionar)</span>
+            {t.profile.extraNoteLabel}{" "}
+            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>{t.profile.extraNoteOpt}</span>
           </label>
           <textarea
             value={notaExtra}
             onChange={e => setNotaExtra(e.target.value)}
-            placeholder="ex: Conheci o CEO na conferência X, quero mencionar o projeto Y..."
+            placeholder="e.g.: I met the CEO at conference X, I want to mention project Y..."
             disabled={gerando}
             rows={2}
             style={{
@@ -1710,7 +1853,7 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Idioma</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.resumeLanguage}</span>
           {(["pt", "en"] as DocLang[]).map(l => (
             <button
               key={l}
@@ -1729,7 +1872,7 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
         <div style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Cor</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.accentColor}</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {PALETTE.map(p => (
               <button
@@ -1754,7 +1897,7 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             value={selectedColor}
             onChange={e => setSelectedColor(e.target.value)}
             style={{ width: 22, height: 22, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", background: "none" }}
-            title="Cor personalizada"
+            title={t.profile.customColor}
           />
         </div>
       </div>
@@ -1776,12 +1919,12 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {gerando ? (
           <>
             <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />
-            A gerar…
+            {t.common.generating}
           </>
         ) : (
           <>
             <MailOpen size={15} />
-            Gerar cover letter
+            {t.profile.generateCoverLetter}
           </>
         )}
       </button>
@@ -1796,9 +1939,9 @@ const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {gerando ? (
               <>
                 <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                Claude a escrever…
+                {t.profile.claudeWriting}
               </>
-            ) : "Rascunho gerado"}
+            ) : t.profile.draftGenerated}
           </div>
           <div style={{
             fontSize: 13, color: "var(--text-primary)", lineHeight: 1.75,
@@ -1926,18 +2069,22 @@ const EdField: React.FC<{ label: string; hint?: string; children: React.ReactNod
   </div>
 );
 
-const ModalActions: React.FC<{ saving: boolean; onSave: () => void; onClose: () => void }> = ({ saving, onSave, onClose }) => (
-  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
-    <button onClick={onClose} style={{ padding: "7px 14px", background: "transparent", border: "none", borderRadius: 7, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
-      Cancelar
-    </button>
-    <button onClick={onSave} disabled={saving} style={{ padding: "7px 18px", background: saving ? "var(--bg-sunken)" : "var(--accent)", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 500, color: saving ? "var(--text-tertiary)" : "#fff", cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
-      {saving ? "A guardar…" : "Guardar"}
-    </button>
-  </div>
-);
+const ModalActions: React.FC<{ saving: boolean; onSave: () => void; onClose: () => void }> = ({ saving, onSave, onClose }) => {
+  const t = useT();
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
+      <button onClick={onClose} style={{ padding: "7px 14px", background: "transparent", border: "none", borderRadius: 7, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
+        {t.profile.editor.cancel}
+      </button>
+      <button onClick={onSave} disabled={saving} style={{ padding: "7px 18px", background: saving ? "var(--bg-sunken)" : "var(--accent)", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 500, color: saving ? "var(--text-tertiary)" : "#fff", cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+        {saving ? t.profile.editor.saving : t.profile.editor.save}
+      </button>
+    </div>
+  );
+};
 
 const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [draft, setDraft] = useState({
     ...pd.dados_pessoais,
     endereco: pd.dados_pessoais.endereco ?? "",
@@ -1968,43 +2115,39 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
 
   return (
     <>
-      {/* Identificação */}
-      <div style={sectionLabel}>Identificação</div>
-      <EdField label="Nome completo">
+      <div style={sectionLabel}>{t.profile.editor.identification}</div>
+      <EdField label={t.profile.editor.fullName}>
         <input style={edInput} value={draft.nome_completo} onChange={e => setDraft(d => ({ ...d, nome_completo: e.target.value }))} />
       </EdField>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <EdField label="Nacionalidade">
-          <input style={edInput} placeholder="ex: Brasileira" value={draft.nacionalidade} onChange={e => setDraft(d => ({ ...d, nacionalidade: e.target.value }))} />
+        <EdField label={t.profile.editor.nationality}>
+          <input style={edInput} value={draft.nacionalidade} onChange={e => setDraft(d => ({ ...d, nacionalidade: e.target.value }))} />
         </EdField>
-        <EdField label="Data de nascimento" hint="ex: 1995-04-12">
-          <input style={edInput} placeholder="AAAA-MM-DD" value={draft.data_nascimento} onChange={e => setDraft(d => ({ ...d, data_nascimento: e.target.value }))} />
+        <EdField label={t.profile.editor.dateOfBirth} hint={t.profile.editor.dateOfBirthHint}>
+          <input style={edInput} placeholder="YYYY-MM-DD" value={draft.data_nascimento} onChange={e => setDraft(d => ({ ...d, data_nascimento: e.target.value }))} />
         </EdField>
       </div>
-      <EdField label="CPF" hint="Usado em candidaturas para o Brasil. Deixa vazio se não aplicável.">
+      <EdField label={t.profile.editor.cpf} hint={t.profile.editor.cpfHint}>
         <input style={edInput} placeholder="000.000.000-00" value={draft.cpf} onChange={e => setDraft(d => ({ ...d, cpf: e.target.value }))} />
       </EdField>
 
-      {/* Contacto */}
-      <div style={sectionLabel}>Contacto</div>
-      <EdField label="Email">
+      <div style={sectionLabel}>{t.profile.editor.contact}</div>
+      <EdField label={t.profile.editor.email}>
         <input style={edInput} type="email" value={draft.email} onChange={e => setDraft(d => ({ ...d, email: e.target.value }))} />
       </EdField>
-      <EdField label="Telefone" hint="Inclui o indicativo do país, ex: +55 11 91234-5678">
+      <EdField label={t.profile.editor.phone} hint={t.profile.editor.phoneHint}>
         <input style={edInput} placeholder="+55 11 91234-5678" value={draft.telefone} onChange={e => setDraft(d => ({ ...d, telefone: e.target.value }))} />
       </EdField>
 
-      {/* Localização */}
-      <div style={sectionLabel}>Localização</div>
-      <EdField label="Cidade / País" hint="Mostrado no cabeçalho do CV, ex: Copenhagen, Denmark">
-        <input style={edInput} placeholder="ex: Copenhagen, Denmark" value={draft.localizacao_atual} onChange={e => setDraft(d => ({ ...d, localizacao_atual: e.target.value }))} />
+      <div style={sectionLabel}>{t.profile.editor.location}</div>
+      <EdField label={t.profile.editor.cityCountry} hint={t.profile.editor.cityCountryHint}>
+        <input style={edInput} placeholder="Copenhagen, Denmark" value={draft.localizacao_atual} onChange={e => setDraft(d => ({ ...d, localizacao_atual: e.target.value }))} />
       </EdField>
-      <EdField label="Endereço completo" hint="Rua, número, bairro, cidade, CEP — usado em documentos formais. Opcional.">
-        <textarea style={{ ...edTextarea }} rows={2} placeholder="ex: Rua das Flores, 123, Apto 4B, São Paulo – SP, 01310-100" value={draft.endereco} onChange={e => setDraft(d => ({ ...d, endereco: e.target.value }))} />
+      <EdField label={t.profile.editor.fullAddress} hint={t.profile.editor.fullAddressHint}>
+        <textarea style={{ ...edTextarea }} rows={2} value={draft.endereco} onChange={e => setDraft(d => ({ ...d, endereco: e.target.value }))} />
       </EdField>
 
-      {/* Links */}
-      <div style={sectionLabel}>Links profissionais</div>
+      <div style={sectionLabel}>{t.profile.editor.professionalLinks}</div>
       {draft.links.map((l, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 1fr 28px", gap: 6, marginBottom: 6 }}>
           <input style={edInput} placeholder="LinkedIn" value={l.tipo} onChange={e => updLink(i, "tipo", e.target.value)} />
@@ -2013,7 +2156,7 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
         </div>
       ))}
       <button onClick={() => setDraft(d => ({ ...d, links: [...d.links, { tipo: "", url: "" }] }))} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 4 }}>
-        + Adicionar link
+        {t.profile.editor.addLink}
       </button>
 
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 10, marginBottom: 4 }}>{error}</div>}
@@ -2023,6 +2166,7 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
 };
 
 const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.experiencia.map(e => ({ ...e, conquistas: [...e.conquistas], tecnologias: [...e.tecnologias] })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2042,17 +2186,17 @@ const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBas
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <EdField label="Cargo"><input style={edInput} value={exp.cargo} onChange={e => upd(i, "cargo", e.target.value)} /></EdField>
-            <EdField label="Empresa"><input style={edInput} value={exp.empresa} onChange={e => upd(i, "empresa", e.target.value)} /></EdField>
-            <EdField label="Início"><input style={edInput} placeholder="2020-01" value={exp.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
-            <EdField label="Fim"><input style={edInput} placeholder="presente" value={exp.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.position}><input style={edInput} value={exp.cargo} onChange={e => upd(i, "cargo", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.company}><input style={edInput} value={exp.empresa} onChange={e => upd(i, "empresa", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.start}><input style={edInput} placeholder="2020-01" value={exp.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.end}><input style={edInput} placeholder={t.profile.present} value={exp.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
           </div>
-          <EdField label="Descrição"><textarea style={edTextarea} rows={3} value={exp.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
-          <EdField label="Conquistas" hint="Uma por linha"><textarea style={edTextarea} rows={3} value={exp.conquistas.join("\n")} onChange={e => upd(i, "conquistas", e.target.value.split("\n"))} /></EdField>
-          <EdField label="Tecnologias" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(exp.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
+          <EdField label={t.profile.editor.description}><textarea style={edTextarea} rows={3} value={exp.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.achievements} hint={t.profile.editor.achievementsHint}><textarea style={edTextarea} rows={3} value={exp.conquistas.join("\n")} onChange={e => upd(i, "conquistas", e.target.value.split("\n"))} /></EdField>
+          <EdField label={t.profile.editor.technologies} hint={t.profile.editor.technologiesHint}><input style={edInput} value={tagsToStr(exp.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { empresa: "", cargo: "", inicio: "", fim: "", descricao: "", conquistas: [], tecnologias: [] }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar experiência</button>
+      <button onClick={() => setItems(arr => [...arr, { empresa: "", cargo: "", inicio: "", fim: "", descricao: "", conquistas: [], tecnologias: [] }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addExperience}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -2060,6 +2204,7 @@ const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBas
 };
 
 const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.projetos.map(p => ({ ...p, tecnologias: [...p.tecnologias] })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2078,13 +2223,13 @@ const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
       {items.map((proj, i) => (
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
-          <EdField label="Nome"><input style={edInput} value={proj.nome} onChange={e => upd(i, "nome", e.target.value)} /></EdField>
-          <EdField label="Descrição"><textarea style={edTextarea} rows={3} value={proj.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
-          <EdField label="URL"><input style={edInput} placeholder="https://github.com/..." value={proj.url} onChange={e => upd(i, "url", e.target.value)} /></EdField>
-          <EdField label="Tecnologias" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(proj.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
+          <EdField label={t.profile.editor.projectName}><input style={edInput} value={proj.nome} onChange={e => upd(i, "nome", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.description}><textarea style={edTextarea} rows={3} value={proj.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.projectUrl}><input style={edInput} placeholder="https://github.com/..." value={proj.url} onChange={e => upd(i, "url", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.technologies} hint={t.profile.editor.technologiesHint}><input style={edInput} value={tagsToStr(proj.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { nome: "", descricao: "", tecnologias: [], url: "", origem: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar projeto</button>
+      <button onClick={() => setItems(arr => [...arr, { nome: "", descricao: "", tecnologias: [], url: "", origem: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addProject}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -2092,6 +2237,7 @@ const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
 };
 
 const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.formacao.map(f => ({ ...f })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2110,15 +2256,15 @@ const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
       {items.map((f, i) => (
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
-          <EdField label="Curso"><input style={edInput} value={f.curso} onChange={e => upd(i, "curso", e.target.value)} /></EdField>
-          <EdField label="Instituição"><input style={edInput} value={f.instituicao} onChange={e => upd(i, "instituicao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.course}><input style={edInput} value={f.curso} onChange={e => upd(i, "curso", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.institution}><input style={edInput} value={f.instituicao} onChange={e => upd(i, "instituicao", e.target.value)} /></EdField>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <EdField label="Início"><input style={edInput} placeholder="2018-09" value={f.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
-            <EdField label="Fim"><input style={edInput} placeholder="2021-06" value={f.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.start}><input style={edInput} placeholder="2018-09" value={f.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.end}><input style={edInput} placeholder="2021-06" value={f.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
           </div>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { curso: "", instituicao: "", inicio: "", fim: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar formação</button>
+      <button onClick={() => setItems(arr => [...arr, { curso: "", instituicao: "", inicio: "", fim: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addEducation}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -2126,6 +2272,7 @@ const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
 };
 
 const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [text, setText] = useState(pd.competencias.join("\n"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2140,7 +2287,7 @@ const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBa
   };
   return (
     <>
-      <EdField label="Competências" hint="Uma por linha">
+      <EdField label={t.profile.editor.skills} hint={t.profile.editor.skillsHint}>
         <textarea style={edTextarea} rows={10} value={text} onChange={e => setText(e.target.value)} />
       </EdField>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
@@ -2149,9 +2296,10 @@ const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBa
   );
 };
 
-const NIVEIS_IDIOMA = ["Nativo", "C2", "C1", "B2", "B1", "A2", "A1"];
+const NIVEIS_IDIOMA = ["Native", "C2", "C1", "B2", "B1", "A2", "A1"];
 
 const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.idiomas.map(l => ({ ...l })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2169,10 +2317,10 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
     <>
       {items.map((l, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 28px", gap: 8, alignItems: "end", marginBottom: 10 }}>
-          <EdField label={i === 0 ? "Idioma" : ""}>
-            <input style={edInput} value={l.idioma} onChange={e => upd(i, "idioma", e.target.value)} placeholder="Português" />
+          <EdField label={i === 0 ? t.profile.editor.language : ""}>
+            <input style={edInput} value={l.idioma} onChange={e => upd(i, "idioma", e.target.value)} placeholder="Portuguese" />
           </EdField>
-          <EdField label={i === 0 ? "Nível" : ""}>
+          <EdField label={i === 0 ? t.profile.editor.level : ""}>
             <select value={l.nivel} onChange={e => upd(i, "nivel", e.target.value)} style={{ ...edInput, cursor: "pointer" }}>
               {NIVEIS_IDIOMA.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -2180,7 +2328,7 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ height: 33, background: "none", border: "1px solid var(--border)", borderRadius: 6, cursor: "pointer", color: "var(--text-tertiary)", marginBottom: 14 }}>×</button>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { idioma: "", nivel: "B2" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar idioma</button>
+      <button onClick={() => setItems(arr => [...arr, { idioma: "", nivel: "B2" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addLanguage}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -2190,50 +2338,51 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
 // ── Region picker ─────────────────────────────────────────────────────────────
 
 const REGION_OPTIONS: { value: string; label: string; group: string }[] = [
-  // Modalidade
-  { value: "remoto-global", label: "Remoto Global", group: "Modalidade" },
-  { value: "remoto-europa",  label: "Remoto Europa",  group: "Modalidade" },
-  // Europa
-  { value: "Europa",          label: "Europa (qualquer país)", group: "Europa" },
-  { value: "Portugal",        label: "Portugal",        group: "Europa" },
-  { value: "Dinamarca",       label: "Dinamarca",       group: "Europa" },
-  { value: "Alemanha",        label: "Alemanha",        group: "Europa" },
-  { value: "Holanda",         label: "Holanda",         group: "Europa" },
-  { value: "Espanha",         label: "Espanha",         group: "Europa" },
-  { value: "França",          label: "França",          group: "Europa" },
-  { value: "Reino Unido",     label: "Reino Unido",     group: "Europa" },
-  { value: "Irlanda",         label: "Irlanda",         group: "Europa" },
-  { value: "Suécia",          label: "Suécia",          group: "Europa" },
-  { value: "Noruega",         label: "Noruega",         group: "Europa" },
-  { value: "Finlândia",       label: "Finlândia",       group: "Europa" },
-  { value: "Suíça",           label: "Suíça",           group: "Europa" },
-  { value: "Áustria",         label: "Áustria",         group: "Europa" },
-  { value: "Bélgica",         label: "Bélgica",         group: "Europa" },
-  { value: "Itália",          label: "Itália",          group: "Europa" },
-  { value: "Polónia",         label: "Polónia",         group: "Europa" },
-  { value: "República Checa", label: "República Checa", group: "Europa" },
-  { value: "Luxemburgo",      label: "Luxemburgo",      group: "Europa" },
-  // América do Norte
-  { value: "Estados Unidos",  label: "Estados Unidos",  group: "América do Norte" },
-  { value: "Canadá",          label: "Canadá",          group: "América do Norte" },
-  // América Latina
-  { value: "América Latina",  label: "América Latina (qualquer país)", group: "América Latina" },
-  { value: "Brasil",          label: "Brasil",          group: "América Latina" },
-  { value: "Argentina",       label: "Argentina",       group: "América Latina" },
-  { value: "México",          label: "México",          group: "América Latina" },
-  { value: "Colômbia",        label: "Colômbia",        group: "América Latina" },
-  { value: "Chile",           label: "Chile",           group: "América Latina" },
-  // Ásia / Oceânia
-  { value: "Ásia",            label: "Ásia (qualquer país)", group: "Ásia & Oceânia" },
-  { value: "Japão",           label: "Japão",           group: "Ásia & Oceânia" },
-  { value: "Singapura",       label: "Singapura",       group: "Ásia & Oceânia" },
-  { value: "Austrália",       label: "Austrália",       group: "Ásia & Oceânia" },
-  { value: "Nova Zelândia",   label: "Nova Zelândia",   group: "Ásia & Oceânia" },
+  // Mode
+  { value: "remoto-global", label: "Global Remote",  group: "Mode" },
+  { value: "remoto-europa",  label: "Europe Remote",  group: "Mode" },
+  // Europe
+  { value: "Europa",          label: "Europe (any country)", group: "Europe" },
+  { value: "Portugal",        label: "Portugal",        group: "Europe" },
+  { value: "Dinamarca",       label: "Denmark",         group: "Europe" },
+  { value: "Alemanha",        label: "Germany",         group: "Europe" },
+  { value: "Holanda",         label: "Netherlands",     group: "Europe" },
+  { value: "Espanha",         label: "Spain",           group: "Europe" },
+  { value: "França",          label: "France",          group: "Europe" },
+  { value: "Reino Unido",     label: "United Kingdom",  group: "Europe" },
+  { value: "Irlanda",         label: "Ireland",         group: "Europe" },
+  { value: "Suécia",          label: "Sweden",          group: "Europe" },
+  { value: "Noruega",         label: "Norway",          group: "Europe" },
+  { value: "Finlândia",       label: "Finland",         group: "Europe" },
+  { value: "Suíça",           label: "Switzerland",     group: "Europe" },
+  { value: "Áustria",         label: "Austria",         group: "Europe" },
+  { value: "Bélgica",         label: "Belgium",         group: "Europe" },
+  { value: "Itália",          label: "Italy",           group: "Europe" },
+  { value: "Polónia",         label: "Poland",          group: "Europe" },
+  { value: "República Checa", label: "Czech Republic",  group: "Europe" },
+  { value: "Luxemburgo",      label: "Luxembourg",      group: "Europe" },
+  // North America
+  { value: "Estados Unidos",  label: "United States",   group: "North America" },
+  { value: "Canadá",          label: "Canada",          group: "North America" },
+  // Latin America
+  { value: "América Latina",  label: "Latin America (any country)", group: "Latin America" },
+  { value: "Brasil",          label: "Brazil",          group: "Latin America" },
+  { value: "Argentina",       label: "Argentina",       group: "Latin America" },
+  { value: "México",          label: "Mexico",          group: "Latin America" },
+  { value: "Colômbia",        label: "Colombia",        group: "Latin America" },
+  { value: "Chile",           label: "Chile",           group: "Latin America" },
+  // Asia / Oceania
+  { value: "Ásia",            label: "Asia (any country)", group: "Asia & Oceania" },
+  { value: "Japão",           label: "Japan",           group: "Asia & Oceania" },
+  { value: "Singapura",       label: "Singapore",       group: "Asia & Oceania" },
+  { value: "Austrália",       label: "Australia",       group: "Asia & Oceania" },
+  { value: "Nova Zelândia",   label: "New Zealand",     group: "Asia & Oceania" },
 ];
 
-const GROUP_ORDER = ["Modalidade", "Europa", "América do Norte", "América Latina", "Ásia & Oceânia"];
+const GROUP_ORDER = ["Mode", "Europe", "North America", "Latin America", "Asia & Oceania"];
 
 const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void }> = ({ value, onChange }) => {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2288,7 +2437,7 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
       )}
       <input
         style={edInput}
-        placeholder="Pesquisar regiões ou países…"
+        placeholder={t.profile.editor.searchRegions}
         value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -2334,6 +2483,7 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
 };
 
 const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; onSaved: () => void; onClose: () => void }> = ({ varianteId, variants, onSaved, onClose }) => {
+  const t = useT();
   const initial = variants.find(v => v.id === varianteId);
   const generatedId = varianteId || `variante_${Date.now()}`;
   const [draft, setDraft] = useState<SearchVariant>(initial ? { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] } : { id: generatedId, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" });
@@ -2349,22 +2499,22 @@ const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; 
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "start" }}>
-        <EdField label="Nome"><input style={edInput} value={draft.nome_exibicao} onChange={e => setDraft(d => ({ ...d, nome_exibicao: e.target.value }))} /></EdField>
-        <EdField label="Ativa">
+        <EdField label={t.profile.editor.variantName}><input style={edInput} value={draft.nome_exibicao} onChange={e => setDraft(d => ({ ...d, nome_exibicao: e.target.value }))} /></EdField>
+        <EdField label={t.profile.editor.variantActive}>
           <div style={{ height: 33, display: "flex", alignItems: "center" }}>
             <button onClick={() => setDraft(d => ({ ...d, ativa: !d.ativa }))} style={{ padding: "5px 14px", borderRadius: 6, border: `1px solid ${draft.ativa ? "var(--accent)" : "var(--border)"}`, background: draft.ativa ? "var(--accent-soft)" : "transparent", color: draft.ativa ? "var(--accent-strong)" : "var(--text-secondary)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
-              {draft.ativa ? "Ativa" : "Inativa"}
+              {draft.ativa ? t.profile.variantActive : t.profile.variantInactive}
             </button>
           </div>
         </EdField>
       </div>
-      <EdField label="Regiões aceitas">
+      <EdField label={t.profile.editor.acceptedRegions}>
         <RegionPicker
           value={draft.regioes_aceitas}
           onChange={v => setDraft(d => ({ ...d, regioes_aceitas: v }))}
         />
       </EdField>
-      <EdField label="Modelos de trabalho">
+      <EdField label={t.profile.editor.workModels}>
         <div style={{ display: "flex", gap: 6 }}>
           {["remoto", "híbrido", "presencial"].map(m => {
             const active = draft.modelos_trabalho.includes(m);
@@ -2393,22 +2543,12 @@ const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; 
           })}
         </div>
       </EdField>
-      <EdField label="Idiomas de candidatura" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(draft.idiomas_aplicacao)} onChange={e => setDraft(d => ({ ...d, idiomas_aplicacao: strToTags(e.target.value) }))} placeholder="en, da, pt" /></EdField>
-      <EdField label="Foco de competências" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(draft.foco_competencias)} onChange={e => setDraft(d => ({ ...d, foco_competencias: strToTags(e.target.value) }))} /></EdField>
+      <EdField label={t.profile.editor.applicationLanguages} hint={t.profile.editor.applicationLanguagesHint}><input style={edInput} value={tagsToStr(draft.idiomas_aplicacao)} onChange={e => setDraft(d => ({ ...d, idiomas_aplicacao: strToTags(e.target.value) }))} placeholder="en, da, pt" /></EdField>
+      <EdField label={t.profile.editor.skillFocus} hint={t.profile.editor.skillFocusHint}><input style={edInput} value={tagsToStr(draft.foco_competencias)} onChange={e => setDraft(d => ({ ...d, foco_competencias: strToTags(e.target.value) }))} /></EdField>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
   );
-};
-
-const SECTION_LABELS: Record<string, string> = {
-  dados_pessoais: "Dados pessoais",
-  experiencia: "Experiência profissional",
-  projetos: "Projetos",
-  formacao: "Formação",
-  competencias: "Competências",
-  idiomas: "Idiomas",
-  nova_variante: "Nova variante de busca",
 };
 
 const SectionEditModal: React.FC<{
@@ -2418,9 +2558,11 @@ const SectionEditModal: React.FC<{
   onSaved: (updatedData?: CandidateBase) => void;
   onClose: () => void;
 }> = ({ target, profileData, variants, onSaved, onClose }) => {
+  const t = useT();
+  const sectionLabels = t.profile.sectionLabels as Record<string, string>;
   const title = target.kind === "variante"
-    ? (variants.find(v => v.id === target.id)?.nome_exibicao ?? "Variante")
-    : SECTION_LABELS[target.kind] ?? target.kind;
+    ? (variants.find(v => v.id === target.id)?.nome_exibicao ?? t.profile.variantActive)
+    : sectionLabels[target.kind] ?? target.kind;
 
   return (
     <div
@@ -2453,7 +2595,7 @@ const SectionEditModal: React.FC<{
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export const Perfil: React.FC = () => {
+export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled?: () => void }> = ({ initialSection, onSectionHandled }) => {
   const [mode, setMode] = useState<Mode>("resumo");
   const [chatFocus, setChatFocus] = useState<ChatFocus | null>(null);
   const [profileData, setProfileData] = useState<CandidateBase | null>(null);
@@ -2461,6 +2603,7 @@ export const Perfil: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const hasLoadedOnce = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -2470,6 +2613,7 @@ export const Perfil: React.FC = () => {
       ]);
       setProfileData(base);
       setVariants(vars ?? []);
+      hasLoadedOnce.current = true;
       setHasProfile(
         Boolean(base?.dados_pessoais?.nome_completo) ||
         Boolean(base?.dados_pessoais?.email) ||
@@ -2480,7 +2624,8 @@ export const Perfil: React.FC = () => {
       );
     } catch (e) {
       console.error("[Perfil] loadData error:", e);
-      setHasProfile(false);
+      // Se já tínhamos dados carregados, manter o estado — não apagar o perfil por erro de parse
+      if (!hasLoadedOnce.current) setHasProfile(false);
     } finally {
       setLoading(false);
     }
@@ -2488,9 +2633,39 @@ export const Perfil: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const unlisten = listen("perfil-atualizado", loadData);
-    return () => { unlisten.then(f => f()); };
+
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    listen("perfil-atualizado", loadData).then((fn) => {
+      if (active) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [loadData]);
+
+  useEffect(() => {
+    if (!initialSection) return;
+    const sectionTargets: Record<string, EditTarget> = {
+      dados_pessoais: { kind: "dados_pessoais" },
+      experiencia:    { kind: "experiencia" },
+      projetos:       { kind: "projetos" },
+      formacao:       { kind: "formacao" },
+      competencias:   { kind: "competencias" },
+      idiomas:        { kind: "idiomas" },
+    };
+    const target = sectionTargets[initialSection];
+    if (!target) return;
+    setEditTarget(target);
+    onSectionHandled?.();
+  }, [initialSection, onSectionHandled]);
 
   const openChat = (focus?: ChatFocus) => {
     setChatFocus(focus ?? null);

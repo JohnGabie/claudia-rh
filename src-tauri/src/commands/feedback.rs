@@ -213,23 +213,23 @@ fn agregar(conn: &Connection) -> Result<AgregadosFeedback, rusqlite::Error> {
 
 fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     let mut s = String::new();
-    s.push_str("## Dados agregados das candidaturas\n\n");
-    s.push_str(&format!("**Total de candidaturas enviadas:** {}\n", dados.candidaturas_total));
-    s.push_str(&format!("**Candidaturas nos últimos 7 dias:** {}\n", dados.candidaturas_semana));
+    s.push_str("## Aggregated application data\n\n");
+    s.push_str(&format!("**Total applications sent:** {}\n", dados.candidaturas_total));
+    s.push_str(&format!("**Applications in the last 7 days:** {}\n", dados.candidaturas_semana));
     if let Some(d) = dados.dias_desde_ultimo_feedback {
-        s.push_str(&format!("**Dias desde o último feedback:** {}\n", d));
+        s.push_str(&format!("**Days since last feedback:** {}\n", d));
     } else {
-        s.push_str("**Feedback anterior:** nenhum (primeira análise)\n");
+        s.push_str("**Previous feedback:** none (first analysis)\n");
     }
     s.push('\n');
 
     s.push_str(&format!(
-        "**Vagas analisadas:** {}  |  **Puladas:** {}  |  **Pendentes:** {}\n\n",
+        "**Jobs analyzed:** {}  |  **Skipped:** {}  |  **Pending:** {}\n\n",
         dados.vagas_analisadas, dados.vagas_puladas, dados.vagas_pendentes
     ));
 
     if !dados.por_resultado.is_empty() {
-        s.push_str("**Resultados conhecidos (marcados manualmente):**\n");
+        s.push_str("**Known results (manually marked):**\n");
         for p in &dados.por_resultado {
             s.push_str(&format!("- {}: {}\n", p.chave, p.count));
         }
@@ -237,15 +237,15 @@ fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     }
 
     if dados.por_variante.len() > 1 {
-        s.push_str("**Candidaturas por variante de busca:**\n");
+        s.push_str("**Applications by search variant:**\n");
         for p in &dados.por_variante {
-            s.push_str(&format!("- {}: {} candidaturas\n", p.chave, p.count));
+            s.push_str(&format!("- {}: {} applications\n", p.chave, p.count));
         }
         s.push('\n');
     }
 
     if !dados.candidaturas_por_dia.is_empty() {
-        s.push_str("**Tendência (últimos 30 dias):**\n");
+        s.push_str("**Trend (last 30 days):**\n");
         for d in &dados.candidaturas_por_dia {
             s.push_str(&format!("- {}: {}\n", d.data, d.count));
         }
@@ -253,22 +253,22 @@ fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     }
 
     if !dados.motivos_puladas.is_empty() {
-        s.push_str("**Motivos de exclusão das vagas puladas:**\n");
+        s.push_str("**Reasons for skipping jobs:**\n");
         for m in &dados.motivos_puladas {
-            s.push_str(&format!("- {}: {} vagas\n", m.categoria, m.total));
+            s.push_str(&format!("- {}: {} jobs\n", m.categoria, m.total));
         }
         s.push('\n');
     }
 
     if !dados.pendencias_por_categoria.is_empty() {
-        s.push_str("**Pendências por categoria:**\n");
+        s.push_str("**Pending items by category:**\n");
         for p in &dados.pendencias_por_categoria {
-            s.push_str(&format!("- {}: {} total ({} resolvidas)\n", p.categoria, p.total, p.resolvidas));
+            s.push_str(&format!("- {}: {} total ({} resolved)\n", p.categoria, p.total, p.resolvidas));
         }
         s.push('\n');
     }
 
-    s.push_str("\nGera o feedback estruturado com base nestes dados.");
+    s.push_str("\nGenerate structured feedback based on this data.");
     s
 }
 
@@ -292,13 +292,146 @@ fn extrair_resumo(texto: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static URL_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    fn mem() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::apply(&conn).unwrap();
+        conn
+    }
+
+    fn insert_vaga(conn: &Connection, status: &str, motivo: Option<&str>) -> i64 {
+        let n = URL_SEQ.fetch_add(1, Ordering::Relaxed);
+        conn.execute(
+            "INSERT INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status, motivo_status) \
+             VALUES ('Dev', 'ACME', 'LinkedIn', ?1, datetime('now'), ?2, ?3)",
+            rusqlite::params![format!("https://fb-test.com/{n}"), status, motivo],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_candidatura(conn: &Connection, vaga_id: i64) {
+        conn.execute(
+            "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
+             VALUES (?1, datetime('now'), '/tmp', 'chrome')",
+            [vaga_id],
+        ).unwrap();
+    }
+
+    // ── extrair_resumo ────────────────────────────────────────────────────────
+
+    #[test]
+    fn extrair_resumo_ignora_linhas_de_cabecalho_markdown() {
+        let texto = "# Título\n\nPrimeira linha.\n\nSegunda linha.\n\nTerceira.";
+        let resumo = extrair_resumo(texto);
+        assert!(!resumo.contains("# Título"), "headers must be stripped");
+        assert!(resumo.contains("Primeira linha"), "content must be kept");
+    }
+
+    #[test]
+    fn extrair_resumo_trunca_em_200_chars_com_reticencias() {
+        let longa = "a".repeat(300);
+        let resumo = extrair_resumo(&longa);
+        assert!(resumo.chars().count() <= 201, "max 200 chars + ellipsis");
+        assert!(resumo.ends_with('…'), "must end with ellipsis");
+    }
+
+    #[test]
+    fn extrair_resumo_texto_curto_retorna_inteiro() {
+        let resumo = extrair_resumo("Feedback breve aqui.");
+        assert_eq!(resumo, "Feedback breve aqui.");
+    }
+
+    // ── agregar ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn agregar_db_vazia_retorna_zeros() {
+        let conn = mem();
+        let d = agregar(&conn).unwrap();
+        assert_eq!(d.candidaturas_total, 0);
+        assert_eq!(d.candidaturas_semana, 0);
+        assert_eq!(d.vagas_analisadas, 0);
+        assert_eq!(d.vagas_puladas, 0);
+        assert_eq!(d.vagas_pendentes, 0);
+        assert!(d.por_variante.is_empty());
+        assert!(d.por_resultado.is_empty());
+        assert!(d.dias_desde_ultimo_feedback.is_none());
+    }
+
+    #[test]
+    fn agregar_conta_candidaturas_e_vagas_por_status() {
+        let conn = mem();
+        let v1 = insert_vaga(&conn, "aplicada", None);
+        insert_vaga(&conn, "pulada", Some("score_baixo: low match"));
+        insert_vaga(&conn, "pendente_revisao", None);
+        insert_candidatura(&conn, v1);
+        insert_candidatura(&conn, v1);
+
+        let d = agregar(&conn).unwrap();
+        assert_eq!(d.candidaturas_total, 2);
+        assert_eq!(d.vagas_analisadas, 3); // aplicada + pulada + pendente_revisao
+        assert_eq!(d.vagas_puladas, 1);
+        assert_eq!(d.vagas_pendentes, 1);
+    }
+
+    // ── formatar_prompt ───────────────────────────────────────────────────────
+
+    #[test]
+    fn formatar_prompt_inclui_totais_e_instrucao_final() {
+        let dados = AgregadosFeedback {
+            candidaturas_total: 15,
+            candidaturas_semana: 5,
+            candidaturas_por_dia: vec![],
+            por_variante: vec![],
+            por_resultado: vec![],
+            vagas_analisadas: 30,
+            vagas_puladas: 10,
+            vagas_pendentes: 2,
+            dias_desde_ultimo_feedback: Some(7),
+            ultimo_feedback_resumo: None,
+            motivos_puladas: vec![],
+            pendencias_por_categoria: vec![],
+        };
+        let prompt = formatar_prompt(&dados);
+        assert!(prompt.contains("15"), "total applications must appear");
+        assert!(prompt.contains("Days since last feedback"), "days since feedback must appear");
+        assert!(prompt.contains("Generate structured feedback"), "must end with instruction");
+    }
+
+    #[test]
+    fn formatar_prompt_sem_feedback_anterior_diz_first_analysis() {
+        let dados = AgregadosFeedback {
+            candidaturas_total: 3,
+            candidaturas_semana: 3,
+            candidaturas_por_dia: vec![],
+            por_variante: vec![],
+            por_resultado: vec![],
+            vagas_analisadas: 5,
+            vagas_puladas: 2,
+            vagas_pendentes: 0,
+            dias_desde_ultimo_feedback: None, // no previous feedback
+            ultimo_feedback_resumo: None,
+            motivos_puladas: vec![],
+            pendencias_por_categoria: vec![],
+        };
+        let prompt = formatar_prompt(&dados);
+        assert!(prompt.contains("first analysis"), "must note this is the first analysis");
+    }
+}
+
 fn spawn_feedback_claude(app: AppHandle, db: Arc<Mutex<Connection>>, gatilho: String) {
     std::thread::spawn(move || {
         let dados = {
             let conn = match db.lock() {
                 Ok(c) => c,
                 Err(_) => {
-                    let _ = app.emit("feedback-output-done", "Erro: não foi possível aceder à base de dados.");
+                    let _ = app.emit("feedback-output-done", "Error: could not access the database.");
                     return;
                 }
             };
@@ -316,7 +449,7 @@ fn spawn_feedback_claude(app: AppHandle, db: Arc<Mutex<Connection>>, gatilho: St
         let data_dir = app.path().app_data_dir().unwrap_or_default();
         let system_prompt = crate::commands::prompts::read_prompt(&data_dir, "feedback");
 
-        let mut child = match std::process::Command::new("claude")
+        let mut child = match std::process::Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",
@@ -477,12 +610,12 @@ pub fn sugerir_feedback(state: State<'_, DbState>) -> Result<SugestaoFeedback, S
             if novas >= 10 {
                 Ok(SugestaoFeedback {
                     sugerir: true,
-                    motivo: format!("{} novas candidaturas desde o último feedback.", novas),
+                    motivo: format!("{} new applications since last feedback.", novas),
                 })
             } else if dias >= 14 {
                 Ok(SugestaoFeedback {
                     sugerir: true,
-                    motivo: format!("{} dias desde o último feedback.", dias),
+                    motivo: format!("{} days since last feedback.", dias),
                 })
             } else {
                 Ok(SugestaoFeedback { sugerir: false, motivo: String::new() })

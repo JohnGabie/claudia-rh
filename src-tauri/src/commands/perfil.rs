@@ -1,4 +1,5 @@
 use once_cell::sync::OnceCell;
+use rusqlite;
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 use std::process::{Command, Stdio};
@@ -127,6 +128,21 @@ pub struct FonteUsada {
     #[serde(default)] pub consultado_em: String,
 }
 
+// Aceita tanto [{tipo,referencia,consultado_em}] como ["url1","url2"] — Claude por vezes
+// escreve strings simples em vez de objetos.
+fn deserialize_fontes<'de, D>(d: D) -> Result<Vec<FonteUsada>, D::Error>
+where D: serde::Deserializer<'de> {
+    let val: serde_yaml::Value = serde::Deserialize::deserialize(d)?;
+    let seq = match val {
+        serde_yaml::Value::Sequence(s) => s,
+        _ => return Ok(vec![]),
+    };
+    Ok(seq.into_iter().map(|v| match v {
+        serde_yaml::Value::String(s) => FonteUsada { referencia: s, ..Default::default() },
+        other => serde_yaml::from_value(other).unwrap_or_default(),
+    }).collect())
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct CandidatoBase {
     #[serde(default)] pub dados_pessoais: DadosPessoais,
@@ -139,7 +155,7 @@ pub struct CandidatoBase {
     #[serde(default)] pub gaps_conhecidos: Vec<GapConhecido>,
     #[serde(default)] pub respostas_modelo: RespostasModelo,
     #[serde(default)] pub ultima_atualizacao: String,
-    #[serde(default)] pub fontes_usadas: Vec<FonteUsada>,
+    #[serde(default, deserialize_with = "deserialize_fontes")] pub fontes_usadas: Vec<FonteUsada>,
 }
 
 // ── search_variants.yaml structs ──────────────────────────────────────────────
@@ -214,10 +230,11 @@ fn estrategia_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// Shared parsing logic for candidate_base.yaml — no eprintln debug output.
 pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, String> {
     let path = candidato_base_path(app)?;
-    if !path.exists() {
-        return Ok(CandidatoBase::default());
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(CandidatoBase::default()),
+        Err(e) => return Err(e.to_string()),
+    };
 
     // Normalize `key: null` to `key: ""` so legacy Claude-generated YAMLs don't fail
     let content: String = raw
@@ -254,12 +271,6 @@ pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, St
 
 #[tauri::command]
 pub fn ler_candidato_base(app: AppHandle) -> Result<CandidatoBase, String> {
-    let path = candidato_base_path(&app)?;
-    eprintln!("[ler_candidato_base] path: {:?}", path);
-    if !path.exists() {
-        eprintln!("[ler_candidato_base] file not found, returning default");
-        return Ok(CandidatoBase::default());
-    }
     eprintln!("[ler_candidato_base] parsing via parse_candidato_base_interno");
     match parse_candidato_base_interno(&app) {
         Ok(c) => {
@@ -287,10 +298,11 @@ pub fn guardar_candidato_base(app: AppHandle, dados: CandidatoBase) -> Result<()
 #[tauri::command]
 pub fn ler_search_variants(app: AppHandle) -> Result<Vec<SearchVariant>, String> {
     let path = search_variants_path(&app)?;
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e.to_string()),
+    };
     let sv: SearchVariants = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     Ok(sv.variantes)
 }
@@ -308,10 +320,11 @@ pub fn guardar_search_variants(app: AppHandle, variantes: SearchVariants) -> Res
 #[tauri::command]
 pub fn ler_estrategia(app: AppHandle) -> Result<String, String> {
     let path = estrategia_path(&app)?;
-    if !path.exists() {
-        return Ok(String::new());
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
     }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -332,28 +345,93 @@ fn perfil_conv() -> &'static Mutex<Vec<(String, String)>> {
     PERFIL_CONV.get_or_init(|| Mutex::new(vec![]))
 }
 
+fn read_open_pendencias(db_path: &std::path::Path) -> String {
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(_) => return "(could not read pending items)".to_string(),
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT p.id, p.categoria, p.descricao, v.titulo, v.empresa \
+         FROM pendencias p LEFT JOIN vagas v ON p.vaga_id = v.id \
+         WHERE p.resolvida = 0 ORDER BY p.criada_em DESC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return "(no open pending items)".to_string(),
+    };
+    let rows: Vec<String> = stmt
+        .query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let cat: String = row.get(1)?;
+            let desc: String = row.get(2)?;
+            let titulo: Option<String> = row.get(3)?;
+            let empresa: Option<String> = row.get(4)?;
+            Ok(format!(
+                "- ID {id}: [{cat}] {desc} (vaga: {} @ {})",
+                titulo.as_deref().unwrap_or("?"),
+                empresa.as_deref().unwrap_or("?"),
+            ))
+        })
+        .map(|r| r.filter_map(|x| x.ok()).collect())
+        .unwrap_or_default();
+
+    if rows.is_empty() {
+        "(no open pending items)".to_string()
+    } else {
+        rows.join("\n")
+    }
+}
+
 fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
     let base_yaml = std::fs::read_to_string(data_dir.join("candidate_base.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
+    let db_path = data_dir.join("claudia_rh.db");
+    let db_path_str = db_path.to_string_lossy().to_string();
+    let pendencias_str = read_open_pendencias(&db_path);
 
     let mut history = String::new();
     if !conv.is_empty() {
-        history.push_str("\n\n## Conversa anterior (contexto)\n");
+        history.push_str("\n\n## Previous conversation (context)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Utilizador" } else { "Claudia" };
+            let label = if role == "user" { "User" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
 
-    crate::commands::prompts::read_prompt(&data_dir, "perfil")
+    let mut prompt = crate::commands::prompts::read_prompt(&data_dir, "perfil")
         .replace("{{DATA_DIR}}", &data_dir_str)
         .replace("{{CANDIDATE_BASE_YAML}}", &base_yaml)
         .replace("{{SEARCH_VARIANTS_YAML}}", &variants_yaml)
-        .replace("{{CONVERSA_ANTERIOR}}", &history)
+        .replace("{{CONVERSA_ANTERIOR}}", &history);
+
+    // Always append pendências block so the model can resolve them when asked,
+    // regardless of the on-disk prompt version.
+    // NOTE: sqlite3 CLI is NOT installed by default on Windows — use Python instead,
+    // which has sqlite3 built-in.
+    prompt.push_str(&format!(
+        "\n\n## Open system pending items\n\n\
+         {pendencias_str}\n\n\
+         If the user asks to mark one or more pending items as resolved \
+         (e.g., \"mark as ok\", \"we already resolved the salary\", \"close all\"), \
+         use Python (has sqlite3 built-in — the sqlite3 CLI is NOT installed on Windows):\n\
+         ```python\n\
+         import sqlite3\n\
+         c = sqlite3.connect(r\"{db_path_str}\")\n\
+         # close a specific pending item (replace ID and REASON):\n\
+         c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"REASON\", ID])\n\
+         # OR close ALL at once:\n\
+         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marked by user' WHERE resolvida=0\")\n\
+         c.commit(); c.close()\n\
+         ```\n\
+         Save the script to a temporary .py file and run it with `python` (or `python3`). \
+         After running, confirm to the user which items were closed. \
+         The interface updates automatically.",
+    ));
+
+    prompt
 }
 
 fn spawn_perfil_claude(app: AppHandle, message: String) {
@@ -361,7 +439,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_system_prompt(&app, &conv);
 
-        let mut child = match Command::new("claude")
+        let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",
@@ -411,6 +489,10 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         }
 
         let _ = child.wait();
+
+        // Notify frontend that the agent may have resolved pendências or updated the DB.
+        let _ = app.emit("db-atualizada", ());
+        let _ = app.emit("pendencia-resolvida", ());
 
         if full_response.contains("PERFIL_ATUALIZADO") {
             let _ = app.emit("perfil-atualizado", ());
@@ -463,28 +545,28 @@ pub fn enviar_mensagem_perfil(app: AppHandle, mensagem: String) -> Result<(), St
 fn build_chrome_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
     let base_yaml = std::fs::read_to_string(data_dir.join("candidate_base.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
 
     let mut history = String::new();
     if !conv.is_empty() {
-        history.push_str("\n\n## Conversa anterior (contexto)\n");
+        history.push_str("\n\n## Previous conversation (context)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Utilizador" } else { "Claudia" };
+            let label = if role == "user" { "User" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
 
     format!(
-        r#"És a Claudia, assistente de construção de perfil profissional. Tens acesso ao browser Chrome com a sessão autenticada do utilizador.
+        r#"You are Claudia, a professional profile-building assistant. You have access to the Chrome browser with the user's authenticated session.
 
-Ficheiros alvo:
-- `{dir}/candidate_base.yaml` — dados pessoais, experiência, projetos, formação, competências, idiomas, gaps, respostas modelo
-- `{dir}/search_variants.yaml` — variantes de busca/CV
+Target files:
+- `{dir}/candidate_base.yaml` — personal data, experience, projects, education, skills, languages, gaps, model answers
+- `{dir}/search_variants.yaml` — search/CV variants
 
-## Estado atual do perfil
+## Current profile state
 
 ### candidate_base.yaml
 ```yaml
@@ -496,19 +578,19 @@ Ficheiros alvo:
 {variants}
 ```
 
-## Processo
-O utilizador já indicou quais as plataformas a importar (ver primeira mensagem). Não perguntes URLs — navega directamente:
+## Process
+The user has already indicated which platforms to import (see first message). Do not ask for URLs — navigate directly:
 
-1. **LinkedIn** (se pedido): abre `https://www.linkedin.com/in/` e a sessão autenticada redireciona para o perfil do utilizador; ou clica no avatar → "Ver o meu perfil". Extrai: nome, localização, headline, experiência, formação, competências, idiomas, links.
-2. **GitHub** (se pedido): abre `https://github.com` e clica no avatar → "Your profile". Extrai: nome, bio, localização, repositórios públicos e privados visíveis (nome, descrição, linguagens principais).
-3. Combina tudo no YAML e mostra ao utilizador para confirmação.
-4. Após confirmação explícita, grava o ficheiro e escreve na linha seguinte exatamente: `PERFIL_ATUALIZADO`
-5. Imediatamente após escrever `PERFIL_ATUALIZADO`, fecha os tabs do LinkedIn e/ou GitHub que abriste. Não abras tabs novos depois disso.
+1. **LinkedIn** (if requested): open `https://www.linkedin.com/in/` and the authenticated session redirects to the user's profile; or click the avatar → "View my profile". Extract: name, location, headline, experience, education, skills, languages, links.
+2. **GitHub** (if requested): open `https://github.com` and click the avatar → "Your profile". Extract: name, bio, location, visible public and private repositories (name, description, primary languages).
+3. Combine everything in YAML and show the user for confirmation.
+4. After explicit confirmation, save the file and write on the next line exactly: `PERFIL_ATUALIZADO`
+5. Immediately after writing `PERFIL_ATUALIZADO`, close the LinkedIn and/or GitHub tabs you opened. Do not open new tabs after that.
 
-## Regras
-- Não perguntes URLs — vai directamente às plataformas com a sessão autenticada
-- Nunca inventas informação — só incluis o que está explicitamente visível
-- Comunicas em português europeu, de forma concisa e direta{history}"#,
+## Rules
+- Do not ask for URLs — go directly to the platforms with the authenticated session
+- Never invent information — only include what is explicitly visible
+- Communicate in Brazilian Portuguese (pt-BR), concisely and directly{history}"#,
         dir = data_dir_str,
         base = base_yaml,
         variants = variants_yaml,
@@ -521,7 +603,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_chrome_system_prompt(&app, &conv);
 
-        let mut child = match Command::new("claude")
+        let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
                 "--print",
@@ -539,7 +621,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         {
             Ok(c) => c,
             Err(e) => {
-                let _ = app.emit("perfil-output", format!("Erro ao iniciar sessão Chrome: {e}"));
+                let _ = app.emit("perfil-output", format!("Error starting Chrome session: {e}"));
                 let _ = app.emit("perfil-output-done", ());
                 return;
             }
@@ -572,6 +654,10 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         }
 
         let _ = child.wait();
+
+        // Notify frontend that the agent may have resolved pendências or updated the DB.
+        let _ = app.emit("db-atualizada", ());
+        let _ = app.emit("pendencia-resolvida", ());
 
         if full_response.contains("PERFIL_ATUALIZADO") {
             let _ = app.emit("perfil-atualizado", ());
@@ -608,8 +694,11 @@ pub fn escrever_para_perfil_chrome(app: AppHandle, input: String) -> Result<(), 
 #[tauri::command]
 pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<String, f64>) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    if !path.exists() { return Ok(()); }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
     let mut sv: SearchVariants = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     for v in sv.variantes.iter_mut() {
         if let Some(&peso) = pesos.get(&v.id) {
@@ -623,11 +712,10 @@ pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<
 #[tauri::command]
 pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    let mut sv = if path.exists() {
-        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?
-    } else {
-        SearchVariants::default()
+    let mut sv = match std::fs::read_to_string(&path) {
+        Ok(content) => serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SearchVariants::default(),
+        Err(e) => return Err(e.to_string()),
     };
     if let Some(pos) = sv.variantes.iter().position(|v| v.id == variante.id) {
         sv.variantes[pos] = variante;
@@ -730,7 +818,7 @@ perguntas_pendentes: []
         let parsed: SearchVariants = serde_yaml::from_str(yaml).expect("parse failed");
         assert_eq!(parsed.variantes.len(), 2);
         assert_eq!(parsed.variantes[0].id, "backend");
-        assert_eq!(parsed.variantes[0].peso, 60);
+        assert_eq!(parsed.variantes[0].peso, 60.0);
         assert!(parsed.variantes[0].ativa);
         assert_eq!(parsed.variantes[1].nome_exibicao, "Full Stack");
         assert_eq!(parsed.preferencias_globais.faixa_salarial.minimo, Some(45000.0));
@@ -740,7 +828,7 @@ perguntas_pendentes: []
         // Serialize and re-parse
         let out = serde_yaml::to_string(&parsed).expect("serialize failed");
         let reparsed: SearchVariants = serde_yaml::from_str(&out).expect("re-parse failed");
-        assert_eq!(reparsed.variantes[0].peso, 60);
+        assert_eq!(reparsed.variantes[0].peso, 60.0);
     }
 
     #[test]

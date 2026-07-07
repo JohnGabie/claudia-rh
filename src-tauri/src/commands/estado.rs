@@ -1,4 +1,4 @@
-use crate::db::queries::{self, Candidatura, Pendencia, ResumoMemoria, Vaga, VagaAtual};
+use crate::db::queries::{self, Candidatura, Pendencia, Proposta, ResumoMemoria, Vaga, VagaAtual};
 use crate::DbState;
 use tauri::{AppHandle, Emitter, State};
 use std::process::Command;
@@ -81,9 +81,46 @@ pub fn contar_propostas(state: State<'_, DbState>) -> Result<i64, String> {
 }
 
 #[tauri::command]
+pub fn listar_propostas(state: State<'_, DbState>) -> Result<Vec<Proposta>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
+    queries::listar_propostas(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ignorar_proposta(state: State<'_, DbState>, app: AppHandle, id: i64) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE propostas_perfil SET promovida = 1, promovida_em = datetime('now') WHERE id = ?1",
+        [id],
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit("proposta-resolvida", id);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn vaga_atual_sessao(state: State<'_, DbState>) -> Result<Option<VagaAtual>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     queries::vaga_candidatando(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn vagas_analisadas_hoje(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::vagas_analisadas_hoje(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn vagas_analisadas_total(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::vagas_analisadas_total(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn tempo_sessoes_hoje(state: State<'_, DbState>) -> Result<f64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    queries::tempo_sessoes_hoje_minutos(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -114,7 +151,7 @@ pub fn pular_pendencia(
     .map_err(|e| e.to_string())?;
     if let Ok(vid) = vaga_id {
         let _ = conn.execute(
-            "UPDATE vagas SET status = 'pulada', motivo_status = 'Pulada pelo utilizador' WHERE id = ?1",
+            "UPDATE vagas SET status = 'pulada', motivo_status = 'Skipped by user' WHERE id = ?1",
             [vid],
         );
     }

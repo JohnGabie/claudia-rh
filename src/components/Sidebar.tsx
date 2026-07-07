@@ -8,6 +8,7 @@ import {
   MessageSquareText,
   Bell,
 } from "lucide-react";
+import { useT } from "../i18n";
 
 export type View = "dashboard" | "perfil" | "historico" | "feedback" | "pendencias" | "terminal" | "configuracoes";
 
@@ -29,16 +30,18 @@ const LogoOculos: React.FC = () => (
   </svg>
 );
 
-const items: { id: View; label: string; Icon: React.FC<{ size: number }> }[] = [
-  { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { id: "perfil", label: "Perfil", Icon: UserRound },
-  { id: "historico", label: "Histórico", Icon: History },
-  { id: "feedback", label: "Feedback", Icon: MessageSquareText },
-  { id: "pendencias", label: "Notificações", Icon: Bell },
-  { id: "terminal", label: "Terminal", Icon: SquareTerminal },
-];
-
 export const Sidebar: React.FC<SidebarProps> = ({ active, onChange, sugerirFeedback = false, pendenciasCount = 0 }) => {
+  const t = useT();
+
+  const items: { id: View; label: string; Icon: React.FC<{ size: number }> }[] = [
+    { id: "dashboard", label: t.nav.dashboard, Icon: LayoutDashboard },
+    { id: "perfil", label: t.nav.profile, Icon: UserRound },
+    { id: "historico", label: t.nav.history, Icon: History },
+    { id: "feedback", label: t.nav.feedback, Icon: MessageSquareText },
+    { id: "pendencias", label: t.nav.notifications, Icon: Bell },
+    { id: "terminal", label: t.nav.terminal, Icon: SquareTerminal },
+  ];
+
   return (
     <aside style={{
       width: 220,
@@ -86,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ active, onChange, sugerirFeedb
       <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
         <button
           onClick={() => onChange("configuracoes")}
-          title="Configurações"
+          title={t.nav.settings}
           style={{
             width: "100%",
             display: "flex",
@@ -113,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ active, onChange, sugerirFeedb
           }}
         >
           <Settings size={18} />
-          <span>Configurações</span>
+          <span>{t.nav.settings}</span>
         </button>
       </div>
     </aside>
