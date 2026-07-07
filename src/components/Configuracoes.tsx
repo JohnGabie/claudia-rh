@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
-import { useT } from "../i18n";
+import { useT, useLocale } from "../i18n";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
 
 export const Configuracoes: React.FC = () => {
   const t = useT();
+  const { locale, setLocale } = useLocale();
   const prompts = [
     { id: "runtime", label: t.settings.prompts.runtime.label, desc: t.settings.prompts.runtime.desc },
     { id: "perfil", label: t.settings.prompts.perfil.label, desc: t.settings.prompts.perfil.desc },
@@ -128,6 +129,37 @@ export const Configuracoes: React.FC = () => {
       <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", marginBottom: 24 }}>
         {t.settings.title}
       </h1>
+
+      {/* 0. Language */}
+      <Section>
+        <SectionTitle>{t.settings.language}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.languageDesc}
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          {(["en", "pt"] as const).map((l) => {
+            const label = l === "en" ? t.settings.languageEn : t.settings.languagePt;
+            const active = locale === l;
+            return (
+              <button
+                key={l}
+                onClick={() => setLocale(l)}
+                style={{
+                  padding: "7px 18px", borderRadius: 6,
+                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  color: active ? "var(--accent-strong)" : "var(--text-secondary)",
+                  fontSize: 13, fontWeight: active ? 600 : 400,
+                  fontFamily: "inherit", cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
 
       {/* 1. Iniciar com o sistema */}
       <Section>

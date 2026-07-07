@@ -94,6 +94,10 @@ export const pt: Strings = {
   },
   settings: {
     title: "Configurações",
+    language: "Idioma",
+    languageDesc: "Seleciona o idioma da interface.",
+    languageEn: "English",
+    languagePt: "Português (Brasil)",
     startWithSystem: "Iniciar com o sistema",
     startWithSystemDesc:
       "Quando ativo, a Claudia RH abre automaticamente ao iniciar o Windows.",

@@ -92,6 +92,10 @@ export const en = {
   },
   settings: {
     title: "Settings",
+    language: "Language",
+    languageDesc: "Select the interface language.",
+    languageEn: "English",
+    languagePt: "Português (Brasil)",
     startWithSystem: "Start with system",
     startWithSystemDesc: "When active, Claudia RH opens automatically when Windows starts.",
     startOnBoot: "Start Claudia RH when computer turns on",
