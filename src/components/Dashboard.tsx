@@ -1137,7 +1137,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                   onDragEnd={handleModoDragEnd}
                 />
                 <ModoCard
-                  label="Procurar vagas na rede"
+                  label="Procurar vagas na rede do LinkedIn"
                   ativo={incluirLinkedinRede}
                   pct={modosAtivos.length > 0 ? Math.round(((modoPesos["linkedin_rede"] ?? 0) / totalModoPeso) * 100) : 0}
                   maxPct={maxModoPct}
@@ -1156,7 +1156,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
                 whiteSpace: "nowrap",
               }}>
-                {disparando ? "A iniciar…" : disparado ? "✓ Sessão iniciada" : incluirLinkedinRede ? "Procurar vagas na rede" : "Procurar vagas agora"}
+                {disparando ? "Iniciando…" : disparado ? "✓ Sessão iniciada" : incluirLinkedinRede && !incluirBuscaNormal ? "Procurar vagas na rede do LinkedIn" : "Procurar vagas agora"}
               </button>
             </div>
           )}
