@@ -12,6 +12,7 @@ import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
 import { Pendencias } from "./components/Pendencias";
+import { Welcome } from "./components/Welcome";
 
 function App() {
   const t = useT();
@@ -24,6 +25,7 @@ function App() {
   const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string } | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   const refreshFeedbackSugestao = () =>
     invoke<{ sugerir: boolean }>("sugerir_feedback").then(s => setSugerirFeedback(s.sugerir)).catch(() => {});
@@ -35,6 +37,9 @@ function App() {
     invoke<number>("contar_propostas").then(setPropostasCount).catch(() => {});
 
   useEffect(() => {
+    invoke<boolean>("welcome_necessario")
+      .then(needed => { if (needed) setShowWelcome(true); })
+      .catch(() => {});
     invoke<{ version: string; body: string } | null>("verificar_atualizacao")
       .then(info => { if (info) setUpdateInfo(info); })
       .catch(() => {});
@@ -113,45 +118,51 @@ function App() {
         </div>
       )}
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
-        <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
+        {showWelcome ? (
+          <Welcome onComplete={(v) => { setShowWelcome(false); setView(v); }} />
+        ) : (
+          <>
+            <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
+            <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
-          {/* Dashboard */}
-          <div style={{ display: view === "dashboard" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-            <Dashboard onNavigate={(tab, section) => { setView(tab as View); if (section) setPerfilSection(section); }} />
-          </div>
+              {/* Dashboard */}
+              <div style={{ display: view === "dashboard" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
+                <Dashboard onNavigate={(tab, section) => { setView(tab as View); if (section) setPerfilSection(section); }} />
+              </div>
 
-          {/* Perfil */}
-          <div style={{ display: view === "perfil" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-            <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} />
-          </div>
+              {/* Perfil */}
+              <div style={{ display: view === "perfil" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} />
+              </div>
 
-          {/* Terminal — nunca desmontado */}
-          <div style={{ display: view === "terminal" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-            <TerminalView />
-          </div>
+              {/* Terminal — nunca desmontado */}
+              <div style={{ display: view === "terminal" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <TerminalView />
+              </div>
 
-          {/* Histórico */}
-          <div style={{ display: view === "historico" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-            <Vagas />
-          </div>
+              {/* Histórico */}
+              <div style={{ display: view === "historico" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Vagas />
+              </div>
 
-          {/* Feedback */}
-          <div style={{ display: view === "feedback" ? "block" : "none", height: "100%", overflow: "auto" }}>
-            <Feedback />
-          </div>
+              {/* Feedback */}
+              <div style={{ display: view === "feedback" ? "block" : "none", height: "100%", overflow: "auto" }}>
+                <Feedback />
+              </div>
 
-          {/* Pendências */}
-          <div style={{ display: view === "pendencias" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-            <Pendencias onNavigateToPerfil={() => setView("perfil")} />
-          </div>
+              {/* Pendências */}
+              <div style={{ display: view === "pendencias" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
+                <Pendencias onNavigateToPerfil={() => setView("perfil")} />
+              </div>
 
-          {/* Configurações */}
-          <div style={{ display: view === "configuracoes" ? "block" : "none", height: "100%", overflow: "auto" }}>
-            <Configuracoes />
-          </div>
+              {/* Configurações */}
+              <div style={{ display: view === "configuracoes" ? "block" : "none", height: "100%", overflow: "auto" }}>
+                <Configuracoes onShowWelcome={() => setShowWelcome(true)} />
+              </div>
 
-        </main>
+            </main>
+          </>
+        )}
       </div>
     </div>
   );

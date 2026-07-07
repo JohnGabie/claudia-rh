@@ -7,6 +7,7 @@ mod prompt;
 mod pty_manager;
 
 use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
+use commands::welcome::{verificar_setup, welcome_necessario, marcar_welcome_concluido};
 use commands::linkedin::{iniciar_busca_linkedin_rede, listar_vagas_linkedin_rede, obter_status_linkedin_rede};
 use commands::updater::{instalar_atualizacao, verificar_atualizacao};
 use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
@@ -273,6 +274,9 @@ pub fn run() {
             obter_status_linkedin_rede,
             verificar_atualizacao,
             instalar_atualizacao,
+            verificar_setup,
+            welcome_necessario,
+            marcar_welcome_concluido,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

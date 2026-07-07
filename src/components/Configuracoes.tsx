@@ -38,7 +38,7 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export const Configuracoes: React.FC = () => {
+export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShowWelcome }) => {
   const t = useT();
   const { locale, setLocale } = useLocale();
   const prompts = [
@@ -365,6 +365,27 @@ export const Configuracoes: React.FC = () => {
           </div>
         </div>
       </Section>
+
+      {onShowWelcome && (
+        <Section>
+          <SectionTitle>Getting started</SectionTitle>
+          <button
+            onClick={onShowWelcome}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 16px", borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "transparent",
+              color: "var(--text-secondary)",
+              fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+            }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-secondary)")}
+          >
+            Show welcome screen
+          </button>
+        </Section>
+      )}
     </div>
   );
 };
