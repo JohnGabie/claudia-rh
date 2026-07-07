@@ -1,5 +1,6 @@
 import React from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useT, useLocale } from "../i18n";
 
 const LogoOculos: React.FC = () => (
   <svg width={22} height={12} viewBox="0 0 660 360" fill="none" strokeLinecap="round" stroke="#fff" strokeWidth={28}>
@@ -12,6 +13,9 @@ const LogoOculos: React.FC = () => (
 );
 
 export const TitleBar: React.FC = () => {
+  const t = useT();
+  const { locale, setLocale } = useLocale();
+
   return (
     <div
       data-tauri-drag-region
@@ -37,8 +41,29 @@ export const TitleBar: React.FC = () => {
         style={{ display: "flex", gap: 4, alignItems: "center" }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Language toggle */}
+        <button
+          onClick={() => setLocale(locale === "en" ? "pt" : "en")}
+          style={{
+            padding: "2px 8px",
+            background: "rgba(255,255,255,0.15)",
+            border: "1px solid rgba(255,255,255,0.3)",
+            borderRadius: 4,
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            WebkitAppRegion: "no-drag",
+            marginRight: 8,
+            letterSpacing: "0.04em",
+          } as React.CSSProperties}
+        >
+          {locale === "en" ? "PT" : "EN"}
+        </button>
+
         <WinBtn
-          title="Minimizar"
+          title={t.titleBar.minimize}
           onClick={() => invoke("minimize_window")}
           icon={
             <svg width={10} height={2} viewBox="0 0 10 2">
@@ -47,7 +72,7 @@ export const TitleBar: React.FC = () => {
           }
         />
         <WinBtn
-          title="Fechar"
+          title={t.titleBar.close}
           onClick={() => invoke("close_window")}
           hoverColor="rgba(196,43,28,0.85)"
           icon={

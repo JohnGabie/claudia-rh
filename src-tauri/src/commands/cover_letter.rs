@@ -333,7 +333,7 @@ fn spawn_cover_letter_claude(
 
         let body_text = body_text.trim().to_string();
         if body_text.is_empty() {
-            let _ = app.emit("cover-letter-error", "Claude não devolveu conteúdo.".to_string());
+            let _ = app.emit("cover-letter-error", "Claude returned no content.".to_string());
             return;
         }
 
@@ -343,13 +343,13 @@ fn spawn_cover_letter_claude(
         let dir = match app.path().app_data_dir() {
             Ok(d) => d,
             Err(e) => {
-                let _ = app.emit("cover-letter-error", format!("Erro ao obter diretório: {e}"));
+                let _ = app.emit("cover-letter-error", format!("Error getting data directory: {e}"));
                 return;
             }
         };
         let cl_dir = dir.join("cover_letters");
         if let Err(e) = std::fs::create_dir_all(&cl_dir) {
-            let _ = app.emit("cover-letter-error", format!("Erro ao criar diretório: {e}"));
+            let _ = app.emit("cover-letter-error", format!("Error creating directory: {e}"));
             return;
         }
 

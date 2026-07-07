@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./styles/tokens.css";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar, type View } from "./components/Sidebar";
+import { useT } from "./i18n";
 import { Dashboard } from "./components/Dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/Perfil";
@@ -13,6 +14,7 @@ import { Configuracoes } from "./components/Configuracoes";
 import { Pendencias } from "./components/Pendencias";
 
 function App() {
+  const t = useT();
   const [view, setView] = useState<View>("dashboard");
   const [sugerirFeedback, setSugerirFeedback] = useState(false);
   const [pendenciasCount, setPendenciasCount] = useState(0);
@@ -79,7 +81,7 @@ function App() {
           fontSize: 13, color: "var(--text-primary)", flexShrink: 0,
         }}>
           <span style={{ flex: 1 }}>
-            Nova versão disponível: <strong>v{updateInfo.version}</strong>
+            {t.app.updateAvailable}<strong>v{updateInfo.version}</strong>
           </span>
           <button
             onClick={() => {
@@ -96,7 +98,7 @@ function App() {
               cursor: installing ? "default" : "pointer", opacity: installing ? 0.7 : 1,
             }}
           >
-            {installing ? "A instalar…" : "Instalar agora"}
+            {installing ? t.app.installing : t.app.installNow}
           </button>
           <button
             onClick={() => setUpdateDismissed(true)}
@@ -106,7 +108,7 @@ function App() {
               color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
             }}
           >
-            Mais tarde
+            {t.app.later}
           </button>
         </div>
       )}
