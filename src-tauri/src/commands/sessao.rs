@@ -57,9 +57,9 @@ pub fn iniciar_sessao(
     args.push("--system-prompt".to_string());
     args.push(sys_prompt);
 
-    let modo_txt = if skip_permissions { "autónomo" } else { "supervisionado" };
+    let modo_txt = if skip_permissions { "autonomous" } else { "supervised" };
     let notice = format!(
-        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m A iniciar sessão Claude (motivo: {} · modo: {})…\r\n",
+        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m Starting Claude session (reason: {} · mode: {})…\r\n",
         motivo, modo_txt
     );
     app.emit("pty-output", notice).ok();

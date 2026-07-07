@@ -88,7 +88,7 @@ pub fn iniciar_busca_linkedin_rede(
         session_id,
         db,
         workspace_str,
-        "Inicia a varredura da rede LinkedIn em busca de vagas partilhadas pelas conexões.".to_string(),
+        "Starting LinkedIn network scan for jobs shared by connections.".to_string(),
     )
 }
 

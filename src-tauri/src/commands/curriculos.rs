@@ -723,9 +723,9 @@ pub fn gerar_curriculo(app: AppHandle, template_id: String, cor_primaria: Option
     let path = cv_dir.join(&file_name);
     std::fs::write(&path, &html).map_err(|e| e.to_string())?;
     let template_nome = match template_id.as_str() {
-        "classic-ats" => "Clássico ATS",
-        "hybrid-skills" => "Híbrido Competências",
-        _ => "Dev Compacto",
+        "classic-ats" => "Classic ATS",
+        "hybrid-skills" => "Hybrid Skills",
+        _ => "Dev Compact",
     }.to_string();
     Ok(CurriculoInfo {
         path: path.to_string_lossy().to_string(),
@@ -760,10 +760,10 @@ pub fn listar_curriculos(app: AppHandle) -> Result<Vec<CurriculoInfo>, String> {
                 (stem.to_string(), String::new())
             };
             let template_nome = match template_id.as_str() {
-                "classic-ats" => "Clássico ATS",
-                "hybrid-skills" => "Híbrido Competências",
-                "dev-compact" => "Dev Compacto",
-                _ => "Desconhecido",
+                "classic-ats" => "Classic ATS",
+                "hybrid-skills" => "Hybrid Skills",
+                "dev-compact" => "Dev Compact",
+                _ => "Unknown",
             }.to_string();
             CurriculoInfo {
                 path: path.to_string_lossy().to_string(),

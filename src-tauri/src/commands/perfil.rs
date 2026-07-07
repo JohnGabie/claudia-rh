@@ -348,7 +348,7 @@ fn perfil_conv() -> &'static Mutex<Vec<(String, String)>> {
 fn read_open_pendencias(db_path: &std::path::Path) -> String {
     let conn = match rusqlite::Connection::open(db_path) {
         Ok(c) => c,
-        Err(_) => return "(não foi possível ler pendências)".to_string(),
+        Err(_) => return "(could not read pending items)".to_string(),
     };
     let mut stmt = match conn.prepare(
         "SELECT p.id, p.categoria, p.descricao, v.titulo, v.empresa \
@@ -356,7 +356,7 @@ fn read_open_pendencias(db_path: &std::path::Path) -> String {
          WHERE p.resolvida = 0 ORDER BY p.criada_em DESC",
     ) {
         Ok(s) => s,
-        Err(_) => return "(sem pendências abertas)".to_string(),
+        Err(_) => return "(no open pending items)".to_string(),
     };
     let rows: Vec<String> = stmt
         .query_map([], |row| {
@@ -375,7 +375,7 @@ fn read_open_pendencias(db_path: &std::path::Path) -> String {
         .unwrap_or_default();
 
     if rows.is_empty() {
-        "(sem pendências abertas)".to_string()
+        "(no open pending items)".to_string()
     } else {
         rows.join("\n")
     }
@@ -384,9 +384,9 @@ fn read_open_pendencias(db_path: &std::path::Path) -> String {
 fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
     let base_yaml = std::fs::read_to_string(data_dir.join("candidate_base.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
     let db_path = data_dir.join("claudia_rh.db");
     let db_path_str = db_path.to_string_lossy().to_string();
@@ -394,9 +394,9 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
 
     let mut history = String::new();
     if !conv.is_empty() {
-        history.push_str("\n\n## Conversa anterior (contexto)\n");
+        history.push_str("\n\n## Previous conversation (context)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Usuário" } else { "Claudia" };
+            let label = if role == "user" { "User" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
@@ -412,23 +412,23 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     // NOTE: sqlite3 CLI is NOT installed by default on Windows — use Python instead,
     // which has sqlite3 built-in.
     prompt.push_str(&format!(
-        "\n\n## Pendências abertas do sistema\n\n\
+        "\n\n## Open system pending items\n\n\
          {pendencias_str}\n\n\
-         Se o usuário pedir para marcar uma ou mais pendências como resolvidas \
-         (ex: \"marca como ok\", \"já resolvemos o salário\", \"fecha tudo\"), \
-         usa Python (tem sqlite3 embutido — o CLI sqlite3 NÃO está instalado no Windows):\n\
+         If the user asks to mark one or more pending items as resolved \
+         (e.g., \"mark as ok\", \"we already resolved the salary\", \"close all\"), \
+         use Python (has sqlite3 built-in — the sqlite3 CLI is NOT installed on Windows):\n\
          ```python\n\
          import sqlite3\n\
          c = sqlite3.connect(r\"{db_path_str}\")\n\
-         # fechar uma pendência específica (substitui ID e MOTIVO):\n\
-         c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"MOTIVO\", ID])\n\
-         # OU fechar TODAS de uma vez:\n\
-         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marcado pelo usuário' WHERE resolvida=0\")\n\
+         # close a specific pending item (replace ID and REASON):\n\
+         c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"REASON\", ID])\n\
+         # OR close ALL at once:\n\
+         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marked by user' WHERE resolvida=0\")\n\
          c.commit(); c.close()\n\
          ```\n\
-         Salve o script em um arquivo .py temporário e execute com `python` (ou `python3`). \
-         Após executar, confirme ao usuário quais foram fechadas. \
-         A interface se atualiza automaticamente.",
+         Save the script to a temporary .py file and run it with `python` (or `python3`). \
+         After running, confirm to the user which items were closed. \
+         The interface updates automatically.",
     ));
 
     prompt
@@ -545,28 +545,28 @@ pub fn enviar_mensagem_perfil(app: AppHandle, mensagem: String) -> Result<(), St
 fn build_chrome_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
     let base_yaml = std::fs::read_to_string(data_dir.join("candidate_base.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
-        .unwrap_or_else(|_| "(ainda vazio)".to_string());
+        .unwrap_or_else(|_| "(still empty)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
 
     let mut history = String::new();
     if !conv.is_empty() {
-        history.push_str("\n\n## Conversa anterior (contexto)\n");
+        history.push_str("\n\n## Previous conversation (context)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Usuário" } else { "Claudia" };
+            let label = if role == "user" { "User" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
 
     format!(
-        r#"Você é a Claudia, assistente de construção de perfil profissional. Você tem acesso ao browser Chrome com a sessão autenticada do usuário.
+        r#"You are Claudia, a professional profile-building assistant. You have access to the Chrome browser with the user's authenticated session.
 
-Arquivos alvo:
-- `{dir}/candidate_base.yaml` — dados pessoais, experiência, projetos, formação, competências, idiomas, gaps, respostas modelo
-- `{dir}/search_variants.yaml` — variantes de busca/CV
+Target files:
+- `{dir}/candidate_base.yaml` — personal data, experience, projects, education, skills, languages, gaps, model answers
+- `{dir}/search_variants.yaml` — search/CV variants
 
-## Estado atual do perfil
+## Current profile state
 
 ### candidate_base.yaml
 ```yaml
@@ -578,19 +578,19 @@ Arquivos alvo:
 {variants}
 ```
 
-## Processo
-O usuário já indicou quais plataformas importar (ver primeira mensagem). Não pergunte URLs — navegue diretamente:
+## Process
+The user has already indicated which platforms to import (see first message). Do not ask for URLs — navigate directly:
 
-1. **LinkedIn** (se pedido): abre `https://www.linkedin.com/in/` e a sessão autenticada redireciona para o perfil do usuário; ou clique no avatar → "Ver meu perfil". Extraia: nome, localização, headline, experiência, formação, competências, idiomas, links.
-2. **GitHub** (se pedido): abre `https://github.com` e clique no avatar → "Your profile". Extraia: nome, bio, localização, repositórios públicos e privados visíveis (nome, descrição, linguagens principais).
-3. Combine tudo no YAML e mostre ao usuário para confirmação.
-4. Após confirmação explícita, grave o arquivo e escreva na linha seguinte exatamente: `PERFIL_ATUALIZADO`
-5. Imediatamente após escrever `PERFIL_ATUALIZADO`, feche as abas do LinkedIn e/ou GitHub que abriu. Não abra abas novas depois disso.
+1. **LinkedIn** (if requested): open `https://www.linkedin.com/in/` and the authenticated session redirects to the user's profile; or click the avatar → "View my profile". Extract: name, location, headline, experience, education, skills, languages, links.
+2. **GitHub** (if requested): open `https://github.com` and click the avatar → "Your profile". Extract: name, bio, location, visible public and private repositories (name, description, primary languages).
+3. Combine everything in YAML and show the user for confirmation.
+4. After explicit confirmation, save the file and write on the next line exactly: `PERFIL_ATUALIZADO`
+5. Immediately after writing `PERFIL_ATUALIZADO`, close the LinkedIn and/or GitHub tabs you opened. Do not open new tabs after that.
 
-## Regras
-- Não pergunte URLs — vá diretamente às plataformas com a sessão autenticada
-- Nunca invente informação — só inclua o que está explicitamente visível
-- Comunique em português brasileiro, de forma concisa e direta{history}"#,
+## Rules
+- Do not ask for URLs — go directly to the platforms with the authenticated session
+- Never invent information — only include what is explicitly visible
+- Communicate in Brazilian Portuguese (pt-BR), concisely and directly{history}"#,
         dir = data_dir_str,
         base = base_yaml,
         variants = variants_yaml,
@@ -621,7 +621,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         {
             Ok(c) => c,
             Err(e) => {
-                let _ = app.emit("perfil-output", format!("Erro ao iniciar sessão Chrome: {e}"));
+                let _ = app.emit("perfil-output", format!("Error starting Chrome session: {e}"));
                 let _ = app.emit("perfil-output-done", ());
                 return;
             }

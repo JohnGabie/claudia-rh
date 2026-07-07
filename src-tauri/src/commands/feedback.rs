@@ -213,23 +213,23 @@ fn agregar(conn: &Connection) -> Result<AgregadosFeedback, rusqlite::Error> {
 
 fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     let mut s = String::new();
-    s.push_str("## Dados agregados das candidaturas\n\n");
-    s.push_str(&format!("**Total de candidaturas enviadas:** {}\n", dados.candidaturas_total));
-    s.push_str(&format!("**Candidaturas nos últimos 7 dias:** {}\n", dados.candidaturas_semana));
+    s.push_str("## Aggregated application data\n\n");
+    s.push_str(&format!("**Total applications sent:** {}\n", dados.candidaturas_total));
+    s.push_str(&format!("**Applications in the last 7 days:** {}\n", dados.candidaturas_semana));
     if let Some(d) = dados.dias_desde_ultimo_feedback {
-        s.push_str(&format!("**Dias desde o último feedback:** {}\n", d));
+        s.push_str(&format!("**Days since last feedback:** {}\n", d));
     } else {
-        s.push_str("**Feedback anterior:** nenhum (primeira análise)\n");
+        s.push_str("**Previous feedback:** none (first analysis)\n");
     }
     s.push('\n');
 
     s.push_str(&format!(
-        "**Vagas analisadas:** {}  |  **Puladas:** {}  |  **Pendentes:** {}\n\n",
+        "**Jobs analyzed:** {}  |  **Skipped:** {}  |  **Pending:** {}\n\n",
         dados.vagas_analisadas, dados.vagas_puladas, dados.vagas_pendentes
     ));
 
     if !dados.por_resultado.is_empty() {
-        s.push_str("**Resultados conhecidos (marcados manualmente):**\n");
+        s.push_str("**Known results (manually marked):**\n");
         for p in &dados.por_resultado {
             s.push_str(&format!("- {}: {}\n", p.chave, p.count));
         }
@@ -237,15 +237,15 @@ fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     }
 
     if dados.por_variante.len() > 1 {
-        s.push_str("**Candidaturas por variante de busca:**\n");
+        s.push_str("**Applications by search variant:**\n");
         for p in &dados.por_variante {
-            s.push_str(&format!("- {}: {} candidaturas\n", p.chave, p.count));
+            s.push_str(&format!("- {}: {} applications\n", p.chave, p.count));
         }
         s.push('\n');
     }
 
     if !dados.candidaturas_por_dia.is_empty() {
-        s.push_str("**Tendência (últimos 30 dias):**\n");
+        s.push_str("**Trend (last 30 days):**\n");
         for d in &dados.candidaturas_por_dia {
             s.push_str(&format!("- {}: {}\n", d.data, d.count));
         }
@@ -253,22 +253,22 @@ fn formatar_prompt(dados: &AgregadosFeedback) -> String {
     }
 
     if !dados.motivos_puladas.is_empty() {
-        s.push_str("**Motivos de exclusão das vagas puladas:**\n");
+        s.push_str("**Reasons for skipping jobs:**\n");
         for m in &dados.motivos_puladas {
-            s.push_str(&format!("- {}: {} vagas\n", m.categoria, m.total));
+            s.push_str(&format!("- {}: {} jobs\n", m.categoria, m.total));
         }
         s.push('\n');
     }
 
     if !dados.pendencias_por_categoria.is_empty() {
-        s.push_str("**Pendências por categoria:**\n");
+        s.push_str("**Pending items by category:**\n");
         for p in &dados.pendencias_por_categoria {
-            s.push_str(&format!("- {}: {} total ({} resolvidas)\n", p.categoria, p.total, p.resolvidas));
+            s.push_str(&format!("- {}: {} total ({} resolved)\n", p.categoria, p.total, p.resolvidas));
         }
         s.push('\n');
     }
 
-    s.push_str("\nGera o feedback estruturado com base nestes dados.");
+    s.push_str("\nGenerate structured feedback based on this data.");
     s
 }
 
@@ -298,7 +298,7 @@ fn spawn_feedback_claude(app: AppHandle, db: Arc<Mutex<Connection>>, gatilho: St
             let conn = match db.lock() {
                 Ok(c) => c,
                 Err(_) => {
-                    let _ = app.emit("feedback-output-done", "Erro: não foi possível aceder à base de dados.");
+                    let _ = app.emit("feedback-output-done", "Error: could not access the database.");
                     return;
                 }
             };
@@ -477,12 +477,12 @@ pub fn sugerir_feedback(state: State<'_, DbState>) -> Result<SugestaoFeedback, S
             if novas >= 10 {
                 Ok(SugestaoFeedback {
                     sugerir: true,
-                    motivo: format!("{} novas candidaturas desde o último feedback.", novas),
+                    motivo: format!("{} new applications since last feedback.", novas),
                 })
             } else if dias >= 14 {
                 Ok(SugestaoFeedback {
                     sugerir: true,
-                    motivo: format!("{} dias desde o último feedback.", dias),
+                    motivo: format!("{} days since last feedback.", dias),
                 })
             } else {
                 Ok(SugestaoFeedback { sugerir: false, motivo: String::new() })
