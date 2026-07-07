@@ -8,6 +8,7 @@ mod pty_manager;
 
 use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
 use commands::linkedin::{iniciar_busca_linkedin_rede, listar_vagas_linkedin_rede, obter_status_linkedin_rede};
+use commands::updater::{instalar_atualizacao, verificar_atualizacao};
 use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
 use commands::prompts::{abrir_ficheiro_prompt, abrir_pasta_dados};
 use commands::curriculos::{gerar_curriculo, listar_curriculos, abrir_curriculo, apagar_curriculo};
@@ -112,6 +113,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -269,6 +271,8 @@ pub fn run() {
             iniciar_busca_linkedin_rede,
             listar_vagas_linkedin_rede,
             obter_status_linkedin_rede,
+            verificar_atualizacao,
+            instalar_atualizacao,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

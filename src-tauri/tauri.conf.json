@@ -24,6 +24,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMwOENFNjcyNzdERkQ2NTEKUldSUjF0OTNjdWFNd0tqdUR5b3NFa3FxWU1QZVRad2xpRFVkdmFUL0V5VGFScWtXdW5WNDVUc04K",
+      "endpoints": [
+        "https://github.com/JohnGabie/claudia-rh/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

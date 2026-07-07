@@ -43,6 +43,10 @@ modo_autonomo.json
 workspace/
 .claude/
 
+# Signing keys — never commit
+*.key
+*.key.pub
+
 # Windows
 Thumbs.db
 desktop.ini

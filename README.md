@@ -11,6 +11,12 @@
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
     <img src="https://img.shields.io/github/stars/JohnGabie/claudia-rh?style=for-the-badge&color=D97757&labelColor=1a1a1a" alt="GitHub stars" />
   </a>
+  <a href="https://github.com/JohnGabie/claudia-rh/releases/latest">
+    <img src="https://img.shields.io/github/v/release/JohnGabie/claudia-rh?style=for-the-badge&color=D97757&labelColor=1a1a1a" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/JohnGabie/claudia-rh/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/JohnGabie/claudia-rh/ci.yml?branch=main&style=for-the-badge&label=CI&labelColor=1a1a1a" alt="CI" />
+  </a>
   <img src="https://img.shields.io/badge/Tauri-v2-24C8D8?style=for-the-badge&logo=tauri&logoColor=white&labelColor=1a1a1a" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=white&labelColor=1a1a1a" alt="React 19" />
   <img src="https://img.shields.io/badge/Rust-stable-CE422B?style=for-the-badge&logo=rust&logoColor=white&labelColor=1a1a1a" alt="Rust" />

@@ -19,6 +19,9 @@ function App() {
   const [propostasCount, setPropostasCount] = useState(0);
   const [perfilSection, setPerfilSection] = useState<string | null>(null);
   const handlePerfilSectionHandled = useCallback(() => setPerfilSection(null), []);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string } | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   const refreshFeedbackSugestao = () =>
     invoke<{ sugerir: boolean }>("sugerir_feedback").then(s => setSugerirFeedback(s.sugerir)).catch(() => {});
@@ -28,6 +31,12 @@ function App() {
 
   const refreshPropostasCount = () =>
     invoke<number>("contar_propostas").then(setPropostasCount).catch(() => {});
+
+  useEffect(() => {
+    invoke<{ version: string; body: string } | null>("verificar_atualizacao")
+      .then(info => { if (info) setUpdateInfo(info); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     refreshFeedbackSugestao();
@@ -61,6 +70,46 @@ function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <TitleBar />
+      {updateInfo && !updateDismissed && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "8px 16px",
+          background: "color-mix(in srgb, var(--warning) 12%, var(--bg-surface))",
+          borderBottom: "1px solid color-mix(in srgb, var(--warning) 30%, var(--border))",
+          fontSize: 13, color: "var(--text-primary)", flexShrink: 0,
+        }}>
+          <span style={{ flex: 1 }}>
+            Nova versão disponível: <strong>v{updateInfo.version}</strong>
+          </span>
+          <button
+            onClick={() => {
+              setInstalling(true);
+              invoke("instalar_atualizacao")
+                .then(() => setInstalling(false))
+                .catch(() => setInstalling(false));
+            }}
+            disabled={installing}
+            style={{
+              padding: "4px 14px", borderRadius: 5, border: "none",
+              background: "var(--warning)", color: "#fff",
+              fontSize: 12, fontWeight: 500, fontFamily: "inherit",
+              cursor: installing ? "default" : "pointer", opacity: installing ? 0.7 : 1,
+            }}
+          >
+            {installing ? "A instalar…" : "Instalar agora"}
+          </button>
+          <button
+            onClick={() => setUpdateDismissed(true)}
+            style={{
+              padding: "4px 10px", borderRadius: 5,
+              border: "1px solid var(--border)", background: "transparent",
+              color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
+            }}
+          >
+            Mais tarde
+          </button>
+        </div>
+      )}
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
         <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>

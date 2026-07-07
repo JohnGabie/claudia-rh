@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ExternalLink, FolderOpen } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
+import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -76,6 +77,11 @@ export const Configuracoes: React.FC = () => {
   const [modoAutonomo, setModoAutonomo] = useState(false);
   const [iniciarComSistema, setIniciarComSistema] = useState(false);
 
+  const [appVersion, setAppVersion] = useState("");
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "found" | "latest">("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [installing, setInstalling] = useState(false);
+
   useEffect(() => {
     invoke<string>("ler_estrategia")
       .then((e) => setEstrategia(e ?? ""))
@@ -84,7 +90,32 @@ export const Configuracoes: React.FC = () => {
 
     invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
     invoke<boolean>("obter_iniciar_com_sistema").then((v) => setIniciarComSistema(!!v)).catch(() => {});
+    getVersion().then(setAppVersion).catch(() => {});
   }, []);
+
+  const verificarAtualizacao = async () => {
+    setUpdateStatus("checking");
+    try {
+      const info = await invoke<{ version: string; body: string } | null>("verificar_atualizacao");
+      if (info) {
+        setUpdateVersion(info.version);
+        setUpdateStatus("found");
+      } else {
+        setUpdateStatus("latest");
+      }
+    } catch {
+      setUpdateStatus("idle");
+    }
+  };
+
+  const instalarAtualizacao = async () => {
+    setInstalling(true);
+    try {
+      await invoke("instalar_atualizacao");
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   const salvarModoAutonomo = (ativo: boolean) => {
     invoke("configurar_modo_autonomo", { ativo }).catch(console.error);
@@ -266,6 +297,62 @@ export const Configuracoes: React.FC = () => {
           <FolderOpen size={14} />
           Abrir pasta de dados
         </button>
+      </Section>
+
+      {/* 5. Atualizações */}
+      <Section>
+        <SectionTitle>Atualizações</SectionTitle>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", borderRadius: 8,
+          border: "1px solid var(--border)", background: "var(--bg-surface)",
+        }}>
+          <div>
+            <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
+              Versão atual{appVersion ? `: ${appVersion}` : ""}
+            </div>
+            {updateStatus === "latest" && (
+              <div style={{ fontSize: 12, color: "var(--success)", marginTop: 3 }}>
+                Estás na versão mais recente
+              </div>
+            )}
+            {updateStatus === "found" && (
+              <div style={{ fontSize: 12, color: "var(--warning)", marginTop: 3 }}>
+                Nova versão disponível: <strong>v{updateVersion}</strong>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {updateStatus === "found" && (
+              <button
+                onClick={instalarAtualizacao}
+                disabled={installing}
+                style={{
+                  padding: "6px 16px", borderRadius: 6, border: "none",
+                  background: "var(--warning)", color: "#fff",
+                  fontSize: 12, fontWeight: 500, fontFamily: "inherit",
+                  cursor: installing ? "default" : "pointer", opacity: installing ? 0.7 : 1,
+                }}
+              >
+                {installing ? "A instalar…" : "Instalar e reiniciar"}
+              </button>
+            )}
+            <button
+              onClick={verificarAtualizacao}
+              disabled={updateStatus === "checking"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 6,
+                border: "1px solid var(--border)", background: "var(--bg-base)",
+                color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit",
+                cursor: updateStatus === "checking" ? "default" : "pointer",
+              }}
+            >
+              <RefreshCw size={12} style={{ animation: updateStatus === "checking" ? "spin 1s linear infinite" : "none" }} />
+              {updateStatus === "checking" ? "A verificar…" : "Verificar atualizações"}
+            </button>
+          </div>
+        </div>
       </Section>
     </div>
   );
