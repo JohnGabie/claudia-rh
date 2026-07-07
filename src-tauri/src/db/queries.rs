@@ -306,6 +306,7 @@ pub fn tempo_sessoes_hoje_minutos(conn: &Connection) -> Result<f64> {
 }
 
 pub fn atividade_recente(conn: &Connection) -> Result<Vec<Vaga>> {
+
     let mut stmt = conn.prepare(
         "SELECT id,titulo,empresa,plataforma,url,localizacao,modelo_trabalho,idioma,descoberta_em,status,motivo_status,match_score FROM vagas ORDER BY descoberta_em DESC LIMIT 8"
     )?;
@@ -327,4 +328,167 @@ pub fn atividade_recente(conn: &Connection) -> Result<Vec<Vaga>> {
     })?
     .collect::<Result<Vec<_>>>()?;
     Ok(vagas)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mem() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        crate::db::apply(&conn).expect("apply schema");
+        conn
+    }
+
+    fn insert_vaga(conn: &Connection, titulo: &str, status: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status) \
+             VALUES (?1, 'ACME', 'LinkedIn', ?2, datetime('now'), ?3)",
+            rusqlite::params![titulo, format!("https://jobs.test/{titulo}"), status],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_candidatura(conn: &Connection, vaga_id: i64) {
+        conn.execute(
+            "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
+             VALUES (?1, datetime('now'), '/tmp', 'chrome')",
+            [vaga_id],
+        ).unwrap();
+    }
+
+    fn insert_pendencia(conn: &Connection, vaga_id: i64, resolvida: bool) {
+        conn.execute(
+            "INSERT INTO pendencias (vaga_id, criada_em, categoria, descricao, resolvida) \
+             VALUES (?1, datetime('now'), 'captcha', 'test', ?2)",
+            rusqlite::params![vaga_id, resolvida as i32],
+        ).unwrap();
+    }
+
+    #[test]
+    fn listar_vagas_empty() {
+        assert!(listar_vagas(&mem(), None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn listar_vagas_sem_filtro_retorna_todos() {
+        let conn = mem();
+        insert_vaga(&conn, "Dev A", "aplicada");
+        insert_vaga(&conn, "Dev B", "pulada");
+        assert_eq!(listar_vagas(&conn, None).unwrap().len(), 2);
+        assert_eq!(listar_vagas(&conn, Some("".into())).unwrap().len(), 2);
+        assert_eq!(listar_vagas(&conn, Some("todas".into())).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn listar_vagas_filtra_por_status() {
+        let conn = mem();
+        insert_vaga(&conn, "Dev A", "aplicada");
+        insert_vaga(&conn, "Dev B", "pulada");
+        insert_vaga(&conn, "Dev C", "aplicada");
+        let aplicadas = listar_vagas(&conn, Some("aplicada".into())).unwrap();
+        assert_eq!(aplicadas.len(), 2);
+        assert!(aplicadas.iter().all(|v| v.status == "aplicada"));
+    }
+
+    #[test]
+    fn listar_pendencias_filtro_nao_resolvidas() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "analisada");
+        insert_pendencia(&conn, vid, false);
+        insert_pendencia(&conn, vid, true);
+
+        let abertas = listar_pendencias(&conn, true).unwrap();
+        assert_eq!(abertas.len(), 1);
+        assert!(!abertas[0].resolvida);
+
+        let todas = listar_pendencias(&conn, false).unwrap();
+        assert_eq!(todas.len(), 2);
+    }
+
+    #[test]
+    fn listar_pendencias_left_join_mostra_vaga_desconhecida() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "analisada");
+        insert_pendencia(&conn, vid, false);
+
+        // Disable FK to insert a pendência with a non-existent vaga_id,
+        // replicating what the agent can do when it writes directly to the DB.
+        conn.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+        conn.execute(
+            "INSERT INTO pendencias (vaga_id, criada_em, categoria, descricao, resolvida) \
+             VALUES (9999, datetime('now'), 'captcha', 'orphan', 0)",
+            [],
+        ).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+
+        let pendencias = listar_pendencias(&conn, true).unwrap();
+        assert_eq!(pendencias.len(), 2);
+        let orphan = pendencias.iter().find(|p| p.vaga_id == 9999).expect("orphan should appear");
+        assert_eq!(orphan.titulo_vaga, "(vaga desconhecida)");
+        assert_eq!(orphan.empresa_vaga, "");
+    }
+
+    #[test]
+    fn pendencias_abertas_sao_contadas_corretamente() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "analisada");
+        insert_pendencia(&conn, vid, false);
+        insert_pendencia(&conn, vid, false);
+        insert_pendencia(&conn, vid, true);
+        assert_eq!(contar_pendencias_nao_resolvidas(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn candidaturas_hoje_ignora_antigas() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "aplicada");
+        insert_candidatura(&conn, vid);
+        conn.execute(
+            "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
+             VALUES (?1, datetime('now', '-2 days'), '/tmp', 'chrome')",
+            [vid],
+        ).unwrap();
+        assert_eq!(candidaturas_hoje(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn contar_propostas_ignora_promovidas() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "analisada");
+        conn.execute(
+            "INSERT INTO propostas_perfil (vaga_id, criada_em, pergunta, promovida) \
+             VALUES (?1, datetime('now'), 'questao 1', 0)",
+            [vid],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO propostas_perfil (vaga_id, criada_em, pergunta, promovida) \
+             VALUES (?1, datetime('now'), 'questao 2', 1)",
+            [vid],
+        ).unwrap();
+        assert_eq!(contar_propostas(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn vaga_candidatando_none_quando_vazia() {
+        assert!(vaga_candidatando(&mem()).unwrap().is_none());
+    }
+
+    #[test]
+    fn vaga_candidatando_retorna_vaga_ativa() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Rust Engineer", "candidatando");
+        let atual = vaga_candidatando(&conn).unwrap().expect("must find active job");
+        assert_eq!(atual.id, vid);
+        assert_eq!(atual.titulo, "Rust Engineer");
+    }
+
+    #[test]
+    fn resumo_memoria_recente_zero_na_db_vazia() {
+        let resumo = resumo_memoria_recente(&mem(), 7).unwrap();
+        assert_eq!(resumo.candidaturas_7_dias, 0);
+        assert_eq!(resumo.pendencias_nao_resolvidas, 0);
+        assert_eq!(resumo.sessoes_7_dias, 0);
+        assert!(resumo.vagas_puladas_recentes.is_empty());
+    }
 }

@@ -43,6 +43,22 @@ jobs:
       - name: build
         run: npm run build
 
+  cargo-test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: test
+        working-directory: src-tauri
+        run: cargo test --lib
+
   windows:
     name: windows (exe)
     runs-on: windows-latest
