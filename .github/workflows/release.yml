@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: "lts/*"
           cache: "npm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: install
         run: npm ci
@@ -49,3 +50,16 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
             src-tauri/target/release/bundle/*/latest.json
+            src-tauri/target/release/claudia-rh.exe
+
+      - name: sync npm package version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" npm-package/package.json
+
+      - name: publish to npm
+        run: npm publish
+        working-directory: npm-package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
