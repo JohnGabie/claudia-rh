@@ -235,6 +235,31 @@ Close Claude, reopen it — from then on Chrome connects automatically in every 
 
 ## Installation
 
+### Option 1 — npm (recommended)
+
+Installs the app and the Claude Code CLI in one command:
+
+```bash
+npm install -g claudia-rh
+```
+
+On first run, `claudia-rh` downloads the Windows executable automatically:
+
+```bash
+claudia-rh
+```
+
+### Option 2 — direct download
+
+Download the latest installer from the [Releases page](https://github.com/JohnGabie/claudia-rh/releases/latest):
+
+| File | Description |
+|------|-------------|
+| `claudia-rh_0.2.0_x64-setup.exe` | NSIS installer (recommended) |
+| `claudia-rh_0.2.0_x64_en-US.msi` | MSI installer |
+
+### Option 3 — build from source
+
 ```bash
 # 1. Clone
 git clone https://github.com/JohnGabie/claudia-rh.git
@@ -250,7 +275,7 @@ npm run tauri dev
 npm run tauri build
 ```
 
-The `.msi` installer will be at `src-tauri/target/release/bundle/msi/`.
+The installer will be at `src-tauri/target/release/bundle/`.
 
 ---
 
