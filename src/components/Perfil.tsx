@@ -542,9 +542,9 @@ const EMPTY_OPTIONS: OptionDef[] = [
   },
   {
     Icon: FileText,
-    title: "Importar ficheiro",
+    title: "Importar arquivo",
     desc: "Indica o caminho de um PDF ou DOCX e o Claude lê diretamente.",
-    preMessage: "Quero importar um ficheiro de currículo (PDF ou DOCX).",
+    preMessage: "Quero importar um arquivo de currículo (PDF ou DOCX).",
     focus: "importar_ficheiro",
   },
 ];
@@ -2051,7 +2051,7 @@ const ModalActions: React.FC<{ saving: boolean; onSave: () => void; onClose: () 
       Cancelar
     </button>
     <button onClick={onSave} disabled={saving} style={{ padding: "7px 18px", background: saving ? "var(--bg-sunken)" : "var(--accent)", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 500, color: saving ? "var(--text-tertiary)" : "#fff", cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
-      {saving ? "A guardar…" : "Guardar"}
+      {saving ? "Salvando…" : "Salvar"}
     </button>
   </div>
 );

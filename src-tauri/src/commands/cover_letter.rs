@@ -367,7 +367,7 @@ fn spawn_cover_letter_claude(
         let path = cl_dir.join(&file_name);
 
         if let Err(e) = std::fs::write(&path, &html) {
-            let _ = app.emit("cover-letter-error", format!("Erro ao guardar ficheiro: {e}"));
+            let _ = app.emit("cover-letter-error", format!("Erro ao salvar arquivo: {e}"));
             return;
         }
 

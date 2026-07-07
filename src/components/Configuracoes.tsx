@@ -219,7 +219,7 @@ export const Configuracoes: React.FC = () => {
               display: "flex", alignItems: "center", gap: 6, transition: "background 0.2s",
             }}
           >
-            {saved ? <><Check size={13} /> Guardado</> : saving ? "A guardar…" : "Guardar"}
+            {saved ? <><Check size={13} /> Salvo</> : saving ? "Salvando…" : "Salvar"}
           </button>
         </div>
       </Section>
@@ -228,7 +228,7 @@ export const Configuracoes: React.FC = () => {
       <Section>
         <SectionTitle>Prompts do sistema</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          Todos os prompts usados pelo Claude estão em ficheiros de texto na pasta de dados. Edita com qualquer editor — as alterações entram em vigor na próxima invocação, sem reiniciar a aplicação.
+          Todos os prompts usados pelo Claude estão em arquivos de texto na pasta de dados. Edite com qualquer editor — as alterações entram em vigor na próxima invocação, sem reiniciar a aplicação.
         </p>
 
         <div style={{

@@ -129,7 +129,7 @@ pub struct FonteUsada {
 }
 
 // Aceita tanto [{tipo,referencia,consultado_em}] como ["url1","url2"] — Claude por vezes
-// escreve strings simples em vez de objectos.
+// escreve strings simples em vez de objetos.
 fn deserialize_fontes<'de, D>(d: D) -> Result<Vec<FonteUsada>, D::Error>
 where D: serde::Deserializer<'de> {
     let val: serde_yaml::Value = serde::Deserialize::deserialize(d)?;
@@ -396,7 +396,7 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     if !conv.is_empty() {
         history.push_str("\n\n## Conversa anterior (contexto)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Utilizador" } else { "Claudia" };
+            let label = if role == "user" { "Usuário" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
@@ -414,7 +414,7 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     prompt.push_str(&format!(
         "\n\n## Pendências abertas do sistema\n\n\
          {pendencias_str}\n\n\
-         Se o utilizador pedir para marcar uma ou mais pendências como resolvidas \
+         Se o usuário pedir para marcar uma ou mais pendências como resolvidas \
          (ex: \"marca como ok\", \"já resolvemos o salário\", \"fecha tudo\"), \
          usa Python (tem sqlite3 embutido — o CLI sqlite3 NÃO está instalado no Windows):\n\
          ```python\n\
@@ -423,12 +423,12 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
          # fechar uma pendência específica (substitui ID e MOTIVO):\n\
          c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"MOTIVO\", ID])\n\
          # OU fechar TODAS de uma vez:\n\
-         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marcado pelo utilizador' WHERE resolvida=0\")\n\
+         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marcado pelo usuário' WHERE resolvida=0\")\n\
          c.commit(); c.close()\n\
          ```\n\
-         Guarda o script num ficheiro .py temporário e corre com `python` (ou `python3`). \
-         Após executar, confirma ao utilizador quais foram fechadas. \
-         A interface actualiza-se automaticamente.",
+         Salve o script em um arquivo .py temporário e execute com `python` (ou `python3`). \
+         Após executar, confirme ao usuário quais foram fechadas. \
+         A interface se atualiza automaticamente.",
     ));
 
     prompt
@@ -554,15 +554,15 @@ fn build_chrome_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> Str
     if !conv.is_empty() {
         history.push_str("\n\n## Conversa anterior (contexto)\n");
         for (role, content) in conv {
-            let label = if role == "user" { "Utilizador" } else { "Claudia" };
+            let label = if role == "user" { "Usuário" } else { "Claudia" };
             history.push_str(&format!("\n**{}**: {}\n", label, content));
         }
     }
 
     format!(
-        r#"És a Claudia, assistente de construção de perfil profissional. Tens acesso ao browser Chrome com a sessão autenticada do utilizador.
+        r#"Você é a Claudia, assistente de construção de perfil profissional. Você tem acesso ao browser Chrome com a sessão autenticada do usuário.
 
-Ficheiros alvo:
+Arquivos alvo:
 - `{dir}/candidate_base.yaml` — dados pessoais, experiência, projetos, formação, competências, idiomas, gaps, respostas modelo
 - `{dir}/search_variants.yaml` — variantes de busca/CV
 
@@ -579,18 +579,18 @@ Ficheiros alvo:
 ```
 
 ## Processo
-O utilizador já indicou quais as plataformas a importar (ver primeira mensagem). Não perguntes URLs — navega directamente:
+O usuário já indicou quais plataformas importar (ver primeira mensagem). Não pergunte URLs — navegue diretamente:
 
-1. **LinkedIn** (se pedido): abre `https://www.linkedin.com/in/` e a sessão autenticada redireciona para o perfil do utilizador; ou clica no avatar → "Ver o meu perfil". Extrai: nome, localização, headline, experiência, formação, competências, idiomas, links.
-2. **GitHub** (se pedido): abre `https://github.com` e clica no avatar → "Your profile". Extrai: nome, bio, localização, repositórios públicos e privados visíveis (nome, descrição, linguagens principais).
-3. Combina tudo no YAML e mostra ao utilizador para confirmação.
-4. Após confirmação explícita, grava o ficheiro e escreve na linha seguinte exatamente: `PERFIL_ATUALIZADO`
-5. Imediatamente após escrever `PERFIL_ATUALIZADO`, fecha os tabs do LinkedIn e/ou GitHub que abriste. Não abras tabs novos depois disso.
+1. **LinkedIn** (se pedido): abre `https://www.linkedin.com/in/` e a sessão autenticada redireciona para o perfil do usuário; ou clique no avatar → "Ver meu perfil". Extraia: nome, localização, headline, experiência, formação, competências, idiomas, links.
+2. **GitHub** (se pedido): abre `https://github.com` e clique no avatar → "Your profile". Extraia: nome, bio, localização, repositórios públicos e privados visíveis (nome, descrição, linguagens principais).
+3. Combine tudo no YAML e mostre ao usuário para confirmação.
+4. Após confirmação explícita, grave o arquivo e escreva na linha seguinte exatamente: `PERFIL_ATUALIZADO`
+5. Imediatamente após escrever `PERFIL_ATUALIZADO`, feche as abas do LinkedIn e/ou GitHub que abriu. Não abra abas novas depois disso.
 
 ## Regras
-- Não perguntes URLs — vai directamente às plataformas com a sessão autenticada
-- Nunca inventas informação — só incluis o que está explicitamente visível
-- Comunicas em português europeu, de forma concisa e direta{history}"#,
+- Não pergunte URLs — vá diretamente às plataformas com a sessão autenticada
+- Nunca invente informação — só inclua o que está explicitamente visível
+- Comunique em português brasileiro, de forma concisa e direta{history}"#,
         dir = data_dir_str,
         base = base_yaml,
         variants = variants_yaml,
