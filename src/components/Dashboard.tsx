@@ -36,20 +36,24 @@ interface ConfigDisparo {
   janelas: JanelaAgendamento[];
 }
 
-interface VagaLinkedinRede {
-  id: number;
-  titulo: string;
-  empresa: string;
-  url: string;
-  fonte_conexao: string | null;
-  descoberta_em: string;
-  status: string;
-}
-
 interface StatusLinkedinRede {
   ativo: boolean;
   ultima_busca: string | null;
   vagas_encontradas: number;
+}
+
+interface SearchVariant {
+  id: string;
+  nome_exibicao: string;
+  peso: number;
+  ativa: boolean;
+  foco_competencias: string[];
+  foco_experiencia: string[];
+  regioes_aceitas: string[];
+  modelos_trabalho: string[];
+  idiomas_aplicacao: string[];
+  cv_gerado_path: string;
+  cv_gerado_em: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -510,6 +514,175 @@ const AgendamentoModal: React.FC<{
   );
 };
 
+// ── VariantCardDash ───────────────────────────────────────────────────────────
+const VariantCardDash: React.FC<{
+  variant: SearchVariant;
+  pct: number;
+  maxPct: number;
+  onDragBar: (newPct: number) => void;
+  onDragEnd: () => void;
+  onToggleAtiva: () => void;
+}> = ({ variant, pct, maxPct, onDragBar, onDragEnd, onToggleAtiva }) => {
+  const barRef = useRef<HTMLDivElement>(null);
+  const onDragBarRef = useRef(onDragBar);
+  const onDragEndRef = useRef(onDragEnd);
+  useEffect(() => { onDragBarRef.current = onDragBar; }, [onDragBar]);
+  useEffect(() => { onDragEndRef.current = onDragEnd; }, [onDragEnd]);
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const move = (ev: MouseEvent) => {
+      if (!barRef.current) return;
+      const rect = barRef.current.getBoundingClientRect();
+      const newPct = Math.max(5, Math.min(maxPct, ((ev.clientX - rect.left) / rect.width) * 100));
+      onDragBarRef.current(newPct);
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      onDragEndRef.current();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+
+  const color = variant.ativa ? "var(--accent)" : "var(--text-tertiary)";
+
+  return (
+    <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", opacity: variant.ativa ? 1 : 0.55 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {variant.nome_exibicao}
+        </span>
+        <button
+          onClick={onToggleAtiva}
+          title={variant.ativa ? "Clica para desativar" : "Clica para ativar"}
+          style={{
+            fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
+            border: `1px solid ${variant.ativa ? "var(--accent)" : "var(--border)"}`,
+            background: variant.ativa ? "var(--accent-soft)" : "transparent",
+            color: variant.ativa ? "var(--accent-strong)" : "var(--text-tertiary)",
+            fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
+          }}
+        >
+          {variant.ativa ? "Ativa" : "Inativa"}
+        </button>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+      </div>
+      <div
+        ref={barRef}
+        onMouseDown={startDrag}
+        title="Arrasta para ajustar peso"
+        style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, cursor: "ew-resize", position: "relative", userSelect: "none", marginBottom: 8 }}
+      >
+        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />
+        <div style={{
+          position: "absolute", top: "50%", left: `${pct}%`,
+          transform: "translate(-50%, -50%)",
+          width: 13, height: 13, borderRadius: "50%",
+          background: color, border: "2px solid var(--bg-surface)",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.18)", pointerEvents: "none",
+        }} />
+      </div>
+      {(variant.regioes_aceitas.length > 0 || variant.modelos_trabalho.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {variant.regioes_aceitas.slice(0, 3).map((r, i) => (
+            <span key={i} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "var(--bg-sunken)", color: "var(--text-secondary)" }}>{r}</span>
+          ))}
+          {variant.modelos_trabalho.slice(0, 2).map((m, i) => (
+            <span key={i} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent-strong)" }}>{m}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── ModoCard — mesmo estilo que VariantCardDash, com arrastar quando ativo ─────
+const ModoCard: React.FC<{
+  label: string;
+  ativo: boolean;
+  pct: number;
+  maxPct: number;
+  emBreve?: boolean;
+  onToggle?: () => void;
+  onDragBar?: (newPct: number) => void;
+  onDragEnd?: () => void;
+}> = ({ label, ativo, pct, maxPct, emBreve, onToggle, onDragBar, onDragEnd }) => {
+  const barRef = useRef<HTMLDivElement>(null);
+  const onDragBarRef = useRef(onDragBar);
+  const onDragEndRef = useRef(onDragEnd);
+  useEffect(() => { onDragBarRef.current = onDragBar; }, [onDragBar]);
+  useEffect(() => { onDragEndRef.current = onDragEnd; }, [onDragEnd]);
+
+  const canDrag = ativo && !emBreve && !!onDragBar;
+
+  const startDrag = (e: React.MouseEvent) => {
+    if (!canDrag) return;
+    e.preventDefault();
+    const move = (ev: MouseEvent) => {
+      if (!barRef.current) return;
+      const rect = barRef.current.getBoundingClientRect();
+      const newPct = Math.max(5, Math.min(maxPct, ((ev.clientX - rect.left) / rect.width) * 100));
+      onDragBarRef.current?.(newPct);
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      onDragEndRef.current?.();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+
+  const color = ativo ? "var(--accent)" : "var(--text-tertiary)";
+
+  return (
+    <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", opacity: ativo ? 1 : 0.55 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+        {emBreve ? (
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, border: "1px solid var(--border)", color: "var(--text-tertiary)", fontWeight: 500 }}>Em breve</span>
+        ) : (
+          <>
+            <button
+              onClick={onToggle}
+              title={ativo ? "Clica para desativar" : "Clica para ativar"}
+              style={{
+                fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
+                border: `1px solid ${ativo ? "var(--accent)" : "var(--border)"}`,
+                background: ativo ? "var(--accent-soft)" : "transparent",
+                color: ativo ? "var(--accent-strong)" : "var(--text-tertiary)",
+                fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
+              }}
+            >
+              {ativo ? "Ativo" : "Inativo"}
+            </button>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+          </>
+        )}
+      </div>
+      <div
+        ref={barRef}
+        onMouseDown={startDrag}
+        title={canDrag ? "Arrasta para ajustar peso" : undefined}
+        style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, position: "relative", userSelect: "none", cursor: canDrag ? "ew-resize" : "default", marginBottom: emBreve ? 0 : undefined }}
+      >
+        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />
+        <div style={{
+          position: "absolute", top: "50%", left: `${pct}%`,
+          transform: "translate(-50%, -50%)",
+          width: 13, height: 13, borderRadius: "50%",
+          background: color, border: "2px solid var(--bg-surface)",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.18)", pointerEvents: "none",
+        }} />
+      </div>
+    </div>
+  );
+};
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate: _onNavigate }) => {
   const [candidaturasHoje, setCandidaturasHoje] = useState(0);
@@ -528,17 +701,73 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const [disparado, setDisparado] = useState(false);
   const [modal, setModal] = useState<ModalCfg | null>(null);
   const [modalAgendamento, setModalAgendamento] = useState(false);
-  const [linkedinStatus, setLinkedinStatus] = useState<StatusLinkedinRede>({ ativo: false, ultima_busca: null, vagas_encontradas: 0 });
-  const [linkedinScanning, setLinkedinScanning] = useState(false);
+
+  const [incluirBuscaNormal, setIncluirBuscaNormal] = useState(true);
   const [incluirLinkedinRede, setIncluirLinkedinRede] = useState(false);
+  const [modoPesos, setModoPesos] = useState<Record<string, number>>({ busca_normal: 100, linkedin_rede: 0 });
+  const committedModoPesosRef = useRef<Record<string, number>>({ busca_normal: 100, linkedin_rede: 0 });
+  const [variants, setVariants] = useState<SearchVariant[]>([]);
+  const [localPesos, setLocalPesos] = useState<Record<string, number>>({});
+  const committedPesosRef = useRef<Record<string, number>>({});
+  const [abaAtiva, setAbaAtiva] = useState<"procura" | "atividade">("procura");
 
   const checkpointTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disparadoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [_linkedinStatus, setLinkedinStatus] = useState<StatusLinkedinRede>({ ativo: false, ultima_busca: null, vagas_encontradas: 0 });
+  const [_linkedinScanning, setLinkedinScanning] = useState(false);
 
   const carregarLinkedin = () =>
     invoke<StatusLinkedinRede>("obter_status_linkedin_rede")
       .then((status) => { setLinkedinStatus(status); setLinkedinScanning(status.ativo); })
       .catch(console.error);
+
+  const carregarVariantes = () =>
+    invoke<SearchVariant[]>("ler_search_variants")
+      .then((vs) => {
+        setVariants(vs);
+        const map: Record<string, number> = {};
+        vs.forEach(v => { map[v.id] = v.peso; });
+        setLocalPesos(map);
+        committedPesosRef.current = map;
+      })
+      .catch(() => {});
+
+  const activeVariants = variants.filter(v => v.ativa);
+  const totalPeso = activeVariants.reduce((s, v) => s + (localPesos[v.id] ?? v.peso), 0) || 1;
+  const maxPct = activeVariants.length > 1 ? 100 - (activeVariants.length - 1) * 5 : 95;
+
+  const handleDragBar = (variantId: string, newPct: number) => {
+    setLocalPesos(prev => {
+      const curTotal = activeVariants.reduce((s, v) => s + (prev[v.id] ?? v.peso), 0);
+      const newPesoForId = (newPct / 100) * curTotal;
+      const others = activeVariants.filter(v => v.id !== variantId);
+      const sumOthers = others.reduce((s, v) => s + (prev[v.id] ?? v.peso), 0);
+      const remaining = curTotal - newPesoForId;
+      const minPeso = (5 / 100) * curTotal;
+      const next: Record<string, number> = { ...prev, [variantId]: newPesoForId };
+      others.forEach(v => {
+        const oldPeso = prev[v.id] ?? v.peso;
+        next[v.id] = sumOthers > 0 ? Math.max(minPeso, (oldPeso / sumOthers) * remaining) : remaining / others.length;
+      });
+      committedPesosRef.current = next;
+      return next;
+    });
+  };
+
+  const handleDragEnd = async () => {
+    const pesos: Record<string, number> = {};
+    variants.forEach(v => { pesos[v.id] = committedPesosRef.current[v.id] ?? v.peso; });
+    await invoke("guardar_pesos_variantes", { pesos }).catch(console.error);
+    carregarVariantes();
+  };
+
+  const handleToggleAtiva = async (variantId: string) => {
+    const v = variants.find(x => x.id === variantId);
+    if (!v) return;
+    await invoke("guardar_variante_unica", { variante: { ...v, ativa: !v.ativa } }).catch(console.error);
+    carregarVariantes();
+  };
 
   const carregar = () =>
     Promise.all([
@@ -566,6 +795,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   useEffect(() => {
     carregar();
     carregarLinkedin();
+    carregarVariantes();
 
     let active = true;
     const unlisteners: (() => void)[] = [];
@@ -584,7 +814,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
         carregarLinkedin();
       }),
       listen("linkedin-session-started", () => { setLinkedinScanning(true); setSessionActive(true); }),
-      listen("db-atualizada", () => { carregar(); carregarLinkedin(); }),
+      listen("db-atualizada", () => { carregar(); carregarLinkedin(); carregarVariantes(); }),
       listen("chrome-reconnect-failed", () => console.warn("[Claudia RH] Chrome extension reconnection failed")),
     ]).then((fns) => {
       if (active) {
@@ -610,14 +840,72 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
     return () => clearInterval(id);
   }, [sessionActive, paused]);
 
+  const MODOS = [
+    { id: "busca_normal", ativo: incluirBuscaNormal },
+    { id: "linkedin_rede", ativo: incluirLinkedinRede },
+  ];
+  const modosAtivos = MODOS.filter(m => m.ativo);
+  const totalModoPeso = modosAtivos.reduce((s, m) => s + (modoPesos[m.id] ?? 0), 0) || 1;
+  const maxModoPct = modosAtivos.length > 1 ? 100 - (modosAtivos.length - 1) * 5 : 95;
+
+  const redistribuir = (ativos: string[]) => {
+    const peso = ativos.length > 0 ? 100 / ativos.length : 0;
+    const next: Record<string, number> = { busca_normal: 0, linkedin_rede: 0 };
+    ativos.forEach(id => { next[id] = peso; });
+    setModoPesos(next);
+    committedModoPesosRef.current = next;
+  };
+
+  const toggleBuscaNormal = () => {
+    const novoAtivo = !incluirBuscaNormal;
+    setIncluirBuscaNormal(novoAtivo);
+    const ativos = [
+      ...(novoAtivo ? ["busca_normal"] : []),
+      ...(incluirLinkedinRede ? ["linkedin_rede"] : []),
+    ];
+    redistribuir(ativos);
+  };
+
+  const toggleLinkedinRede = () => {
+    const novoAtivo = !incluirLinkedinRede;
+    setIncluirLinkedinRede(novoAtivo);
+    const ativos = [
+      ...(incluirBuscaNormal ? ["busca_normal"] : []),
+      ...(novoAtivo ? ["linkedin_rede"] : []),
+    ];
+    redistribuir(ativos);
+  };
+
+  const handleModoDragBar = (modoId: string, newPct: number) => {
+    setModoPesos(prev => {
+      const curTotal = modosAtivos.reduce((s, m) => s + (prev[m.id] ?? 0), 0);
+      const newPesoForId = (newPct / 100) * curTotal;
+      const others = modosAtivos.filter(m => m.id !== modoId);
+      const sumOthers = others.reduce((s, m) => s + (prev[m.id] ?? 0), 0);
+      const remaining = curTotal - newPesoForId;
+      const minPeso = (5 / 100) * curTotal;
+      const next: Record<string, number> = { ...prev, [modoId]: newPesoForId };
+      others.forEach(m => {
+        const old = prev[m.id] ?? 0;
+        next[m.id] = sumOthers > 0 ? Math.max(minPeso, (old / sumOthers) * remaining) : remaining / others.length;
+      });
+      committedModoPesosRef.current = next;
+      return next;
+    });
+  };
+
+  const handleModoDragEnd = () => { /* pesos já em committedModoPesosRef, sem backend por agora */ };
+
   const disparar = async () => {
+    if (!incluirBuscaNormal && !incluirLinkedinRede) return;
     setDisparando(true);
     try {
-      if (incluirLinkedinRede) {
+      if (incluirLinkedinRede && !incluirBuscaNormal) {
         await invoke("iniciar_busca_linkedin_rede");
         setLinkedinScanning(true);
       } else {
         await invoke("disparar_sessao", { motivo: "manual" });
+        if (incluirLinkedinRede) setLinkedinScanning(true);
       }
       setDisparado(true);
       if (disparadoTimerRef.current) clearTimeout(disparadoTimerRef.current);
@@ -791,245 +1079,271 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
         </div>
       )}
 
-      {/* ── Grelha de indicadores 2×2 ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-
-        {/* Card 1 — Candidaturas hoje */}
-        {(() => {
-          const reached = candidaturasHoje >= config.limite_diario;
-          const barColor = reached ? "var(--success)" : pctCandidaturas >= 80 ? "var(--warning)" : "var(--accent)";
+      {/* ── Tab bar ── */}
+      <div style={{ display: "flex", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+        {([["procura", "Procura"], ["atividade", "Atividade"]] as const).map(([id, label]) => {
+          const ativo = abaAtiva === id;
           return (
-            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Candidaturas hoje
-                </span>
-                <button onClick={abrirCandidaturas} title="Editar limite" className="edit-icon-btn">
-                  <Pencil size={11} />
-                </button>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
-                <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                  {loading ? "—" : candidaturasHoje}
-                </span>
-                <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
-                <span style={{ fontSize: 20, fontWeight: 600, color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                  {config.limite_diario}
-                </span>
-              </div>
-              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
-                <div style={{ width: `${pctCandidaturas}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                {reached
-                  ? <span style={{ color: "var(--success)", fontWeight: 500 }}>Meta atingida ✓</span>
-                  : <>{config.limite_diario - candidaturasHoje} restantes</>}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Card 2 — Vagas analisadas */}
-        {(() => {
-          const reached = limVagas > 0 && vagasHoje >= limVagas;
-          const barColor = reached ? "var(--success)" : pctVagas >= 80 ? "var(--warning)" : "var(--accent)";
-          return (
-            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Vagas analisadas
-                </span>
-                <button onClick={abrirVagas} title="Editar limite" className="edit-icon-btn">
-                  <Pencil size={11} />
-                </button>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
-                <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                  {loading ? "—" : vagasHoje}
-                </span>
-                <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
-                <span style={{ fontSize: 20, fontWeight: 600, color: limVagas > 0 ? "var(--text-secondary)" : "var(--text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
-                  {limVagas > 0 ? limVagas : "∞"}
-                </span>
-              </div>
-              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
-                <div style={{ width: limVagas > 0 ? `${pctVagas}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Card 3 — Tempo de procura */}
-        {(() => {
-          const barColor = limiteEsgotado ? "var(--danger)" : pctTempo >= 85 ? "var(--warning)" : "var(--accent)";
-          return (
-            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Tempo de procura
-                </span>
-                <button onClick={abrirTempo} title="Editar limite" className="edit-icon-btn">
-                  <Pencil size={11} />
-                </button>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
-                <span style={{ fontSize: 24, fontWeight: 700, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                  {formatarTempo(tempoMinutos)}
-                </span>
-                <span style={{ fontSize: 14, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
-                <span style={{ fontSize: 16, fontWeight: 600, color: config.limite_tempo_minutos > 0 ? "var(--text-secondary)" : "var(--text-tertiary)" }}>
-                  {config.limite_tempo_minutos > 0 ? formatTempoCompact(config.limite_tempo_minutos) : "∞"}
-                </span>
-              </div>
-              <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
-                <div style={{ width: config.limite_tempo_minutos > 0 ? `${pctTempo}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
-              </div>
-              <div style={{ fontSize: 11 }}>
-                {limiteEsgotado
-                  ? <span style={{ color: "var(--danger)", fontWeight: 500 }}>Limite atingido hoje</span>
-                  : config.limite_tempo_minutos > 0
-                    ? <span style={{ color: "var(--text-tertiary)" }}>{formatarTempo(config.limite_tempo_minutos - tempoMinutos)} restantes</span>
-                    : <span style={{ color: "var(--text-tertiary)" }}>sem limite</span>}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Card 4 — Agendamento */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Agendamento
-            </span>
-            <button onClick={() => setModalAgendamento(true)} title="Configurar agendamento" className="edit-icon-btn">
-              <Pencil size={11} />
+            <button key={id} onClick={() => setAbaAtiva(id)} style={{
+              padding: "8px 18px", fontSize: 13, fontWeight: ativo ? 600 : 400,
+              color: ativo ? "var(--accent-strong)" : "var(--text-secondary)",
+              background: "transparent", border: "none",
+              borderBottom: ativo ? "2px solid var(--accent)" : "2px solid transparent",
+              cursor: "pointer", fontFamily: "inherit", marginBottom: -1,
+              transition: "color 0.15s, border-color 0.15s",
+            }}>
+              {label}
             </button>
-          </div>
-          {proximaJanela === null ? (
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-              Nenhum horário definido — clica no lápis para agendar sessões automáticas.
+          );
+        })}
+      </div>
+
+      {/* ── Tab: Procura ── */}
+      {abaAtiva === "procura" && (
+        <>
+          {/* Controlo de sessão */}
+          {sessionActive ? (
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button onClick={paused ? retomar : pausar} style={{
+                flex: 1, padding: "11px 0", borderRadius: 8, fontSize: 14, fontWeight: 500,
+                fontFamily: "inherit", cursor: "pointer", transition: "background 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                background: paused ? "var(--accent)" : "var(--bg-sunken)",
+                color: paused ? "#fff" : "var(--text-secondary)",
+                border: paused ? "none" : "1px solid var(--border)",
+              }}>
+                {paused ? <><Play size={14} /> Retomar</> : <><Pause size={14} /> Pausar</>}
+              </button>
+              <button onClick={interromper} style={{
+                padding: "11px 20px", borderRadius: 8, fontSize: 14, fontWeight: 500,
+                fontFamily: "inherit", cursor: "pointer", transition: "background 0.15s",
+                display: "flex", alignItems: "center", gap: 7,
+                background: "#F7E2DF", color: "var(--danger)", border: "1px solid var(--danger)",
+              }}>
+                <Square size={13} fill="currentColor" /> Interromper
+              </button>
             </div>
           ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-                <span style={{
-                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-                  background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)",
-                  display: "inline-block",
-                  animation: proximaJanela === "ATIVO_AGORA" ? "pulse 2s infinite" : "none",
-                }} />
-                <span style={{ fontSize: 13, fontWeight: 500, color: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-primary)" }}>
-                  {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
-                </span>
+            <div style={{ marginBottom: 16 }}>
+              {/* Modos de procura */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                <ModoCard
+                  label="Procurar vagas"
+                  ativo={incluirBuscaNormal}
+                  pct={modosAtivos.length > 0 ? Math.round(((modoPesos["busca_normal"] ?? 0) / totalModoPeso) * 100) : 0}
+                  maxPct={maxModoPct}
+                  onToggle={toggleBuscaNormal}
+                  onDragBar={(p) => handleModoDragBar("busca_normal", p)}
+                  onDragEnd={handleModoDragEnd}
+                />
+                <ModoCard
+                  label="Procurar vagas na rede"
+                  ativo={incluirLinkedinRede}
+                  pct={modosAtivos.length > 0 ? Math.round(((modoPesos["linkedin_rede"] ?? 0) / totalModoPeso) * 100) : 0}
+                  maxPct={maxModoPct}
+                  onToggle={toggleLinkedinRede}
+                  onDragBar={(p) => handleModoDragBar("linkedin_rede", p)}
+                  onDragEnd={handleModoDragEnd}
+                />
+                <ModoCard label="Procurar freelas" ativo={false} pct={0} maxPct={95} emBreve />
+                <ModoCard label="Procurar em sites de empresas" ativo={false} pct={0} maxPct={95} emBreve />
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
-              </div>
-            </>
+              <button onClick={disparar} disabled={disparando} style={{
+                width: "100%", padding: "12px 0",
+                background: disparado ? "var(--success)" : "var(--accent)",
+                color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 500,
+                cursor: disparando ? "default" : "pointer", fontFamily: "inherit",
+                transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
+                whiteSpace: "nowrap",
+              }}>
+                {disparando ? "A iniciar…" : disparado ? "✓ Sessão iniciada" : incluirLinkedinRede ? "Procurar vagas na rede" : "Procurar vagas agora"}
+              </button>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* Controlo de sessão */}
-      {sessionActive ? (
-        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          <button
-            onClick={paused ? retomar : pausar}
-            style={{
-              flex: 1, padding: "11px 0", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              fontFamily: "inherit", cursor: "pointer", transition: "background 0.15s",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-              background: paused ? "var(--accent)" : "var(--bg-sunken)",
-              color: paused ? "#fff" : "var(--text-secondary)",
-              border: paused ? "none" : "1px solid var(--border)",
-            }}
-          >
-            {paused ? <><Play size={14} /> Retomar</> : <><Pause size={14} /> Pausar</>}
-          </button>
-          <button
-            onClick={interromper}
-            style={{
-              padding: "11px 20px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              fontFamily: "inherit", cursor: "pointer", transition: "background 0.15s",
-              display: "flex", alignItems: "center", gap: 7,
-              background: "#F7E2DF", color: "var(--danger)",
-              border: "1px solid var(--danger)",
-            }}
-          >
-            <Square size={13} fill="currentColor" /> Interromper
-          </button>
-        </div>
-      ) : (
-        <div style={{ marginBottom: 24 }}>
-          {/* Toggle: modo de procura */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <ToggleSwitch checked={incluirLinkedinRede} onChange={() => setIncluirLinkedinRede(v => !v)} />
-            <span style={{ fontSize: 13, color: incluirLinkedinRede ? "var(--text-primary)" : "var(--text-secondary)" }}>
-              Procurar vagas na rede
-            </span>
-            {incluirLinkedinRede && linkedinStatus.vagas_encontradas > 0 && (
-              <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto" }}>
-                {linkedinStatus.vagas_encontradas} encontradas
-              </span>
-            )}
+          {/* Grelha de indicadores 2×2 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+            {/* Card 1 — Candidaturas hoje */}
+            {(() => {
+              const reached = candidaturasHoje >= config.limite_diario;
+              const barColor = reached ? "var(--success)" : pctCandidaturas >= 80 ? "var(--warning)" : "var(--accent)";
+              return (
+                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Candidaturas hoje</span>
+                    <button onClick={abrirCandidaturas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{loading ? "—" : candidaturasHoje}</span>
+                    <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>{config.limite_diario}</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                    <div style={{ width: `${pctCandidaturas}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    {reached ? <span style={{ color: "var(--success)", fontWeight: 500 }}>Meta atingida ✓</span> : <>{config.limite_diario - candidaturasHoje} restantes</>}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Card 2 — Vagas analisadas */}
+            {(() => {
+              const reached = limVagas > 0 && vagasHoje >= limVagas;
+              const barColor = reached ? "var(--success)" : pctVagas >= 80 ? "var(--warning)" : "var(--accent)";
+              return (
+                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Vagas analisadas</span>
+                    <button onClick={abrirVagas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{loading ? "—" : vagasHoje}</span>
+                    <span style={{ fontSize: 15, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, color: limVagas > 0 ? "var(--text-secondary)" : "var(--text-tertiary)", fontVariantNumeric: "tabular-nums" }}>{limVagas > 0 ? limVagas : "∞"}</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                    <div style={{ width: limVagas > 0 ? `${pctVagas}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Card 3 — Tempo de procura */}
+            {(() => {
+              const barColor = limiteEsgotado ? "var(--danger)" : pctTempo >= 85 ? "var(--warning)" : "var(--accent)";
+              return (
+                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Tempo de procura</span>
+                    <button onClick={abrirTempo} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{formatarTempo(tempoMinutos)}</span>
+                    <span style={{ fontSize: 14, color: "var(--text-tertiary)", margin: "0 2px" }}>/</span>
+                    <span style={{ fontSize: 16, fontWeight: 600, color: config.limite_tempo_minutos > 0 ? "var(--text-secondary)" : "var(--text-tertiary)" }}>{config.limite_tempo_minutos > 0 ? formatTempoCompact(config.limite_tempo_minutos) : "∞"}</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--bg-sunken)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                    <div style={{ width: config.limite_tempo_minutos > 0 ? `${pctTempo}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
+                  </div>
+                  <div style={{ fontSize: 11 }}>
+                    {limiteEsgotado
+                      ? <span style={{ color: "var(--danger)", fontWeight: 500 }}>Limite atingido hoje</span>
+                      : config.limite_tempo_minutos > 0
+                        ? <span style={{ color: "var(--text-tertiary)" }}>{formatarTempo(config.limite_tempo_minutos - tempoMinutos)} restantes</span>
+                        : <span style={{ color: "var(--text-tertiary)" }}>sem limite</span>}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Card 4 — Agendamento */}
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Agendamento</span>
+                <button onClick={() => setModalAgendamento(true)} title="Configurar agendamento" className="edit-icon-btn"><Pencil size={11} /></button>
+              </div>
+              {proximaJanela === null ? (
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>Nenhum horário definido — clica no lápis para agendar sessões automáticas.</div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)", display: "inline-block", animation: proximaJanela === "ATIVO_AGORA" ? "pulse 2s infinite" : "none" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, color: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-primary)" }}>
+                      {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          <button
-            onClick={disparar}
-            disabled={disparando}
-            style={{
-              width: "100%", padding: "12px 0",
-              background: disparado ? "var(--success)" : "var(--accent)",
-              color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 500,
-              cursor: disparando ? "default" : "pointer", fontFamily: "inherit",
-              transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}
-          >
-            {disparando
-              ? "A iniciar…"
-              : disparado
-              ? "✓ Sessão iniciada"
-              : incluirLinkedinRede
-              ? "Procurar vagas na rede"
-              : "Procurar vagas agora"}
-          </button>
-        </div>
+
+          {/* Variantes de procura */}
+          {variants.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {variants.map((v) => {
+                const peso = localPesos[v.id] ?? v.peso;
+                const pct = Math.round((peso / totalPeso) * 100);
+                return (
+                  <VariantCardDash
+                    key={v.id}
+                    variant={v}
+                    pct={pct}
+                    maxPct={maxPct}
+                    onDragBar={(newPct) => handleDragBar(v.id, newPct)}
+                    onDragEnd={handleDragEnd}
+                    onToggleAtiva={() => handleToggleAtiva(v.id)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Atividade recente */}
-      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 12 }}>
-        Atividade recente
-      </div>
-
-      {loading ? (
-        <div style={{ color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>
-      ) : atividade.length === 0 ? (
-        <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>Nenhuma atividade ainda.</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {atividade.map((v) => {
-            const s = STATUS_STYLE[v.status] ?? STATUS_STYLE.descoberta;
+      {/* ── Tab: Atividade ── */}
+      {abaAtiva === "atividade" && (
+        <>
+          {/* Mini gráfico de barras — vagas por dia (últimos 7 dias) */}
+          {(() => {
+            const hoje = new Date();
+            const dias: { label: string; count: number }[] = Array.from({ length: 7 }, (_, i) => {
+              const d = new Date(hoje);
+              d.setDate(hoje.getDate() - (6 - i));
+              const iso = d.toISOString().slice(0, 10);
+              const label = d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3);
+              const count = atividade.filter(v => v.descoberta_em.slice(0, 10) === iso).length;
+              return { label, count };
+            });
+            const maxCount = Math.max(...dias.map(d => d.count), 1);
             return (
-              <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {v.titulo}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{v.empresa}</div>
+              <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+                  Vagas descobertas — últimos 7 dias
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap", ...s }}>
-                  {STATUS_LABELS[v.status] ?? v.status}
-                </span>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
-                  {tempoRelativo(v.descoberta_em)}
-                </span>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 56 }}>
+                  {dias.map((d, i) => {
+                    const isHoje = i === 6;
+                    const h = Math.max(4, Math.round((d.count / maxCount) * 48));
+                    return (
+                      <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: "100%", height: h, background: isHoje ? "var(--accent)" : "var(--accent-soft)", borderRadius: "3px 3px 0 0" }} />
+                        <span style={{ fontSize: 10, color: isHoje ? "var(--accent-strong)" : "var(--text-tertiary)", fontWeight: isHoje ? 600 : 400 }}>{d.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
-          })}
-        </div>
+          })()}
+
+          {/* Lista de atividade */}
+          {loading ? (
+            <div style={{ color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>
+          ) : atividade.length === 0 ? (
+            <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>Nenhuma atividade ainda.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {atividade.map((v) => {
+                const s = STATUS_STYLE[v.status] ?? STATUS_STYLE.descoberta;
+                return (
+                  <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.titulo}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{v.empresa}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap", ...s }}>{STATUS_LABELS[v.status] ?? v.status}</span>
+                    <span style={{ fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{tempoRelativo(v.descoberta_em)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Drum picker modal */}
