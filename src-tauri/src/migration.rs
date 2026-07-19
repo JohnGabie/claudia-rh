@@ -1,14 +1,16 @@
-//! One-shot migration of user data from the pre-v0.2 app data directory.
+//! One-shot migration of user data from the v0.2.0 app data directory.
 //!
-//! v0.2 changed the Tauri identifier from `com.joaog.claudia-rh` to
-//! `io.github.johngabie.claudia-rh` (commit 6693e56, open-source cleanup),
-//! which silently moved `app_data_dir()` to a brand-new empty directory.
-//! Without this migration every v0.1 user "loses" their profile, vagas,
-//! candidaturas and pendências on update.
+//! History: v0.2.0 changed the Tauri identifier from `com.joaog.claudia-rh`
+//! to `io.github.johngabie.claudia-rh` (commit 6693e56), silently moving
+//! `app_data_dir()` to a brand-new empty directory — v0.1 users "lost" their
+//! profile on update. v0.2.1 reverted to the original identifier, which is
+//! now frozen forever (see the identifier_is_frozen test below). This
+//! migration rescues data written by installs that ran v0.2.0.
 
 use std::path::Path;
 
-const LEGACY_DIR_NAME: &str = "com.joaog.claudia-rh";
+// The identifier v0.2.0 shipped with — the only release on the wrong path.
+const LEGACY_DIR_NAME: &str = "io.github.johngabie.claudia-rh";
 
 /// Plain data files copied only when missing at the destination.
 const DATA_FILES: &[&str] = &[
@@ -135,7 +137,7 @@ mod tests {
     fn migrates_files_and_db_into_fresh_dir() {
         let root = temp_root("fresh");
         let old = root.join(LEGACY_DIR_NAME);
-        let new = root.join("io.github.johngabie.claudia-rh");
+        let new = root.join("com.joaog.claudia-rh");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::create_dir_all(&new).unwrap();
         std::fs::write(old.join("candidate_base.yaml"), "dados_pessoais:\n  nome_completo: X\n").unwrap();
@@ -151,7 +153,7 @@ mod tests {
     fn never_overwrites_existing_new_data() {
         let root = temp_root("existing");
         let old = root.join(LEGACY_DIR_NAME);
-        let new = root.join("io.github.johngabie.claudia-rh");
+        let new = root.join("com.joaog.claudia-rh");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::create_dir_all(&new).unwrap();
         std::fs::write(old.join("candidate_base.yaml"), "old profile").unwrap();
@@ -169,7 +171,7 @@ mod tests {
     fn replaces_empty_new_db_with_backup() {
         let root = temp_root("emptydb");
         let old = root.join(LEGACY_DIR_NAME);
-        let new = root.join("io.github.johngabie.claudia-rh");
+        let new = root.join("com.joaog.claudia-rh");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::create_dir_all(&new).unwrap();
         make_db(&old.join("claudia_rh.db"), 4);
@@ -181,10 +183,28 @@ mod tests {
         assert!(new.join("claudia_rh.db.pre-migration").exists());
     }
 
+    /// The app identifier determines where user data lives (app_data_dir)
+    /// AND the Windows installer upgrade path. Changing it silently strands
+    /// every existing user's profile/DB in the old directory and breaks
+    /// in-place updates. It already happened once (v0.2.0, commit 6693e56).
+    /// NEVER change it. If you believe you must, you are wrong — see
+    /// src/migration.rs for the cleanup the last change required.
+    #[test]
+    fn identifier_is_frozen() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["identifier"].as_str(),
+            Some("com.joaog.claudia-rh"),
+            "The Tauri identifier must NEVER change — it is the user data path \
+             and the installer upgrade identity. See src/migration.rs."
+        );
+    }
+
     #[test]
     fn noop_without_legacy_dir() {
         let root = temp_root("nolegacy");
-        let new = root.join("io.github.johngabie.claudia-rh");
+        let new = root.join("com.joaog.claudia-rh");
         std::fs::create_dir_all(&new).unwrap();
         migrate_legacy_data_dir(&new);
         assert!(!new.join("candidate_base.yaml").exists());
