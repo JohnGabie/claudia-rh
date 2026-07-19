@@ -1,4 +1,3 @@
-use once_cell::sync::OnceCell;
 use rusqlite;
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
@@ -338,19 +337,101 @@ pub fn guardar_estrategia(app: AppHandle, conteudo: String) -> Result<(), String
 
 // ── Profile chat session ──────────────────────────────────────────────────────
 
-// Conversation history: vec of (role, content) where role is "user" or "assistant"
-static PERFIL_CONV: OnceCell<Mutex<Vec<(String, String)>>> = OnceCell::new();
+// Maximum entries kept in the in-memory conversation (20 user↔assistant pairs).
+const MAX_HISTORY: usize = 40;
 
-fn perfil_conv() -> &'static Mutex<Vec<(String, String)>> {
-    PERFIL_CONV.get_or_init(|| Mutex::new(vec![]))
+/// Profile chat session state, managed by Tauri (registered in lib.rs).
+/// Holds the conversation history — vec of (role, content) where role is
+/// "user" or "assistant" — and the running claude child process so the user
+/// can interrupt it. The child is taken (set to None) on natural completion
+/// or on interrupt.
+#[derive(Default)]
+pub struct PerfilChat {
+    conv: Mutex<Vec<(String, String)>>,
+    child: Mutex<Option<std::process::Child>>,
 }
 
-// Running claude process for the profile chat, kept here so the user can
-// interrupt it. Taken (set to None) on natural completion or on interrupt.
-static PERFIL_CHILD: OnceCell<Mutex<Option<std::process::Child>>> = OnceCell::new();
+impl PerfilChat {
+    fn snapshot(&self) -> Vec<(String, String)> {
+        self.conv.lock().unwrap().clone()
+    }
 
-fn perfil_child() -> &'static Mutex<Option<std::process::Child>> {
-    PERFIL_CHILD.get_or_init(|| Mutex::new(None))
+    fn reset(&self) {
+        self.conv.lock().unwrap().clear();
+    }
+
+    fn push_exchange(&self, user: String, assistant: String) {
+        push_exchange(&mut self.conv.lock().unwrap(), user, assistant);
+    }
+
+    fn truncate_last_exchange(&self) {
+        truncate_last_exchange(&mut self.conv.lock().unwrap());
+    }
+
+    fn store_child(&self, child: std::process::Child) {
+        *self.child.lock().unwrap() = Some(child);
+    }
+
+    /// Returns the child for reaping, or None if the user already interrupted.
+    fn take_child(&self) -> Option<std::process::Child> {
+        self.child.lock().unwrap().take()
+    }
+
+    fn interrupt(&self) {
+        if let Some(mut child) = self.take_child() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+// ── Pure helpers (unit-tested below) ─────────────────────────────────────────
+
+fn push_exchange(conv: &mut Vec<(String, String)>, user: String, assistant: String) {
+    conv.push(("user".to_string(), user));
+    conv.push(("assistant".to_string(), assistant));
+    if conv.len() > MAX_HISTORY {
+        let drain = conv.len() - MAX_HISTORY;
+        conv.drain(0..drain);
+    }
+}
+
+/// Drops everything from the last user message onwards, so the user can edit
+/// and resend it without duplicating context.
+fn truncate_last_exchange(conv: &mut Vec<(String, String)>) {
+    if let Some(idx) = conv.iter().rposition(|(role, _)| role == "user") {
+        conv.truncate(idx);
+    }
+}
+
+/// One parsed line of claude's `--output-format stream-json` output.
+enum StreamLine {
+    /// Incremental text delta from a stream_event.
+    Delta(String),
+    /// Final full result (subtype success) — replaces the accumulated deltas.
+    FinalResult(String),
+    /// Anything else (tool events, metadata, unparseable lines).
+    Other,
+}
+
+fn parse_stream_line(line: &str) -> StreamLine {
+    if line.trim().is_empty() {
+        return StreamLine::Other;
+    }
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
+        return StreamLine::Other;
+    };
+    if val["type"] == "stream_event" {
+        if let Some(text) = val["event"]["delta"]["text"].as_str() {
+            return StreamLine::Delta(text.to_string());
+        }
+    }
+    if val["type"] == "result" && val["subtype"] == "success" {
+        if let Some(r) = val["result"].as_str() {
+            return StreamLine::FinalResult(r.to_string());
+        }
+    }
+    StreamLine::Other
 }
 
 fn read_open_pendencias(db_path: &std::path::Path) -> String {
@@ -459,66 +540,65 @@ fn stderr_log(app: &AppHandle) -> Stdio {
         .unwrap_or_else(Stdio::null)
 }
 
-fn spawn_perfil_claude(app: AppHandle, message: String) {
+/// Unified spawn for both profile chat variants (regular and --chrome).
+/// Spawns `claude --print` streaming stream-json, forwards text deltas to the
+/// frontend, and records the exchange in the managed PerfilChat history.
+fn spawn_claude_stream(app: AppHandle, message: String, chrome: bool) {
     std::thread::spawn(move || {
-        let conv = perfil_conv().lock().unwrap().clone();
-        let sys = build_system_prompt(&app, &conv);
+        let chat = app.state::<PerfilChat>();
+        let conv = chat.snapshot();
+        let sys = if chrome {
+            build_chrome_system_prompt(&app, &conv)
+        } else {
+            build_system_prompt(&app, &conv)
+        };
 
-        let stderr = stderr_log(&app);
-        let mut child = match Command::new(crate::commands::claude_program())
-            .args([
-                "--dangerously-skip-permissions",
-                "--print",
-                "--output-format", "stream-json",
-                "--verbose",
-                "--include-partial-messages",
-                &message,
-                "--system-prompt",
-                &sys,
-            ])
+        let mut cmd = Command::new(crate::commands::claude_program());
+        cmd.args(["--dangerously-skip-permissions", "--print"]);
+        if chrome {
+            cmd.arg("--chrome");
+        }
+        cmd.args(["--output-format", "stream-json", "--verbose", "--include-partial-messages"])
+            .arg(&message)
+            .args(["--system-prompt", &sys])
             .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn()
-        {
+            .stderr(stderr_log(&app));
+
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                let _ = app.emit("perfil-output", format!("Erro ao iniciar Claude: {e}"));
+                let context = if chrome { "sessão Chrome" } else { "Claude" };
+                let _ = app.emit("perfil-output", format!("Erro ao iniciar {context}: {e}"));
                 let _ = app.emit("perfil-output-done", ());
                 return;
             }
         };
 
         let stdout = child.stdout.take().expect("stdout piped");
-        *perfil_child().lock().unwrap() = Some(child);
+        chat.store_child(child);
         let reader = std::io::BufReader::new(stdout);
         let mut full_response = String::new();
 
         for line in reader.lines() {
             let line = match line { Ok(l) => l, Err(_) => break };
-            if line.trim().is_empty() { continue; }
-
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                if val["type"] == "stream_event" {
-                    if let Some(text) = val["event"]["delta"]["text"].as_str() {
-                        full_response.push_str(text);
-                        let emit_text = text.replace("PERFIL_ATUALIZADO", "");
-                        if !emit_text.is_empty() {
-                            let _ = app.emit("perfil-output", emit_text);
-                        }
+            match parse_stream_line(&line) {
+                StreamLine::Delta(text) => {
+                    full_response.push_str(&text);
+                    let emit_text = text.replace("PERFIL_ATUALIZADO", "");
+                    if !emit_text.is_empty() {
+                        let _ = app.emit("perfil-output", emit_text);
                     }
                 }
-                if val["type"] == "result" && val["subtype"] == "success" {
-                    if let Some(r) = val["result"].as_str() {
-                        full_response = r.to_string();
-                    }
-                }
+                StreamLine::FinalResult(r) => full_response = r,
+                StreamLine::Other => {}
             }
         }
 
         // None here means the user interrupted (interromper_perfil took and killed it).
-        if let Some(mut c) = perfil_child().lock().unwrap().take() {
-            let _ = c.wait();
-        }
+        let interrupted = match chat.take_child() {
+            Some(mut c) => { let _ = c.wait(); false }
+            None => true,
+        };
 
         // Notify frontend that the agent may have resolved pendências or updated the DB.
         let _ = app.emit("db-atualizada", ());
@@ -529,37 +609,40 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         }
         let clean = full_response.replace("PERFIL_ATUALIZADO", "").trim().to_string();
 
-        {
-            let mut c = perfil_conv().lock().unwrap();
-            c.push(("user".to_string(), message));
-            c.push(("assistant".to_string(), clean));
-            if c.len() > 40 {
-                let drain = c.len() - 40;
-                c.drain(0..drain);
-            }
+        // A session that died without producing anything and without being
+        // interrupted is an error the user must see, not silence.
+        if clean.is_empty() && !interrupted {
+            let log_path = app.path().app_data_dir()
+                .map(|d| d.join("claude-perfil-stderr.log").to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
+            let hint = if chrome {
+                format!(
+                    "A sessão do Chrome terminou sem resposta. Verifique se o Chrome está aberto \
+                     com a extensão do Claude conectada. Detalhes técnicos em: {log_path}"
+                )
+            } else {
+                format!("A sessão terminou sem resposta. Detalhes técnicos em: {log_path}")
+            };
+            let _ = app.emit("perfil-output", hint);
         }
+
+        chat.push_exchange(message, clean);
 
         let _ = app.emit("perfil-output-done", ());
     });
 }
 
 #[tauri::command]
-pub fn interromper_perfil() -> Result<(), String> {
-    if let Some(mut child) = perfil_child().lock().map_err(|e| e.to_string())?.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+pub fn interromper_perfil(app: AppHandle) -> Result<(), String> {
+    app.state::<PerfilChat>().interrupt();
     Ok(())
 }
 
 // Drops the last user↔assistant exchange from the in-memory history so the
 // user can edit and resend their last message without duplicating context.
 #[tauri::command]
-pub fn remover_ultima_troca_perfil() -> Result<(), String> {
-    let mut c = perfil_conv().lock().map_err(|e| e.to_string())?;
-    if let Some(idx) = c.iter().rposition(|(role, _)| role == "user") {
-        c.truncate(idx);
-    }
+pub fn remover_ultima_troca_perfil(app: AppHandle) -> Result<(), String> {
+    app.state::<PerfilChat>().truncate_last_exchange();
     Ok(())
 }
 
@@ -569,7 +652,7 @@ pub fn iniciar_sessao_perfil(
     contexto: String,
     primeira_message: String,
 ) -> Result<(), String> {
-    *perfil_conv().lock().map_err(|e| e.to_string())? = vec![];
+    app.state::<PerfilChat>().reset();
 
     let msg = if !contexto.is_empty() && contexto != "geral" {
         format!("[Foco: {}]\n\n{}", contexto, primeira_message)
@@ -577,13 +660,13 @@ pub fn iniciar_sessao_perfil(
         primeira_message
     };
 
-    spawn_perfil_claude(app, msg);
+    spawn_claude_stream(app, msg, false);
     Ok(())
 }
 
 #[tauri::command]
 pub fn enviar_mensagem_perfil(app: AppHandle, mensagem: String) -> Result<(), String> {
-    spawn_perfil_claude(app, mensagem);
+    spawn_claude_stream(app, mensagem, false);
     Ok(())
 }
 
@@ -648,115 +731,16 @@ O utilizador já indicou quais as plataformas a importar (ver primeira mensagem)
     )
 }
 
-fn spawn_chrome_session(app: AppHandle, message: String) {
-    std::thread::spawn(move || {
-        let conv = perfil_conv().lock().unwrap().clone();
-        let sys = build_chrome_system_prompt(&app, &conv);
-
-        let stderr = stderr_log(&app);
-        let mut child = match Command::new(crate::commands::claude_program())
-            .args([
-                "--dangerously-skip-permissions",
-                "--print",
-                "--chrome",
-                "--output-format", "stream-json",
-                "--verbose",
-                "--include-partial-messages",
-                &message,
-                "--system-prompt",
-                &sys,
-            ])
-            .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = app.emit("perfil-output", format!("Erro ao iniciar sessão Chrome: {e}"));
-                let _ = app.emit("perfil-output-done", ());
-                return;
-            }
-        };
-
-        let stdout = child.stdout.take().expect("stdout piped");
-        *perfil_child().lock().unwrap() = Some(child);
-        let reader = std::io::BufReader::new(stdout);
-        let mut full_response = String::new();
-
-        for line in reader.lines() {
-            let line = match line { Ok(l) => l, Err(_) => break };
-            if line.trim().is_empty() { continue; }
-
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                if val["type"] == "stream_event" {
-                    if let Some(text) = val["event"]["delta"]["text"].as_str() {
-                        full_response.push_str(text);
-                        let emit_text = text.replace("PERFIL_ATUALIZADO", "");
-                        if !emit_text.is_empty() {
-                            let _ = app.emit("perfil-output", emit_text);
-                        }
-                    }
-                }
-                if val["type"] == "result" && val["subtype"] == "success" {
-                    if let Some(r) = val["result"].as_str() {
-                        full_response = r.to_string();
-                    }
-                }
-            }
-        }
-
-        // None here means the user interrupted (interromper_perfil took and killed it).
-        let interrupted = {
-            let mut guard = perfil_child().lock().unwrap();
-            match guard.take() {
-                Some(mut c) => { let _ = c.wait(); false }
-                None => true,
-            }
-        };
-
-        // Notify frontend that the agent may have resolved pendências or updated the DB.
-        let _ = app.emit("db-atualizada", ());
-        let _ = app.emit("pendencia-resolvida", ());
-
-        if full_response.contains("PERFIL_ATUALIZADO") {
-            let _ = app.emit("perfil-atualizado", ());
-        }
-        let clean = full_response.replace("PERFIL_ATUALIZADO", "").trim().to_string();
-
-        if clean.is_empty() && !interrupted {
-            let log_path = app.path().app_data_dir()
-                .map(|d| d.join("claude-perfil-stderr.log").to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
-            let _ = app.emit("perfil-output", format!(
-                "A sessão do Chrome terminou sem resposta. Verifique se o Chrome está aberto \
-                 com a extensão do Claude conectada. Detalhes técnicos em: {log_path}"
-            ));
-        }
-
-        {
-            let mut c = perfil_conv().lock().unwrap();
-            c.push(("user".to_string(), message));
-            c.push(("assistant".to_string(), clean));
-            if c.len() > 40 {
-                let drain = c.len() - 40;
-                c.drain(0..drain);
-            }
-        }
-
-        let _ = app.emit("perfil-output-done", ());
-    });
-}
-
 #[tauri::command]
 pub fn iniciar_sessao_perfil_chrome(app: AppHandle, primeira_mensagem: String) -> Result<(), String> {
-    *perfil_conv().lock().map_err(|e| e.to_string())? = vec![];
-    spawn_chrome_session(app, primeira_mensagem);
+    app.state::<PerfilChat>().reset();
+    spawn_claude_stream(app, primeira_mensagem, true);
     Ok(())
 }
 
 #[tauri::command]
 pub fn escrever_para_perfil_chrome(app: AppHandle, input: String) -> Result<(), String> {
-    spawn_chrome_session(app, input);
+    spawn_claude_stream(app, input, true);
     Ok(())
 }
 
@@ -801,6 +785,95 @@ pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Conversation history ──────────────────────────────────────────────
+
+    fn exchange(n: usize) -> (String, String) {
+        (format!("question {n}"), format!("answer {n}"))
+    }
+
+    #[test]
+    fn push_exchange_appends_user_then_assistant() {
+        let mut conv = vec![];
+        push_exchange(&mut conv, "hi".into(), "hello".into());
+        assert_eq!(conv, vec![
+            ("user".to_string(), "hi".to_string()),
+            ("assistant".to_string(), "hello".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn push_exchange_caps_history_dropping_oldest() {
+        let mut conv = vec![];
+        for n in 0..30 {
+            let (u, a) = exchange(n);
+            push_exchange(&mut conv, u, a);
+        }
+        assert_eq!(conv.len(), MAX_HISTORY);
+        // The oldest exchanges were dropped; the first remaining is exchange 10.
+        assert_eq!(conv[0], ("user".to_string(), "question 10".to_string()));
+        assert_eq!(conv.last().unwrap(), &("assistant".to_string(), "answer 29".to_string()));
+    }
+
+    #[test]
+    fn truncate_last_exchange_removes_last_user_and_reply() {
+        let mut conv = vec![];
+        push_exchange(&mut conv, "first".into(), "reply 1".into());
+        push_exchange(&mut conv, "second".into(), "reply 2".into());
+        truncate_last_exchange(&mut conv);
+        assert_eq!(conv, vec![
+            ("user".to_string(), "first".to_string()),
+            ("assistant".to_string(), "reply 1".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn truncate_last_exchange_on_empty_history_is_noop() {
+        let mut conv: Vec<(String, String)> = vec![];
+        truncate_last_exchange(&mut conv);
+        assert!(conv.is_empty());
+    }
+
+    #[test]
+    fn truncate_last_exchange_drops_trailing_user_without_reply() {
+        let mut conv = vec![("user".to_string(), "pending".to_string())];
+        truncate_last_exchange(&mut conv);
+        assert!(conv.is_empty());
+    }
+
+    // ── stream-json parsing ───────────────────────────────────────────────
+
+    #[test]
+    fn parse_stream_line_extracts_text_delta() {
+        let line = r#"{"type":"stream_event","event":{"delta":{"text":"Olá!"}}}"#;
+        match parse_stream_line(line) {
+            StreamLine::Delta(t) => assert_eq!(t, "Olá!"),
+            _ => panic!("expected Delta"),
+        }
+    }
+
+    #[test]
+    fn parse_stream_line_extracts_final_result() {
+        let line = r#"{"type":"result","subtype":"success","result":"done."}"#;
+        match parse_stream_line(line) {
+            StreamLine::FinalResult(r) => assert_eq!(r, "done."),
+            _ => panic!("expected FinalResult"),
+        }
+    }
+
+    #[test]
+    fn parse_stream_line_ignores_error_results() {
+        let line = r#"{"type":"result","subtype":"error_during_execution","result":"boom"}"#;
+        assert!(matches!(parse_stream_line(line), StreamLine::Other));
+    }
+
+    #[test]
+    fn parse_stream_line_ignores_tool_events_garbage_and_blank() {
+        let tool = r#"{"type":"stream_event","event":{"type":"content_block_start"}}"#;
+        assert!(matches!(parse_stream_line(tool), StreamLine::Other));
+        assert!(matches!(parse_stream_line("not json at all"), StreamLine::Other));
+        assert!(matches!(parse_stream_line("   "), StreamLine::Other));
+    }
 
     #[test]
     fn candidato_base_roundtrip() {
