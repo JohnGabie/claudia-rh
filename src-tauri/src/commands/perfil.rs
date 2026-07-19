@@ -345,6 +345,14 @@ fn perfil_conv() -> &'static Mutex<Vec<(String, String)>> {
     PERFIL_CONV.get_or_init(|| Mutex::new(vec![]))
 }
 
+// Running claude process for the profile chat, kept here so the user can
+// interrupt it. Taken (set to None) on natural completion or on interrupt.
+static PERFIL_CHILD: OnceCell<Mutex<Option<std::process::Child>>> = OnceCell::new();
+
+fn perfil_child() -> &'static Mutex<Option<std::process::Child>> {
+    PERFIL_CHILD.get_or_init(|| Mutex::new(None))
+}
+
 fn read_open_pendencias(db_path: &std::path::Path) -> String {
     let conn = match rusqlite::Connection::open(db_path) {
         Ok(c) => c,
@@ -463,6 +471,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         };
 
         let stdout = child.stdout.take().expect("stdout piped");
+        *perfil_child().lock().unwrap() = Some(child);
         let reader = std::io::BufReader::new(stdout);
         let mut full_response = String::new();
 
@@ -488,7 +497,10 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
             }
         }
 
-        let _ = child.wait();
+        // None here means the user interrupted (interromper_perfil took and killed it).
+        if let Some(mut c) = perfil_child().lock().unwrap().take() {
+            let _ = c.wait();
+        }
 
         // Notify frontend that the agent may have resolved pendências or updated the DB.
         let _ = app.emit("db-atualizada", ());
@@ -511,6 +523,26 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
 
         let _ = app.emit("perfil-output-done", ());
     });
+}
+
+#[tauri::command]
+pub fn interromper_perfil() -> Result<(), String> {
+    if let Some(mut child) = perfil_child().lock().map_err(|e| e.to_string())?.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+// Drops the last user↔assistant exchange from the in-memory history so the
+// user can edit and resend their last message without duplicating context.
+#[tauri::command]
+pub fn remover_ultima_troca_perfil() -> Result<(), String> {
+    let mut c = perfil_conv().lock().map_err(|e| e.to_string())?;
+    if let Some(idx) = c.iter().rposition(|(role, _)| role == "user") {
+        c.truncate(idx);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -628,6 +660,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         };
 
         let stdout = child.stdout.take().expect("stdout piped");
+        *perfil_child().lock().unwrap() = Some(child);
         let reader = std::io::BufReader::new(stdout);
         let mut full_response = String::new();
 
@@ -653,7 +686,10 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
             }
         }
 
-        let _ = child.wait();
+        // None here means the user interrupted (interromper_perfil took and killed it).
+        if let Some(mut c) = perfil_child().lock().unwrap().take() {
+            let _ = c.wait();
+        }
 
         // Notify frontend that the agent may have resolved pendências or updated the DB.
         let _ = app.emit("db-atualizada", ());
