@@ -6,7 +6,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Dashboard } from "./components/Dashboard";
 import { Feedback } from "./components/Feedback";
-import { Perfil } from "./components/Perfil";
+import { Perfil } from "./components/perfil";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
