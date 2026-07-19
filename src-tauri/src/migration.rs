@@ -46,6 +46,7 @@ pub fn migrate_legacy_data_dir(new_dir: &Path) {
     }
 
     migrate_database(&old_dir, new_dir);
+    cleanup_legacy_dir(&old_dir, new_dir);
 }
 
 /// The database needs more care than plain files: db::init may already have
@@ -89,6 +90,32 @@ fn migrate_database(old_dir: &Path, new_dir: &Path) {
         }
     }
     eprintln!("[migration] migrated database from legacy data dir");
+}
+
+/// Removes the legacy directory once its data is verified to be covered by
+/// the new one. Conservative: any doubt keeps the directory untouched.
+fn cleanup_legacy_dir(old_dir: &Path, new_dir: &Path) {
+    // Every data file present in the legacy dir must exist in the new one.
+    for file in DATA_FILES {
+        if old_dir.join(file).exists() && !new_dir.join(file).exists() {
+            return;
+        }
+    }
+    // Legacy DB rows must be covered by the new DB (equal-or-more rows —
+    // either migrated or the user rebuilt at least as much in the new one).
+    let old_db = old_dir.join("claudia_rh.db");
+    if old_db.exists() {
+        let old_rows = count_user_rows(&old_db);
+        let new_db = new_dir.join("claudia_rh.db");
+        let new_rows = if new_db.exists() { count_user_rows(&new_db) } else { 0 };
+        if old_rows > 0 && new_rows < old_rows {
+            return;
+        }
+    }
+    match std::fs::remove_dir_all(old_dir) {
+        Ok(()) => eprintln!("[migration] legacy data dir verified as covered and removed"),
+        Err(e) => eprintln!("[migration] failed to remove legacy data dir: {e}"),
+    }
 }
 
 /// Total rows across the tables that represent real user activity.
@@ -148,6 +175,7 @@ mod tests {
 
         assert!(new.join("candidate_base.yaml").exists());
         assert_eq!(count_user_rows(&new.join("claudia_rh.db")), 3);
+        assert!(!old.exists(), "legacy dir must be removed after full coverage");
     }
 
     #[test]
@@ -166,6 +194,7 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(new.join("candidate_base.yaml")).unwrap(), "new profile");
         assert_eq!(count_user_rows(&new.join("claudia_rh.db")), 2);
+        assert!(old.exists(), "legacy dir must be KEPT while its DB is not covered");
     }
 
     #[test]
@@ -182,6 +211,7 @@ mod tests {
 
         assert_eq!(count_user_rows(&new.join("claudia_rh.db")), 4);
         assert!(new.join("claudia_rh.db.pre-migration").exists());
+        assert!(!old.exists(), "legacy dir removed once the DB is fully migrated");
     }
 
     /// The app identifier determines where user data lives (app_data_dir)
