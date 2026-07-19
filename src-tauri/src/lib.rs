@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod db_watcher;
 mod idle_watcher;
+pub mod mcp;
 mod notificacoes;
 mod prompt;
 mod pty_manager;
@@ -47,6 +48,39 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::Manager;
 
 pub struct DbState(pub Arc<Mutex<Connection>>);
+
+/// Localhost port where the app listens for push notifications from the MCP
+/// subprocess (instant UI refresh after a tool write). None if binding failed —
+/// the db_watcher poll then remains the only refresh path.
+pub struct McpNotifyPort(pub Option<u16>);
+
+fn start_mcp_notify_listener(app: &tauri::AppHandle) -> Option<u16> {
+    use tauri::Emitter;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
+    let port = listener.local_addr().ok()?.port();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for stream in listener.incoming().flatten() {
+            let mut line = String::new();
+            let mut reader = std::io::BufReader::new(stream);
+            if reader.read_line(&mut line).is_ok() {
+                match line.trim() {
+                    "perfil" => {
+                        let _ = app.emit("perfil-atualizado", ());
+                        let _ = app.emit("db-atualizada", ());
+                    }
+                    "db" => {
+                        let _ = app.emit("db-atualizada", ());
+                        let _ = app.emit("pendencia-resolvida", ());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
+    Some(port)
+}
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct JanelaAgendamento {
@@ -123,6 +157,10 @@ pub fn run() {
             let conn = db::init(&data_dir.join("claudia_rh.db"))?;
             let conn_arc = Arc::new(Mutex::new(conn));
             app.manage(DbState(Arc::clone(&conn_arc)));
+
+            // MCP push-notification listener (instant UI refresh on tool writes)
+            let notify_port = start_mcp_notify_listener(app.handle());
+            app.manage(McpNotifyPort(notify_port));
 
             // Idle config
             let idle_cfg = load_idle_config(&data_dir);

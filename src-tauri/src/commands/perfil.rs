@@ -227,15 +227,9 @@ fn estrategia_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 // ── YAML commands ─────────────────────────────────────────────────────────────
 
-/// Shared parsing logic for candidate_base.yaml — no eprintln debug output.
-pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, String> {
-    let path = candidato_base_path(app)?;
-    let raw = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(CandidatoBase::default()),
-        Err(e) => return Err(e.to_string()),
-    };
-
+/// Pure parsing/validation of candidate_base.yaml content. Also used by the
+/// MCP `update_profile` tool to validate before writing.
+pub fn parse_candidato_base_str(raw: &str) -> Result<CandidatoBase, String> {
     // Normalize `key: null` to `key: ""` so legacy Claude-generated YAMLs don't fail
     let content: String = raw
         .lines()
@@ -267,6 +261,17 @@ pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, St
         candidato.dados_pessoais.links = links;
     }
     Ok(candidato)
+}
+
+/// Shared parsing logic for candidate_base.yaml — no eprintln debug output.
+pub fn parse_candidato_base_interno(app: &AppHandle) -> Result<CandidatoBase, String> {
+    let path = candidato_base_path(app)?;
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(CandidatoBase::default()),
+        Err(e) => return Err(e.to_string()),
+    };
+    parse_candidato_base_str(&raw)
 }
 
 #[tauri::command]
@@ -388,9 +393,7 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let variants_yaml = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
         .unwrap_or_else(|_| "(still empty)".to_string());
     let data_dir_str = data_dir.to_string_lossy().to_string();
-    let db_path = data_dir.join("claudia_rh.db");
-    let db_path_str = db_path.to_string_lossy().to_string();
-    let pendencias_str = read_open_pendencias(&db_path);
+    let pendencias_str = read_open_pendencias(&data_dir.join("claudia_rh.db"));
 
     let mut history = String::new();
     if !conv.is_empty() {
@@ -405,33 +408,77 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
         .replace("{{DATA_DIR}}", &data_dir_str)
         .replace("{{CANDIDATE_BASE_YAML}}", &base_yaml)
         .replace("{{SEARCH_VARIANTS_YAML}}", &variants_yaml)
+        .replace("{{SCHEMA}}", crate::commands::prompts::PROFILE_SCHEMA)
         .replace("{{CONVERSA_ANTERIOR}}", &history);
 
-    // Always append pendências block so the model can resolve them when asked,
-    // regardless of the on-disk prompt version.
-    // NOTE: sqlite3 CLI is NOT installed by default on Windows — use Python instead,
-    // which has sqlite3 built-in.
+    // Always appended in code (not in the editable prompt file) so every
+    // install gets the current tool instructions regardless of prompt version.
     prompt.push_str(&format!(
         "\n\n## Open system pending items\n\n\
          {pendencias_str}\n\n\
-         If the user asks to mark one or more pending items as resolved \
+         If the user asks to mark pending items as resolved \
          (e.g., \"mark as ok\", \"we already resolved the salary\", \"close all\"), \
-         use Python (has sqlite3 built-in — the sqlite3 CLI is NOT installed on Windows):\n\
-         ```python\n\
-         import sqlite3\n\
-         c = sqlite3.connect(r\"{db_path_str}\")\n\
-         # close a specific pending item (replace ID and REASON):\n\
-         c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao=? WHERE id=?\", [\"REASON\", ID])\n\
-         # OR close ALL at once:\n\
-         # c.execute(\"UPDATE pendencias SET resolvida=1, resolvida_em=datetime('now'), resolucao='Marked by user' WHERE resolvida=0\")\n\
-         c.commit(); c.close()\n\
-         ```\n\
-         Save the script to a temporary .py file and run it with `python` (or `python3`). \
-         After running, confirm to the user which items were closed. \
-         The interface updates automatically.",
+         use the `close_pendencia` tool (one call per ID; call `list_pendencias` \
+         first if you need to confirm current IDs). \
+         After closing, confirm to the user which items were closed. \
+         The interface updates automatically.\n\n\
+         ## Saving the profile\n\n\
+         IMPORTANT: to create or update candidate_base.yaml ALWAYS use the \
+         `update_profile` tool, sending the COMPLETE YAML. Never write the file \
+         directly with other tools. If validation returns an error, fix the YAML \
+         and call again. Writing PERFIL_ATUALIZADO is not necessary.",
     ));
 
     prompt
+}
+
+/// Writes mcp-config.json pointing at this same binary in --mcp-serve mode,
+/// so the claude CLI exposes claudia's typed tools to the model. Zero user
+/// config: current_exe() resolves the path in dev and installed builds alike.
+/// Shared by every claude spawn (profile chat, main PTY session, linkedin).
+pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let data_dir = app.path().app_data_dir().ok()?;
+    let exe = std::env::current_exe().ok()?;
+    let notify_port = app.try_state::<crate::McpNotifyPort>().and_then(|s| s.0);
+
+    let mut args = vec![
+        "--mcp-serve".to_string(),
+        "--data-dir".to_string(),
+        data_dir.to_string_lossy().into_owned(),
+    ];
+    if let Some(port) = notify_port {
+        args.push("--notify-port".to_string());
+        args.push(port.to_string());
+    }
+    if cfg!(debug_assertions) {
+        args.push("--debug".to_string());
+    }
+
+    let config = serde_json::json!({
+        "mcpServers": {
+            "claudia": { "command": exe.to_string_lossy(), "args": args }
+        }
+    });
+    let path = data_dir.join("mcp-config.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&config).ok()?).ok()?;
+    Some(path)
+}
+
+// The claude process stderr goes to a log in app_data_dir, otherwise errors
+// (e.g. failing to connect to Chrome) vanish and the user only sees silence.
+fn stderr_log(app: &AppHandle) -> Stdio {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .and_then(|d| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(d.join("claude-perfil-stderr.log"))
+                .ok()
+        })
+        .map(Stdio::from)
+        .unwrap_or_else(Stdio::null)
 }
 
 fn spawn_perfil_claude(app: AppHandle, message: String) {
@@ -439,19 +486,23 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_system_prompt(&app, &conv);
 
-        let mut child = match Command::new(crate::commands::claude_program())
-            .args([
-                "--dangerously-skip-permissions",
-                "--print",
-                "--output-format", "stream-json",
-                "--verbose",
-                "--include-partial-messages",
-                &message,
-                "--system-prompt",
-                &sys,
-            ])
+        let mut cmd = Command::new(crate::commands::claude_program());
+        cmd.args([
+            "--dangerously-skip-permissions",
+            "--print",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+        ]);
+        // Expose claudia's typed tools (update_profile, close_pendencia, …)
+        if let Some(mcp_config) = write_mcp_config(&app) {
+            cmd.arg("--mcp-config").arg(mcp_config);
+        }
+        let mut child = match cmd
+            .arg(&message)
+            .args(["--system-prompt", &sys])
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr_log(&app))
             .spawn()
         {
             Ok(c) => c,
@@ -584,16 +635,19 @@ The user has already indicated which platforms to import (see first message). Do
 1. **LinkedIn** (if requested): open `https://www.linkedin.com/in/` and the authenticated session redirects to the user's profile; or click the avatar → "View my profile". Extract: name, location, headline, experience, education, skills, languages, links.
 2. **GitHub** (if requested): open `https://github.com` and click the avatar → "Your profile". Extract: name, bio, location, visible public and private repositories (name, description, primary languages).
 3. Combine everything in YAML and show the user for confirmation.
-4. After explicit confirmation, save the file and write on the next line exactly: `PERFIL_ATUALIZADO`
-5. Immediately after writing `PERFIL_ATUALIZADO`, close the LinkedIn and/or GitHub tabs you opened. Do not open new tabs after that.
+4. After explicit confirmation, save with the `update_profile` tool (send the COMPLETE candidate_base.yaml). Never write the file directly. If validation returns an error, fix the YAML and call again.
+5. Immediately after saving, close the LinkedIn and/or GitHub tabs you opened. Do not open new tabs after that.
 
 ## Rules
 - Do not ask for URLs — go directly to the platforms with the authenticated session
 - Never invent information — only include what is explicitly visible
-- Communicate in Brazilian Portuguese (pt-BR), concisely and directly{history}"#,
+- Communicate in Brazilian Portuguese (pt-BR), concisely and directly
+
+{schema}{history}"#,
         dir = data_dir_str,
         base = base_yaml,
         variants = variants_yaml,
+        schema = crate::commands::prompts::PROFILE_SCHEMA,
         history = history,
     )
 }
@@ -603,20 +657,24 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_chrome_system_prompt(&app, &conv);
 
-        let mut child = match Command::new(crate::commands::claude_program())
-            .args([
-                "--dangerously-skip-permissions",
-                "--print",
-                "--chrome",
-                "--output-format", "stream-json",
-                "--verbose",
-                "--include-partial-messages",
-                &message,
-                "--system-prompt",
-                &sys,
-            ])
+        let mut cmd = Command::new(crate::commands::claude_program());
+        cmd.args([
+            "--dangerously-skip-permissions",
+            "--print",
+            "--chrome",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+        ]);
+        // Expose claudia's typed tools (update_profile, close_pendencia, …)
+        if let Some(mcp_config) = write_mcp_config(&app) {
+            cmd.arg("--mcp-config").arg(mcp_config);
+        }
+        let mut child = match cmd
+            .arg(&message)
+            .args(["--system-prompt", &sys])
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr_log(&app))
             .spawn()
         {
             Ok(c) => c,

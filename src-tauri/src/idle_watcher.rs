@@ -94,6 +94,46 @@ fn pode_disparar(db: &Arc<Mutex<rusqlite::Connection>>, config: &IdleConfig) -> 
     true
 }
 
+/// Spawns the background idle-watcher task.
+/// Polls every 30 seconds. Only fires once per idle session (resets when the
+/// user becomes active again, i.e. idle time drops below 10 s).
+pub fn start(
+    app: AppHandle,
+    idle_config: Arc<Mutex<IdleConfig>>,
+    db: Arc<Mutex<rusqlite::Connection>>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut fired_this_idle = false;
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+
+            let cfg_snapshot = {
+                let cfg = idle_config.lock().unwrap();
+                cfg.clone()
+            };
+            let ativo = cfg_snapshot.ativo;
+            let limiar_secs = cfg_snapshot.limiar_minutos * 60;
+
+            let secs = idle_secs();
+
+            if secs < 10 {
+                fired_this_idle = false;
+                continue;
+            }
+
+            if !ativo || fired_this_idle {
+                continue;
+            }
+
+            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) {
+                fired_this_idle = true;
+                let _ = iniciar_sessao(Arc::clone(&db), &app, "inatividade");
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::pode_disparar;
@@ -179,44 +219,4 @@ mod tests {
         }];
         assert!(!pode_disparar(&db, &IdleConfig { janelas, ..cfg_padrao() }));
     }
-}
-
-/// Spawns the background idle-watcher task.
-/// Polls every 30 seconds. Only fires once per idle session (resets when the
-/// user becomes active again, i.e. idle time drops below 10 s).
-pub fn start(
-    app: AppHandle,
-    idle_config: Arc<Mutex<IdleConfig>>,
-    db: Arc<Mutex<rusqlite::Connection>>,
-) {
-    tauri::async_runtime::spawn(async move {
-        let mut fired_this_idle = false;
-
-        loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-
-            let cfg_snapshot = {
-                let cfg = idle_config.lock().unwrap();
-                cfg.clone()
-            };
-            let ativo = cfg_snapshot.ativo;
-            let limiar_secs = cfg_snapshot.limiar_minutos * 60;
-
-            let secs = idle_secs();
-
-            if secs < 10 {
-                fired_this_idle = false;
-                continue;
-            }
-
-            if !ativo || fired_this_idle {
-                continue;
-            }
-
-            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) {
-                fired_this_idle = true;
-                let _ = iniciar_sessao(Arc::clone(&db), &app, "inatividade");
-            }
-        }
-    });
 }

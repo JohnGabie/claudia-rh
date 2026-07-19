@@ -32,6 +32,7 @@ chrono = { version = "0.4", features = ["serde"] }
 keyring = "3"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
+rmcp = { version = "2.2.0", features = ["server", "transport-io"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

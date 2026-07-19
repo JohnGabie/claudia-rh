@@ -69,6 +69,11 @@ pub fn iniciar_busca_linkedin_rede(
         args.push("--dangerously-skip-permissions".to_string());
     }
     args.push("--chrome".to_string());
+    // Expose claudia's typed tools (register_vaga with fonte_conexao, …)
+    if let Some(mcp_config) = crate::commands::perfil::write_mcp_config(&app) {
+        args.push("--mcp-config".to_string());
+        args.push(mcp_config.to_string_lossy().into_owned());
+    }
     args.push("--system-prompt".to_string());
     args.push(sys_prompt);
 

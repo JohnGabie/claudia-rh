@@ -121,28 +121,20 @@ O Tauri está monitorando o stream de output e, ao ver esta linha, vai terminar 
 
 ## Como escrever o estado compartilhado
 
-O banco de dados SQLite está em `{{DB_PATH}}`. Use o cliente de linha de comando `sqlite3` (ou equivalente disponível no ambiente) para ler e escrever diretamente — não há uma API intermediária para isso nesta versão do sistema. As tabelas relevantes e os seus campos estão descritos no documento de arquitetura, seção 10; use-as exatamente como estão definidas, sem adicionar colunas ou alterar nomes.
+O estado compartilhado é escrito EXCLUSIVAMENTE através das ferramentas MCP do servidor `claudia` — nunca com o cliente `sqlite3`, scripts, ou escrita direta de arquivos. As ferramentas validam os dados e a interface se atualiza instantaneamente a cada chamada.
 
 Sequência esperada para cada vaga processada:
 
-1. Ao descobrir uma vaga nova, insere uma linha em `vagas` com `status = 'descoberta'`.
-2. Depois de avaliar o match contra o perfil, atualiza `status` para `'analisada'` e preenche `match_score` com um resumo textual breve (quais must-haves estão cobertos, quais não).
-3. Se decidir avançar, atualiza `status` para `'candidatando'` antes de começar a interagir com o formulário — isso garante que, se a sessão cair no meio, o estado reflete que esta vaga estava em progresso, não intocada.
-4. Ao terminar com sucesso, insira uma linha em `candidaturas` (com o caminho da pasta de arquivos gerados) e atualize `vagas.status` para `'aplicada'`.
-5. Se decidir pular, atualiza `status` para `'pulada'` e preenche `motivo_status` com uma frase clara.
-6. Se encontrar uma condição de pausa total, insere uma linha em `pendencias` (categoria correspondente à lista acima, descrição legível do que travou) e atualiza `vagas.status` para `'pendente_revisao'`.
+1. Ao descobrir uma vaga nova, chame `register_vaga` (titulo, empresa, plataforma, url; localizacao/modelo_trabalho se visíveis). A resposta devolve o ID da vaga — use-o em todas as chamadas seguintes. URLs repetidas não criam duplicados.
+2. Depois de avaliar o match contra o perfil, chame `update_vaga_status` com `status: "analisada"` e `detalhe` com um resumo textual breve do match (quais must-haves estão cobertos, quais não).
+3. Se decidir avançar, chame `update_vaga_status` com `status: "candidatando"` antes de começar a interagir com o formulário — isso garante que, se a sessão cair no meio, o estado reflete que esta vaga estava em progresso, não intocada.
+4. Ao terminar com sucesso, chame `register_candidatura` (vaga_id, pasta_arquivos com o caminho dos arquivos gerados, metodo). Essa chamada única registra a candidatura E marca a vaga como aplicada.
+5. Se decidir pular, chame `update_vaga_status` com `status: "pulada"` e `detalhe` com o motivo numa frase clara.
+6. Se encontrar uma condição de pausa total, chame `create_pendencia` (vaga_id, categoria correspondente à lista acima, descricao legível do que travou). Essa chamada única cria a pendência E marca a vaga como pendente_revisao.
 
-7. **Ao retomar uma vaga em `pendente_revisao`:** antes de continuar, leia a pendência associada para entender como o usuário resolveu a situação:
-   ```sql
-   SELECT id, resolucao FROM pendencias WHERE vaga_id = <id> AND resolvida = 0 ORDER BY criada_em DESC LIMIT 1;
-   ```
-   Se `resolucao` estiver preenchido (o usuário já agiu pela UI), use esse texto como contexto para continuar. Ao terminar com a vaga (seja aplicar, pular, ou encontrar nova pausa), marque obrigatoriamente todas as pendências abertas dessa vaga como resolvidas:
-   ```sql
-   UPDATE pendencias SET resolvida = 1, resolvida_em = datetime('now'), resolucao = COALESCE(resolucao, 'Resolvida pelo agente') WHERE vaga_id = <id> AND resolvida = 0;
-   ```
-   A interface do usuário se atualiza automaticamente assim que escrever no banco de dados — não precisa fazer mais nada.
+7. **Ao retomar uma vaga em `pendente_revisao`:** antes de continuar, chame `get_pendencia_vaga` para ler como o usuário resolveu a situação. Se houver resolução escrita, use esse texto como contexto para continuar. Ao terminar com a vaga (seja aplicar, pular, ou encontrar nova pausa), chame obrigatoriamente `close_pendencias_vaga` para fechar todas as pendências abertas dessa vaga.
 
-Nunca avance o `status` de uma vaga sem escrever a alteração correspondente no banco de dados — o Tauri só sabe o que está acontecendo através dessas escritas, não através do seu raciocínio interno.
+Nunca avance o estado de uma vaga sem a chamada de ferramenta correspondente — o Tauri só sabe o que está acontecendo através dessas escritas, não através do seu raciocínio interno. Se uma ferramenta devolver erro de validação, corrija os argumentos e chame de novo.
 
 ## Geração do material de candidatura
 
