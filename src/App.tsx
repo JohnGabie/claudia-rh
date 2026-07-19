@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./styles/tokens.css";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar, type View } from "./components/Sidebar";
-import { Dashboard } from "./components/Dashboard";
+import { Dashboard } from "./components/dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/perfil";
 import { TerminalView } from "./components/Terminal";
