@@ -3,6 +3,7 @@ mod db;
 mod db_watcher;
 mod idle_watcher;
 pub mod mcp;
+mod migration;
 mod notificacoes;
 mod prompt;
 mod pty_manager;
@@ -153,6 +154,9 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            // One-shot migration from the pre-v0.2 data dir (identifier change)
+            migration::migrate_legacy_data_dir(&data_dir);
 
             // Database
             let conn = db::init(&data_dir.join("claudia_rh.db"))?;
