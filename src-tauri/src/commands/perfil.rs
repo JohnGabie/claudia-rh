@@ -550,6 +550,12 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
         }
         let clean = full_response.replace("PERFIL_ATUALIZADO", "").trim().to_string();
 
+        // A session that died without producing anything is an error the user
+        // must see, not silence.
+        if clean.is_empty() {
+            let _ = app.emit("perfil-output", empty_response_hint(&app, false));
+        }
+
         {
             let mut c = perfil_conv().lock().unwrap();
             c.push(("user".to_string(), message));
@@ -722,6 +728,12 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         }
         let clean = full_response.replace("PERFIL_ATUALIZADO", "").trim().to_string();
 
+        // A session that died without producing anything is an error the user
+        // must see (e.g. Chrome extension not connected), not silence.
+        if clean.is_empty() {
+            let _ = app.emit("perfil-output", empty_response_hint(&app, true));
+        }
+
         {
             let mut c = perfil_conv().lock().unwrap();
             c.push(("user".to_string(), message));
@@ -734,6 +746,24 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
 
         let _ = app.emit("perfil-output-done", ());
     });
+}
+
+/// User-facing message for a claude run that ended with no text at all,
+/// pointing at the stderr log captured by stderr_log().
+fn empty_response_hint(app: &AppHandle, chrome: bool) -> String {
+    let log_path = app
+        .path()
+        .app_data_dir()
+        .map(|d| d.join("claude-perfil-stderr.log").to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
+    if chrome {
+        format!(
+            "A sessão do Chrome terminou sem resposta. Verifique se o Chrome está aberto \
+             com a extensão do Claude conectada. Detalhes técnicos em: {log_path}"
+        )
+    } else {
+        format!("A sessão terminou sem resposta. Detalhes técnicos em: {log_path}")
+    }
 }
 
 #[tauri::command]
