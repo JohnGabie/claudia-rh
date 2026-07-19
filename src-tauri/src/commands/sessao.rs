@@ -54,12 +54,17 @@ pub fn iniciar_sessao(
         args.push("--dangerously-skip-permissions".to_string());
     }
     args.push("--chrome".to_string());
+    // Expose claudia's typed tools (register_vaga, update_vaga_status, …)
+    if let Some(mcp_config) = crate::commands::perfil::write_mcp_config(app) {
+        args.push("--mcp-config".to_string());
+        args.push(mcp_config.to_string_lossy().into_owned());
+    }
     args.push("--system-prompt".to_string());
     args.push(sys_prompt);
 
-    let modo_txt = if skip_permissions { "autónomo" } else { "supervisionado" };
+    let modo_txt = if skip_permissions { "autonomous" } else { "supervised" };
     let notice = format!(
-        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m A iniciar sessão Claude (motivo: {} · modo: {})…\r\n",
+        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m Starting Claude session (reason: {} · mode: {})…\r\n",
         motivo, modo_txt
     );
     app.emit("pty-output", notice).ok();

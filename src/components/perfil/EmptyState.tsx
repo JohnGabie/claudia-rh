@@ -1,4 +1,5 @@
 import React from "react";
+import { useT } from "../../i18n";
 import { Link2, ClipboardList, FileText } from "lucide-react";
 import { ChatFocus } from "./types";
 
@@ -40,30 +41,14 @@ const OptionCard: React.FC<{ option: OptionDef; onStart: (focus: ChatFocus) => v
   );
 };
 
-const EMPTY_OPTIONS: OptionDef[] = [
-  {
-    Icon: ClipboardList,
-    title: "Colar currículo",
-    desc: "Cole o texto do teu CV existente e o Claude estrutura-o automaticamente.",
-    preMessage: "Quero colar o texto do meu currículo para estruturar o perfil.",
-    focus: "colar_curriculo",
-  },
-  {
-    Icon: FileText,
-    title: "Importar ficheiro",
-    desc: "Indica o caminho de um PDF ou DOCX e o Claude lê diretamente.",
-    preMessage: "Quero importar um ficheiro de currículo (PDF ou DOCX).",
-    focus: "importar_ficheiro",
-  },
-];
-
 const GithubLinkedinCard: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => {
+  const t = useT();
   const [hov, setHov] = React.useState(false);
   return (
     <button
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      onClick={() => onStart({ section: "chrome", label: "GitHub / LinkedIn", chromeSessao: true })}
+      onClick={() => onStart({ section: "chrome", label: t.profile.githubLinkedin, chromeSessao: true })}
       style={{
         flex: 1, background: "var(--bg-surface)",
         border: `1px solid ${hov ? "var(--accent)" : "var(--border)"}`,
@@ -75,16 +60,34 @@ const GithubLinkedinCard: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({
     >
       <Link2 size={20} color={hov ? "var(--accent)" : "var(--text-secondary)"} />
       <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginTop: 10, marginBottom: 4 }}>
-        GitHub / LinkedIn
+        {t.profile.githubLinkedin}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-        O Claude acede com a tua sessão autenticada e importa tudo automaticamente.
+        {t.profile.githubLinkedinDesc}
       </div>
     </button>
   );
 };
 
-export const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => (
+export const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ onStart }) => {
+  const t = useT();
+  const EMPTY_OPTIONS: OptionDef[] = [
+    {
+      Icon: ClipboardList,
+      title: t.profile.pasteResume,
+      desc: t.profile.pasteResumeDesc,
+      preMessage: "Quero colar o texto do meu currículo para estruturar o perfil.",
+      focus: "colar_curriculo",
+    },
+    {
+      Icon: FileText,
+      title: t.profile.importFile,
+      desc: t.profile.importFileDesc,
+      preMessage: "Quero importar um arquivo de currículo (PDF ou DOCX).",
+      focus: "importar_ficheiro",
+    },
+  ];
+  return (
   <div style={{
     flex: 1, display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center",
@@ -103,11 +106,10 @@ export const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ 
     </div>
 
     <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, marginBottom: 8 }}>
-      Vamos construir o teu perfil
+      {t.profile.emptyStateTitle}
     </h2>
     <p style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 420, lineHeight: 1.6, margin: "0 0 32px" }}>
-      O Claude vai conversar contigo para estruturar a tua experiência profissional.
-      Escolhe como queres começar — podes combinar qualquer uma destas opções.
+      {t.profile.emptyStateDesc}
     </p>
 
     <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 560 }}>
@@ -118,7 +120,7 @@ export const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ 
     </div>
 
     <button
-      onClick={() => onStart({ section: "geral", label: "Perfil", preMessage: "Olá! Vamos começar a construir o meu perfil." })}
+      onClick={() => onStart({ section: "geral", label: t.profile.title, preMessage: "Olá! Vamos começar a construir o meu perfil." })}
       style={{
         marginTop: 20, padding: "9px 20px",
         background: "transparent", border: "1px solid var(--border)",
@@ -126,7 +128,8 @@ export const EmptyState: React.FC<{ onStart: (focus: ChatFocus) => void }> = ({ 
         cursor: "pointer", fontFamily: "inherit",
       }}
     >
-      Começar conversa diretamente
+      {t.profile.startDirectly}
     </button>
   </div>
-);
+  );
+};

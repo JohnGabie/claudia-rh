@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { useT } from "../../i18n";
 
 // ── ModoCard — mesmo estilo que VariantCardDash, com arrastar quando ativo ─────
 export const ModoCard: React.FC<{
@@ -11,6 +12,7 @@ export const ModoCard: React.FC<{
   onDragBar?: (newPct: number) => void;
   onDragEnd?: () => void;
 }> = ({ label, ativo, pct, maxPct, emBreve, onToggle, onDragBar, onDragEnd }) => {
+  const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   const onDragBarRef = useRef(onDragBar);
   const onDragEndRef = useRef(onDragEnd);
@@ -46,12 +48,12 @@ export const ModoCard: React.FC<{
           {label}
         </span>
         {emBreve ? (
-          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, border: "1px solid var(--border)", color: "var(--text-tertiary)", fontWeight: 500 }}>Em breve</span>
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, border: "1px solid var(--border)", color: "var(--text-tertiary)", fontWeight: 500 }}>{t.dashboard.comingSoon}</span>
         ) : (
           <>
             <button
               onClick={onToggle}
-              title={ativo ? "Clica para desativar" : "Clica para ativar"}
+              title={ativo ? t.dashboard.clickToDeactivate : t.dashboard.clickToActivate}
               style={{
                 fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
                 border: `1px solid ${ativo ? "var(--accent)" : "var(--border)"}`,
@@ -60,7 +62,7 @@ export const ModoCard: React.FC<{
                 fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
               }}
             >
-              {ativo ? "Ativo" : "Inativo"}
+              {ativo ? t.dashboard.active : t.profile.variantInactive}
             </button>
             <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
           </>
@@ -69,7 +71,7 @@ export const ModoCard: React.FC<{
       <div
         ref={barRef}
         onMouseDown={startDrag}
-        title={canDrag ? "Arrasta para ajustar peso" : undefined}
+        title={canDrag ? t.dashboard.dragToAdjustWeight : undefined}
         style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, position: "relative", userSelect: "none", cursor: canDrag ? "ew-resize" : "default", marginBottom: emBreve ? 0 : undefined }}
       >
         <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />

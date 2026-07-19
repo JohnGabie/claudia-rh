@@ -700,6 +700,131 @@ fn template_dev_compact(data: &CandidatoBase, color: &str, lang: &Lang) -> Strin
 </html>"#)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::perfil::CandidatoBase;
+
+    fn perfil_simples() -> CandidatoBase {
+        serde_yaml::from_str(r#"
+dados_pessoais:
+  nome_completo: "João Silva"
+  email: "joao@test.com"
+  localizacao_atual: "Copenhagen, Denmark"
+  links: []
+experiencia:
+  - empresa: "ACME"
+    cargo: "Backend Dev"
+    inicio: "2020-01"
+    fim: ""
+    descricao: "APIs REST"
+    conquistas: ["Latência -40%"]
+    tecnologias: ["Rust", "Python"]
+competencias:
+  - "Rust"
+  - "Python"
+  - "SQL"
+idiomas:
+  - idioma: "Português"
+    nivel: "Nativo"
+  - idioma: "English"
+    nivel: "C1"
+"#).unwrap()
+    }
+
+    #[test]
+    fn esc_escapa_caracteres_html() {
+        assert_eq!(esc("<div>"), "&lt;div&gt;");
+        assert_eq!(esc("a & b"), "a &amp; b");
+        assert_eq!(esc(r#"say "hi""#), "say &quot;hi&quot;");
+        assert_eq!(esc("plain"), "plain");
+        assert_eq!(esc(""), "");
+    }
+
+    #[test]
+    fn hex_to_rgb_parseia_hex_com_e_sem_cardinal() {
+        assert_eq!(hex_to_rgb("#d97757"), (0xd9, 0x77, 0x57));
+        assert_eq!(hex_to_rgb("d97757"), (0xd9, 0x77, 0x57));
+        assert_eq!(hex_to_rgb("#ffffff"), (255, 255, 255));
+        assert_eq!(hex_to_rgb("#000000"), (0, 0, 0));
+    }
+
+    #[test]
+    fn hex_to_rgb_hex_invalido_retorna_zero() {
+        assert_eq!(hex_to_rgb(""), (0, 0, 0));
+        assert_eq!(hex_to_rgb("#abc"), (0, 0, 0)); // too short
+    }
+
+    #[test]
+    fn tint_clareia_cor_preta_para_meio() {
+        // (0 + 0.5 * (255 - 0)).round() = 127.5 → 128 = 0x80
+        assert_eq!(tint("#000000", 0.5), "#808080");
+        // white tinted stays white
+        assert_eq!(tint("#ffffff", 0.5), "#ffffff");
+    }
+
+    #[test]
+    fn darken_escurece_cor_branca_para_meio() {
+        // (255 * (1 - 0.5)).round() = 127.5 → 128 = 0x80
+        assert_eq!(darken("#ffffff", 0.5), "#808080");
+        // black darkened stays black
+        assert_eq!(darken("#000000", 0.5), "#000000");
+    }
+
+    #[test]
+    fn compute_anos_retorna_vazio_sem_experiencia() {
+        let data: CandidatoBase = serde_yaml::from_str("{}").unwrap();
+        assert_eq!(compute_anos_experiencia(&data), "");
+    }
+
+    #[test]
+    fn compute_anos_usa_entrada_mais_antiga() {
+        // Two jobs: 2015 and 2020 — must use 2015
+        let data: CandidatoBase = serde_yaml::from_str(r#"
+experiencia:
+  - empresa: "B"
+    cargo: "Dev"
+    inicio: "2020-01"
+    fim: ""
+  - empresa: "A"
+    cargo: "Dev"
+    inicio: "2015-06"
+    fim: ""
+"#).unwrap();
+        let anos = compute_anos_experiencia(&data);
+        let current = chrono::Local::now().year() as u32;
+        assert_eq!(anos, (current - 2015).to_string());
+    }
+
+    #[test]
+    fn extract_keywords_deduplica_case_insensitive() {
+        let data: CandidatoBase = serde_yaml::from_str(r#"
+competencias: ["Rust", "Python"]
+experiencia:
+  - empresa: "A"
+    cargo: "Dev"
+    inicio: "2020"
+    fim: ""
+    tecnologias: ["rust", "TypeScript"]
+"#).unwrap();
+        let kws = extract_all_keywords(&data);
+        // "Rust" from competencias + "rust" from experiencia → only one entry
+        assert_eq!(kws.len(), 3, "expected Rust, Python, TypeScript — got {kws:?}");
+        assert!(kws.iter().any(|k| k.to_lowercase() == "rust"));
+        assert!(kws.contains(&"Python".to_string()));
+        assert!(kws.contains(&"TypeScript".to_string()));
+    }
+
+    #[test]
+    fn build_idiomas_line_formata_com_nivel_e_separador() {
+        let data = perfil_simples();
+        let line = build_idiomas_line(&data);
+        assert!(line.contains("Português (Nativo)"));
+        assert!(line.contains("English (C1)"));
+        assert!(line.contains("&middot;"));
+    }
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -723,9 +848,9 @@ pub fn gerar_curriculo(app: AppHandle, template_id: String, cor_primaria: Option
     let path = cv_dir.join(&file_name);
     std::fs::write(&path, &html).map_err(|e| e.to_string())?;
     let template_nome = match template_id.as_str() {
-        "classic-ats" => "Clássico ATS",
-        "hybrid-skills" => "Híbrido Competências",
-        _ => "Dev Compacto",
+        "classic-ats" => "Classic ATS",
+        "hybrid-skills" => "Hybrid Skills",
+        _ => "Dev Compact",
     }.to_string();
     Ok(CurriculoInfo {
         path: path.to_string_lossy().to_string(),
@@ -760,10 +885,10 @@ pub fn listar_curriculos(app: AppHandle) -> Result<Vec<CurriculoInfo>, String> {
                 (stem.to_string(), String::new())
             };
             let template_nome = match template_id.as_str() {
-                "classic-ats" => "Clássico ATS",
-                "hybrid-skills" => "Híbrido Competências",
-                "dev-compact" => "Dev Compacto",
-                _ => "Desconhecido",
+                "classic-ats" => "Classic ATS",
+                "hybrid-skills" => "Hybrid Skills",
+                "dev-compact" => "Dev Compact",
+                _ => "Unknown",
             }.to_string();
             CurriculoInfo {
                 path: path.to_string_lossy().to_string(),

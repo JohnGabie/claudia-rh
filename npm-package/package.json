@@ -1,6 +1,6 @@
 {
   "name": "claudia-rh",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Automated job-application agent powered by Claude + Chrome",
   "bin": {
     "claudia-rh": "bin/claudia-rh.js"
@@ -15,5 +15,8 @@
   },
   "homepage": "https://github.com/JohnGabie/claudia-rh",
   "keywords": ["claude", "jobs", "ai", "automation", "tauri"],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "latest"
+  }
 }

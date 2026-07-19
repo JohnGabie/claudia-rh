@@ -43,6 +43,44 @@ fn darken_cl(hex: &str, factor: f32) -> String {
     format!("#{:02x}{:02x}{:02x}", blend(r), blend(g), blend(b))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn esc_escapa_html_especial() {
+        assert_eq!(esc("<script>alert(1)</script>"), "&lt;script&gt;alert(1)&lt;/script&gt;");
+        assert_eq!(esc("a & b"), "a &amp; b");
+        assert_eq!(esc(r#"say "hi""#), "say &quot;hi&quot;");
+        assert_eq!(esc("clean"), "clean");
+    }
+
+    #[test]
+    fn hex_to_rgb_cl_parseia_cores_validas() {
+        assert_eq!(hex_to_rgb_cl("#d97757"), (0xd9, 0x77, 0x57));
+        assert_eq!(hex_to_rgb_cl("#000000"), (0, 0, 0));
+        assert_eq!(hex_to_rgb_cl("#ffffff"), (255, 255, 255));
+        assert_eq!(hex_to_rgb_cl("aabbcc"), (0xaa, 0xbb, 0xcc)); // without #
+    }
+
+    #[test]
+    fn hex_to_rgb_cl_hex_invalido_retorna_zero() {
+        assert_eq!(hex_to_rgb_cl(""), (0, 0, 0));
+        assert_eq!(hex_to_rgb_cl("#abc"), (0, 0, 0)); // too short (< 6 chars after #)
+    }
+
+    #[test]
+    fn darken_cl_escurece_branco_cinquenta_porcento() {
+        // (255 * (1 - 0.5)).round() = 127.5 → 128 = 0x80
+        assert_eq!(darken_cl("#ffffff", 0.5), "#808080");
+    }
+
+    #[test]
+    fn darken_cl_preto_permanece_preto() {
+        assert_eq!(darken_cl("#000000", 0.9), "#000000");
+    }
+}
+
 // ── Profile summary for Claude context ───────────────────────────────────────
 
 fn build_profile_context(data: &CandidatoBase) -> String {
@@ -333,7 +371,7 @@ fn spawn_cover_letter_claude(
 
         let body_text = body_text.trim().to_string();
         if body_text.is_empty() {
-            let _ = app.emit("cover-letter-error", "Claude não devolveu conteúdo.".to_string());
+            let _ = app.emit("cover-letter-error", "Claude returned no content.".to_string());
             return;
         }
 
@@ -343,13 +381,13 @@ fn spawn_cover_letter_claude(
         let dir = match app.path().app_data_dir() {
             Ok(d) => d,
             Err(e) => {
-                let _ = app.emit("cover-letter-error", format!("Erro ao obter diretório: {e}"));
+                let _ = app.emit("cover-letter-error", format!("Error getting data directory: {e}"));
                 return;
             }
         };
         let cl_dir = dir.join("cover_letters");
         if let Err(e) = std::fs::create_dir_all(&cl_dir) {
-            let _ = app.emit("cover-letter-error", format!("Erro ao criar diretório: {e}"));
+            let _ = app.emit("cover-letter-error", format!("Error creating directory: {e}"));
             return;
         }
 
@@ -367,7 +405,7 @@ fn spawn_cover_letter_claude(
         let path = cl_dir.join(&file_name);
 
         if let Err(e) = std::fs::write(&path, &html) {
-            let _ = app.emit("cover-letter-error", format!("Erro ao guardar ficheiro: {e}"));
+            let _ = app.emit("cover-letter-error", format!("Erro ao salvar arquivo: {e}"));
             return;
         }
 

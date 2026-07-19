@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { useT } from "../../i18n";
 import { ConfigDisparo, JanelaAgendamento } from "./types";
-import { DIAS } from "./constants";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 // ── AgendamentoModal ──────────────────────────────────────────────────────────
@@ -10,6 +10,7 @@ export const AgendamentoModal: React.FC<{
   onSave: (ativo: boolean, limiar: number, janelas: JanelaAgendamento[]) => void;
   onClose: () => void;
 }> = ({ config, onSave, onClose }) => {
+  const t = useT();
   const [janelas, setJanelas] = useState<JanelaAgendamento[]>(config.janelas);
 
   useEffect(() => {
@@ -58,15 +59,15 @@ export const AgendamentoModal: React.FC<{
       >
         {/* Header */}
         <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Agendamento</div>
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>janelas com horário ativo disparam automaticamente</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{t.dashboard.schedule}</div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{t.dashboard.scheduleDesc}</div>
         </div>
 
         {/* Body */}
         <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
           {/* Janelas */}
           <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 10 }}>
-            Janelas de atividade
+            {t.dashboard.activityWindows}
           </div>
 
           {janelas.length === 0 ? (
@@ -74,7 +75,7 @@ export const AgendamentoModal: React.FC<{
               padding: "12px 16px", borderRadius: 8, border: "1px dashed var(--border)",
               color: "var(--text-tertiary)", fontSize: 13, marginBottom: 12,
             }}>
-              Sem janelas — o disparo pode ocorrer a qualquer hora.
+              {t.dashboard.noWindows}
             </div>
           ) : (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
@@ -83,7 +84,7 @@ export const AgendamentoModal: React.FC<{
                 gap: 6, padding: "6px 10px",
                 background: "var(--bg-sunken)", borderBottom: "1px solid var(--border)",
               }}>
-                {["Dia", "Início", "Ativo", ""].map((h, i) => (
+                {[t.dashboard.day, t.dashboard.start, t.dashboard.active, ""].map((h, i) => (
                   <div key={i} style={{ fontSize: 10, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {h}
                   </div>
@@ -98,7 +99,7 @@ export const AgendamentoModal: React.FC<{
                   opacity: j.ativo ? 1 : 0.65,
                 }}>
                   <select value={j.dia_semana} onChange={e => atualizar(i, { dia_semana: parseInt(e.target.value) })} style={{ ...smallInput, width: "100%" }}>
-                    {DIAS.map((d, idx) => <option key={idx} value={idx}>{d}</option>)}
+                    {t.dashboard.days.map((d, idx) => <option key={idx} value={idx}>{d}</option>)}
                   </select>
                   <input type="time" value={j.inicio} onChange={e => atualizar(i, { inicio: e.target.value })} style={{ ...smallInput, width: "100%" }} />
                   <div style={{ display: "flex", justifyContent: "center" }}>
@@ -132,7 +133,7 @@ export const AgendamentoModal: React.FC<{
             onMouseEnter={e => (e.currentTarget.style.color = "var(--text-primary)")}
             onMouseLeave={e => (e.currentTarget.style.color = "var(--text-secondary)")}
           >
-            <Plus size={13} /> Adicionar janela
+            <Plus size={13} /> {t.dashboard.addWindow}
           </button>
         </div>
 
@@ -147,7 +148,7 @@ export const AgendamentoModal: React.FC<{
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Cancelar
+            {t.dashboard.cancel}
           </button>
           <button
             onClick={() => { onSave(janelas.some(j => j.ativo), config.limiar_minutos, janelas); onClose(); }}
@@ -158,7 +159,7 @@ export const AgendamentoModal: React.FC<{
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Guardar
+            {t.dashboard.save}
           </button>
         </div>
       </div>

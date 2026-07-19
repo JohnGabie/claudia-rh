@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useT } from "../../i18n";
 import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { CurriculoInfo, DocLang, PALETTE } from "./types";
 
-// ── Templates metadata ─────────────────────────────────────────────────────
-
-const TEMPLATES = [
-  { id: "classic-ats", nome: "Clássico ATS", badge: "95% ATS", desc: "Single column, sem cores. Máxima compatibilidade com Workday, Greenhouse e Taleo." },
-  { id: "hybrid-skills", nome: "Híbrido Competências", badge: "90% ATS · Recomendado 2026", desc: "Competências em destaque no topo. Alinha com filtro skills-first dos ATS modernos." },
-  { id: "dev-compact", nome: "Dev Compacto", badge: "1 página · Tech/Startups", desc: "Layout denso e técnico. GitHub em destaque, badges de tecnologia, formato PAR." },
-];
 export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const t = useT();
+  const TEMPLATES = [
+    { id: "classic-ats", nome: t.profile.templates.classicAts.name, badge: t.profile.templates.classicAts.badge, desc: t.profile.templates.classicAts.desc },
+    { id: "hybrid-skills", nome: t.profile.templates.hybridSkills.name, badge: t.profile.templates.hybridSkills.badge, desc: t.profile.templates.hybridSkills.desc },
+    { id: "dev-compact", nome: t.profile.templates.devCompact.name, badge: t.profile.templates.devCompact.badge, desc: t.profile.templates.devCompact.desc },
+  ];
   const [gerando, setGerando] = useState<string | null>(null);
   const [curriculos, setCurriculos] = useState<CurriculoInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,10 +76,10 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
           }}
         >
           <ArrowLeft size={14} />
-          Voltar
+          {t.common.back}
         </button>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Currículos
+          {t.profile.resumesTitle}
         </h1>
       </div>
 
@@ -101,7 +101,7 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
       }}>
         {/* Language toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Idioma</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.resumeLanguage}</span>
           {(["pt", "en"] as DocLang[]).map(l => (
             <button
               key={l}
@@ -127,7 +127,7 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
         display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500, flexShrink: 0 }}>
-          Cor do acento
+          {t.profile.accentColor}
         </span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {PALETTE.map(p => (
@@ -154,7 +154,7 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
             value={selectedColor}
             onChange={e => setSelectedColor(e.target.value)}
             style={{ width: 26, height: 26, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", background: "none" }}
-            title="Cor personalizada"
+            title={t.profile.customColor}
           />
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "monospace" }}>{selectedColor}</span>
         </div>
@@ -162,41 +162,41 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
 
       {/* Template cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
-        {TEMPLATES.map(t => (
-          <div key={t.id} style={{
+        {TEMPLATES.map(tmpl => (
+          <div key={tmpl.id} style={{
             flex: "1 1 200px", background: "var(--bg-surface)",
             border: "1px solid var(--border)", borderRadius: 10, padding: 16,
             display: "flex", flexDirection: "column", gap: 8,
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t.nome}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{tmpl.nome}</span>
               <span style={{
                 fontSize: 10, padding: "2px 7px", borderRadius: 10,
                 background: "var(--accent-soft)", color: "var(--accent-strong)", fontWeight: 500,
-              }}>{t.badge}</span>
+              }}>{tmpl.badge}</span>
             </div>
-            <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45, flex: 1 }}>{t.desc}</p>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45, flex: 1 }}>{tmpl.desc}</p>
             <button
-              onClick={() => gerar(t.id)}
+              onClick={() => gerar(tmpl.id)}
               disabled={gerando !== null}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                padding: "7px 14px", background: gerando === t.id ? "var(--bg-sunken)" : selectedColor,
+                padding: "7px 14px", background: gerando === tmpl.id ? "var(--bg-sunken)" : selectedColor,
                 border: "none", borderRadius: 8, fontSize: 13,
-                color: gerando === t.id ? "var(--text-secondary)" : "#fff",
+                color: gerando === tmpl.id ? "var(--text-secondary)" : "#fff",
                 cursor: gerando !== null ? "not-allowed" : "pointer", fontFamily: "inherit",
                 transition: "background 0.15s",
               }}
             >
-              {gerando === t.id ? (
+              {gerando === tmpl.id ? (
                 <>
                   <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                  A gerar…
+                  {t.common.generating}
                 </>
               ) : (
                 <>
                   <FileText size={13} />
-                  Gerar
+                  {t.common.generate}
                 </>
               )}
             </button>
@@ -206,17 +206,17 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
 
       {/* Generated CVs list */}
       <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 10 }}>
-        Currículos gerados
+        {t.profile.generatedResumes}
       </div>
       {loading ? (
-        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>A carregar…</div>
+        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{t.common.loading}</div>
       ) : curriculos.length === 0 ? (
         <div style={{
           background: "var(--bg-surface)", border: "1px dashed var(--border)",
           borderRadius: 8, padding: "20px 16px", textAlign: "center",
           fontSize: 13, color: "var(--text-secondary)",
         }}>
-          Ainda não há currículos gerados. Escolhe um template acima para começar.
+          {t.profile.noResumesYet}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -244,7 +244,7 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                   fontFamily: "inherit",
                 }}
               >
-                Abrir
+                {t.common.open}
               </button>
               <button
                 onClick={() => apagar(cv.path)}

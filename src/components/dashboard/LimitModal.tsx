@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useT } from "../../i18n";
 import { ModalCfg } from "./types";
 import { DrumPicker } from "./DrumPicker";
 
 export const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ cfg, onClose }) => {
+  const t = useT();
   const [valor, setValor] = useState(cfg.valorAtual);
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ c
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Cancelar
+            {t.dashboard.cancel}
           </button>
           <button
             onClick={() => { cfg.onSave(valor); onClose(); }}
@@ -79,7 +81,7 @@ export const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ c
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Guardar
+            {t.dashboard.save}
           </button>
         </div>
       </div>

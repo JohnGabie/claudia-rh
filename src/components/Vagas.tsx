@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ExternalLink, Folder } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Vaga } from "../types";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useT } from "../i18n";
+
 
 interface Candidatura {
   id: number;
@@ -18,16 +20,6 @@ interface Candidatura {
   resultado: string | null;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  descoberta: "Descoberta",
-  analisada: "Analisada",
-  candidatando: "A candidatar",
-  aplicada: "Aplicada",
-  pulada: "Pulada",
-  pendente_revisao: "Pendente revisão",
-  bloqueada: "Bloqueada",
-};
-
 const STATUS_STYLE: Record<string, { background: string; color: string }> = {
   descoberta: { background: "var(--bg-sunken)", color: "var(--text-secondary)" },
   analisada: { background: "var(--bg-sunken)", color: "var(--text-secondary)" },
@@ -38,36 +30,19 @@ const STATUS_STYLE: Record<string, { background: string; color: string }> = {
   bloqueada: { background: "#F7E2DF", color: "var(--danger)" },
 };
 
-const FILTROS = [
-  { key: "todas", label: "Todas" },
-  { key: "descoberta", label: "Descoberta" },
-  { key: "analisada", label: "Analisada" },
-  { key: "pendente_revisao", label: "Pendente revisão" },
-  { key: "bloqueada", label: "Bloqueada" },
-  { key: "pulada", label: "Pulada" },
-];
-
-const METODO_LABEL: Record<string, string> = {
-  chrome: "Chrome",
-  formulario: "Formulário",
-  email: "E-mail",
-  linkedin: "LinkedIn",
-  manual: "Manual",
-};
-
-const RESULTADO_OPCOES = [
-  { value: null, label: "—", color: "var(--text-tertiary)" },
-  { value: "sem_resposta", label: "Sem resposta", color: "var(--text-tertiary)" },
-  { value: "rejeitada", label: "Rejeitada", color: "var(--danger)" },
-  { value: "entrevista", label: "Entrevista", color: "var(--warning)" },
-  { value: "oferta", label: "Oferta", color: "var(--success)" },
-];
-
 const ResultadoPicker: React.FC<{
   candidaturaId: number;
   resultado: string | null;
   onUpdate: () => void;
 }> = ({ candidaturaId, resultado, onUpdate }) => {
+  const t = useT();
+  const RESULTADO_OPCOES = [
+    { value: null, label: t.jobs.resultOptions.none, color: "var(--text-tertiary)" },
+    { value: "sem_resposta", label: t.jobs.resultOptions.sem_resposta, color: "var(--text-tertiary)" },
+    { value: "rejeitada", label: t.jobs.resultOptions.rejeitada, color: "var(--danger)" },
+    { value: "entrevista", label: t.jobs.resultOptions.entrevista, color: "var(--warning)" },
+    { value: "oferta", label: t.jobs.resultOptions.oferta, color: "var(--success)" },
+  ];
   const [busy, setBusy] = useState(false);
   const atual = RESULTADO_OPCOES.find(o => o.value === resultado) ?? RESULTADO_OPCOES[0];
 
@@ -100,6 +75,15 @@ const ResultadoPicker: React.FC<{
 };
 
 export const Vagas: React.FC = () => {
+  const t = useT();
+  const FILTROS = [
+    { key: "todas", label: t.jobs.filters.todas },
+    { key: "descoberta", label: t.jobs.filters.descoberta },
+    { key: "analisada", label: t.jobs.filters.analisada },
+    { key: "pendente_revisao", label: t.jobs.filters.pendente_revisao },
+    { key: "bloqueada", label: t.jobs.filters.bloqueada },
+    { key: "pulada", label: t.jobs.filters.pulada },
+  ];
   const [subView, setSubView] = useState<"todas" | "historico">("todas");
   const [filtro, setFiltro] = useState("todas");
   const [vagas, setVagas] = useState<Vaga[]>([]);
@@ -183,12 +167,12 @@ export const Vagas: React.FC = () => {
         flexShrink: 0,
       }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
-          Vagas
+          {t.jobs.title}
         </h1>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
-          {pill(subView === "todas", () => setSubView("todas"), "Todas as vagas")}
-          {pill(subView === "historico", () => setSubView("historico"), "Histórico de candidaturas")}
+          {pill(subView === "todas", () => setSubView("todas"), t.jobs.allJobs)}
+          {pill(subView === "historico", () => setSubView("historico"), t.jobs.applicationHistory)}
         </div>
 
         {subView === "todas" && (
@@ -204,18 +188,18 @@ export const Vagas: React.FC = () => {
       <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }}>
         {loading ? (
           <div style={{ padding: "24px 0", color: "var(--text-tertiary)", fontSize: 14 }}>
-            A carregar…
+            {t.common.loading}
           </div>
         ) : subView === "todas" ? (
           vagas.length === 0 ? (
             <div style={{ padding: "24px 0", color: "var(--text-secondary)", fontSize: 14 }}>
-              Nenhuma vaga encontrada.
+              {t.jobs.noJobsFound}
             </div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Título", "Empresa", "Plataforma", "Status", "Descoberta", ""].map((h) => (
+                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.status, t.jobs.tableHeaders.discovered, ""].map((h) => (
                     <th key={h} style={{
                       padding: "10px 12px",
                       textAlign: "left",
@@ -256,7 +240,7 @@ export const Vagas: React.FC = () => {
                           title={v.motivo_status ?? undefined}
                           style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, ...s }}
                         >
-                          {STATUS_LABELS[v.status] ?? v.status}
+                          {t.jobs.statusLabels[v.status as keyof typeof t.jobs.statusLabels] ?? v.status}
                         </span>
                         {v.motivo_status && (
                           <div style={{
@@ -273,7 +257,7 @@ export const Vagas: React.FC = () => {
                       <td style={{ padding: "10px 12px" }}>
                         <button
                           onClick={() => openUrl(v.url).catch(console.error)}
-                          title="Abrir vaga"
+                          title={t.jobs.openJob}
                           style={{
                             background: "transparent", border: "none", cursor: "pointer",
                             padding: 4, color: "var(--text-tertiary)", display: "flex", alignItems: "center",
@@ -291,13 +275,13 @@ export const Vagas: React.FC = () => {
         ) : (
           candidaturas.length === 0 ? (
             <div style={{ padding: "24px 0", color: "var(--text-secondary)", fontSize: 14 }}>
-              Nenhuma candidatura enviada ainda.
+              {t.jobs.noApplications}
             </div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Título", "Empresa", "Plataforma", "Método", "Resultado", "Enviada", "", ""].map((h, i) => (
+                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.method, t.jobs.tableHeaders.result, t.jobs.tableHeaders.sent, "", ""].map((h, i) => (
                     <th key={i} style={{
                       padding: "10px 12px",
                       textAlign: "left",
@@ -337,7 +321,7 @@ export const Vagas: React.FC = () => {
                           fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
                           background: "var(--accent-soft)", color: "var(--accent-strong)",
                         }}>
-                          {METODO_LABEL[c.metodo] ?? c.metodo}
+                          {(t.jobs.methodLabels as Record<string, string>)[c.metodo] ?? c.metodo}
                         </span>
                       </td>
                       <td style={{ padding: "10px 12px" }}>
@@ -354,7 +338,7 @@ export const Vagas: React.FC = () => {
                         {c.pasta_arquivos && (
                           <button
                             onClick={() => invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch(console.error)}
-                            title="Abrir pasta de ficheiros"
+                            title={t.jobs.openFiles}
                             style={{
                               background: "transparent", border: "none", cursor: "pointer",
                               padding: 4, color: "var(--text-tertiary)", display: "flex", alignItems: "center",
@@ -367,7 +351,7 @@ export const Vagas: React.FC = () => {
                       <td style={{ padding: "10px 12px" }}>
                         <button
                           onClick={() => openUrl(c.url).catch(console.error)}
-                          title="Abrir vaga"
+                          title={t.jobs.openJob}
                           style={{
                             background: "transparent", border: "none", cursor: "pointer",
                             padding: 4, color: "var(--text-tertiary)", display: "flex", alignItems: "center",

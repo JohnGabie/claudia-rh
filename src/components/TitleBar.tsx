@@ -1,5 +1,6 @@
 import React from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useT } from "../i18n";
 
 const LogoOculos: React.FC = () => (
   <svg width={22} height={12} viewBox="0 0 660 360" fill="none" strokeLinecap="round" stroke="#fff" strokeWidth={28}>
@@ -12,6 +13,8 @@ const LogoOculos: React.FC = () => (
 );
 
 export const TitleBar: React.FC = () => {
+  const t = useT();
+
   return (
     <div
       data-tauri-drag-region
@@ -38,7 +41,7 @@ export const TitleBar: React.FC = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <WinBtn
-          title="Minimizar"
+          title={t.titleBar.minimize}
           onClick={() => invoke("minimize_window")}
           icon={
             <svg width={10} height={2} viewBox="0 0 10 2">
@@ -47,7 +50,7 @@ export const TitleBar: React.FC = () => {
           }
         />
         <WinBtn
-          title="Fechar"
+          title={t.titleBar.close}
           onClick={() => invoke("close_window")}
           hoverColor="rgba(196,43,28,0.85)"
           icon={

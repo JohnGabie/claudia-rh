@@ -2,29 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { useT } from "../../i18n";
 import { ArrowLeft, Paperclip, Send, Pencil, Square, AlertCircle, X } from "lucide-react";
 import { renderMarkdown } from "../../lib/markdown";
 import { CandidateBase, ChatFocus, Message } from "./types";
-
-// ── Logo ───────────────────────────────────────────────────────────────────
-
-const GlassesAvatar: React.FC = () => (
-  <div style={{
-    width: 30, height: 30, borderRadius: "50%",
-    background: "var(--accent-soft)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
-  }}>
-    <svg width={18} height={10} viewBox="0 0 660 360" fill="none" strokeLinecap="round"
-      stroke="var(--accent)" strokeWidth={30}>
-      <circle cx="160" cy="195" r="135" />
-      <circle cx="500" cy="195" r="135" />
-      <path d="M295 180 Q330 130 365 180" />
-      <path d="M10 195 L35 192" />
-      <path d="M650 195 L625 192" />
-    </svg>
-  </div>
-);
+import { GlassesAvatar } from "./sections";
 
 // ── Chat view ──────────────────────────────────────────────────────────────
 
@@ -33,10 +15,11 @@ export const ChatView: React.FC<{
   onBack: () => void;
   data: CandidateBase | null;
 }> = ({ focus, onBack, data }) => {
+  const t = useT();
   const isChrome = focus?.chromeSessao === true;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [anexos, setAnexos] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Chrome selection state — shown before the session starts
@@ -100,6 +83,27 @@ export const ChatView: React.FC<{
     };
   }, [isChrome]);
 
+  useEffect(() => {
+    if (isChrome) {
+      setMessages([{
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: t.profile.importQuestion,
+        streaming: false,
+      }]);
+      // Don't start the session yet — wait for the user's selection
+    } else if (focus?.preMessage) {
+      setMessages([{ id: crypto.randomUUID(), role: "user", content: focus.preMessage, streaming: false }]);
+      startSession(focus.preMessage);
+    } else {
+      const greeting = data
+        ? t.profile.greetingWithProfile
+        : t.profile.greetingNoProfile;
+      setMessages([{ id: crypto.randomUUID(), role: "assistant", content: greeting, streaming: false }]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleImport = async () => {
     const sources: string[] = [];
     if (importLinkedin) sources.push("LinkedIn");
@@ -138,55 +142,35 @@ export const ChatView: React.FC<{
     }
   };
 
-  useEffect(() => {
-    if (isChrome) {
-      setMessages([{
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "Que perfis queres importar? Acedo com a tua sessão autenticada — podes selecionar um ou ambos.",
-        streaming: false,
-      }]);
-      // Don't start the session yet — wait for the user's selection
-    } else if (focus?.preMessage) {
-      setMessages([{ id: crypto.randomUUID(), role: "user", content: focus.preMessage, streaming: false }]);
-      startSession(focus.preMessage);
-    } else {
-      const greeting = data
-        ? "Olá! Vejo que o teu perfil já tem informação. O que queres atualizar ou adicionar?"
-        : "Olá! Ainda não tens perfil construído. Como preferes começar?";
-      setMessages([{ id: crypto.randomUUID(), role: "assistant", content: greeting, streaming: false }]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const anexarFicheiros = async () => {
-    const selecionados = await openFileDialog({ multiple: true, title: "Anexar ficheiros" });
-    if (!selecionados) return;
-    const paths = Array.isArray(selecionados) ? selecionados : [selecionados];
-    setAnexos(prev => [...prev, ...paths.filter(p => !prev.includes(p))]);
+  const attachFiles = async () => {
+    const selected = await openFileDialog({ multiple: true, title: t.profile.attachFiles });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    setAttachments(prev => [...prev, ...paths.filter(p => !prev.includes(p))]);
   };
 
-  const nomeFicheiro = (path: string) => path.split(/[/\\]/).pop() ?? path;
+  const fileName = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
   const sendMessage = async () => {
     const text = input.trim();
-    if ((!text && anexos.length === 0) || sending) return;
+    if ((!text && attachments.length === 0) || sending) return;
 
     // Bubble shows only the text + file names; the invoke gets the full paths
     // with an instruction so Claude reads them with the Read tool.
-    const displayText = anexos.length > 0
-      ? `${text}${text ? "\n\n" : ""}📎 ${anexos.map(nomeFicheiro).join(", ")}`
+    const displayText = attachments.length > 0
+      ? `${text}${text ? "\n\n" : ""}📎 ${attachments.map(fileName).join(", ")}`
       : text;
-    const promptText = anexos.length > 0
-      ? `${text}${text ? "\n\n" : ""}[Ficheiros anexados pelo utilizador — lê-os com a ferramenta Read:]\n${anexos.map(p => `- ${p}`).join("\n")}`
+    const promptText = attachments.length > 0
+      ? `${text}${text ? "\n\n" : ""}${t.profile.attachedNote}\n${attachments.map(p => `- ${p}`).join("\n")}`
       : text;
 
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: displayText, streaming: false };
     setMessages(prev => [...prev, userMsg]);
     setInput("");
-    setAnexos([]);
+    setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = "auto";
-    setSending(true);    setError(null);
+    setSending(true);
+    setError(null);
 
     try {
       if (isChrome) {
@@ -197,7 +181,8 @@ export const ChatView: React.FC<{
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      setSending(false);    }
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -255,7 +240,7 @@ export const ChatView: React.FC<{
           }}
         >
           <ArrowLeft size={15} />
-          Perfil
+          {t.profile.title}
         </button>
 
         {focus && focus.section !== "geral" && (
@@ -283,7 +268,7 @@ export const ChatView: React.FC<{
           }}>
             <AlertCircle size={14} />
             <span>
-              Não foi possível iniciar a sessão: {error}. Certifica-te que o backend está implementado.
+              {t.profile.sessionError.replace("{error}", error)}
             </span>
           </div>
         )}
@@ -327,7 +312,7 @@ export const ChatView: React.FC<{
               {msg.role === "user" && i === lastUserIdx && !sending && (
                 <button
                   onClick={editLastMessage}
-                  title="Editar mensagem"
+                  title={t.profile.editMessage}
                   style={{
                     background: "none", border: "none", cursor: "pointer",
                     padding: 4, marginTop: 4, flexShrink: 0,
@@ -401,7 +386,7 @@ export const ChatView: React.FC<{
                 transition: "background 0.15s, color 0.15s",
               }}
             >
-              Importar
+              {t.profile.importBtn}
             </button>
           </div>
         )}
@@ -417,12 +402,12 @@ export const ChatView: React.FC<{
         padding: "12px 16px",
         display: isChrome && !selectionDone ? "none" : undefined,
       }}>
-        {anexos.length > 0 && (
+        {attachments.length > 0 && (
           <div style={{
             display: "flex", flexWrap: "wrap", gap: 6,
             maxWidth: 680, margin: "0 auto 8px",
           }}>
-            {anexos.map(path => (
+            {attachments.map(path => (
               <span
                 key={path}
                 title={path}
@@ -435,11 +420,11 @@ export const ChatView: React.FC<{
               >
                 <Paperclip size={11} style={{ flexShrink: 0 }} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {nomeFicheiro(path)}
+                  {fileName(path)}
                 </span>
                 <button
-                  onClick={() => setAnexos(prev => prev.filter(p => p !== path))}
-                  title="Remover anexo"
+                  onClick={() => setAttachments(prev => prev.filter(p => p !== path))}
+                  title={t.profile.removeAttachment}
                   style={{
                     background: "none", border: "none", cursor: "pointer", padding: 0,
                     display: "flex", alignItems: "center", color: "var(--text-tertiary)",
@@ -456,9 +441,9 @@ export const ChatView: React.FC<{
           maxWidth: 680, margin: "0 auto",
         }}>
           <button
-            onClick={anexarFicheiros}
+            onClick={attachFiles}
             disabled={sending}
-            title="Anexar ficheiros"
+            title={t.profile.attachFiles}
             style={{
               width: 36, height: 36, flexShrink: 0,
               background: "none", border: "none", borderRadius: 8,
@@ -481,7 +466,7 @@ export const ChatView: React.FC<{
               el.style.height = Math.min(el.scrollHeight, 160) + "px";
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Escreve uma mensagem… (Enter para enviar, Shift+Enter para nova linha)"
+            placeholder={t.profile.chatPlaceholder}
             disabled={sending}
             rows={1}
             style={{
@@ -506,7 +491,7 @@ export const ChatView: React.FC<{
           {sending ? (
             <button
               onClick={stopGeneration}
-              title="Parar geração"
+              title={t.profile.stopGeneration}
               style={{
                 width: 36, height: 36, flexShrink: 0,
                 background: "var(--accent)",
@@ -520,22 +505,22 @@ export const ChatView: React.FC<{
           ) : (
             <button
               onClick={sendMessage}
-              disabled={!input.trim() && anexos.length === 0}
+              disabled={!input.trim() && attachments.length === 0}
               title="Enviar (Enter)"
               style={{
                 width: 36, height: 36, flexShrink: 0,
-                background: (!input.trim() && anexos.length === 0) ? "var(--bg-sunken)" : "var(--accent)",
-                border: "none", borderRadius: 8, cursor: (!input.trim() && anexos.length === 0) ? "default" : "pointer",
+                background: (!input.trim() && attachments.length === 0) ? "var(--bg-sunken)" : "var(--accent)",
+                border: "none", borderRadius: 8, cursor: (!input.trim() && attachments.length === 0) ? "default" : "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "background 0.15s",
               }}
             >
-              <Send size={15} color={(!input.trim() && anexos.length === 0) ? "var(--text-tertiary)" : "#fff"} />
+              <Send size={15} color={(!input.trim() && attachments.length === 0) ? "var(--text-tertiary)" : "#fff"} />
             </button>
           )}
         </div>
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginTop: 6, maxWidth: 680, margin: "6px auto 0" }}>
-          Enter para enviar · Shift+Enter para nova linha
+          {t.profile.enterHint}
         </div>
       </div>
 

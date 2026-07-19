@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { useT } from "../../i18n";
 import { SearchVariant } from "../../types";
 
 // ── VariantCardDash ───────────────────────────────────────────────────────────
@@ -10,6 +11,7 @@ export const VariantCardDash: React.FC<{
   onDragEnd: () => void;
   onToggleAtiva: () => void;
 }> = ({ variant, pct, maxPct, onDragBar, onDragEnd, onToggleAtiva }) => {
+  const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   const onDragBarRef = useRef(onDragBar);
   const onDragEndRef = useRef(onDragEnd);
@@ -43,7 +45,7 @@ export const VariantCardDash: React.FC<{
         </span>
         <button
           onClick={onToggleAtiva}
-          title={variant.ativa ? "Clica para desativar" : "Clica para ativar"}
+          title={variant.ativa ? t.dashboard.clickToDeactivate : t.dashboard.clickToActivate}
           style={{
             fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
             border: `1px solid ${variant.ativa ? "var(--accent)" : "var(--border)"}`,
@@ -52,14 +54,14 @@ export const VariantCardDash: React.FC<{
             fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
           }}
         >
-          {variant.ativa ? "Ativa" : "Inativa"}
+          {variant.ativa ? t.profile.variantActive : t.profile.variantInactive}
         </button>
         <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
       </div>
       <div
         ref={barRef}
         onMouseDown={startDrag}
-        title="Arrasta para ajustar peso"
+        title={t.dashboard.dragToAdjustWeight}
         style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, cursor: "ew-resize", position: "relative", userSelect: "none", marginBottom: 8 }}
       >
         <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />

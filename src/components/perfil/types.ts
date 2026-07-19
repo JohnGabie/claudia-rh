@@ -1,5 +1,3 @@
-
-
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface DadosPessoais {
@@ -36,7 +34,6 @@ export interface CandidateBase {
   ultima_atualizacao: string;
   fontes_usadas: { tipo: string; referencia: string; consultado_em: string }[];
 }
-
 
 export interface CurriculoInfo {
   path: string;

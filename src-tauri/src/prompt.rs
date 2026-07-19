@@ -70,17 +70,17 @@ fn build_memory_summary(conn: &Connection) -> String {
                     .map(|rows| rows.filter_map(|r| r.ok()).collect())
                     .unwrap_or_default();
                 if rows.is_empty() {
-                    "(nenhuma vaga pulada recentemente)".to_string()
+                    "(no jobs skipped recently)".to_string()
                 } else {
                     rows.join("\n")
                 }
             }
-            Err(_) => "(nenhuma vaga pulada recentemente)".to_string(),
+            Err(_) => "(no jobs skipped recently)".to_string(),
         }
     };
 
     format!(
-        "Candidaturas hoje: {}\nCandidaturas esta semana: {}\nPendências por resolver: {}\n\nVagas puladas recentemente:\n{}",
+        "Applications today: {}\nApplications this week: {}\nUnresolved pending items: {}\n\nRecently skipped jobs:\n{}",
         hoje, semana, pendentes, puladas_txt
     )
 }

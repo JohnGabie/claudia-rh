@@ -1,22 +1,47 @@
 import React, { useEffect, useRef } from "react";
+import { useT } from "../../i18n";
 import { Pencil } from "lucide-react";
 import { SearchVariant } from "../../types";
 import { CandidateBase, EditTarget } from "./types";
 
+// ── Logo ───────────────────────────────────────────────────────────────────
+
+export const GlassesAvatar: React.FC = () => (
+  <div style={{
+    width: 30, height: 30, borderRadius: "50%",
+    background: "var(--accent-soft)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  }}>
+    <svg width={18} height={10} viewBox="0 0 660 360" fill="none" strokeLinecap="round"
+      stroke="var(--accent)" strokeWidth={30}>
+      <circle cx="160" cy="195" r="135" />
+      <circle cx="500" cy="195" r="135" />
+      <path d="M295 180 Q330 130 365 180" />
+      <path d="M10 195 L35 192" />
+      <path d="M650 195 L625 192" />
+    </svg>
+  </div>
+);
+
+
 // ── Profile section components ─────────────────────────────────────────────
 
-export const EditBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button onClick={onClick} style={{
-    display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
-    cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit",
-    padding: "2px 6px", borderRadius: 4, flexShrink: 0,
-  }}
-  onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-strong)")}
-  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
-  >
-    <Pencil size={11} /> Editar
-  </button>
-);
+export const EditBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const t = useT();
+  return (
+    <button onClick={onClick} style={{
+      display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
+      cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit",
+      padding: "2px 6px", borderRadius: 4, flexShrink: 0,
+    }}
+    onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-strong)")}
+    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
+    >
+      <Pencil size={11} /> {t.common.edit}
+    </button>
+  );
+};
 
 export const SectionBlock: React.FC<{ title: string; onEdit: () => void; children: React.ReactNode }> = ({ title, onEdit, children }) => (
   <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 20px", marginBottom: 12 }}>
@@ -31,6 +56,7 @@ export const SectionBlock: React.FC<{ title: string; onEdit: () => void; childre
 );
 
 export const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }> = ({ data, onEdit }) => {
+  const t = useT();
   const dp = data.dados_pessoais;
   const initials = (dp.nome_completo || "?").split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
   const headline = data.experiencia?.[0]
@@ -47,7 +73,7 @@ export const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }
         }}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2 }}>
-            {dp.nome_completo || <span style={{ color: "var(--text-tertiary)" }}>Nome não preenchido</span>}
+            {dp.nome_completo || <span style={{ color: "var(--text-tertiary)" }}>{t.profile.nameNotFilled}</span>}
           </div>
           {headline && <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 3 }}>{headline}</div>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 6 }}>
@@ -71,8 +97,10 @@ export const ProfileHeader: React.FC<{ data: CandidateBase; onEdit: () => void }
   );
 };
 
-export const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Experiência profissional" onEdit={onEdit}>
+export const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.professionalExperience} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {items.map((exp, i) => (
         <div key={i} style={{ paddingLeft: 14, borderLeft: "2px solid var(--border)" }}>
@@ -83,7 +111,7 @@ export const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"];
             </div>
             {(exp.inicio || exp.fim) && (
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 2 }}>
-                {exp.inicio}{exp.fim ? ` – ${exp.fim}` : " – presente"}
+                {exp.inicio}{exp.fim ? ` – ${exp.fim}` : ` – ${t.profile.present}`}
               </div>
             )}
           </div>
@@ -108,10 +136,13 @@ export const ExperienciaSection: React.FC<{ items: CandidateBase["experiencia"];
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-export const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Projetos" onEdit={onEdit}>
+export const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.projects} onEdit={onEdit}>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {items.map((proj, i) => (
         <div key={i} style={{ background: "var(--bg-sunken)", borderRadius: 8, padding: "12px 14px", border: "1px solid var(--border)" }}>
@@ -128,10 +159,13 @@ export const ProjetosSection: React.FC<{ items: CandidateBase["projetos"]; onEdi
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-export const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Formação" onEdit={onEdit}>
+export const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.education} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {items.map((f, i) => (
         <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -148,10 +182,13 @@ export const FormacaoSection: React.FC<{ items: CandidateBase["formacao"]; onEdi
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
-export const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Competências" onEdit={onEdit}>
+export const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.skills} onEdit={onEdit}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {items.map((skill, i) => (
         <span key={i} style={{
@@ -162,15 +199,18 @@ export const CompetenciasSection: React.FC<{ items: string[]; onEdit: () => void
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
 const NIVEL_COLOR: Record<string, string> = {
   Nativo: "var(--success)", C2: "var(--success)", C1: "var(--accent)",
   B2: "var(--warning)", B1: "var(--warning)", A2: "var(--text-tertiary)", A1: "var(--text-tertiary)",
 };
 
-export const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit: () => void }> = ({ items, onEdit }) => (
-  <SectionBlock title="Idiomas" onEdit={onEdit}>
+export const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit: () => void }> = ({ items, onEdit }) => {
+  const t = useT();
+  return (
+  <SectionBlock title={t.profile.sectionTitles.languages} onEdit={onEdit}>
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {items.map((lang, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -182,7 +222,8 @@ export const IdiomasSection: React.FC<{ items: CandidateBase["idiomas"]; onEdit:
       ))}
     </div>
   </SectionBlock>
-);
+  );
+};
 
 export const VariantCard: React.FC<{
   variant: SearchVariant;
@@ -193,6 +234,7 @@ export const VariantCard: React.FC<{
   onDragEnd: () => void;
   onToggleAtiva: () => void;
 }> = ({ variant, pct, maxPct, onEdit, onDragBar, onDragEnd, onToggleAtiva }) => {
+  const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   const onDragBarRef = useRef(onDragBar);
   const onDragEndRef = useRef(onDragEnd);
@@ -226,7 +268,7 @@ export const VariantCard: React.FC<{
           <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{variant.nome_exibicao}</span>
           <button
             onClick={onToggleAtiva}
-            title={variant.ativa ? "Clica para desativar" : "Clica para ativar"}
+            title={variant.ativa ? t.profile.clickToDeactivate : t.profile.clickToActivate}
             style={{
               fontSize: 11, padding: "2px 8px", borderRadius: 10, cursor: "pointer",
               border: `1px solid ${variant.ativa ? "var(--accent)" : "var(--border)"}`,
@@ -235,7 +277,7 @@ export const VariantCard: React.FC<{
               fontFamily: "inherit", fontWeight: 500, flexShrink: 0,
             }}
           >
-            {variant.ativa ? "Ativa" : "Inativa"}
+            {variant.ativa ? t.profile.variantActive : t.profile.variantInactive}
           </button>
           <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{displayPct}%</span>
         </div>
@@ -244,7 +286,7 @@ export const VariantCard: React.FC<{
         <div
           ref={barRef}
           onMouseDown={startDrag}
-          title="Arrasta para ajustar peso"
+          title={t.profile.dragToAdjustWeight}
           style={{ height: 6, background: "var(--bg-sunken)", borderRadius: 3, cursor: "ew-resize", position: "relative", userSelect: "none" }}
         >
           <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />
@@ -268,10 +310,10 @@ export const VariantCard: React.FC<{
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
         <button onClick={() => onEdit({ kind: "variante", id: variant.id })} style={{ padding: "5px 12px", borderRadius: 6, cursor: "pointer", background: "none", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", fontFamily: "inherit" }}>
-          Editar
+          {t.profile.editVariant}
         </button>
-        <button disabled title="Em breve — requer template" style={{ padding: "5px 12px", borderRadius: 6, cursor: "default", background: "var(--bg-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit" }}>
-          Exportar CV
+        <button disabled title={t.profile.exportCVSoon} style={{ padding: "5px 12px", borderRadius: 6, cursor: "default", background: "var(--bg-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", fontFamily: "inherit" }}>
+          {t.profile.exportCV}
         </button>
       </div>
     </div>

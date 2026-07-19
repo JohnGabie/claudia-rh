@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb } from "lucide-react";
+import { useT } from "../i18n";
 
 interface Proposta {
   id: number;
@@ -26,21 +27,6 @@ interface Pendencia {
   resolucao: string | null;
 }
 
-const CATEGORIA_META: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size: number }> }> = {
-  captcha:               { label: "Captcha",            color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: MousePointerClick },
-  dados_sensiveis:       { label: "Dados sensíveis",    color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  inventar_informacao:   { label: "Informação em falta",color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  red_line:              { label: "Red line",            color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
-  salario:               { label: "Salário fora da faixa",color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-  pergunta_sem_resposta: { label: "Pergunta sem resposta",color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: HelpCircle },
-  dialogo_bloqueante:    { label: "Diálogo bloqueante",  color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-  extensao_chrome:       { label: "Extensão Chrome",     color:"var(--warning)",bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
-};
-
-function resolveMeta(categoria: string) {
-  const key = Object.keys(CATEGORIA_META).find((k) => categoria.toLowerCase().includes(k));
-  return CATEGORIA_META[key ?? "red_line"] ?? CATEGORIA_META.red_line;
-}
 
 function tempoDesde(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -58,6 +44,22 @@ interface CardProps {
 }
 
 const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
+  const t = useT();
+  const CATEGORIA_META: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size: number }> }> = {
+    captcha:               { label: t.notifications.categories.captcha,               color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: MousePointerClick },
+    dados_sensiveis:       { label: t.notifications.categories.dados_sensiveis,       color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    inventar_informacao:   { label: t.notifications.categories.inventar_informacao,   color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    red_line:              { label: t.notifications.categories.red_line,              color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: ShieldAlert },
+    salario:               { label: t.notifications.categories.salario,               color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+    pergunta_sem_resposta: { label: t.notifications.categories.pergunta_sem_resposta, color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: HelpCircle },
+    dialogo_bloqueante:    { label: t.notifications.categories.dialogo_bloqueante,    color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+    extensao_chrome:       { label: t.notifications.categories.extensao_chrome,       color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+  };
+  const resolveMeta = (categoria: string) => {
+    const key = Object.keys(CATEGORIA_META).find((k) => categoria.toLowerCase().includes(k));
+    return CATEGORIA_META[key ?? "red_line"] ?? CATEGORIA_META.red_line;
+  };
+
   const [expanded, setExpanded] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [resolucaoText, setResolucaoText] = useState("");
@@ -146,7 +148,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
           </span>
           <button
             onClick={handlePular}
-            title="Ignorar"
+            title={t.common.ignore}
             style={{
               width: 20, height: 20,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -197,7 +199,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
               autoFocus
               value={resolucaoText}
               onChange={(e) => setResolucaoText(e.target.value)}
-              placeholder="Como resolveste esta pendência?"
+              placeholder={t.notifications.howResolved}
               rows={2}
               style={{
                 width: "100%",
@@ -225,14 +227,14 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
                 onClick={() => setResolving(false)}
                 style={ghostBtnStyle}
               >
-                Cancelar
+                {t.notifications.cancel}
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={!resolucaoText.trim()}
                 style={{ ...solidBtnStyle, opacity: resolucaoText.trim() ? 1 : 0.45 }}
               >
-                Confirmar
+                {t.notifications.confirm}
               </button>
             </>
           ) : (
@@ -240,7 +242,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
               onClick={handleResolver}
               style={solidBtnStyle}
             >
-              {isCaptcha ? "Já resolvi no Chrome" : "Resolver"}
+              {isCaptcha ? t.notifications.resolvedInChrome : t.notifications.resolve}
             </button>
           )}
         </div>
@@ -250,6 +252,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
 };
 
 const PropostaItem: React.FC<{ p: Proposta; onResolved: () => void; onNavigateToPerfil?: () => void }> = ({ p, onResolved, onNavigateToPerfil }) => {
+  const t = useT();
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -290,14 +293,14 @@ const PropostaItem: React.FC<{ p: Proposta; onResolved: () => void; onNavigateTo
             flexShrink: 0,
           }}>
             <Lightbulb size={10} />
-            Sugestão de perfil
+            {t.notifications.profileSuggestion}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto", flexShrink: 0 }}>
             {tempoDesde(p.criada_em)}
           </span>
           <button
             onClick={handleIgnorar}
-            title="Ignorar"
+            title={t.common.ignore}
             style={{
               width: 20, height: 20,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -330,12 +333,12 @@ const PropostaItem: React.FC<{ p: Proposta; onResolved: () => void; onNavigateTo
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-          <button onClick={handleIgnorar} style={ghostBtnStyle}>Ignorar</button>
+          <button onClick={handleIgnorar} style={ghostBtnStyle}>{t.common.ignore}</button>
           <button
             onClick={() => onNavigateToPerfil?.()}
             style={solidBtnStyle}
           >
-            Ver no Perfil
+            {t.notifications.viewInProfile}
           </button>
         </div>
       </div>
@@ -367,6 +370,7 @@ const solidBtnStyle: React.CSSProperties = {
 };
 
 export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () => void }> = ({ noHeader = false, onNavigateToPerfil }) => {
+  const t = useT();
   const [pendencias, setPendencias] = useState<Pendencia[]>([]);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -400,7 +404,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
       {!noHeader && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-            Notificações
+            {t.notifications.title}
           </h1>
           {total > 0 && (
             <span style={{
@@ -418,7 +422,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
       )}
 
       {loading ? (
-        <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>A carregar…</div>
+        <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>{t.notifications.loading}</div>
       ) : total === 0 ? (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
@@ -426,7 +430,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
           color: "var(--text-tertiary)",
         }}>
           <CheckCircle2 size={32} strokeWidth={1.5} color="var(--success)" />
-          <span style={{ fontSize: 13 }}>Sem notificações por resolver</span>
+          <span style={{ fontSize: 13 }}>{t.notifications.noNotifications}</span>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

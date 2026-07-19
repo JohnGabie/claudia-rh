@@ -3,10 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Pencil } from "lucide-react";
+import { useT } from "../../i18n";
 import { VagaResumo, SearchVariant } from "../../types";
 import { tempoRelativo, formatarTempo, formatTempoCompact } from "../../lib/format";
 import { VagaAtual, ConfigDisparo, StatusLinkedinRede, ModalCfg, JanelaAgendamento } from "./types";
-import { STATUS_LABELS, STATUS_STYLE, CFG_DEFAULT, VALS_CANDIDATURAS, VALS_VAGAS, VALS_TEMPO, calcularProximaJanela } from "./constants";
+import { STATUS_STYLE, CFG_DEFAULT, VALS_CANDIDATURAS, VALS_VAGAS, VALS_TEMPO, calcularProximaJanela } from "./constants";
 import { LimitModal } from "./LimitModal";
 import { AgendamentoModal } from "./AgendamentoModal";
 import { VariantCardDash } from "./VariantCardDash";
@@ -14,6 +15,7 @@ import { ModoCard } from "./ModoCard";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate: _onNavigate }) => {
+  const t = useT();
   const [candidaturasHoje, setCandidaturasHoje] = useState(0);
   const [vagasHoje, setVagasHoje] = useState(0);
   const [vagasTotal, setVagasTotal] = useState(0);
@@ -306,8 +308,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
 
   // Modal openers
   const abrirCandidaturas = () => setModal({
-    titulo: "Limite de candidaturas",
-    subtitulo: "máximo por dia",
+    titulo: t.dashboard.searchLimit,
+    subtitulo: t.dashboard.maxPerDay,
     valores: VALS_CANDIDATURAS,
     valorAtual: config.limite_diario,
     formatValue: (v) => String(v),
@@ -315,8 +317,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   });
 
   const abrirVagas = () => setModal({
-    titulo: "Limite de vagas",
-    subtitulo: "por sessão  ·  0 = sem limite",
+    titulo: t.dashboard.jobLimit,
+    subtitulo: t.dashboard.perSession,
     valores: VALS_VAGAS,
     valorAtual: config.limite_vagas_sessao ?? 0,
     formatValue: (v) => v === 0 ? "∞" : String(v),
@@ -324,15 +326,15 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   });
 
   const abrirTempo = () => setModal({
-    titulo: "Limite de tempo",
-    subtitulo: "por dia  ·  0 = sem limite",
+    titulo: t.dashboard.timeLimit,
+    subtitulo: t.dashboard.perDay,
     valores: VALS_TEMPO,
     valorAtual: config.limite_tempo_minutos,
     formatValue: formatTempoCompact,
     onSave: salvarTempo,
   });
 
-  const proximaJanela = useMemo(() => calcularProximaJanela(config.janelas), [config.janelas]);
+  const proximaJanela = useMemo(() => calcularProximaJanela(config.janelas, t.dashboard.days), [config.janelas, t.dashboard.days]);
   const limiteEsgotado = config.limite_tempo_minutos > 0 && tempoMinutos >= config.limite_tempo_minutos;
   const pctCandidaturas = Math.min((candidaturasHoje / Math.max(config.limite_diario, 1)) * 100, 100);
   const pctTempo = config.limite_tempo_minutos > 0 ? Math.min((tempoMinutos / config.limite_tempo_minutos) * 100, 100) : 0;
@@ -355,7 +357,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               display: "inline-block",
             }} />
             <span style={{ fontSize: 13, color: paused ? "var(--warning)" : "var(--success)", fontWeight: 500 }}>
-              {paused ? "Pausada" : "A trabalhar…"}
+              {paused ? t.dashboard.paused : t.dashboard.working}
             </span>
           </div>
         )}
@@ -369,7 +371,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
           display: "flex", alignItems: "center", gap: 12,
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "var(--accent-strong)", fontWeight: 500, marginBottom: 2 }}>Agora a candidatar</div>
+            <div style={{ fontSize: 12, color: "var(--accent-strong)", fontWeight: 500, marginBottom: 2 }}>{t.dashboard.nowApplying}</div>
             <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {vagaAtual.titulo}
             </div>
@@ -392,7 +394,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
           display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--warning)", fontWeight: 500,
         }}>
           <AlertTriangle size={16} />
-          {pendenciasCount === 1 ? "1 pendência aguarda resolução" : `${pendenciasCount} pendências aguardam resolução`}
+          {pendenciasCount === 1 ? t.dashboard.pending_one : `${pendenciasCount}${t.dashboard.pending_many}`}
         </div>
       )}
 
@@ -404,13 +406,13 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
           display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-secondary)",
         }}>
           <Lightbulb size={16} style={{ color: "var(--accent)", flexShrink: 0 }} />
-          <span>{propostas === 1 ? "1 proposta de evolução do perfil disponível" : `${propostas} propostas de evolução do perfil disponíveis`}</span>
+          <span>{propostas === 1 ? t.dashboard.suggestions_one : `${propostas}${t.dashboard.suggestions_many}`}</span>
         </div>
       )}
 
       {/* ── Tab bar ── */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
-        {([["procura", "Procura"], ["atividade", "Atividade"]] as const).map(([id, label]) => {
+        {([["procura", t.dashboard.tabSearch], ["atividade", t.dashboard.tabActivity]] as const).map(([id, label]) => {
           const ativo = abaAtiva === id;
           return (
             <button key={id} onClick={() => setAbaAtiva(id)} style={{
@@ -441,7 +443,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 color: paused ? "#fff" : "var(--text-secondary)",
                 border: paused ? "none" : "1px solid var(--border)",
               }}>
-                {paused ? <><Play size={14} /> Retomar</> : <><Pause size={14} /> Pausar</>}
+                {paused ? <><Play size={14} /> {t.dashboard.resume}</> : <><Pause size={14} /> {t.dashboard.pause}</>}
               </button>
               <button onClick={interromper} style={{
                 padding: "11px 20px", borderRadius: 8, fontSize: 14, fontWeight: 500,
@@ -449,7 +451,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 display: "flex", alignItems: "center", gap: 7,
                 background: "#F7E2DF", color: "var(--danger)", border: "1px solid var(--danger)",
               }}>
-                <Square size={13} fill="currentColor" /> Interromper
+                <Square size={13} fill="currentColor" /> {t.dashboard.interrupt}
               </button>
             </div>
           ) : (
@@ -457,7 +459,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               {/* Modos de procura */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
                 <ModoCard
-                  label="Procurar vagas"
+                  label={t.dashboard.searchJobs}
                   ativo={incluirBuscaNormal}
                   pct={modosAtivos.length > 0 ? Math.round(((modoPesos["busca_normal"] ?? 0) / totalModoPeso) * 100) : 0}
                   maxPct={maxModoPct}
@@ -466,7 +468,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                   onDragEnd={handleModoDragEnd}
                 />
                 <ModoCard
-                  label="Procurar vagas na rede"
+                  label={t.dashboard.searchLinkedIn}
                   ativo={incluirLinkedinRede}
                   pct={modosAtivos.length > 0 ? Math.round(((modoPesos["linkedin_rede"] ?? 0) / totalModoPeso) * 100) : 0}
                   maxPct={maxModoPct}
@@ -474,8 +476,8 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                   onDragBar={(p) => handleModoDragBar("linkedin_rede", p)}
                   onDragEnd={handleModoDragEnd}
                 />
-                <ModoCard label="Procurar freelas" ativo={false} pct={0} maxPct={95} emBreve />
-                <ModoCard label="Procurar em sites de empresas" ativo={false} pct={0} maxPct={95} emBreve />
+                <ModoCard label={t.dashboard.searchFreelas} ativo={false} pct={0} maxPct={95} emBreve />
+                <ModoCard label={t.dashboard.searchCompanySites} ativo={false} pct={0} maxPct={95} emBreve />
               </div>
               <button onClick={disparar} disabled={disparando} style={{
                 width: "100%", padding: "12px 0",
@@ -485,7 +487,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 transition: "background 0.2s", opacity: disparando ? 0.8 : 1,
                 whiteSpace: "nowrap",
               }}>
-                {disparando ? "A iniciar…" : disparado ? "✓ Sessão iniciada" : incluirLinkedinRede ? "Procurar vagas na rede" : "Procurar vagas agora"}
+                {disparando ? t.dashboard.starting : disparado ? t.dashboard.sessionStarted : incluirLinkedinRede && !incluirBuscaNormal ? t.dashboard.searchLinkedInNow : t.dashboard.searchJobsNow}
               </button>
             </div>
           )}
@@ -499,7 +501,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               return (
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Candidaturas hoje</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.applicationsToday}</span>
                     <button onClick={abrirCandidaturas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
@@ -511,7 +513,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                     <div style={{ width: `${pctCandidaturas}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                    {reached ? <span style={{ color: "var(--success)", fontWeight: 500 }}>Meta atingida ✓</span> : <>{config.limite_diario - candidaturasHoje} restantes</>}
+                    {reached ? <span style={{ color: "var(--success)", fontWeight: 500 }}>{t.dashboard.goalReached}</span> : <>{config.limite_diario - candidaturasHoje}{t.dashboard.remaining}</>}
                   </div>
                 </div>
               );
@@ -523,7 +525,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               return (
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Vagas analisadas</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.jobsAnalyzed}</span>
                     <button onClick={abrirVagas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
@@ -546,7 +548,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
               return (
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Tempo de procura</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.searchTime}</span>
                     <button onClick={abrirTempo} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
@@ -559,10 +561,10 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                   </div>
                   <div style={{ fontSize: 11 }}>
                     {limiteEsgotado
-                      ? <span style={{ color: "var(--danger)", fontWeight: 500 }}>Limite atingido hoje</span>
+                      ? <span style={{ color: "var(--danger)", fontWeight: 500 }}>{t.dashboard.limitReached}</span>
                       : config.limite_tempo_minutos > 0
-                        ? <span style={{ color: "var(--text-tertiary)" }}>{formatarTempo(config.limite_tempo_minutos - tempoMinutos)} restantes</span>
-                        : <span style={{ color: "var(--text-tertiary)" }}>sem limite</span>}
+                        ? <span style={{ color: "var(--text-tertiary)" }}>{formatarTempo(config.limite_tempo_minutos - tempoMinutos)}{t.dashboard.remaining}</span>
+                        : <span style={{ color: "var(--text-tertiary)" }}>{t.dashboard.noLimit}</span>}
                   </div>
                 </div>
               );
@@ -570,21 +572,24 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
             {/* Card 4 — Agendamento */}
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Agendamento</span>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.scheduleStat}</span>
                 <button onClick={() => setModalAgendamento(true)} title="Configurar agendamento" className="edit-icon-btn"><Pencil size={11} /></button>
               </div>
               {proximaJanela === null ? (
-                <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>Nenhum horário definido — clica no lápis para agendar sessões automáticas.</div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>{t.dashboard.noSchedule}</div>
               ) : (
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-tertiary)", display: "inline-block", animation: proximaJanela === "ATIVO_AGORA" ? "pulse 2s infinite" : "none" }} />
                     <span style={{ fontSize: 13, fontWeight: 500, color: proximaJanela === "ATIVO_AGORA" ? "var(--success)" : "var(--text-primary)" }}>
-                      {proximaJanela === "ATIVO_AGORA" ? "Ativo agora" : `Próximo: ${proximaJanela}`}
+                      {proximaJanela === "ATIVO_AGORA" ? t.dashboard.activeNow : `${t.dashboard.next}${proximaJanela}`}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                    {config.janelas.filter(j => j.ativo).length} janela{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""} ativa{config.janelas.filter(j => j.ativo).length !== 1 ? "s" : ""}
+                    {(() => {
+                      const count = config.janelas.filter(j => j.ativo).length;
+                      return `${count} ${count === 1 ? t.dashboard.windowsActive_one : t.dashboard.windowsActive_many}`;
+                    })()}
                   </div>
                 </>
               )}
@@ -632,7 +637,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
             return (
               <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
-                  Vagas descobertas — últimos 7 dias
+                  {t.dashboard.discoveredJobs}
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 56 }}>
                   {dias.map((d, i) => {
@@ -652,9 +657,9 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
 
           {/* Lista de atividade */}
           {loading ? (
-            <div style={{ color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>
+            <div style={{ color: "var(--text-tertiary)", fontSize: 14 }}>{t.dashboard.loading}</div>
           ) : atividade.length === 0 ? (
-            <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>Nenhuma atividade ainda.</div>
+            <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>{t.dashboard.noActivity}</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
               {atividade.map((v) => {
@@ -665,7 +670,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                       <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.titulo}</div>
                       <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{v.empresa}</div>
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap", ...s }}>{STATUS_LABELS[v.status] ?? v.status}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap", ...s }}>{t.dashboard.statusLabels[v.status as keyof typeof t.dashboard.statusLabels] ?? v.status}</span>
                     <span style={{ fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{tempoRelativo(v.descoberta_em)}</span>
                   </div>
                 );

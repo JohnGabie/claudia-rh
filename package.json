@@ -1,7 +1,21 @@
 {
   "name": "claudia-rh",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Automated job-application agent powered by Claude Code + Chrome",
+  "author": "Claudia RH Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JohnGabie/claudia-rh.git"
+  },
+  "keywords": [
+    "job-application",
+    "automation",
+    "claude",
+    "tauri",
+    "ai-agent"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

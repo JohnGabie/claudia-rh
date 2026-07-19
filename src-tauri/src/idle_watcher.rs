@@ -133,3 +133,90 @@ pub fn start(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::pode_disparar;
+    use crate::{IdleConfig, JanelaAgendamento};
+    use chrono::Datelike;
+    use rusqlite::Connection;
+    use std::sync::{Arc, Mutex};
+
+    fn mem_db() -> Arc<Mutex<Connection>> {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::apply(&conn).unwrap();
+        Arc::new(Mutex::new(conn))
+    }
+
+    fn cfg_padrao() -> IdleConfig {
+        IdleConfig { ativo: true, limiar_minutos: 5, limite_diario: 10, limite_tempo_minutos: 0, janelas: vec![] }
+    }
+
+    fn insert_candidaturas_hoje(conn: &Connection, n: u32) {
+        conn.execute(
+            "INSERT INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status) \
+             VALUES ('dev', 'ACME', 'LinkedIn', 'https://idle-test.com', datetime('now'), 'aplicada')",
+            [],
+        ).unwrap();
+        let vid = conn.last_insert_rowid();
+        for _ in 0..n {
+            conn.execute(
+                "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
+                 VALUES (?1, datetime('now'), '/tmp', 'chrome')",
+                [vid],
+            ).unwrap();
+        }
+    }
+
+    #[test]
+    fn pode_disparar_sem_restricoes_retorna_true() {
+        assert!(pode_disparar(&mem_db(), &cfg_padrao()));
+    }
+
+    #[test]
+    fn pode_disparar_bloqueia_quando_limite_diario_atingido() {
+        let db = mem_db();
+        { let c = db.lock().unwrap(); insert_candidaturas_hoje(&c, 5); }
+        assert!(!pode_disparar(&db, &IdleConfig { limite_diario: 5, ..cfg_padrao() }));
+    }
+
+    #[test]
+    fn pode_disparar_permite_abaixo_do_limite_diario() {
+        let db = mem_db();
+        { let c = db.lock().unwrap(); insert_candidaturas_hoje(&c, 3); }
+        assert!(pode_disparar(&db, &IdleConfig { limite_diario: 10, ..cfg_padrao() }));
+    }
+
+    #[test]
+    fn pode_disparar_janela_ativa_para_todos_os_dias_retorna_true() {
+        let db = mem_db();
+        // Cover every day of the week, full day — use "99:99" fim so midnight never misses
+        let janelas = (0u8..7)
+            .map(|d| JanelaAgendamento { dia_semana: d, inicio: "00:00".into(), fim: "99:99".into(), ativo: true })
+            .collect();
+        assert!(pode_disparar(&db, &IdleConfig { janelas, ..cfg_padrao() }));
+    }
+
+    #[test]
+    fn pode_disparar_janelas_todas_inativas_retorna_false() {
+        let db = mem_db();
+        let janelas = (0u8..7)
+            .map(|d| JanelaAgendamento { dia_semana: d, inicio: "00:00".into(), fim: "99:99".into(), ativo: false })
+            .collect();
+        assert!(!pode_disparar(&db, &IdleConfig { janelas, ..cfg_padrao() }));
+    }
+
+    #[test]
+    fn pode_disparar_janela_somente_para_outro_dia_retorna_false() {
+        let db = mem_db();
+        let hoje = chrono::Local::now().weekday().num_days_from_sunday() as u8;
+        let outro = (hoje + 1) % 7;
+        let janelas = vec![JanelaAgendamento {
+            dia_semana: outro,
+            inicio: "00:00".into(),
+            fim: "99:99".into(),
+            ativo: true,
+        }];
+        assert!(!pode_disparar(&db, &IdleConfig { janelas, ..cfg_padrao() }));
+    }
+}

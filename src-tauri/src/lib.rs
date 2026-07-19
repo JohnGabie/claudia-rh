@@ -2,11 +2,14 @@ mod commands;
 mod db;
 mod db_watcher;
 mod idle_watcher;
+pub mod mcp;
+mod migration;
 mod notificacoes;
 mod prompt;
 mod pty_manager;
 
 use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
+use commands::welcome::{verificar_setup, welcome_necessario, marcar_welcome_concluido};
 use commands::linkedin::{iniciar_busca_linkedin_rede, listar_vagas_linkedin_rede, obter_status_linkedin_rede};
 use commands::updater::{instalar_atualizacao, verificar_atualizacao};
 use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
@@ -46,6 +49,39 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::Manager;
 
 pub struct DbState(pub Arc<Mutex<Connection>>);
+
+/// Localhost port where the app listens for push notifications from the MCP
+/// subprocess (instant UI refresh after a tool write). None if binding failed —
+/// the db_watcher poll then remains the only refresh path.
+pub struct McpNotifyPort(pub Option<u16>);
+
+fn start_mcp_notify_listener(app: &tauri::AppHandle) -> Option<u16> {
+    use tauri::Emitter;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
+    let port = listener.local_addr().ok()?.port();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for stream in listener.incoming().flatten() {
+            let mut line = String::new();
+            let mut reader = std::io::BufReader::new(stream);
+            if reader.read_line(&mut line).is_ok() {
+                match line.trim() {
+                    "perfil" => {
+                        let _ = app.emit("perfil-atualizado", ());
+                        let _ = app.emit("db-atualizada", ());
+                    }
+                    "db" => {
+                        let _ = app.emit("db-atualizada", ());
+                        let _ = app.emit("pendencia-resolvida", ());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
+    Some(port)
+}
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct JanelaAgendamento {
@@ -115,15 +151,21 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::perfil::PerfilChat::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            // One-shot migration from the pre-v0.2 data dir (identifier change)
+            migration::migrate_legacy_data_dir(&data_dir);
 
             // Database
             let conn = db::init(&data_dir.join("claudia_rh.db"))?;
             let conn_arc = Arc::new(Mutex::new(conn));
             app.manage(DbState(Arc::clone(&conn_arc)));
+
+            // MCP push-notification listener (instant UI refresh on tool writes)
+            let notify_port = start_mcp_notify_listener(app.handle());
+            app.manage(McpNotifyPort(notify_port));
 
             // Idle config
             let idle_cfg = load_idle_config(&data_dir);
@@ -238,9 +280,9 @@ pub fn run() {
             iniciar_sessao_perfil,
             iniciar_sessao_perfil_chrome,
             enviar_mensagem_perfil,
-            escrever_para_perfil_chrome,
             interromper_perfil,
             remover_ultima_troca_perfil,
+            escrever_para_perfil_chrome,
             guardar_credencial,
             obter_credencial,
             obter_utilizador_credencial,
@@ -277,6 +319,9 @@ pub fn run() {
             obter_status_linkedin_rede,
             verificar_atualizacao,
             instalar_atualizacao,
+            verificar_setup,
+            welcome_necessario,
+            marcar_welcome_concluido,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

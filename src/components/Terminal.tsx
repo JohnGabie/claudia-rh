@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
+import { useT } from "../i18n";
 import { ToggleSwitch } from "./ui/ToggleSwitch";
 
 const LIGHT_THEME = {
@@ -31,6 +32,7 @@ const LIGHT_THEME = {
 };
 
 export const TerminalView: React.FC = () => {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -144,7 +146,7 @@ export const TerminalView: React.FC = () => {
             fontWeight: locked ? 400 : 500,
             transition: "color 0.2s",
           }}>
-            {locked ? "Apenas visualização" : "Sob o teu controlo"}
+            {locked ? t.terminal.viewOnly : t.terminal.underYourControl}
           </span>
         </div>
 
@@ -162,12 +164,12 @@ export const TerminalView: React.FC = () => {
             fontFamily: "inherit",
           }}
         >
-          Teste PTY
+          {t.terminal.testPty}
         </button>
 
         {/* Toggle switch */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Assumir controlo</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.terminal.takeControl}</span>
           <ToggleSwitch checked={!locked} onChange={handleToggle} />
         </div>
       </div>

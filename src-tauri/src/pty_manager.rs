@@ -77,7 +77,7 @@ pub fn iniciar(
 /// - SESSION_CHECKPOINT_REQUESTED detection → clean restart via frontend event
 /// - Chrome extension disconnection detection → automatic /chrome reconnect attempt
 /// - Session end → updates `sessoes.terminada_em` in the database
-// TODO(refactor phase 1): group these args into a session config struct
+// TODO(refactor): group these args into a session config struct
 #[allow(clippy::too_many_arguments)]
 pub fn iniciar_claude(
     app: AppHandle,
@@ -233,7 +233,7 @@ pub fn escrever(input: String) -> Result<(), String> {
         guard
             .as_ref()
             .map(|s| Arc::clone(&s.writer))
-            .ok_or_else(|| "PTY não inicializado".to_string())?
+            .ok_or_else(|| "PTY not initialized".to_string())?
     };
     let mut w = writer_arc.lock().map_err(|e| e.to_string())?;
     w.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
@@ -248,7 +248,7 @@ pub fn redimensionar(rows: u16, cols: u16) -> Result<(), String> {
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())
     } else {
-        Err("PTY não inicializado".into())
+        Err("PTY not initialized".into())
     }
 }
 

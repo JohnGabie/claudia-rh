@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useT } from "../../i18n";
 import { X } from "lucide-react";
 import { SearchVariant } from "../../types";
 import { CandidateBase, EditTarget } from "./types";
@@ -27,18 +28,22 @@ const EdField: React.FC<{ label: string; hint?: string; children: React.ReactNod
   </div>
 );
 
-const ModalActions: React.FC<{ saving: boolean; onSave: () => void; onClose: () => void }> = ({ saving, onSave, onClose }) => (
-  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
-    <button onClick={onClose} style={{ padding: "7px 14px", background: "transparent", border: "none", borderRadius: 7, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
-      Cancelar
-    </button>
-    <button onClick={onSave} disabled={saving} style={{ padding: "7px 18px", background: saving ? "var(--bg-sunken)" : "var(--accent)", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 500, color: saving ? "var(--text-tertiary)" : "#fff", cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
-      {saving ? "A guardar…" : "Guardar"}
-    </button>
-  </div>
-);
+const ModalActions: React.FC<{ saving: boolean; onSave: () => void; onClose: () => void }> = ({ saving, onSave, onClose }) => {
+  const t = useT();
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
+      <button onClick={onClose} style={{ padding: "7px 14px", background: "transparent", border: "none", borderRadius: 7, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
+        {t.profile.editor.cancel}
+      </button>
+      <button onClick={onSave} disabled={saving} style={{ padding: "7px 18px", background: saving ? "var(--bg-sunken)" : "var(--accent)", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 500, color: saving ? "var(--text-tertiary)" : "#fff", cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+        {saving ? t.profile.editor.saving : t.profile.editor.save}
+      </button>
+    </div>
+  );
+};
 
 const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [draft, setDraft] = useState({
     ...pd.dados_pessoais,
     endereco: pd.dados_pessoais.endereco ?? "",
@@ -69,43 +74,39 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
 
   return (
     <>
-      {/* Identificação */}
-      <div style={sectionLabel}>Identificação</div>
-      <EdField label="Nome completo">
+      <div style={sectionLabel}>{t.profile.editor.identification}</div>
+      <EdField label={t.profile.editor.fullName}>
         <input style={edInput} value={draft.nome_completo} onChange={e => setDraft(d => ({ ...d, nome_completo: e.target.value }))} />
       </EdField>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <EdField label="Nacionalidade">
-          <input style={edInput} placeholder="ex: Brasileira" value={draft.nacionalidade} onChange={e => setDraft(d => ({ ...d, nacionalidade: e.target.value }))} />
+        <EdField label={t.profile.editor.nationality}>
+          <input style={edInput} value={draft.nacionalidade} onChange={e => setDraft(d => ({ ...d, nacionalidade: e.target.value }))} />
         </EdField>
-        <EdField label="Data de nascimento" hint="ex: 1995-04-12">
-          <input style={edInput} placeholder="AAAA-MM-DD" value={draft.data_nascimento} onChange={e => setDraft(d => ({ ...d, data_nascimento: e.target.value }))} />
+        <EdField label={t.profile.editor.dateOfBirth} hint={t.profile.editor.dateOfBirthHint}>
+          <input style={edInput} placeholder="YYYY-MM-DD" value={draft.data_nascimento} onChange={e => setDraft(d => ({ ...d, data_nascimento: e.target.value }))} />
         </EdField>
       </div>
-      <EdField label="CPF" hint="Usado em candidaturas para o Brasil. Deixa vazio se não aplicável.">
+      <EdField label={t.profile.editor.cpf} hint={t.profile.editor.cpfHint}>
         <input style={edInput} placeholder="000.000.000-00" value={draft.cpf} onChange={e => setDraft(d => ({ ...d, cpf: e.target.value }))} />
       </EdField>
 
-      {/* Contacto */}
-      <div style={sectionLabel}>Contacto</div>
-      <EdField label="Email">
+      <div style={sectionLabel}>{t.profile.editor.contact}</div>
+      <EdField label={t.profile.editor.email}>
         <input style={edInput} type="email" value={draft.email} onChange={e => setDraft(d => ({ ...d, email: e.target.value }))} />
       </EdField>
-      <EdField label="Telefone" hint="Inclui o indicativo do país, ex: +55 11 91234-5678">
+      <EdField label={t.profile.editor.phone} hint={t.profile.editor.phoneHint}>
         <input style={edInput} placeholder="+55 11 91234-5678" value={draft.telefone} onChange={e => setDraft(d => ({ ...d, telefone: e.target.value }))} />
       </EdField>
 
-      {/* Localização */}
-      <div style={sectionLabel}>Localização</div>
-      <EdField label="Cidade / País" hint="Mostrado no cabeçalho do CV, ex: Copenhagen, Denmark">
-        <input style={edInput} placeholder="ex: Copenhagen, Denmark" value={draft.localizacao_atual} onChange={e => setDraft(d => ({ ...d, localizacao_atual: e.target.value }))} />
+      <div style={sectionLabel}>{t.profile.editor.location}</div>
+      <EdField label={t.profile.editor.cityCountry} hint={t.profile.editor.cityCountryHint}>
+        <input style={edInput} placeholder="Copenhagen, Denmark" value={draft.localizacao_atual} onChange={e => setDraft(d => ({ ...d, localizacao_atual: e.target.value }))} />
       </EdField>
-      <EdField label="Endereço completo" hint="Rua, número, bairro, cidade, CEP — usado em documentos formais. Opcional.">
-        <textarea style={{ ...edTextarea }} rows={2} placeholder="ex: Rua das Flores, 123, Apto 4B, São Paulo – SP, 01310-100" value={draft.endereco} onChange={e => setDraft(d => ({ ...d, endereco: e.target.value }))} />
+      <EdField label={t.profile.editor.fullAddress} hint={t.profile.editor.fullAddressHint}>
+        <textarea style={{ ...edTextarea }} rows={2} value={draft.endereco} onChange={e => setDraft(d => ({ ...d, endereco: e.target.value }))} />
       </EdField>
 
-      {/* Links */}
-      <div style={sectionLabel}>Links profissionais</div>
+      <div style={sectionLabel}>{t.profile.editor.professionalLinks}</div>
       {draft.links.map((l, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 1fr 28px", gap: 6, marginBottom: 6 }}>
           <input style={edInput} placeholder="LinkedIn" value={l.tipo} onChange={e => updLink(i, "tipo", e.target.value)} />
@@ -114,7 +115,7 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
         </div>
       ))}
       <button onClick={() => setDraft(d => ({ ...d, links: [...d.links, { tipo: "", url: "" }] }))} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 4 }}>
-        + Adicionar link
+        {t.profile.editor.addLink}
       </button>
 
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 10, marginBottom: 4 }}>{error}</div>}
@@ -124,6 +125,7 @@ const DadosPessoaisEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateB
 };
 
 const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.experiencia.map(e => ({ ...e, conquistas: [...e.conquistas], tecnologias: [...e.tecnologias] })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,17 +145,17 @@ const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBas
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <EdField label="Cargo"><input style={edInput} value={exp.cargo} onChange={e => upd(i, "cargo", e.target.value)} /></EdField>
-            <EdField label="Empresa"><input style={edInput} value={exp.empresa} onChange={e => upd(i, "empresa", e.target.value)} /></EdField>
-            <EdField label="Início"><input style={edInput} placeholder="2020-01" value={exp.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
-            <EdField label="Fim"><input style={edInput} placeholder="presente" value={exp.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.position}><input style={edInput} value={exp.cargo} onChange={e => upd(i, "cargo", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.company}><input style={edInput} value={exp.empresa} onChange={e => upd(i, "empresa", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.start}><input style={edInput} placeholder="2020-01" value={exp.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.end}><input style={edInput} placeholder={t.profile.present} value={exp.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
           </div>
-          <EdField label="Descrição"><textarea style={edTextarea} rows={3} value={exp.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
-          <EdField label="Conquistas" hint="Uma por linha"><textarea style={edTextarea} rows={3} value={exp.conquistas.join("\n")} onChange={e => upd(i, "conquistas", e.target.value.split("\n"))} /></EdField>
-          <EdField label="Tecnologias" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(exp.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
+          <EdField label={t.profile.editor.description}><textarea style={edTextarea} rows={3} value={exp.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.achievements} hint={t.profile.editor.achievementsHint}><textarea style={edTextarea} rows={3} value={exp.conquistas.join("\n")} onChange={e => upd(i, "conquistas", e.target.value.split("\n"))} /></EdField>
+          <EdField label={t.profile.editor.technologies} hint={t.profile.editor.technologiesHint}><input style={edInput} value={tagsToStr(exp.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { empresa: "", cargo: "", inicio: "", fim: "", descricao: "", conquistas: [], tecnologias: [] }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar experiência</button>
+      <button onClick={() => setItems(arr => [...arr, { empresa: "", cargo: "", inicio: "", fim: "", descricao: "", conquistas: [], tecnologias: [] }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addExperience}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -161,6 +163,7 @@ const ExperienciaEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBas
 };
 
 const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.projetos.map(p => ({ ...p, tecnologias: [...p.tecnologias] })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,13 +182,13 @@ const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
       {items.map((proj, i) => (
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
-          <EdField label="Nome"><input style={edInput} value={proj.nome} onChange={e => upd(i, "nome", e.target.value)} /></EdField>
-          <EdField label="Descrição"><textarea style={edTextarea} rows={3} value={proj.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
-          <EdField label="URL"><input style={edInput} placeholder="https://github.com/..." value={proj.url} onChange={e => upd(i, "url", e.target.value)} /></EdField>
-          <EdField label="Tecnologias" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(proj.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
+          <EdField label={t.profile.editor.projectName}><input style={edInput} value={proj.nome} onChange={e => upd(i, "nome", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.description}><textarea style={edTextarea} rows={3} value={proj.descricao} onChange={e => upd(i, "descricao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.projectUrl}><input style={edInput} placeholder="https://github.com/..." value={proj.url} onChange={e => upd(i, "url", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.technologies} hint={t.profile.editor.technologiesHint}><input style={edInput} value={tagsToStr(proj.tecnologias)} onChange={e => upd(i, "tecnologias", strToTags(e.target.value))} /></EdField>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { nome: "", descricao: "", tecnologias: [], url: "", origem: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar projeto</button>
+      <button onClick={() => setItems(arr => [...arr, { nome: "", descricao: "", tecnologias: [], url: "", origem: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addProject}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -193,6 +196,7 @@ const ProjetosEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
 };
 
 const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.formacao.map(f => ({ ...f })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,15 +215,15 @@ const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
       {items.map((f, i) => (
         <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 12, position: "relative" }}>
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18, lineHeight: 1 }}>×</button>
-          <EdField label="Curso"><input style={edInput} value={f.curso} onChange={e => upd(i, "curso", e.target.value)} /></EdField>
-          <EdField label="Instituição"><input style={edInput} value={f.instituicao} onChange={e => upd(i, "instituicao", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.course}><input style={edInput} value={f.curso} onChange={e => upd(i, "curso", e.target.value)} /></EdField>
+          <EdField label={t.profile.editor.institution}><input style={edInput} value={f.instituicao} onChange={e => upd(i, "instituicao", e.target.value)} /></EdField>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <EdField label="Início"><input style={edInput} placeholder="2018-09" value={f.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
-            <EdField label="Fim"><input style={edInput} placeholder="2021-06" value={f.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.start}><input style={edInput} placeholder="2018-09" value={f.inicio} onChange={e => upd(i, "inicio", e.target.value)} /></EdField>
+            <EdField label={t.profile.editor.end}><input style={edInput} placeholder="2021-06" value={f.fim} onChange={e => upd(i, "fim", e.target.value)} /></EdField>
           </div>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { curso: "", instituicao: "", inicio: "", fim: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar formação</button>
+      <button onClick={() => setItems(arr => [...arr, { curso: "", instituicao: "", inicio: "", fim: "" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addEducation}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -227,6 +231,7 @@ const FormacaoEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) 
 };
 
 const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [text, setText] = useState(pd.competencias.join("\n"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,7 +246,7 @@ const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBa
   };
   return (
     <>
-      <EdField label="Competências" hint="Uma por linha">
+      <EdField label={t.profile.editor.skills} hint={t.profile.editor.skillsHint}>
         <textarea style={edTextarea} rows={10} value={text} onChange={e => setText(e.target.value)} />
       </EdField>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
@@ -250,9 +255,10 @@ const CompetenciasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBa
   );
 };
 
-const NIVEIS_IDIOMA = ["Nativo", "C2", "C1", "B2", "B1", "A2", "A1"];
+const NIVEIS_IDIOMA = ["Native", "C2", "C1", "B2", "B1", "A2", "A1"];
 
 const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) => void; onClose: () => void }> = ({ pd, onSaved, onClose }) => {
+  const t = useT();
   const [items, setItems] = useState(pd.idiomas.map(l => ({ ...l })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,10 +276,10 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
     <>
       {items.map((l, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 28px", gap: 8, alignItems: "end", marginBottom: 10 }}>
-          <EdField label={i === 0 ? "Idioma" : ""}>
-            <input style={edInput} value={l.idioma} onChange={e => upd(i, "idioma", e.target.value)} placeholder="Português" />
+          <EdField label={i === 0 ? t.profile.editor.language : ""}>
+            <input style={edInput} value={l.idioma} onChange={e => upd(i, "idioma", e.target.value)} placeholder="Portuguese" />
           </EdField>
-          <EdField label={i === 0 ? "Nível" : ""}>
+          <EdField label={i === 0 ? t.profile.editor.level : ""}>
             <select value={l.nivel} onChange={e => upd(i, "nivel", e.target.value)} style={{ ...edInput, cursor: "pointer" }}>
               {NIVEIS_IDIOMA.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -281,7 +287,7 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
           <button onClick={() => setItems(arr => arr.filter((_, j) => j !== i))} style={{ height: 33, background: "none", border: "1px solid var(--border)", borderRadius: 6, cursor: "pointer", color: "var(--text-tertiary)", marginBottom: 14 }}>×</button>
         </div>
       ))}
-      <button onClick={() => setItems(arr => [...arr, { idioma: "", nivel: "B2" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>+ Adicionar idioma</button>
+      <button onClick={() => setItems(arr => [...arr, { idioma: "", nivel: "B2" }])} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", marginBottom: 16 }}>{t.profile.editor.addLanguage}</button>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
@@ -291,50 +297,51 @@ const IdiomasEditor: React.FC<{ pd: CandidateBase; onSaved: (u: CandidateBase) =
 // ── Region picker ─────────────────────────────────────────────────────────────
 
 const REGION_OPTIONS: { value: string; label: string; group: string }[] = [
-  // Modalidade
-  { value: "remoto-global", label: "Remoto Global", group: "Modalidade" },
-  { value: "remoto-europa",  label: "Remoto Europa",  group: "Modalidade" },
-  // Europa
-  { value: "Europa",          label: "Europa (qualquer país)", group: "Europa" },
-  { value: "Portugal",        label: "Portugal",        group: "Europa" },
-  { value: "Dinamarca",       label: "Dinamarca",       group: "Europa" },
-  { value: "Alemanha",        label: "Alemanha",        group: "Europa" },
-  { value: "Holanda",         label: "Holanda",         group: "Europa" },
-  { value: "Espanha",         label: "Espanha",         group: "Europa" },
-  { value: "França",          label: "França",          group: "Europa" },
-  { value: "Reino Unido",     label: "Reino Unido",     group: "Europa" },
-  { value: "Irlanda",         label: "Irlanda",         group: "Europa" },
-  { value: "Suécia",          label: "Suécia",          group: "Europa" },
-  { value: "Noruega",         label: "Noruega",         group: "Europa" },
-  { value: "Finlândia",       label: "Finlândia",       group: "Europa" },
-  { value: "Suíça",           label: "Suíça",           group: "Europa" },
-  { value: "Áustria",         label: "Áustria",         group: "Europa" },
-  { value: "Bélgica",         label: "Bélgica",         group: "Europa" },
-  { value: "Itália",          label: "Itália",          group: "Europa" },
-  { value: "Polónia",         label: "Polónia",         group: "Europa" },
-  { value: "República Checa", label: "República Checa", group: "Europa" },
-  { value: "Luxemburgo",      label: "Luxemburgo",      group: "Europa" },
-  // América do Norte
-  { value: "Estados Unidos",  label: "Estados Unidos",  group: "América do Norte" },
-  { value: "Canadá",          label: "Canadá",          group: "América do Norte" },
-  // América Latina
-  { value: "América Latina",  label: "América Latina (qualquer país)", group: "América Latina" },
-  { value: "Brasil",          label: "Brasil",          group: "América Latina" },
-  { value: "Argentina",       label: "Argentina",       group: "América Latina" },
-  { value: "México",          label: "México",          group: "América Latina" },
-  { value: "Colômbia",        label: "Colômbia",        group: "América Latina" },
-  { value: "Chile",           label: "Chile",           group: "América Latina" },
-  // Ásia / Oceânia
-  { value: "Ásia",            label: "Ásia (qualquer país)", group: "Ásia & Oceânia" },
-  { value: "Japão",           label: "Japão",           group: "Ásia & Oceânia" },
-  { value: "Singapura",       label: "Singapura",       group: "Ásia & Oceânia" },
-  { value: "Austrália",       label: "Austrália",       group: "Ásia & Oceânia" },
-  { value: "Nova Zelândia",   label: "Nova Zelândia",   group: "Ásia & Oceânia" },
+  // Mode
+  { value: "remoto-global", label: "Global Remote",  group: "Mode" },
+  { value: "remoto-europa",  label: "Europe Remote",  group: "Mode" },
+  // Europe
+  { value: "Europa",          label: "Europe (any country)", group: "Europe" },
+  { value: "Portugal",        label: "Portugal",        group: "Europe" },
+  { value: "Dinamarca",       label: "Denmark",         group: "Europe" },
+  { value: "Alemanha",        label: "Germany",         group: "Europe" },
+  { value: "Holanda",         label: "Netherlands",     group: "Europe" },
+  { value: "Espanha",         label: "Spain",           group: "Europe" },
+  { value: "França",          label: "France",          group: "Europe" },
+  { value: "Reino Unido",     label: "United Kingdom",  group: "Europe" },
+  { value: "Irlanda",         label: "Ireland",         group: "Europe" },
+  { value: "Suécia",          label: "Sweden",          group: "Europe" },
+  { value: "Noruega",         label: "Norway",          group: "Europe" },
+  { value: "Finlândia",       label: "Finland",         group: "Europe" },
+  { value: "Suíça",           label: "Switzerland",     group: "Europe" },
+  { value: "Áustria",         label: "Austria",         group: "Europe" },
+  { value: "Bélgica",         label: "Belgium",         group: "Europe" },
+  { value: "Itália",          label: "Italy",           group: "Europe" },
+  { value: "Polónia",         label: "Poland",          group: "Europe" },
+  { value: "República Checa", label: "Czech Republic",  group: "Europe" },
+  { value: "Luxemburgo",      label: "Luxembourg",      group: "Europe" },
+  // North America
+  { value: "Estados Unidos",  label: "United States",   group: "North America" },
+  { value: "Canadá",          label: "Canada",          group: "North America" },
+  // Latin America
+  { value: "América Latina",  label: "Latin America (any country)", group: "Latin America" },
+  { value: "Brasil",          label: "Brazil",          group: "Latin America" },
+  { value: "Argentina",       label: "Argentina",       group: "Latin America" },
+  { value: "México",          label: "Mexico",          group: "Latin America" },
+  { value: "Colômbia",        label: "Colombia",        group: "Latin America" },
+  { value: "Chile",           label: "Chile",           group: "Latin America" },
+  // Asia / Oceania
+  { value: "Ásia",            label: "Asia (any country)", group: "Asia & Oceania" },
+  { value: "Japão",           label: "Japan",           group: "Asia & Oceania" },
+  { value: "Singapura",       label: "Singapore",       group: "Asia & Oceania" },
+  { value: "Austrália",       label: "Australia",       group: "Asia & Oceania" },
+  { value: "Nova Zelândia",   label: "New Zealand",     group: "Asia & Oceania" },
 ];
 
-const GROUP_ORDER = ["Modalidade", "Europa", "América do Norte", "América Latina", "Ásia & Oceânia"];
+const GROUP_ORDER = ["Mode", "Europe", "North America", "Latin America", "Asia & Oceania"];
 
 const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void }> = ({ value, onChange }) => {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -389,7 +396,7 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
       )}
       <input
         style={edInput}
-        placeholder="Pesquisar regiões ou países…"
+        placeholder={t.profile.editor.searchRegions}
         value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -435,6 +442,7 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
 };
 
 const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; onSaved: () => void; onClose: () => void }> = ({ varianteId, variants, onSaved, onClose }) => {
+  const t = useT();
   const [draft, setDraft] = useState<SearchVariant>(() => {
     const initial = variants.find(v => v.id === varianteId);
     if (initial) {
@@ -454,22 +462,22 @@ const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; 
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "start" }}>
-        <EdField label="Nome"><input style={edInput} value={draft.nome_exibicao} onChange={e => setDraft(d => ({ ...d, nome_exibicao: e.target.value }))} /></EdField>
-        <EdField label="Ativa">
+        <EdField label={t.profile.editor.variantName}><input style={edInput} value={draft.nome_exibicao} onChange={e => setDraft(d => ({ ...d, nome_exibicao: e.target.value }))} /></EdField>
+        <EdField label={t.profile.editor.variantActive}>
           <div style={{ height: 33, display: "flex", alignItems: "center" }}>
             <button onClick={() => setDraft(d => ({ ...d, ativa: !d.ativa }))} style={{ padding: "5px 14px", borderRadius: 6, border: `1px solid ${draft.ativa ? "var(--accent)" : "var(--border)"}`, background: draft.ativa ? "var(--accent-soft)" : "transparent", color: draft.ativa ? "var(--accent-strong)" : "var(--text-secondary)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
-              {draft.ativa ? "Ativa" : "Inativa"}
+              {draft.ativa ? t.profile.variantActive : t.profile.variantInactive}
             </button>
           </div>
         </EdField>
       </div>
-      <EdField label="Regiões aceitas">
+      <EdField label={t.profile.editor.acceptedRegions}>
         <RegionPicker
           value={draft.regioes_aceitas}
           onChange={v => setDraft(d => ({ ...d, regioes_aceitas: v }))}
         />
       </EdField>
-      <EdField label="Modelos de trabalho">
+      <EdField label={t.profile.editor.workModels}>
         <div style={{ display: "flex", gap: 6 }}>
           {["remoto", "híbrido", "presencial"].map(m => {
             const active = draft.modelos_trabalho.includes(m);
@@ -498,22 +506,12 @@ const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; 
           })}
         </div>
       </EdField>
-      <EdField label="Idiomas de candidatura" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(draft.idiomas_aplicacao)} onChange={e => setDraft(d => ({ ...d, idiomas_aplicacao: strToTags(e.target.value) }))} placeholder="en, da, pt" /></EdField>
-      <EdField label="Foco de competências" hint="Separadas por vírgula"><input style={edInput} value={tagsToStr(draft.foco_competencias)} onChange={e => setDraft(d => ({ ...d, foco_competencias: strToTags(e.target.value) }))} /></EdField>
+      <EdField label={t.profile.editor.applicationLanguages} hint={t.profile.editor.applicationLanguagesHint}><input style={edInput} value={tagsToStr(draft.idiomas_aplicacao)} onChange={e => setDraft(d => ({ ...d, idiomas_aplicacao: strToTags(e.target.value) }))} placeholder="en, da, pt" /></EdField>
+      <EdField label={t.profile.editor.skillFocus} hint={t.profile.editor.skillFocusHint}><input style={edInput} value={tagsToStr(draft.foco_competencias)} onChange={e => setDraft(d => ({ ...d, foco_competencias: strToTags(e.target.value) }))} /></EdField>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10 }}>{error}</div>}
       <ModalActions saving={saving} onSave={save} onClose={onClose} />
     </>
   );
-};
-
-const SECTION_LABELS: Record<string, string> = {
-  dados_pessoais: "Dados pessoais",
-  experiencia: "Experiência profissional",
-  projetos: "Projetos",
-  formacao: "Formação",
-  competencias: "Competências",
-  idiomas: "Idiomas",
-  nova_variante: "Nova variante de busca",
 };
 
 export const SectionEditModal: React.FC<{
@@ -523,9 +521,11 @@ export const SectionEditModal: React.FC<{
   onSaved: (updatedData?: CandidateBase) => void;
   onClose: () => void;
 }> = ({ target, profileData, variants, onSaved, onClose }) => {
+  const t = useT();
+  const sectionLabels = t.profile.sectionLabels as Record<string, string>;
   const title = target.kind === "variante"
-    ? (variants.find(v => v.id === target.id)?.nome_exibicao ?? "Variante")
-    : SECTION_LABELS[target.kind] ?? target.kind;
+    ? (variants.find(v => v.id === target.id)?.nome_exibicao ?? t.profile.variantActive)
+    : sectionLabels[target.kind] ?? target.kind;
 
   return (
     <div

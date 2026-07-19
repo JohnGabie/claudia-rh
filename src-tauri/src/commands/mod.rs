@@ -1,4 +1,5 @@
 pub mod cover_letter;
+pub mod welcome;
 pub mod updater;
 pub mod startup;
 pub mod credenciais;

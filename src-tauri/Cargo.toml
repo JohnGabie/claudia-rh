@@ -1,11 +1,12 @@
 [package]
 name = "claudia-rh"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.2.0"
+description = "Automated job-application agent powered by Claude Code + Chrome"
+authors = ["Claudia RH Contributors"]
+license = "MIT"
+repository = "https://github.com/JohnGabie/claudia-rh"
+homepage = "https://github.com/JohnGabie/claudia-rh"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -31,7 +32,8 @@ chrono = { version = "0.4", features = ["serde"] }
 keyring = "3"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
-tauri-plugin-dialog = "2"
+rmcp = { version = "2.2.0", features = ["server", "transport-io"] }
+tauri-plugin-dialog = "2.7.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

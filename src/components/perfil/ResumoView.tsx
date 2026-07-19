@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useT } from "../../i18n";
 import { Plus, FileText, MailOpen, Lightbulb } from "lucide-react";
 import { SearchVariant } from "../../types";
 import { CandidateBase, ChatFocus, EditTarget, Proposta } from "./types";
@@ -17,6 +18,7 @@ export const ResumoView: React.FC<{
   onDirectEdit: (target: EditTarget) => void;
   onReloadData: () => void;
 }> = ({ data, variants, onOpenChat, onOpenCurriculos, onOpenCoverLetters, onDirectEdit, onReloadData }) => {
+  const t = useT();
   const [localPesos, setLocalPesos] = useState<Record<string, number>>({});
   const committedPesosRef = useRef<Record<string, number>>({});
 
@@ -38,7 +40,7 @@ export const ResumoView: React.FC<{
   const handleAplicarProposta = (p: Proposta) => {
     onOpenChat({
       section: "sugestao_perfil",
-      label: "Sugestão de perfil",
+      label: t.profile.applySuggestion,
       preMessage: p.pergunta + (p.contexto ? `\n\nContexto: ${p.contexto}` : ""),
     });
   };
@@ -99,7 +101,7 @@ export const ResumoView: React.FC<{
     <div style={{ padding: 24, overflow: "auto", height: "100%" }}>
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, flex: 1 }}>Perfil</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, flex: 1 }}>{t.profile.title}</h1>
         <button
           onClick={() => onDirectEdit({ kind: "nova_variante" })}
           style={{
@@ -111,7 +113,7 @@ export const ResumoView: React.FC<{
           }}
         >
           <Plus size={14} />
-          Nova variante
+          {t.profile.newVariant}
         </button>
         <button
           onClick={onOpenCurriculos}
@@ -124,7 +126,7 @@ export const ResumoView: React.FC<{
           }}
         >
           <FileText size={14} />
-          Currículos
+          {t.profile.resumes}
         </button>
         <button
           onClick={onOpenCoverLetters}
@@ -137,7 +139,7 @@ export const ResumoView: React.FC<{
           }}
         >
           <MailOpen size={14} />
-          Cover Letters
+          {t.profile.coverLetters}
         </button>
         <button
           onClick={() => onOpenChat()}
@@ -149,12 +151,12 @@ export const ResumoView: React.FC<{
             fontFamily: "inherit",
           }}
         >
-          Atualizar perfil
+          {t.profile.updateProfile}
         </button>
       </div>
       {atualizadoEm ? (
         <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 20 }}>
-          Última atualização: {atualizadoEm}
+          {t.profile.lastUpdated}{atualizadoEm}
         </div>
       ) : (
         <div style={{ marginBottom: 20 }} />
@@ -172,7 +174,7 @@ export const ResumoView: React.FC<{
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <Lightbulb size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent-strong)" }}>
-              {propostas.length === 1 ? "1 sugestão de melhoria" : `${propostas.length} sugestões de melhoria`}
+              {propostas.length === 1 ? t.profile.suggestions_one : `${propostas.length}${t.profile.suggestions_many}`}
             </span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -200,7 +202,7 @@ export const ResumoView: React.FC<{
                       color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
-                    Ignorar
+                    {t.profile.ignore}
                   </button>
                   <button
                     onClick={() => handleAplicarProposta(p)}
@@ -210,7 +212,7 @@ export const ResumoView: React.FC<{
                       color: "#fff", cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
-                    Aplicar no chat
+                    {t.profile.applySuggestion}
                   </button>
                 </div>
               </div>
@@ -262,9 +264,9 @@ export const ResumoView: React.FC<{
       {/* Variants section */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)" }}>Variantes de busca</span>
+          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)" }}>{t.profile.searchVariants}</span>
           <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            {variants.filter(v => v.ativa).length} ativa{variants.filter(v => v.ativa).length !== 1 ? "s" : ""}
+            {variants.filter(v => v.ativa).length} {variants.filter(v => v.ativa).length === 1 ? t.profile.activeCount_one : t.profile.activeCount_many}
           </span>
           <button
             onClick={() => onDirectEdit({ kind: "nova_variante" })}
@@ -278,7 +280,7 @@ export const ResumoView: React.FC<{
             }}
           >
             <Plus size={12} />
-            Adicionar nova busca
+            {t.profile.addNewSearch}
           </button>
         </div>
 
@@ -288,7 +290,7 @@ export const ResumoView: React.FC<{
             borderRadius: 8, padding: "20px 16px", textAlign: "center",
           }}>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10 }}>
-              Sem variantes ainda. Uma variante define o tipo de vaga que a Claudia vai procurar.
+              {t.profile.noVariantsDesc}
             </div>
             <button
               onClick={() => onDirectEdit({ kind: "nova_variante" })}
@@ -300,7 +302,7 @@ export const ResumoView: React.FC<{
               }}
             >
               <Plus size={14} />
-              Criar variante
+              {t.profile.createVariant}
             </button>
           </div>
         ) : (

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Sparkles, RefreshCw, ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
 import { renderMarkdown } from "../lib/markdown";
+import { useT } from "../i18n";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,8 @@ interface SugestaoFeedback { sugerir: boolean; motivo: string }
 // ── Visualizações ─────────────────────────────────────────────────────────
 
 const TrendChart: React.FC<{ data: DadosPorDia[] }> = ({ data }) => {
-  if (data.length < 2) return <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "12px 0" }}>Dados insuficientes para tendência.</div>;
+  const t = useT();
+  if (data.length < 2) return <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "12px 0" }}>{t.feedback.insufficientData}</div>;
   const W = 500, H = 100, PX = 8, PY = 8;
   const max = Math.max(...data.map(d => d.count), 1);
   const pts = data.map((d, i) => {
@@ -69,23 +71,8 @@ const TrendChart: React.FC<{ data: DadosPorDia[] }> = ({ data }) => {
   );
 };
 
-const RESULTADO_LABELS: Record<string, string> = {
-  sem_resposta: "Sem resposta", rejeitada: "Rejeitada", entrevista: "Entrevista", oferta: "Oferta",
-};
 const RESULTADO_COLORS: Record<string, string> = {
   sem_resposta: "var(--text-tertiary)", rejeitada: "var(--danger)", entrevista: "var(--warning)", oferta: "var(--success)",
-};
-const MOTIVO_LABELS: Record<string, string> = {
-  sem_musthave: "Sem must-have", setor_evitar: "Setor a evitar",
-  localizacao: "Localização", idioma: "Idioma",
-  salario: "Salário", score_baixo: "Score baixo", outro: "Outro",
-  aprovada: "Aprovada",
-};
-const PENDENCIA_LABELS: Record<string, string> = {
-  captcha: "Captcha", dados_sensiveis: "Dados sensíveis",
-  inventar_informacao: "Informação em falta", red_line: "Red line",
-  salario: "Salário", pergunta_sem_resposta: "Pergunta s/ resposta",
-  dialogo_bloqueante: "Diálogo bloqueante", extensao_chrome: "Extensão Chrome",
 };
 
 const BarChart: React.FC<{ data: ParContagem[]; maxItems?: number; labelMap?: Record<string, string>; colorMap?: Record<string, string>; barColor?: string }> = ({ data, maxItems = 8, labelMap, colorMap, barColor }) => {
@@ -96,7 +83,7 @@ const BarChart: React.FC<{ data: ParContagem[]; maxItems?: number; labelMap?: Re
       {rows.map((d, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 140, fontSize: 12, textAlign: "right", color: "var(--text-secondary)", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {(labelMap ?? RESULTADO_LABELS)[d.chave] ?? d.chave}
+            {(labelMap ?? {})[d.chave] ?? d.chave}
           </span>
           <div style={{ flex: 1, height: 14, background: "var(--bg-sunken)", borderRadius: 3 }}>
             <div style={{
@@ -112,14 +99,14 @@ const BarChart: React.FC<{ data: ParContagem[]; maxItems?: number; labelMap?: Re
   );
 };
 
-const PendenciaChart: React.FC<{ data: PendenciaCategoria[] }> = ({ data }) => {
+const PendenciaChart: React.FC<{ data: PendenciaCategoria[]; labelMap?: Record<string, string> }> = ({ data, labelMap }) => {
   const max = Math.max(...data.map(d => d.total), 1);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {data.map((d, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 140, fontSize: 12, textAlign: "right", color: "var(--text-secondary)", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {PENDENCIA_LABELS[d.categoria] ?? d.categoria}
+            {(labelMap ?? {})[d.categoria] ?? d.categoria}
           </span>
           <div style={{ flex: 1, height: 14, background: "var(--bg-sunken)", borderRadius: 3 }}>
             <div style={{ position: "relative", width: `${(d.total / max) * 100}%`, height: "100%", borderRadius: 3, minWidth: d.total > 0 ? 4 : 0, overflow: "hidden" }}>
@@ -148,6 +135,7 @@ const StatPill: React.FC<{ label: string; value: string | number }> = ({ label, 
 // ── FeedbackCard ──────────────────────────────────────────────────────────
 
 const FeedbackCard: React.FC<{ registo: RegistoFeedback }> = ({ registo }) => {
+  const t = useT();
   const [expandido, setExpandido] = useState(false);
   const data = new Date(registo.gerado_em).toLocaleDateString("pt-PT", { day: "numeric", month: "long", year: "numeric" });
   return (
@@ -168,7 +156,7 @@ const FeedbackCard: React.FC<{ registo: RegistoFeedback }> = ({ registo }) => {
               background: registo.gatilho === "marco" ? "var(--accent-soft)" : "var(--bg-sunken)",
               color: registo.gatilho === "marco" ? "var(--accent-strong)" : "var(--text-secondary)",
             }}>
-              {registo.gatilho === "marco" ? "Marco" : "Manual"}
+              {registo.gatilho === "marco" ? t.feedback.milestone : t.feedback.manual}
             </span>
             <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
               {registo.candidaturas_ate_aqui} candidaturas
@@ -191,6 +179,33 @@ const FeedbackCard: React.FC<{ registo: RegistoFeedback }> = ({ registo }) => {
 // ── Main ──────────────────────────────────────────────────────────────────
 
 export const Feedback: React.FC = () => {
+  const t = useT();
+  const RESULTADO_LABELS: Record<string, string> = {
+    sem_resposta: t.feedback.resultLabels.sem_resposta,
+    rejeitada: t.feedback.resultLabels.rejeitada,
+    entrevista: t.feedback.resultLabels.entrevista,
+    oferta: t.feedback.resultLabels.oferta,
+  };
+  const MOTIVO_LABELS: Record<string, string> = {
+    sem_musthave: t.feedback.skipReasonLabels.sem_musthave,
+    setor_evitar: t.feedback.skipReasonLabels.setor_evitar,
+    localizacao: t.feedback.skipReasonLabels.localizacao,
+    idioma: t.feedback.skipReasonLabels.idioma,
+    salario: t.feedback.skipReasonLabels.salario,
+    score_baixo: t.feedback.skipReasonLabels.score_baixo,
+    outro: t.feedback.skipReasonLabels.outro,
+    aprovada: t.feedback.skipReasonLabels.aprovada,
+  };
+  const PENDENCIA_LABELS: Record<string, string> = {
+    captcha: t.feedback.pendingLabels.captcha,
+    dados_sensiveis: t.feedback.pendingLabels.dados_sensiveis,
+    inventar_informacao: t.feedback.pendingLabels.inventar_informacao,
+    red_line: t.feedback.pendingLabels.red_line,
+    salario: t.feedback.pendingLabels.salario,
+    pergunta_sem_resposta: t.feedback.pendingLabels.pergunta_sem_resposta,
+    dialogo_bloqueante: t.feedback.pendingLabels.dialogo_bloqueante,
+    extensao_chrome: t.feedback.pendingLabels.extensao_chrome,
+  };
   const [dados, setDados] = useState<AgregadosFeedback | null>(null);
   const [feedbacks, setFeedbacks] = useState<RegistoFeedback[]>([]);
   const [sugestao, setSugestao] = useState<SugestaoFeedback | null>(null);
@@ -256,7 +271,7 @@ export const Feedback: React.FC = () => {
   const gerarFeedback = async (gatilho: "manual" | "marco") => {
     firstChunkRef.current = false;
     setGerando(true);
-    setOutputAtual("A analisar os dados e gerar feedback…");
+    setOutputAtual(t.feedback.analyzingData);
     try {
       await invoke("gerar_feedback", { gatilho });
     } catch (e) {
@@ -267,14 +282,14 @@ export const Feedback: React.FC = () => {
   };
 
   if (loading) {
-    return <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 14 }}>A carregar…</div>;
+    return <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 14 }}>{t.feedback.loading}</div>;
   }
 
   return (
     <div style={{ padding: 24, paddingBottom: 40 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, flex: 1 }}>
-          Feedback
+          {t.feedback.title}
         </h1>
         <button
           onClick={() => gerarFeedback("manual")}
@@ -289,8 +304,8 @@ export const Feedback: React.FC = () => {
           }}
         >
           {gerando
-            ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> A gerar…</>
-            : <><Sparkles size={13} /> Gerar feedback agora</>}
+            ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> {t.feedback.generating}</>
+            : <><Sparkles size={13} /> {t.feedback.generateNow}</>}
         </button>
       </div>
 
@@ -311,7 +326,7 @@ export const Feedback: React.FC = () => {
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Gerar
+            {t.feedback.generate}
           </button>
         </div>
       )}
@@ -332,17 +347,17 @@ export const Feedback: React.FC = () => {
       {dados && (
         <>
           <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-            <StatPill label="Candidaturas enviadas" value={dados.candidaturas_total} />
-            <StatPill label="Esta semana" value={dados.candidaturas_semana} />
-            <StatPill label="Vagas analisadas" value={dados.vagas_analisadas} />
-            <StatPill label="Vagas puladas" value={dados.vagas_puladas} />
+            <StatPill label={t.feedback.applicationsSent} value={dados.candidaturas_total} />
+            <StatPill label={t.feedback.thisWeek} value={dados.candidaturas_semana} />
+            <StatPill label={t.feedback.jobsAnalyzed} value={dados.vagas_analisadas} />
+            <StatPill label={t.feedback.jobsSkipped} value={dados.vagas_puladas} />
           </div>
 
           {/* Trend chart */}
           {dados.candidaturas_por_dia.length > 0 && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 8 }}>
-                Candidaturas — últimos 30 dias
+                {t.feedback.last30Days}
               </div>
               <TrendChart data={dados.candidaturas_por_dia} />
             </div>
@@ -352,7 +367,7 @@ export const Feedback: React.FC = () => {
           {dados.por_resultado.length > 0 && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 12 }}>
-                Resultados conhecidos
+                {t.feedback.knownResults}
               </div>
               <BarChart data={dados.por_resultado} labelMap={RESULTADO_LABELS} colorMap={RESULTADO_COLORS} />
             </div>
@@ -362,7 +377,7 @@ export const Feedback: React.FC = () => {
           {dados.por_variante.length > 1 && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 12 }}>
-                Por variante de busca
+                {t.feedback.bySearchVariant}
               </div>
               <BarChart data={dados.por_variante} />
             </div>
@@ -372,7 +387,7 @@ export const Feedback: React.FC = () => {
           {dados.motivos_puladas.length > 0 && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 12 }}>
-                Motivos de exclusão ({dados.vagas_puladas} vagas puladas)
+                {t.feedback.skipReasonsTitle} ({dados.vagas_puladas} {t.feedback.jobsSkipped})
               </div>
               <BarChart
                 data={dados.motivos_puladas.map(m => ({ chave: m.categoria, count: m.total }))}
@@ -386,10 +401,10 @@ export const Feedback: React.FC = () => {
           {dados.pendencias_por_categoria.length > 0 && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>Pendências por tipo</span>
-                <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>verde = resolvidas / vermelho = abertas</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>{t.feedback.pendingsByType}</span>
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{t.feedback.pendingNote}</span>
               </div>
-              <PendenciaChart data={dados.pendencias_por_categoria} />
+              <PendenciaChart data={dados.pendencias_por_categoria} labelMap={PENDENCIA_LABELS} />
             </div>
           )}
         </>
@@ -399,7 +414,7 @@ export const Feedback: React.FC = () => {
       {feedbacks.length > 0 && (
         <>
           <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 12, marginTop: 8 }}>
-            Feedbacks anteriores
+            {t.feedback.previousFeedbacks}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {feedbacks.map(f => <FeedbackCard key={f.id} registo={f} />)}
@@ -413,10 +428,10 @@ export const Feedback: React.FC = () => {
           borderRadius: 8, padding: 32, textAlign: "center",
           color: "var(--text-secondary)", fontSize: 14,
         }}>
-          Ainda não há candidaturas suficientes para gerar feedback.
+          {t.feedback.notEnoughApplications}
           <br />
           <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            O feedback será útil após as primeiras candidaturas serem enviadas.
+            {t.feedback.feedbackWillBeUseful}
           </span>
         </div>
       )}
@@ -427,7 +442,7 @@ export const Feedback: React.FC = () => {
           borderRadius: 8, padding: 24, textAlign: "center",
           color: "var(--text-secondary)", fontSize: 13,
         }}>
-          Ainda não geraste nenhum feedback. Usa o botão acima para analisar as candidaturas.
+          {t.feedback.noFeedbackYet}
         </div>
       )}
 

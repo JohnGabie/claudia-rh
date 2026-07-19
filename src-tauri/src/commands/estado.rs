@@ -151,7 +151,7 @@ pub fn pular_pendencia(
     .map_err(|e| e.to_string())?;
     if let Ok(vid) = vaga_id {
         let _ = conn.execute(
-            "UPDATE vagas SET status = 'pulada', motivo_status = 'Pulada pelo utilizador' WHERE id = ?1",
+            "UPDATE vagas SET status = 'pulada', motivo_status = 'Skipped by user' WHERE id = ?1",
             [vid],
         );
     }

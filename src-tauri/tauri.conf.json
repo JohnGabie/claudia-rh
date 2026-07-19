@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "claudia-rh",
-  "version": "0.1.0",
-  "identifier": "com.joaog.claudia-rh",
+  "version": "0.2.0",
+  "identifier": "io.github.johngabie.claudia-rh",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

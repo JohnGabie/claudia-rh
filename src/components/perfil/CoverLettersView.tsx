@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useT } from "../../i18n";
 import { ArrowLeft, MailOpen, Loader2, AlertCircle } from "lucide-react";
 import { CoverLetterInfo, DocLang, PALETTE } from "./types";
 
 // ── Cover Letters view ─────────────────────────────────────────────────────
 
 export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const t = useT();
   const [empresa, setEmpresa] = useState("");
   const [cargo, setCargo] = useState("");
   const [descricaoVaga, setDescricaoVaga] = useState("");
@@ -114,10 +116,10 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
           }}
         >
           <ArrowLeft size={14} />
-          Voltar
+          {t.common.back}
         </button>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Cover Letters
+          {t.profile.coverLettersTitle}
         </h1>
       </div>
 
@@ -138,12 +140,12 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         borderRadius: 10, padding: "18px 20px", marginBottom: 12,
       }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
-          Nova cover letter
+          {t.profile.newCoverLetter}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-              Empresa <span style={{ color: "var(--danger)" }}>*</span>
+              {t.profile.company} <span style={{ color: "var(--danger)" }}>*</span>
             </label>
             <input
               value={empresa}
@@ -162,7 +164,7 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
           </div>
           <div>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-              Cargo <span style={{ color: "var(--danger)" }}>*</span>
+              {t.profile.position} <span style={{ color: "var(--danger)" }}>*</span>
             </label>
             <input
               value={cargo}
@@ -182,13 +184,13 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-            Descrição da vaga{" "}
-            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(opcional — melhora a especificidade)</span>
+            {t.profile.jobDescriptionLabel}{" "}
+            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>{t.profile.jobDescriptionOpt}</span>
           </label>
           <textarea
             value={descricaoVaga}
             onChange={e => setDescricaoVaga(e.target.value)}
-            placeholder="Cola aqui o texto da oferta de emprego..."
+            placeholder={t.profile.pasteJobText}
             disabled={gerando}
             rows={5}
             style={{
@@ -203,13 +205,13 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         </div>
         <div>
           <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>
-            Nota extra{" "}
-            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(opcional — algo específico que queres mencionar)</span>
+            {t.profile.extraNoteLabel}{" "}
+            <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>{t.profile.extraNoteOpt}</span>
           </label>
           <textarea
             value={notaExtra}
             onChange={e => setNotaExtra(e.target.value)}
-            placeholder="ex: Conheci o CEO na conferência X, quero mencionar o projeto Y..."
+            placeholder="e.g.: I met the CEO at conference X, I want to mention project Y..."
             disabled={gerando}
             rows={2}
             style={{
@@ -231,7 +233,7 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Idioma</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.resumeLanguage}</span>
           {(["pt", "en"] as DocLang[]).map(l => (
             <button
               key={l}
@@ -250,7 +252,7 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         </div>
         <div style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Cor</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t.profile.accentColor}</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {PALETTE.map(p => (
               <button
@@ -275,7 +277,7 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
             value={selectedColor}
             onChange={e => setSelectedColor(e.target.value)}
             style={{ width: 22, height: 22, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", background: "none" }}
-            title="Cor personalizada"
+            title={t.profile.customColor}
           />
         </div>
       </div>
@@ -297,12 +299,12 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         {gerando ? (
           <>
             <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />
-            A gerar…
+            {t.common.generating}
           </>
         ) : (
           <>
             <MailOpen size={15} />
-            Gerar cover letter
+            {t.profile.generateCoverLetter}
           </>
         )}
       </button>
@@ -317,9 +319,9 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
             {gerando ? (
               <>
                 <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                Claude a escrever…
+                {t.profile.claudeWriting}
               </>
-            ) : "Rascunho gerado"}
+            ) : t.profile.draftGenerated}
           </div>
           <div style={{
             fontSize: 13, color: "var(--text-primary)", lineHeight: 1.75,
