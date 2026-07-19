@@ -24,8 +24,38 @@ jobs:
       - name: install
         run: npm ci
 
+      - name: lint
+        run: npm run lint
+
       - name: build
         run: npm run build
+
+  rust:
+    name: rust (test + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: system deps (tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: test
+        run: cargo test
+        working-directory: src-tauri
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
 
   npm-install:
     name: npm install (fresh)

@@ -1030,6 +1030,44 @@ const ChatView: React.FC<{
     };
   }, [isChrome]);
 
+  const handleImport = async () => {
+    const sources: string[] = [];
+    if (importLinkedin) sources.push("LinkedIn");
+    if (importGithub) sources.push("GitHub");
+    if (sources.length === 0) return;
+
+    const primeiraMsg = `Quero importar o meu perfil do ${sources.join(" e ")}. Acede com a minha sessão autenticada e extrai toda a informação profissional.`;
+    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: primeiraMsg, streaming: false };
+
+    setMessages(prev => [...prev, userMsg]);
+    setSelectionDone(true);
+    setSending(true);
+    setError(null);
+
+    try {
+      await invoke("iniciar_sessao_perfil_chrome", { primeiraMensagem: primeiraMsg });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setSending(false);
+    }
+  };
+
+  const startSession = async (firstMessage: string) => {
+    setSending(true);
+    setError(null);
+    try {
+      await invoke("iniciar_sessao_perfil", {
+        contexto: focus?.section ?? "geral",
+        primeiraMessage: firstMessage,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setSending(false);
+    }
+  };
+
   useEffect(() => {
     if (isChrome) {
       setMessages([{
@@ -1050,40 +1088,6 @@ const ChatView: React.FC<{
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleImport = async () => {
-    const sources: string[] = [];
-    if (importLinkedin) sources.push("LinkedIn");
-    if (importGithub) sources.push("GitHub");
-    if (sources.length === 0) return;
-
-    const primeiraMsg = `Quero importar o meu perfil do ${sources.join(" e ")}. Acede com a minha sessão autenticada e extrai toda a informação profissional.`;
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: primeiraMsg, streaming: false };
-
-    setMessages(prev => [...prev, userMsg]);
-    setSelectionDone(true);
-    setSending(true);    setError(null);
-
-    try {
-      await invoke("iniciar_sessao_perfil_chrome", { primeiraMensagem: primeiraMsg });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      setSending(false);    }
-  };
-
-  const startSession = async (firstMessage: string) => {
-    setSending(true);    setError(null);
-    try {
-      await invoke("iniciar_sessao_perfil", {
-        contexto: focus?.section ?? "geral",
-        primeiraMessage: firstMessage,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      setSending(false);    }
-  };
 
   const anexarFicheiros = async () => {
     const selecionados = await openFileDialog({ multiple: true, title: "Anexar ficheiros" });
@@ -2600,9 +2604,13 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
 };
 
 const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; onSaved: () => void; onClose: () => void }> = ({ varianteId, variants, onSaved, onClose }) => {
-  const initial = variants.find(v => v.id === varianteId);
-  const generatedId = varianteId || `variante_${Date.now()}`;
-  const [draft, setDraft] = useState<SearchVariant>(initial ? { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] } : { id: generatedId, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" });
+  const [draft, setDraft] = useState<SearchVariant>(() => {
+    const initial = variants.find(v => v.id === varianteId);
+    if (initial) {
+      return { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] };
+    }
+    return { id: varianteId || `variante_${Date.now()}`, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
