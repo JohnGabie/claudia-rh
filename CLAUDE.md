@@ -17,7 +17,7 @@ user base — see `.claude/QUALIDADE.md` for the quality/refactor roadmap.
 ## Hard rules
 
 - **NEVER change the Tauri `identifier`** in `src-tauri/tauri.conf.json`
-  (`com.joaog.claudia-rh`). It determines where user data lives and the
+  (`io.github.johngabie.claudia-rh`). It determines where user data lives and the
   installer upgrade identity; changing it strands every user's profile and DB
   (it happened in v0.2.0 — see `src-tauri/src/migration.rs`). A unit test
   (`identifier_is_frozen`) enforces this.
