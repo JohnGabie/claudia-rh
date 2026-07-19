@@ -442,11 +442,29 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     prompt
 }
 
+// stderr do processo claude vai para um log em app_data_dir, senão os erros
+// (ex.: falha a ligar ao Chrome) desaparecem e o utilizador só vê silêncio.
+fn stderr_log(app: &AppHandle) -> Stdio {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .and_then(|d| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(d.join("claude-perfil-stderr.log"))
+                .ok()
+        })
+        .map(Stdio::from)
+        .unwrap_or_else(Stdio::null)
+}
+
 fn spawn_perfil_claude(app: AppHandle, message: String) {
     std::thread::spawn(move || {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_system_prompt(&app, &conv);
 
+        let stderr = stderr_log(&app);
         let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
@@ -459,7 +477,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
                 &sys,
             ])
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
         {
             Ok(c) => c,
@@ -635,6 +653,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         let conv = perfil_conv().lock().unwrap().clone();
         let sys = build_chrome_system_prompt(&app, &conv);
 
+        let stderr = stderr_log(&app);
         let mut child = match Command::new(crate::commands::claude_program())
             .args([
                 "--dangerously-skip-permissions",
@@ -648,7 +667,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
                 &sys,
             ])
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
         {
             Ok(c) => c,
@@ -687,9 +706,13 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         }
 
         // None here means the user interrupted (interromper_perfil took and killed it).
-        if let Some(mut c) = perfil_child().lock().unwrap().take() {
-            let _ = c.wait();
-        }
+        let interrupted = {
+            let mut guard = perfil_child().lock().unwrap();
+            match guard.take() {
+                Some(mut c) => { let _ = c.wait(); false }
+                None => true,
+            }
+        };
 
         // Notify frontend that the agent may have resolved pendências or updated the DB.
         let _ = app.emit("db-atualizada", ());
@@ -699,6 +722,16 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
             let _ = app.emit("perfil-atualizado", ());
         }
         let clean = full_response.replace("PERFIL_ATUALIZADO", "").trim().to_string();
+
+        if clean.is_empty() && !interrupted {
+            let log_path = app.path().app_data_dir()
+                .map(|d| d.join("claude-perfil-stderr.log").to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
+            let _ = app.emit("perfil-output", format!(
+                "A sessão Chrome terminou sem resposta. Verifica que o Chrome está aberto \
+                 com a extensão Claude ligada. Detalhes técnicos em: {log_path}"
+            ));
+        }
 
         {
             let mut c = perfil_conv().lock().unwrap();
