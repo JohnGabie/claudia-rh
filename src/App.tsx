@@ -7,7 +7,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { useT } from "./i18n";
 import { Dashboard } from "./components/Dashboard";
 import { Feedback } from "./components/Feedback";
-import { Perfil } from "./components/Perfil";
+import { Perfil } from "./components/perfil";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
