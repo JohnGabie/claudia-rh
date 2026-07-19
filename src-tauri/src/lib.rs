@@ -30,8 +30,8 @@ use commands::feedback::{
 use commands::notif::{configurar_notif, load_notif_config, obter_config_notif};
 use commands::perfil::{
     enviar_mensagem_perfil, escrever_para_perfil_chrome, guardar_candidato_base, guardar_estrategia,
-    guardar_search_variants, guardar_pesos_variantes, guardar_variante_unica, iniciar_sessao_perfil, iniciar_sessao_perfil_chrome, ler_candidato_base,
-    ler_estrategia, ler_search_variants,
+    guardar_search_variants, guardar_pesos_variantes, guardar_variante_unica, iniciar_sessao_perfil, iniciar_sessao_perfil_chrome, interromper_perfil, ler_candidato_base,
+    ler_estrategia, ler_search_variants, remover_ultima_troca_perfil,
 };
 use commands::pty::{escrever_pty, iniciar_pty, parar_pty, redimensionar_pty};
 use commands::sessao::{
@@ -149,6 +149,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -275,6 +276,8 @@ pub fn run() {
             iniciar_sessao_perfil,
             iniciar_sessao_perfil_chrome,
             enviar_mensagem_perfil,
+            interromper_perfil,
+            remover_ultima_troca_perfil,
             escrever_para_perfil_chrome,
             guardar_credencial,
             obter_credencial,

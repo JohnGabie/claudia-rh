@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useT } from "../i18n";
 import {
   ArrowLeft,
+  Paperclip,
   Plus,
   Send,
   FileText,
   Link2,
   ClipboardList,
   Pencil,
+  Square,
   AlertCircle,
   Loader2,
   Lightbulb,
@@ -980,8 +983,8 @@ const ChatView: React.FC<{
   const isChrome = focus?.chromeSessao === true;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
-  const [sessionActive, setSessionActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Chrome selection state — shown before the session starts
   const [selectionDone, setSelectionDone] = useState(false);
@@ -1025,7 +1028,6 @@ const ChatView: React.FC<{
           return prev;
         });
         setSending(false);
-        setSessionActive(false);
 
         if (isChrome && perfilSavedRef.current) {
           setTimeout(() => onBackRef.current(), 2000);
@@ -1078,7 +1080,6 @@ const ChatView: React.FC<{
     setMessages(prev => [...prev, userMsg]);
     setSelectionDone(true);
     setSending(true);
-    setSessionActive(true);
     setError(null);
 
     try {
@@ -1087,13 +1088,11 @@ const ChatView: React.FC<{
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       setSending(false);
-      setSessionActive(false);
     }
   };
 
   const startSession = async (firstMessage: string) => {
     setSending(true);
-    setSessionActive(true);
     setError(null);
     try {
       await invoke("iniciar_sessao_perfil", {
@@ -1104,32 +1103,49 @@ const ChatView: React.FC<{
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       setSending(false);
-      setSessionActive(false);
     }
   };
 
+  const attachFiles = async () => {
+    const selected = await openFileDialog({ multiple: true, title: t.profile.attachFiles });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    setAttachments(prev => [...prev, ...paths.filter(p => !prev.includes(p))]);
+  };
+
+  const fileName = (path: string) => path.split(/[/\\]/).pop() ?? path;
+
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && attachments.length === 0) || sending) return;
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text, streaming: false };
+    // Bubble shows only the text + file names; the invoke gets the full paths
+    // with an instruction so Claude reads them with the Read tool.
+    const displayText = attachments.length > 0
+      ? `${text}${text ? "\n\n" : ""}📎 ${attachments.map(fileName).join(", ")}`
+      : text;
+    const promptText = attachments.length > 0
+      ? `${text}${text ? "\n\n" : ""}${t.profile.attachedNote}\n${attachments.map(p => `- ${p}`).join("\n")}`
+      : text;
+
+    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: displayText, streaming: false };
     setMessages(prev => [...prev, userMsg]);
     setInput("");
+    setAttachments([]);
+    if (inputRef.current) inputRef.current.style.height = "auto";
     setSending(true);
-    setSessionActive(true);
     setError(null);
 
     try {
       if (isChrome) {
-        await invoke("escrever_para_perfil_chrome", { input: text });
+        await invoke("escrever_para_perfil_chrome", { input: promptText });
       } else {
-        await invoke("enviar_mensagem_perfil", { mensagem: text });
+        await invoke("enviar_mensagem_perfil", { mensagem: promptText });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       setSending(false);
-      setSessionActive(false);
     }
   };
 
@@ -1138,6 +1154,36 @@ const ChatView: React.FC<{
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const stopGeneration = async () => {
+    try {
+      await invoke("interromper_perfil");
+    } catch {
+      // the done event resets the UI either way
+    }
+  };
+
+  const lastUserIdx = messages.map(m => m.role).lastIndexOf("user");
+
+  const editLastMessage = async () => {
+    if (sending || lastUserIdx === -1) return;
+    const msg = messages[lastUserIdx];
+    try {
+      await invoke("remover_ultima_troca_perfil");
+    } catch {
+      // history stays as-is; resending will still work, just with extra context
+    }
+    setMessages(prev => prev.slice(0, lastUserIdx));
+    setInput(msg.content);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 160) + "px";
+        el.focus();
+      }
+    });
   };
 
   return (
@@ -1173,12 +1219,6 @@ const ChatView: React.FC<{
           </>
         )}
 
-        {sessionActive && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <Loader2 size={13} style={{ color: "var(--accent)", animation: "spin 1s linear infinite" }} />
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.profile.claudiaWriting}</span>
-          </div>
-        )}
       </div>
 
       {/* Messages area */}
@@ -1198,7 +1238,7 @@ const ChatView: React.FC<{
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 680, margin: "0 auto" }}>
-          {messages.map((msg) => (
+          {messages.map((msg, i) => (
             <div
               key={msg.id}
               style={{
@@ -1232,8 +1272,46 @@ const ChatView: React.FC<{
                   }} />
                 )}
               </div>
+
+              {msg.role === "user" && i === lastUserIdx && !sending && (
+                <button
+                  onClick={editLastMessage}
+                  title={t.profile.editMessage}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    padding: 4, marginTop: 4, flexShrink: 0,
+                    display: "flex", alignItems: "center",
+                    color: "var(--text-tertiary)", transition: "color 0.15s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = "var(--accent)"}
+                  onMouseLeave={e => e.currentTarget.style.color = "var(--text-tertiary)"}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
             </div>
           ))}
+
+          {sending && !messages[messages.length - 1]?.streaming && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <GlassesAvatar />
+              <div style={{
+                padding: "12px 14px",
+                borderRadius: "12px 12px 12px 4px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                {[0, 1, 2].map(n => (
+                  <span key={n} style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: "var(--text-tertiary)",
+                    animation: `typingDot 1.2s ease-in-out ${n * 0.18}s infinite`,
+                  }} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Chrome source selection — shown before session starts */}
@@ -1288,14 +1366,69 @@ const ChatView: React.FC<{
         padding: "12px 16px",
         display: isChrome && !selectionDone ? "none" : undefined,
       }}>
+        {attachments.length > 0 && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 6,
+            maxWidth: 680, margin: "0 auto 8px",
+          }}>
+            {attachments.map(path => (
+              <span
+                key={path}
+                title={path}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "3px 8px", borderRadius: 6,
+                  background: "var(--bg-sunken)", border: "1px solid var(--border)",
+                  fontSize: 12, color: "var(--text-secondary)", maxWidth: 220,
+                }}
+              >
+                <Paperclip size={11} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {fileName(path)}
+                </span>
+                <button
+                  onClick={() => setAttachments(prev => prev.filter(p => p !== path))}
+                  title={t.profile.removeAttachment}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer", padding: 0,
+                    display: "flex", alignItems: "center", color: "var(--text-tertiary)",
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div style={{
           display: "flex", alignItems: "flex-end", gap: 10,
           maxWidth: 680, margin: "0 auto",
         }}>
+          <button
+            onClick={attachFiles}
+            disabled={sending}
+            title={t.profile.attachFiles}
+            style={{
+              width: 36, height: 36, flexShrink: 0,
+              background: "none", border: "none", borderRadius: 8,
+              cursor: sending ? "default" : "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--text-secondary)", transition: "color 0.15s",
+            }}
+            onMouseEnter={e => { if (!sending) e.currentTarget.style.color = "var(--accent)"; }}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-secondary)"}
+          >
+            <Paperclip size={16} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={e => {
+              setInput(e.target.value);
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 160) + "px";
+            }}
             onKeyDown={handleKeyDown}
             placeholder={t.profile.chatPlaceholder}
             disabled={sending}
@@ -1312,27 +1445,43 @@ const ChatView: React.FC<{
               background: sending ? "var(--bg-sunken)" : "var(--bg-base)",
               outline: "none",
               lineHeight: "1.5",
-              maxHeight: 120,
+              maxHeight: 160,
               overflow: "auto",
               transition: "border-color 0.15s",
             }}
             onFocus={e => e.target.style.borderColor = "var(--accent)"}
             onBlur={e => e.target.style.borderColor = "var(--border)"}
           />
-          <button
-            onClick={sendMessage}
-            disabled={sending || !input.trim()}
-            title="Enviar (Enter)"
-            style={{
-              width: 36, height: 36, flexShrink: 0,
-              background: sending || !input.trim() ? "var(--bg-sunken)" : "var(--accent)",
-              border: "none", borderRadius: 8, cursor: sending || !input.trim() ? "default" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.15s",
-            }}
-          >
-            <Send size={15} color={sending || !input.trim() ? "var(--text-tertiary)" : "#fff"} />
-          </button>
+          {sending ? (
+            <button
+              onClick={stopGeneration}
+              title={t.profile.stopGeneration}
+              style={{
+                width: 36, height: 36, flexShrink: 0,
+                background: "var(--accent)",
+                border: "none", borderRadius: 8, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+            >
+              <Square size={12} fill="#fff" color="#fff" />
+            </button>
+          ) : (
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() && attachments.length === 0}
+              title="Enviar (Enter)"
+              style={{
+                width: 36, height: 36, flexShrink: 0,
+                background: (!input.trim() && attachments.length === 0) ? "var(--bg-sunken)" : "var(--accent)",
+                border: "none", borderRadius: 8, cursor: (!input.trim() && attachments.length === 0) ? "default" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+            >
+              <Send size={15} color={(!input.trim() && attachments.length === 0) ? "var(--text-tertiary)" : "#fff"} />
+            </button>
+          )}
         </div>
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginTop: 6, maxWidth: 680, margin: "6px auto 0" }}>
           {t.profile.enterHint}
@@ -1342,6 +1491,10 @@ const ChatView: React.FC<{
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes blink { 50% { opacity: 0; } }
+        @keyframes typingDot {
+          0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+          30% { opacity: 1; transform: translateY(-3px); }
+        }
       `}</style>
     </div>
   );
@@ -2484,9 +2637,13 @@ const RegionPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void 
 
 const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; onSaved: () => void; onClose: () => void }> = ({ varianteId, variants, onSaved, onClose }) => {
   const t = useT();
-  const initial = variants.find(v => v.id === varianteId);
-  const generatedId = varianteId || `variante_${Date.now()}`;
-  const [draft, setDraft] = useState<SearchVariant>(initial ? { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] } : { id: generatedId, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" });
+  const [draft, setDraft] = useState<SearchVariant>(() => {
+    const initial = variants.find(v => v.id === varianteId);
+    if (initial) {
+      return { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] };
+    }
+    return { id: varianteId || `variante_${Date.now()}`, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
