@@ -3,20 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ExternalLink, Folder } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-
-interface Vaga {
-  id: number;
-  titulo: string;
-  empresa: string;
-  plataforma: string;
-  url: string;
-  localizacao: string | null;
-  modelo_trabalho: string | null;
-  descoberta_em: string;
-  status: string;
-  motivo_status: string | null;
-  match_score: string | null;
-}
+import { Vaga } from "../types";
 
 interface Candidatura {
   id: number;

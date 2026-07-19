@@ -3,14 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Pencil, Plus, Trash2 } from "lucide-react";
-
-interface Vaga {
-  id: number;
-  titulo: string;
-  empresa: string;
-  status: string;
-  descoberta_em: string;
-}
+import { VagaResumo, SearchVariant } from "../types";
+import { tempoRelativo, formatarTempo, formatTempoCompact } from "../lib/format";
+import { ToggleSwitch } from "./ui/ToggleSwitch";
 
 interface VagaAtual {
   id: number;
@@ -42,20 +37,6 @@ interface StatusLinkedinRede {
   vagas_encontradas: number;
 }
 
-interface SearchVariant {
-  id: string;
-  nome_exibicao: string;
-  peso: number;
-  ativa: boolean;
-  foco_competencias: string[];
-  foco_experiencia: string[];
-  regioes_aceitas: string[];
-  modelos_trabalho: string[];
-  idiomas_aplicacao: string[];
-  cv_gerado_path: string;
-  cv_gerado_em: string;
-}
-
 const STATUS_LABELS: Record<string, string> = {
   descoberta: "Descoberta",
   analisada: "Analisada",
@@ -77,31 +58,6 @@ const STATUS_STYLE: Record<string, { background: string; color: string }> = {
 };
 
 const DIAS_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-
-function tempoRelativo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "agora mesmo";
-  if (mins < 60) return `há ${mins} min`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `há ${hours}h`;
-  return `há ${Math.floor(hours / 24)}d`;
-}
-
-function formatarTempo(minutos: number): string {
-  const h = Math.floor(minutos / 60);
-  const m = Math.round(minutos % 60);
-  if (h === 0) return `${m}min`;
-  return m === 0 ? `${h}h` : `${h}h ${m}min`;
-}
-
-function formatTempoCompact(m: number): string {
-  if (m === 0) return "∞";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  return rem === 0 ? `${h}h` : `${h}h${rem}m`;
-}
 
 function calcularProximaJanela(janelas: JanelaAgendamento[]): string | null {
   if (janelas.length === 0) return null;
@@ -329,26 +285,6 @@ const LimitModal: React.FC<{ cfg: ModalCfg; onClose: () => void }> = ({ cfg, onC
     </div>
   );
 };
-
-// ── ToggleSwitch ──────────────────────────────────────────────────────────────
-const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
-  <button
-    role="switch" aria-checked={checked}
-    onMouseDown={(e) => { e.preventDefault(); onChange(); }}
-    style={{
-      width: 40, height: 22, borderRadius: 11, flexShrink: 0, padding: 0,
-      background: checked ? "var(--accent)" : "var(--bg-sunken)",
-      border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
-      cursor: "pointer", position: "relative", transition: "background 0.2s, border-color 0.2s",
-    }}
-  >
-    <span style={{
-      position: "absolute", top: 2, left: checked ? 20 : 2, width: 16, height: 16,
-      borderRadius: "50%", background: checked ? "#fff" : "var(--text-tertiary)",
-      transition: "left 0.2s, background 0.2s", display: "block",
-    }} />
-  </button>
-);
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -690,7 +626,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const [vagasTotal, setVagasTotal] = useState(0);
   const [tempoMinutos, setTempoMinutos] = useState(0);
   const [config, setConfig] = useState<ConfigDisparo>(CFG_DEFAULT);
-  const [atividade, setAtividade] = useState<Vaga[]>([]);
+  const [atividade, setAtividade] = useState<VagaResumo[]>([]);
   const [vagaAtual, setVagaAtual] = useState<VagaAtual | null>(null);
   const [pendenciasCount, setPendenciasCount] = useState(0);
   const [propostas, setPropostas] = useState(0);
@@ -772,7 +708,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
   const carregar = () =>
     Promise.all([
       invoke<number>("candidaturas_hoje"),
-      invoke<Vaga[]>("atividade_recente"),
+      invoke<VagaResumo[]>("atividade_recente"),
       invoke<VagaAtual | null>("vaga_atual_sessao"),
       invoke<number>("contar_pendencias"),
       invoke<number>("contar_propostas"),

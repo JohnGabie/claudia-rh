@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Sparkles, RefreshCw, ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
+import { renderMarkdown } from "../lib/markdown";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -35,45 +36,6 @@ interface RegistoFeedback {
 }
 
 interface SugestaoFeedback { sugerir: boolean; motivo: string }
-
-// ── Markdown ───────────────────────────────────────────────────────────────
-
-function applyInline(text: string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((p, i) => {
-    if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
-    if (p.startsWith("`") && p.endsWith("`"))
-      return <code key={i} style={{ fontFamily: "JetBrains Mono,Consolas,monospace", fontSize: 12, background: "var(--bg-sunken)", padding: "1px 4px", borderRadius: 3 }}>{p.slice(1, -1)}</code>;
-    return p;
-  });
-}
-
-function renderMarkdown(text: string): React.ReactNode {
-  const nodes: React.ReactNode[] = [];
-  let codeLines: string[] = [];
-  let inCode = false;
-  text.split("\n").forEach((line, i) => {
-    if (line.startsWith("```")) {
-      if (!inCode) { inCode = true; codeLines = []; return; }
-      inCode = false;
-      nodes.push(<pre key={i} style={{ background: "var(--bg-sunken)", borderRadius: 6, padding: "8px 10px", margin: "6px 0", fontFamily: "JetBrains Mono,Consolas,monospace", fontSize: 12, overflow: "auto", whiteSpace: "pre-wrap" }}><code>{codeLines.join("\n")}</code></pre>);
-      return;
-    }
-    if (inCode) { codeLines.push(line); return; }
-    if (line === "") { nodes.push(<div key={i} style={{ height: 6 }} />); return; }
-    if (line.match(/^#{1,3} /)) {
-      const level = line.match(/^#+/)![0].length;
-      nodes.push(<div key={i} style={{ fontSize: level === 1 ? 16 : 14, fontWeight: 600, color: "var(--text-primary)", marginTop: 12, marginBottom: 4 }}>{line.replace(/^#+\s/, "")}</div>);
-      return;
-    }
-    if (line.startsWith("- ") || line.startsWith("• ")) {
-      nodes.push(<div key={i} style={{ display: "flex", gap: 6, marginLeft: 4, lineHeight: "1.55" }}><span style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }}>•</span><span>{applyInline(line.slice(2))}</span></div>);
-      return;
-    }
-    nodes.push(<div key={i} style={{ lineHeight: "1.55" }}>{applyInline(line)}</div>);
-  });
-  return <>{nodes}</>;
-}
 
 // ── Visualizações ─────────────────────────────────────────────────────────
 
@@ -219,7 +181,7 @@ const FeedbackCard: React.FC<{ registo: RegistoFeedback }> = ({ registo }) => {
       </button>
       {expandido && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)", fontSize: 13 }}>
-          <div style={{ paddingTop: 12 }}>{renderMarkdown(registo.conteudo_completo)}</div>
+          <div style={{ paddingTop: 12 }}>{renderMarkdown(registo.conteudo_completo, { headingSize: "md" })}</div>
         </div>
       )}
     </div>
@@ -361,7 +323,7 @@ export const Feedback: React.FC = () => {
           borderRadius: 8, padding: 16, marginBottom: 16,
           fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5,
         }}>
-          {renderMarkdown(outputAtual)}
+          {renderMarkdown(outputAtual, { headingSize: "md" })}
           {gerando && <span style={{ display: "inline-block", width: 6, height: 13, marginLeft: 4, background: "var(--accent)", borderRadius: 1, verticalAlign: "middle", animation: "blink 0.8s step-end infinite" }} />}
         </div>
       )}
