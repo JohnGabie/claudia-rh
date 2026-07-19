@@ -1,7 +1,7 @@
 import React from "react";
 
-// Renderer de markdown leve para as respostas da Claudia (chat, feedback).
-// Suporta: **bold**, *italic*, `code`, blocos ```, títulos #/##/###, bullets "- "/"• ".
+// Lightweight markdown renderer for Claudia's replies (chat, feedback).
+// Supports: **bold**, *italic*, `code`, ``` blocks, #/##/### headings, "- "/"• " bullets.
 
 export function applyInline(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
@@ -24,7 +24,7 @@ export function applyInline(text: string): React.ReactNode[] {
   });
 }
 
-// headingSize: "sm" para bolhas de chat (default), "md" para vistas de documento
+// headingSize: "sm" for chat bubbles (default), "md" for document views
 export function renderMarkdown(text: string, opts?: { headingSize?: "sm" | "md" }): React.ReactNode {
   const md = opts?.headingSize === "md";
   const lines = text.split("\n");

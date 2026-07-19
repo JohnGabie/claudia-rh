@@ -92,7 +92,7 @@ export interface Proposta {
   contexto: string | null;
 }
 
-// Metadata partilhada dos documentos gerados (CVs e cartas)
+// Shared metadata for generated documents (CVs and cover letters)
 export const PALETTE = [
   { hex: "#1a1a1a", label: "Preto" },
   { hex: "#D97757", label: "Laranja" },

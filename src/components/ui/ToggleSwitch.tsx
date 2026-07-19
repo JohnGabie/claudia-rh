@@ -1,7 +1,7 @@
 import React from "react";
 
-// Toggle único da app — substitui as cópias que existiam em Dashboard,
-// Configuracoes e Terminal.
+// The app's single toggle — replaces the copies that lived in Dashboard,
+// Configuracoes and Terminal.
 export const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
   <button
     role="switch"

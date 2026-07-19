@@ -442,8 +442,8 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     prompt
 }
 
-// stderr do processo claude vai para um log em app_data_dir, senão os erros
-// (ex.: falha a ligar ao Chrome) desaparecem e o utilizador só vê silêncio.
+// The claude process stderr goes to a log in app_data_dir, otherwise errors
+// (e.g. failing to connect to Chrome) vanish and the user only sees silence.
 fn stderr_log(app: &AppHandle) -> Stdio {
     app.path()
         .app_data_dir()
@@ -728,8 +728,8 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
                 .map(|d| d.join("claude-perfil-stderr.log").to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
             let _ = app.emit("perfil-output", format!(
-                "A sessão Chrome terminou sem resposta. Verifica que o Chrome está aberto \
-                 com a extensão Claude ligada. Detalhes técnicos em: {log_path}"
+                "A sessão do Chrome terminou sem resposta. Verifique se o Chrome está aberto \
+                 com a extensão do Claude conectada. Detalhes técnicos em: {log_path}"
             ));
         }
 

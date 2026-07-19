@@ -1,5 +1,5 @@
-// Tipos partilhados entre componentes — espelham as estruturas do backend Rust.
-// Um tipo novo usado por 2+ componentes pertence aqui, não duplicado localmente.
+// Types shared across components — mirror the Rust backend structs.
+// A type used by 2+ components belongs here, not duplicated locally.
 
 export interface Vaga {
   id: number;
@@ -15,7 +15,7 @@ export interface Vaga {
   match_score: string | null;
 }
 
-// Subconjunto devolvido pelas queries do dashboard
+// Subset returned by the dashboard queries
 export type VagaResumo = Pick<Vaga, "id" | "titulo" | "empresa" | "status" | "descoberta_em">;
 
 export interface SearchVariant {

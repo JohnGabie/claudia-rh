@@ -1,4 +1,4 @@
-// Formatação de tempo partilhada (funções puras, sem React)
+// Shared time formatting (pure functions, no React)
 
 export function tempoRelativo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

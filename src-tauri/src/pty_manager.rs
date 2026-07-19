@@ -77,7 +77,7 @@ pub fn iniciar(
 /// - SESSION_CHECKPOINT_REQUESTED detection → clean restart via frontend event
 /// - Chrome extension disconnection detection → automatic /chrome reconnect attempt
 /// - Session end → updates `sessoes.terminada_em` in the database
-// TODO(refactor fase 1): agrupar os args numa struct de config da sessão
+// TODO(refactor phase 1): group these args into a session config struct
 #[allow(clippy::too_many_arguments)]
 pub fn iniciar_claude(
     app: AppHandle,
