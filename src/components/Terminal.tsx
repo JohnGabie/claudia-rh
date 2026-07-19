@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
 import { useT } from "../i18n";
+import { ToggleSwitch } from "./ui/ToggleSwitch";
 
 const LIGHT_THEME = {
   background: "#F1EFEA",
@@ -189,34 +190,3 @@ export const TerminalView: React.FC = () => {
   );
 };
 
-const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
-  <button
-    role="switch"
-    aria-checked={checked}
-    onMouseDown={(e) => { e.preventDefault(); onChange(); }}
-    style={{
-      width: 40,
-      height: 22,
-      borderRadius: 11,
-      background: checked ? "var(--accent)" : "var(--bg-sunken)",
-      border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
-      cursor: "pointer",
-      position: "relative",
-      transition: "background 0.2s, border-color 0.2s",
-      flexShrink: 0,
-      padding: 0,
-    }}
-  >
-    <span style={{
-      position: "absolute",
-      top: 2,
-      left: checked ? 20 : 2,
-      width: 16,
-      height: 16,
-      borderRadius: "50%",
-      background: checked ? "#fff" : "var(--text-tertiary)",
-      transition: "left 0.2s, background 0.2s",
-      display: "block",
-    }} />
-  </button>
-);

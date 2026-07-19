@@ -2,22 +2,10 @@ import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ExternalLink, Folder } from "lucide-react";
+import { Vaga } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useT } from "../i18n";
 
-interface Vaga {
-  id: number;
-  titulo: string;
-  empresa: string;
-  plataforma: string;
-  url: string;
-  localizacao: string | null;
-  modelo_trabalho: string | null;
-  descoberta_em: string;
-  status: string;
-  motivo_status: string | null;
-  match_score: string | null;
-}
 
 interface Candidatura {
   id: number;
