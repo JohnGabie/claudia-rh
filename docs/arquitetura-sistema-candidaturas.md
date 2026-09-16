@@ -1,6 +1,6 @@
 # Arquitetura do sistema de candidaturas automáticas
 
-> Documento de referência para implementação. Descreve o sistema completo: app Tauri, sessão Claude Code de execução, camada de estratégia, terminal embutido, perfil do candidato, e regras de governação. Este documento é a fonte de verdade para qualquer trabalho de codificação subsequente.
+> Documento de referência para implementação. Descreve o sistema completo: app Tauri, sessão Claude Code de execução, camada de estratégia, terminal embutido, perfil do candidato, e regras de governança. Este documento é a fonte de verdade para qualquer trabalho de codificação subsequente.
 
 ## 1. Visão geral
 
@@ -8,15 +8,15 @@ O sistema é uma aplicação desktop (Windows, construída em Tauri) que automat
 
 A aplicação não tenta resolver isto com automação puramente scriptada (Playwright determinístico). Em vez disso, orquestra sessões do Claude Code ligadas ao Chrome através da extensão oficial Claude in Chrome (via native messaging, ativada com a flag `--chrome` ou o comando `/chrome`), deixando o modelo interpretar cada página, decidir o que fazer, e quando parar. O Tauri funciona como casca: interface, configuração, histórico, e o agente que dispara essas sessões — nunca como motor de decisão.
 
-A ideia central do sistema pode ser resumida assim: existe uma camada lenta e conversacional, onde o usuário e o Claude discutem estratégia, perfil e prioridades; e existe uma camada rápida e autónoma, onde uma sessão de execução aplica essa estratégia vaga a vaga, de forma visível, parando sempre que encontra algo fora do que foi acordado.
+A ideia central do sistema pode ser resumida assim: existe uma camada lenta e conversacional, onde o usuário e o Claude discutem estratégia, perfil e prioridades; e existe uma camada rápida e autônoma, onde uma sessão de execução aplica essa estratégia vaga a vaga, de forma visível, parando sempre que encontra algo fora do que foi acordado.
 
 ## 2. Princípios de design
 
 Estes princípios não são negociáveis e devem orientar qualquer decisão de implementação que não esteja explicitamente coberta neste documento.
 
-**Visibilidade sobre ocultação.** O Chrome controlado pela sessão de execução nunca é minimizado, escondido, ou corre em modo headless. O usuário deve poder ver, em qualquer momento, o que a IA está a fazer. Isto não é negociável mesmo que prejudique performance ou elegância técnica.
+**Visibilidade sobre ocultação.** O Chrome controlado pela sessão de execução nunca é minimizado, escondido, ou corre em modo headless. O usuário deve poder ver, em qualquer momento, o que a IA está fazendo. Isto não é negociável mesmo que prejudique performance ou elegância técnica.
 
-**Honestidade sobre o currículo é absoluta.** O sistema nunca inventa experiência, certificações, tecnologias, ou inflaciona competências do candidato. Qualquer conteúdo gerado (CV, carta, respostas em formulário) deve ser rastreável a algo que existe no perfil ou no currículo mestre. Isto é herdado diretamente da skill `tailor-application` original e estende-se a todo o sistema.
+**Honestidade sobre o currículo é absoluta.** O sistema nunca inventa experiência, certificações, tecnologias, ou inflaciona competências do candidato. Qualquer conteúdo gerado (CV, carta, respostas em formulário) deve ser rastreável a `candidate_base.yaml` ou ao CV da variante correspondente. Isto é herdado diretamente da skill `tailor-application` original e estende-se a todo o sistema.
 
 **Pausa é o comportamento seguro por padrão.** Sempre que a sessão de execução encontra ambiguidade real — um campo fora do perfil, uma pergunta sem resposta clara, um captcha, uma vaga que não se encaixa nos critérios — o comportamento correto é parar e tornar isso visível, nunca adivinhar e seguir.
 
@@ -24,7 +24,7 @@ Estes princípios não são negociáveis e devem orientar qualquer decisão de i
 
 **Etiqueta de plataforma é uma prioridade de produto, não só de risco.** O sistema deve comportar-se com um ritmo que pareça humano nas plataformas que visita (LinkedIn, Indeed, Jobindex, sites de empresas), não porque a conta do usuário precisa de proteção a todo o custo, mas porque um sistema que se comporta de forma agressiva é, por construção, um sistema de pior qualidade.
 
-**Tudo é auditável depois do facto.** Cada candidatura enviada, cada vaga pulada, cada decisão de pausa, fica registada com o motivo. O usuário deve poder, semanas depois, reconstruir porque é que uma vaga específica foi tratada de uma certa forma.
+**Tudo é auditável depois do fato.** Cada candidatura enviada, cada vaga pulada, cada decisão de pausa, fica registrada com o motivo. O usuário deve poder, semanas depois, reconstruir porque é que uma vaga específica foi tratada de uma certa forma.
 
 ## 3. Componentes do sistema
 
@@ -36,7 +36,7 @@ Aplicação nativa Windows, construída em Tauri (Rust no backend, webview HTML/
 
 - Renderizar o dashboard: histórico de vagas, estado atual, pendências de revisão.
 - Gerir configurações: credenciais de plataformas (LinkedIn e outras) e caminho da pasta de aplicações. Os dados do candidato não se editam aqui — vivem na aba Perfil.
-- Expor os dois mecanismos de disparo da sessão de execução: botão manual ("procurar vagas agora") e deteção de inatividade do sistema.
+- Expor os dois mecanismos de disparo da sessão de execução: botão manual ("procurar vagas agora") e detecção de inatividade do sistema.
 - Spawnar e gerir o processo `claude` como child process, através de um pseudo-terminal (PTY), e renderizar o seu output num terminal embutido.
 - Gerir o segundo modo de sessão Claude Code: a conversa da aba Perfil, invocada sem `--chrome`, com interface de chat (não PTY/terminal). Essa sessão lê e escreve `candidate_base.yaml` e `search_variants.yaml`; nunca submete candidaturas.
 - Posicionar e (opcionalmente) gerir a janela do Chrome aberta pela sessão de execução, sem nunca a esconder.
@@ -48,10 +48,10 @@ O Tauri é deliberadamente "burro" em relação a decisões sobre vagas. Ele obs
 
 Processo `claude` invocado pelo Tauri com a integração Chrome ativa (flag `--chrome`), responsável por todo o trabalho de descoberta, análise, geração de conteúdo e candidatura. Esta sessão:
 
-- Lê, no arranque, `candidate_base.yaml`, `search_variants.yaml`, a estratégia do dia (se existir), e a memória das últimas execuções.
+- Lê, no início, `candidate_base.yaml`, `search_variants.yaml`, a estratégia do dia (se existir), e a memória das últimas execuções.
 - Navega as plataformas configuradas (job boards e, com restrições próprias, o LinkedIn), com um Chrome sempre visível.
 - Para cada vaga candidata, avalia o match contra o perfil, decide se vale a pena candidatar, gera o material necessário (CV adaptado, carta, ou resposta a um formulário) e executa a candidatura — ou pausa e pede intervenção humana, segundo as regras descritas na seção 6.
-- Escreve o resultado de cada vaga processada (aplicada, pulada, pendente, bloqueada) no estado partilhado, para que o Tauri possa refletir isso na interface em tempo real.
+- Escreve o resultado de cada vaga processada (aplicada, pulada, pendente, bloqueada) no estado compartilhado, para que o Tauri possa refletir isso na interface em tempo real.
 - Decide internamente, vaga a vaga, se deve continuar na mesma sessão ou sinalizar ao Tauri que é preferível reiniciar o processo antes da próxima vaga (ver seção 7).
 
 Esta é a única parte do sistema com poder de decisão real. Tudo o resto existe para lhe dar contexto ou para lhe impor limites.
@@ -62,15 +62,15 @@ Esta é a única parte do sistema com poder de decisão real. Tudo o resto exist
 
 Um modo de operação distinto da execução — mais lento, conversacional, iniciado pelo usuário quando este o desejar, nunca automaticamente. Nesta camada:
 
-- O usuário e o Claude discutem e atualizam o perfil do candidato.
+- O usuário e o Claude discutem estratégia do dia. A edição do perfil (`candidate_base.yaml` / `search_variants.yaml`) vive na aba Perfil, não aqui.
 - O usuário pode pedir ao Claude que proponha uma estratégia para a próxima janela de execução (ex: "hoje foco em vagas internacionais", "esta semana só candidaturas no Brasil").
-- O resultado desta conversa é persistido como um arquivo de estratégia que a sessão de execução lê no arranque. A camada de estratégia nunca executa candidaturas diretamente.
+- O resultado desta conversa é persistido como um arquivo de estratégia que a sessão de execução lê no início. A camada de estratégia nunca executa candidaturas diretamente.
 
 ### 3.4 Terminal embutido
 
 Um terminal funcional (não decorativo) construído com `xterm.js` no frontend e um pseudo-terminal real (`portable-pty`, via ConPTY no Windows) no backend Rust, ligado ao processo da sessão de execução. Começa bloqueado para input do usuário (modo apenas-visualização) e pode ser desbloqueado por um botão "assumir controle", momento em que o teclado do usuário passa a escrever diretamente no processo Claude Code subjacente. Detalhado na seção 8.
 
-### 3.5 Estado partilhado (persistência)
+### 3.5 Estado compartilhado (persistência)
 
 SQLite como base de dados principal (histórico de vagas, candidaturas, pendências), mais um pequeno conjunto de arquivos de configuração em formato YAML ou JSON (`candidate_base.yaml`, `search_variants.yaml`, estratégia ativa). Detalhado na seção 5. É este estado — não a janela de contexto de nenhuma sessão — que carrega a memória do sistema entre execuções.
 
@@ -80,7 +80,7 @@ Existem dois mecanismos de disparo, ambos invocando exatamente o mesmo caminho d
 
 **Disparo manual.** O usuário clica em "procurar vagas agora" no dashboard. O Tauri invoca imediatamente a sessão de execução.
 
-**Disparo automático por inatividade.** O Tauri monitoriza o tempo de inatividade do sistema operativo (via `GetLastInputInfo` no Windows, acessível através de uma crate Rust como `user-idle` ou chamada direta à Win32 API). Quando o tempo de inatividade excede um limiar configurável (sugestão de default: 15 minutos), e desde que ainda existam vagas no orçamento diário por processar, o Tauri invoca a sessão de execução automaticamente. Se o usuário retomar atividade enquanto a sessão está a correr, a sessão **não é interrompida** — o princípio de visibilidade já garante que o usuário vê o que está a acontecer e pode intervir manualmente se quiser parar.
+**Disparo automático por inatividade.** O Tauri monitora o tempo de inatividade do sistema operacional (via `GetLastInputInfo` no Windows, acessível através de uma crate Rust como `user-idle` ou chamada direta à Win32 API). Quando o tempo de inatividade excede um limiar configurável (sugestão de default: 15 minutos), e desde que ainda existam vagas no orçamento diário por processar, o Tauri invoca a sessão de execução automaticamente. Se o usuário retomar atividade enquanto a sessão está em execução, a sessão **não é interrompida** — o princípio de visibilidade já garante que o usuário vê o que está acontecendo e pode intervir manualmente se quiser parar.
 
 Em ambos os casos, o passo seguinte é idêntico:
 
@@ -94,7 +94,7 @@ Não existe um terceiro caminho de disparo (ex: cron job independente do Tauri).
 
 ## 5. Perfil do candidato, estratégia e memória
 
-Estes três artefactos são o contexto que transforma uma sessão Claude Code genérica numa sessão que representa este candidato específico, com esta estratégia específica, sabendo o que já foi feito.
+Estes três artefatos são o contexto que transforma uma sessão Claude Code genérica numa sessão que representa este candidato específico, com esta estratégia específica, sabendo o que já foi feito.
 
 ### 5.1 Perfil do candidato (`candidate_base.yaml` + `search_variants.yaml`)
 
@@ -223,7 +223,7 @@ Se este arquivo não existir ou estiver vazio, a sessão de execução usa apena
 
 ### 5.3 Memória de execução
 
-Vive inteiramente na base de dados SQLite (ver seção 10), nunca na janela de contexto de uma sessão. No arranque de cada sessão de execução, o Tauri lê um resumo (não o histórico completo) e injeta-o no prompt: número de candidaturas dos últimos 7 dias, vagas puladas recentemente e motivo, pendências ainda não resolvidas pelo usuário. Isto é o que permite à sessão "lembrar-se" sem depender de continuidade de processo.
+Vive inteiramente na base de dados SQLite (ver seção 10), nunca na janela de contexto de uma sessão. No início de cada sessão de execução, o Tauri lê um resumo (não o histórico completo) e injeta-o no prompt: número de candidaturas dos últimos 7 dias, vagas puladas recentemente e motivo, pendências ainda não resolvidas pelo usuário. Isto é o que permite à sessão "lembrar-se" sem depender de continuidade de processo.
 
 ## 6. Regras de pausa
 
@@ -234,16 +234,16 @@ Esta é a seção mais importante do documento. O risco identificado pelo usuár
 Estas condições interrompem o processamento da vaga atual e disparam notificação de alta prioridade. A sessão não tenta resolver, não adivinha, não avança para a vaga seguinte até o usuário responder a esta pendência especificamente — embora possa, em paralelo, continuar a trabalhar noutras vagas se a arquitetura de execução permitir (ver nota abaixo).
 
 - **Qualquer campo de pretensão salarial fora da faixa definida em `preferencias_globais.faixa_salarial`**, ou qualquer campo salarial quando a faixa não está definida.
-- **Qualquer campo listado em `red_lines`** no perfil do candidato, sem excepção.
-- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — a única diferença no LinkedIn é que o login em si é automatizado (credenciais geridas via keyring, seção 3.3 do prompt de construção), nunca causando pausa por si só; um captcha que apareça depois do login segue a regra geral. Nota técnica: esta é também a política nativa da extensão Claude in Chrome — ao encontrar uma página de login ou captcha, ela já pausa e espera intervenção manual, o que está alinhado com esta regra e não exige lógica adicional para a detetar.
+- **Qualquer campo listado em `red_lines`** no perfil do candidato, sem exceção.
+- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — a única diferença no LinkedIn é que o login em si é automatizado (credenciais geridas via keyring, seção 3.3 do prompt de construção), nunca causando pausa por si só; um captcha que apareça depois do login segue a regra geral. Nota técnica: esta é também a política nativa da extensão Claude in Chrome — ao encontrar uma página de login ou captcha, ela já pausa e espera intervenção manual, o que está alinhado com esta regra e não exige lógica adicional para a detectar.
 - **Diálogo JavaScript bloqueante** (`alert`, `confirm`, `prompt`) na página. Estes diálogos bloqueiam todos os eventos do browser e a sessão não os consegue dispensar programaticamente — exigem fecho manual pelo usuário antes de a sessão poder continuar. Trata-se de uma limitação técnica da extensão, não de uma escolha de design, mas o efeito prático é o mesmo de uma pausa total: a sessão fica bloqueada até intervenção humana.
-- **Pergunta aberta de formulário sem correspondência em `respostas_modelo`** e sem informação suficiente no perfil ou no CV da variante correspondente para responder com honestidade. Exemplo: "porque queres trabalhar aqui especificamente" quando não há nenhuma resposta-modelo equivalente.
+- **Pergunta aberta de formulário sem correspondência em `respostas_modelo`** e sem informação suficiente no perfil ou no CV da variante correspondente para responder com honestidade. Exemplo: "por que você quer trabalhar aqui especificamente" quando não há nenhuma resposta-modelo equivalente.
 - **Pedido de dados pessoais sensíveis** não cobertos pelo perfil (dados de saúde, informação familiar, número de identificação nacional, e equivalentes).
 - **Qualquer situação em que a sessão precise de inventar informação** para preencher um campo obrigatório. Isto é absoluto: a honestidade definida na seção 2 não é uma preferência, é uma regra de bloqueio.
 
-### 6.2 Categoria de pausa local (pula a vaga, regista, continua)
+### 6.2 Categoria de pausa local (pula a vaga, registra, continua)
 
-Estas condições não exigem intervenção imediata do usuário — a sessão regista a vaga como pendente de baixa prioridade ou simplesmente pulada, com o motivo explícito, e segue para a próxima vaga candidata.
+Estas condições não exigem intervenção imediata do usuário — a sessão registra a vaga como pendente de baixa prioridade ou simplesmente pulada, com o motivo explícito, e segue para a próxima vaga candidata.
 
 - A vaga não atinge um limiar mínimo de match com o perfil (critério a refinar em conjunto com o usuário, mas nunca abaixo de "há pelo menos um must-have coberto").
 - A vaga viola um critério de `setores_evitar` ou `empresas_evitar`.
@@ -269,7 +269,7 @@ A extensão Claude in Chrome usa um service worker que pode ficar inativo em ses
 
 ### 6.5 Mecanismo de notificação
 
-Quando ocorre uma pausa total, a sessão de execução escreve o estado de pendência na base de dados (tabela `pendencias`, ver seção 10) e o Tauri, através de um listener no estado partilhado, dispara uma notificação nativa do Windows (toast). Se a notificação não for atendida — definido como o usuário não abrir o dashboard nem interagir com a pendência — dentro de um intervalo configurável (sugestão: 5, 10, ou 15 minutos, à escolha do usuário nas configurações), a notificação repete-se. Isto continua indefinidamente até o usuário resolver a pendência ou cancelar explicitamente a vaga em questão.
+Quando ocorre uma pausa total, a sessão de execução escreve o estado de pendência na base de dados (tabela `pendencias`, ver seção 10) e o Tauri, através de um listener no estado compartilhado, dispara uma notificação nativa do Windows (toast). Se a notificação não for atendida — definido como o usuário não abrir o dashboard nem interagir com a pendência — dentro de um intervalo configurável (sugestão: 5, 10, ou 15 minutos, à escolha do usuário nas configurações), a notificação repete-se. Isto continua indefinidamente até o usuário resolver a pendência ou cancelar explicitamente a vaga em questão.
 
 ## 7. Etiqueta de plataforma e granularidade de sessão
 
@@ -283,15 +283,15 @@ Como a navegação é feita pela própria sessão Claude Code através da extens
 - Limitar o número de candidaturas processadas por hora, distribuindo o trabalho do dia em vez de processar tudo em sequência rápida.
 - Nunca tentar resolver ou contornar um desafio de verificação humana (ver seção 6.1) — isto é tratado como pausa total, não como obstáculo a superar.
 
-Estas instruções não garantem indetetabilidade — são orientação de comportamento para um agente que raciocina, não controle mecânico — mas alinham-se com o princípio de que um sistema bem comportado é, por si, um sistema de melhor qualidade, independentemente de considerações de deteção.
+Estas instruções não garantem indetectabilidade — são orientação de comportamento para um agente que raciocina, não controle mecânico — mas alinham-se com o princípio de que um sistema bem comportado é, por si, um sistema de melhor qualidade, independentemente de considerações de detecção.
 
 ### 7.2 Diversidade de fontes
 
-A sessão de execução deve distribuir a descoberta de vagas entre múltiplas fontes (job boards dedicados, boards de empresas, LinkedIn) em vez de concentrar todo o volume diário numa única plataforma. Job boards com termos de uso mais permissivos para automação devem ser preferidos como fonte primária; o LinkedIn é tratado com o ritmo mais conservador de todas as fontes, dado ser historicamente a plataforma mais agressiva na deteção de automação.
+A sessão de execução deve distribuir a descoberta de vagas entre múltiplas fontes (job boards dedicados, boards de empresas, LinkedIn) em vez de concentrar todo o volume diário numa única plataforma. Job boards com termos de uso mais permissivos para automação devem ser preferidos como fonte primária; o LinkedIn é tratado com o ritmo mais conservador de todas as fontes, dado ser historicamente a plataforma mais agressiva na detecção de automação.
 
 ### 7.3 Granularidade da sessão
 
-Em vez de um número fixo de vagas por sessão, a sessão de execução avalia a complexidade de cada vaga e decide, vaga a vaga, se deve continuar no mesmo processo ou sinalizar ao Tauri que prefere ser reiniciada antes da próxima. O sinal técnico para isto é um marcador específico escrito no estado partilhado (ex: linha `SESSION_CHECKPOINT_REQUESTED` ou equivalente lido pelo Tauri através do stream de output do PTY) — ao detetá-lo, o Tauri encerra o processo atual de forma limpa e invoca um novo, que retoma a partir do estado persistido (não da janela de contexto anterior).
+Em vez de um número fixo de vagas por sessão, a sessão de execução avalia a complexidade de cada vaga e decide, vaga a vaga, se deve continuar no mesmo processo ou sinalizar ao Tauri que prefere ser reiniciada antes da próxima. O sinal técnico para isto é um marcador específico escrito no estado compartilhado (ex: linha `SESSION_CHECKPOINT_REQUESTED` ou equivalente lido pelo Tauri através do stream de output do PTY) — ao detectá-lo, o Tauri encerra o processo atual de forma limpa e invoca um novo, que retoma a partir do estado persistido (não da janela de contexto anterior).
 
 Casos típicos em que isto é esperado:
 
@@ -410,11 +410,11 @@ Este schema deve ser tratado como ponto de partida, não como definição congel
 
 ## 11. Relação com a skill `tailor-application` original
 
-A skill original (análise de posting, match assessment, geração de CV/carta/outreach/talking points/study guide, convenções de nomenclatura de arquivos, estilo de carta dinamarquesa, registo de gaps em `_gaps.jsonl`) não é substituída por este sistema — é absorvida como a lógica de conteúdo que a sessão de execução invoca para cada vaga individual. A diferença está inteiramente naquilo que envolve essa lógica:
+A skill original (análise de posting, match assessment, geração de CV/carta/outreach/talking points/study guide, convenções de nomenclatura de arquivos, estilo de carta dinamarquesa, registro de gaps em `_gaps.jsonl`) não é substituída por este sistema — é absorvida como a lógica de conteúdo que a sessão de execução invoca para cada vaga individual. A diferença está inteiramente naquilo que envolve essa lógica:
 
-- A skill original assume que o usuário traz a vaga; este sistema acrescenta a camada de descoberta autónoma.
+- A skill original assume que o usuário traz a vaga; este sistema acrescenta a camada de descoberta autônoma.
 - A skill original produz os arquivos e reporta de volta ao usuário em texto; este sistema acrescenta a decisão de quando avançar automaticamente para a candidatura versus pausar.
-- O registo de gaps em `_gaps.jsonl`, pensado para alimentar um futuro `/study-plan`, mantém-se exatamente como está — é complementar, não conflitante, com a tabela `propostas_perfil` deste sistema, que serve um propósito diferente (evolução das preferências do candidato, não acompanhamento de lacunas de competência).
+- O registro de gaps em `_gaps.jsonl`, pensado para alimentar um futuro `/study-plan`, mantém-se exatamente como está — é complementar, não conflitante, com a tabela `propostas_perfil` deste sistema, que serve um propósito diferente (evolução das preferências do candidato, não acompanhamento de lacunas de competência).
 - As regras de honestidade, a estrutura de pastas por empresa, e a separação entre arquivos para o empregador (nome do candidato) e arquivos internos (nomes descritivos) aplicam-se sem alteração.
 
 Em suma: este documento descreve a máquina que decide quando e como invocar a skill; não substitui o que a skill já faz bem.

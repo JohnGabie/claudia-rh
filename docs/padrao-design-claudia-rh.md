@@ -1,16 +1,16 @@
 # Padrão de design — Claudia RH
 
-> Documento de referência visual para implementação. Especifica identidade, tokens de design (cor, tipografia, espaçamento), estrutura de navegação, e o layout de cada tela. Complementa `arquitetura-sistema-candidaturas.md` (lógica) e `prompt-construcao-tauri.md` (engenharia) — onde esses documentos diziam "provisório, aguardar o documento de design", é este documento que resolve essas referências.
+> Documento de referência visual para implementação. Especifica identidade, tokens de design (cor, tipografia, espaçamento), estrutura de navegação, e o layout de cada tela. Complementa `arquitetura-sistema-candidaturas.md` (lógica). O prompt de construção das fases Tauri é histórico (pasta pai do workspace) — onde ele dizia "provisório, aguardar o documento de design", é este documento que resolve essas referências.
 
 ## 1. Identidade
 
 **Nome do produto:** Claudia RH.
 
-**Tom:** ferramenta de trabalho pessoal, não produto comercial. Claudia RH existe para uma pessoa controlar o seu próprio processo de candidaturas — a voz da interface deve ser direta e funcional, nunca promocional. Não há copy de marketing em lado nenhum da aplicação; há apenas instruções claras, estados claros, e o que está a acontecer agora.
+**Tom:** ferramenta de trabalho pessoal, não produto comercial. Claudia RH existe para uma pessoa controlar o seu próprio processo de candidaturas — a voz da interface deve ser direta e funcional, nunca promocional. Não há copy de marketing em lado nenhum da aplicação; há apenas instruções claras, estados claros, e o que está acontecendo agora.
 
 **Sensação geral:** um painel de controle leve, não um terminal escuro de operações. O usuário já fica com Chrome e terminal visíveis durante a execução — a própria app Tauri não precisa de competir com essa intensidade visual. É claro, calmo, e deixa o trabalho real (vagas, candidaturas, decisões) ser o conteúdo, não a casca.
 
-### 1.1 Logótipo — óculos
+### 1.1 Logotipo — óculos
 
 O elemento de assinatura da identidade é um par de óculos redondos, em traço aberto (sem lente preenchida) — o trocadilho de "Claude" para "Claudia" associado à imagem clássica de uma profissional de RH experiente, criteriosa, que já viu currículos de mais. É o único elemento gráfico de personalidade da aplicação; todo o resto do sistema visual (seção 2) permanece deliberadamente neutro precisamente para que este símbolo se destaque sem competir com decoração.
 
@@ -38,7 +38,7 @@ Pontos que não devem ser alterados ao reimplementar: as duas lentes (`circle`) 
 | Ícone da aplicação (barra de tarefas, atalho) | Branco (`#FFFFFF`) | `--accent` (`#D97757`), `border-radius` 14px sobre um quadrado |
 | Marca-de-água opcional dentro do cartão "Agora" (seção 4.2), apenas quando há sessão ativa | `--accent`, opacidade 0.5, escala reduzida, posicionado no canto superior direito do cartão | transparente sobre `--bg-surface` |
 
-O logótipo nunca aparece preenchido (sem fill), nunca aparece com lentes de tamanhos diferentes, e nunca é usado como padrão repetido ou textura de fundo — é um símbolo único, não um motivo decorativo espalhado pela interface. A sua única repetição admitida é a marca-de-água discreta da tabela acima, e mesmo essa é opcional, a aplicar com critério, não em todos os cartões.
+O logotipo nunca aparece preenchido (sem fill), nunca aparece com lentes de tamanhos diferentes, e nunca é usado como padrão repetido ou textura de fundo — é um símbolo único, não um motivo decorativo espalhado pela interface. A sua única repetição admitida é a marca-de-água discreta da tabela acima, e mesmo essa é opcional, a aplicar com critério, não em todos os cartões.
 
 ## 2. Tokens de design
 
@@ -78,7 +78,7 @@ Não há face serifada em nenhum lugar da aplicação — isto não é um produt
 
 - Unidade base: 4px. Espaçamentos usados: 4, 8, 12, 16, 24, 32px.
 - `border-radius`: 8px em cartões e botões, 6px em badges e pills, 4px em inputs.
-- Sombra: apenas uma, subtil, para elevar modais/drawers sobre o conteúdo (`0 4px 16px rgba(31,29,24,0.08)`). Cartões na superfície normal não têm sombra — distinguem-se por borda de 1px em `--border`, não por elevação.
+- Sombra: apenas uma, sutil, para elevar modais/drawers sobre o conteúdo (`0 4px 16px rgba(31,29,24,0.08)`). Cartões na superfície normal não têm sombra — distinguem-se por borda de 1px em `--border`, não por elevação.
 
 ## 3. Estrutura de navegação
 
@@ -98,7 +98,7 @@ Cada item de navegação principal (2–7) é uma linha de 40px de altura, ícon
 
 ## 4. Dashboard
 
-A primeira tela que o usuário vê. Tem dois estados distintos, dependendo de existir ou não uma sessão de execução ativa neste momento — isto é o requisito central desta tela, conforme pedido: mostrar o que está a acontecer agora, não apenas números acumulados.
+A primeira tela que o usuário vê. Tem dois estados distintos, dependendo de existir ou não uma sessão de execução ativa neste momento — isto é o requisito central desta tela, conforme pedido: mostrar o que está acontecendo agora, não apenas números acumulados.
 
 ### 4.1 Estado sem sessão ativa
 
@@ -111,9 +111,9 @@ A primeira tela que o usuário vê. Tem dois estados distintos, dependendo de ex
 
 Substitui o botão "Procurar vagas agora" por um indicador de estado ativo: ponto pulsante em `--accent` mais o texto "A trabalhar...".
 
-- **Cartão "Agora"**, em destaque visual (borda em `--accent`, não apenas `--border`): mostra a vaga que a sessão está a processar neste instante — título, empresa, e a etapa atual em texto curto (ex: "a preencher formulário", "a analisar correspondência com o perfil", "à espera de resposta da página"). Este texto vem de uma leitura periódica do estado partilhado (a sessão de execução atualiza isto a cada mudança relevante, não apenas no fim de cada vaga). **O link da vaga (campo `url` da tabela `vagas`) é sempre visível neste cartão**, como uma linha de texto truncado com ícone de link externo (`ti-external-link`), nunca escondido atrás de um clique — o usuário deve poder abrir a vaga original a qualquer momento para acompanhar o que a sessão está a ver.
+- **Cartão "Agora"**, em destaque visual (borda em `--accent`, não apenas `--border`): mostra a vaga que a sessão está processando neste instante — título, empresa, e a etapa atual em texto curto (ex: "a preencher formulário", "a analisar correspondência com o perfil", "à espera de resposta da página"). Este texto vem de uma leitura periódica do estado compartilhado (a sessão de execução atualiza isto a cada mudança relevante, não apenas no fim de cada vaga). **O link da vaga (campo `url` da tabela `vagas`) é sempre visível neste cartão**, como uma linha de texto truncado com ícone de link externo (`ti-external-link`), nunca escondido atrás de um clique — o usuário deve poder abrir a vaga original a qualquer momento para acompanhar o que a sessão está vendo.
 - Abaixo do cartão "Agora", a fila de vagas ainda por processar nesta sessão, em lista compacta e mais discreta (texto `--text-secondary`, sem badges de status, já que ainda não foram avaliadas).
-- O cartão de resumo do dia e a atividade recente continuam visíveis, mas abaixo do cartão "Agora" — a prioridade visual vai para o que está a acontecer neste momento.
+- O cartão de resumo do dia e a atividade recente continuam visíveis, mas abaixo do cartão "Agora" — a prioridade visual vai para o que está acontecendo neste momento.
 - Um botão secundário "Abrir terminal" neste cartão leva diretamente à aba Terminal, para quem quiser ver o detalhe completo do raciocínio.
 
 ## 5. Perfil
@@ -195,7 +195,7 @@ Acionada pelo ícone de engrenagem no fundo da sidebar (item 9). Abre como um po
 
 ## 12. Resolução das referências provisórias
 
-Este documento substitui, de forma definitiva, as seguintes referências marcadas como "provisório, aguardar documento de design" no prompt de construção do Tauri:
+Este documento substitui, de forma definitiva, as seguintes referências marcadas como "provisório, aguardar documento de design" no prompt de construção histórico:
 
 - A estrutura de componentes em `src/components/` deve ser reorganizada para refletir as seis telas principais desta seção (Dashboard, Perfil, Histórico, Terminal, Pendências, Configurações) mais o popover de configurações rápidas, em vez da divisão genérica originalmente sugerida.
 - A tela de configurações da fase 2 do prompt de construção corresponde à seção 10 deste documento.
