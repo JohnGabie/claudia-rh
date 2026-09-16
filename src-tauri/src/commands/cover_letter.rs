@@ -202,10 +202,10 @@ fn build_cover_letter_html(
 
     let (recipient, subject_prefix, closing, lang_attr, salutation) = if idioma == "en" {
         ("Hiring Manager", "Re:", "Best regards,", "en",
-         format!("Dear Hiring Manager,"))
+         "Dear Hiring Manager,".to_string())
     } else {
         ("Responsável de Recrutamento", "Assunto:", "Com os melhores cumprimentos,", "pt",
-         format!("Exmo./Exma. Responsável de Recrutamento,"))
+         "Exmo./Exma. Responsável de Recrutamento,".to_string())
     };
 
     let subject = format!("{} {} — {}", subject_prefix, esc(cargo), nome);

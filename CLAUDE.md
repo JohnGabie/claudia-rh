@@ -1,27 +1,26 @@
-# Claudia RH — guia da sessão de coding
+# Claudia RH
 
-Claudia RH é uma aplicação desktop Windows (Tauri) que automatiza descoberta e candidatura a vagas, orquestrando sessões do Claude Code ligadas ao Chrome via a extensão Claude in Chrome.
+App desktop Windows (Tauri v2: Rust + React/TypeScript) que automatiza candidaturas com Claude Code + Chrome.
 
-Este arquivo é o ponto de entrada de qualquer sessão de coding **neste repositório**. Lê-o primeiro.
+Este arquivo é o ponto de entrada de qualquer sessão de coding **neste repositório**.
 
-## Ordem de leitura obrigatória
-
-Só estes paths, todos dentro de `claudia-rh/`:
+## Ordem de leitura
 
 1. `docs/arquitetura-sistema-candidaturas.md` — spec de sistema. Se o que você for construir contradiz este documento, o documento vence — assinale a contradição em vez de a resolver em silêncio.
-2. `docs/padrao-design-claudia-rh.md` — identidade visual, tokens, navegação, layout das telas.
-3. `src-tauri/src/prompt_sistema_runtime.md` — texto que a app injeta na sessão de execução. Leia para perceber o que você está orquestrando. **Não edite este arquivo sem pedido explícito.**
+2. `docs/padrao-design-claudia-rh.md` — identidade visual, tokens, navegação, layout.
+3. `src-tauri/src/prompt_sistema_runtime.md` — texto que a app injeta na sessão de execução. **Não edite sem pedido explícito.**
 4. Este `CLAUDE.md`.
+5. `.claude/QUALIDADE.md` — roadmap de qualidade/refactor (quando existir).
 
-Os `.md` na pasta pai do workspace PyCharm (`curriculum-apply/`, um nível acima deste repo) são **históricos**. Não são fonte de verdade.
+## Convenções
 
-## Regras permanentes
+- **Comentários de código: inglês.** Sempre.
+- **Commit messages: inglês.**
+- **Identificadores novos: inglês.** Código legado em português não se renomeia em massa.
+- **Copy da UI: pt-BR.** Docs vivos (`docs/`, este ficheiro) também em pt-BR.
+- **README público: inglês.**
 
-### Idioma
-
-Docs vivos, commit messages e copy nova em português: **pt-BR** (`você`, `seção`, `arquivo`, `usuário`). O `README.md` público permanece inglês.
-
-### Git
+## Git
 
 ```
 main     → só releases (tag vX.Y.Z). Nunca commit direto.
@@ -30,28 +29,32 @@ feat/*   → uma preocupação por branch, criada a partir de dev atualizado.
 fix/*    → igual, para correções.
 ```
 
-Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de `dev` → review na feature → merge em `dev` → release faz merge `dev` → `main` + tag. Depois apagar a feature branch.
+Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de `dev` → review → merge em `dev` → release faz merge `dev` → `main` + tag.
 
-Não trabalhar em `main`. Não reutilizar branches leftover.
+## Regras duras
 
-### Decisões não cobertas
-
-Se você encontrar uma decisão de implementação não coberta pela arquitetura nem pelo design, pare e pergunte — não assuma em silêncio.
+- **NUNCA mudar o `identifier` Tauri** em `src-tauri/tauri.conf.json` (`io.github.johngabie.claudia-rh`). Determina pasta de dados do usuário e identidade do instalador. Teste `identifier_is_frozen` garante isto. Ver `src-tauri/src/migration.rs`.
+- Se uma decisão não está na arquitectura nem no design, pare e pergunte.
 
 ## Superpowers
 
 Specs: `docs/superpowers/specs/`
 Planos: `docs/superpowers/plans/`
 
-Um ciclo = spec aprovada → plano → worktree/branch a partir de `dev` → implementação → review → merge em `dev`.
+Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → review → merge em `dev`.
 
-## Dívida conhecida (não "feito")
+## Build
 
-- Pré-requisitos da extensão Chrome / versão do Claude Code / plano da conta: não validados na UI.
-- Janela do Chrome "sempre visível": não implementado (API OS fora de escopo imediato).
-- Toast nativo Windows: `notificacoes.rs` emite eventos Tauri mas não chama `send_sync` do plugin de notificação — o toast nativo não dispara. Correção = ciclo Superpowers próprio, não este.
+- Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.
+- Backend: em `src-tauri/`, `cargo check` / `cargo test` / `cargo clippy`.
+- App: `npm run tauri dev`.
+
+## Dívida conhecida
+
+- Toast nativo Windows: `notificacoes.rs` emite eventos Tauri mas não chama o plugin de notificação — o toast do sistema não dispara.
+- Pré-requisitos Chrome / plano da conta: não validados na UI.
 - Pesquisa pontual da aba Feedback: não implementada.
 
 ## O que este repo já é
 
-App Tauri v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml`, aba Perfil conversacional, Histórico, Feedback, Pendências, Terminal, Configurações (credenciais / disparo / estratégia). A sessão de execução corre `claude --dangerously-skip-permissions --chrome` no PTY; a sessão de Perfil corre sem `--chrome`.
+v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Sessão de execução = `claude --chrome` no PTY; sessão de Perfil = sem `--chrome`.

@@ -6,37 +6,7 @@ use tauri_plugin_opener::OpenerExt;
 
 const DEFAULT_RUNTIME: &str = include_str!("../prompt_sistema_runtime.md");
 
-const DEFAULT_PERFIL: &str = r#"You are Claudia, a professional profile-building assistant. You help the user build and update their candidate profile in two YAML files:
-
-- `{{DATA_DIR}}/candidate_base.yaml` — personal data bank
-- `{{DATA_DIR}}/search_variants.yaml` — search/CV variants
-
-## Current profile state
-
-### candidate_base.yaml
-```yaml
-{{CANDIDATE_BASE_YAML}}
-```
-
-### search_variants.yaml
-```yaml
-{{SEARCH_VARIANTS_YAML}}
-```
-
-## Available capabilities
-- You can use WebFetch to access public LinkedIn and GitHub profiles when the user provides the URL.
-- You can read and write YAML files on the system.
-- Everything you need is available in this session — no additional session is required.
-
-## Rules
-- Never invent information — only structure what the user explicitly confirms.
-- Before saving any change, show the YAML content you intend to write and wait for confirmation.
-- When saving a file, write on the next line exactly: `PERFIL_ATUALIZADO`
-- Communicate in Brazilian Portuguese (pt-BR), concisely and directly.
-- If the user pastes a CV or gives a LinkedIn/GitHub URL, use WebFetch to access the profile, extract the facts, and propose a structured draft before saving.
-- Never mention implementation technical details (flags, processes, internal sessions) to the user — they are not relevant to them.
-
-## Mandatory schema — candidate_base.yaml
+pub const PROFILE_SCHEMA: &str = r#"## Mandatory schema — candidate_base.yaml
 
 The parser is strict about types. Follow EXACTLY these formats or the file will be unreadable.
 
@@ -171,6 +141,40 @@ respostas_modelo:
 ultima_atualizacao: "2026-06-23"
 ```
 Date in `"YYYY-MM-DD"` format, always quoted.
+"#;
+
+const DEFAULT_PERFIL: &str = r#"You are Claudia, a professional profile-building assistant. You help the user build and update their candidate profile in two YAML files:
+
+- `{{DATA_DIR}}/candidate_base.yaml` — personal data bank
+- `{{DATA_DIR}}/search_variants.yaml` — search/CV variants
+
+## Current profile state
+
+### candidate_base.yaml
+```yaml
+{{CANDIDATE_BASE_YAML}}
+```
+
+### search_variants.yaml
+```yaml
+{{SEARCH_VARIANTS_YAML}}
+```
+
+## Available capabilities
+- You can use WebFetch to access public LinkedIn and GitHub profiles when the user provides the URL.
+- To SAVE the profile, use the `update_profile` tool (it takes the COMPLETE candidate_base.yaml, validates it against the schema and writes it to the correct location). Never write the file directly with other tools.
+- For pendências, use the `list_pendencias` and `close_pendencia` tools.
+- Everything you need is available in this session — no additional session is required.
+
+## Rules
+- Never invent information — only structure what the user explicitly confirms.
+- Before saving any change, show the YAML content you intend to write and wait for confirmation.
+- After confirmation, save with `update_profile` sending the full YAML. If validation returns an error, fix the YAML and call again — no need to re-confirm with the user.
+- Communicate in Brazilian Portuguese (pt-BR), concisely and directly.
+- If the user pastes a CV or gives a LinkedIn/GitHub URL, use WebFetch to access the profile, extract the facts, and propose a structured draft before saving.
+- Never mention implementation technical details (flags, processes, internal sessions) to the user — they are not relevant to them.
+
+{{SCHEMA}}
 
 ---
 
@@ -292,12 +296,17 @@ FOR EACH JOB FOUND, extract:
 - Name of the connection who published/shared
 
 HOW TO SAVE EACH JOB:
-sqlite3 "{{DB_PATH}}" "INSERT OR IGNORE INTO vagas (titulo, empresa, plataforma, url, descoberta_em, status, fonte_conexao) VALUES ('<job_title>', '<company_name>', 'linkedin_rede', '<job_url>', datetime('now'), 'descoberta', '<connection_name>');"
+Call the `register_vaga` tool from the `claudia` MCP server with:
+- titulo: job title
+- empresa: company name
+- plataforma: "linkedin_rede"
+- url: job URL
+- fonte_conexao: name of the connection who published/shared
+Never write to the database directly (sqlite3, scripts) — only through the tool.
 
 TECHNICAL RULES:
-- Escape single quotes inside values with '' (two apostrophes)
 - If there is no direct job URL, use the LinkedIn post URL as the job URL
-- OR IGNORE prevents duplicates automatically
+- Repeated URLs do not create duplicates — the tool handles that and returns the existing ID
 - When you finish the entire scan, write exactly this line: BUSCA_LINKEDIN_REDE_CONCLUIDA
 "#;
 
@@ -360,8 +369,29 @@ pub fn read_prompt(data_dir: &Path, id: &str) -> String {
 
 /// Create all prompt files on startup (no-op if they already exist).
 pub fn ensure_all_prompts(data_dir: &Path) {
+    migrate_stale_prompts(data_dir);
     for id in &["runtime", "perfil", "feedback", "cover_letter_pt", "cover_letter_en", "linkedin-rede"] {
         let _ = read_prompt(data_dir, id);
+    }
+}
+
+/// On-disk prompt files are only created when missing, so installs keep stale
+/// instructions forever. When a file still carries pre-MCP era instructions
+/// (write YAML directly, PERFIL_ATUALIZADO marker, sqlite3 CLI writes), back
+/// it up and let read_prompt rewrite the current default.
+fn migrate_stale_prompts(data_dir: &Path) {
+    // (file, marker of the pre-MCP era instructions)
+    let stale_markers = [
+        ("perfil.md", "PERFIL_ATUALIZADO"),
+        ("runtime.md", "sqlite3"),
+        ("linkedin-rede.md", "sqlite3"),
+    ];
+    for (file, marker) in stale_markers {
+        let path = data_dir.join("prompts").join(file);
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        if content.contains(marker) {
+            let _ = std::fs::rename(&path, data_dir.join("prompts").join(format!("{file}.bak")));
+        }
     }
 }
 

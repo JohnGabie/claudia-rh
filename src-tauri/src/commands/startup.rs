@@ -1,6 +1,8 @@
 use tauri::command;
 
+#[cfg(windows)]
 const APP_NAME: &str = "ClaudiaRH";
+#[cfg(windows)]
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[command]

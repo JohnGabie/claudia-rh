@@ -478,6 +478,11 @@ export const en = {
     chatPlaceholder:
       "Write a message… (Enter to send, Shift+Enter for new line)",
     enterHint: "Enter to send · Shift+Enter for new line",
+    attachFiles: "Attach files",
+    removeAttachment: "Remove attachment",
+    stopGeneration: "Stop generation",
+    editMessage: "Edit message",
+    attachedNote: "[Files attached by the user — read them with the Read tool:]",
     importBtn: "Import",
     importQuestion:
       "Which profiles would you like to import? I access with your authenticated session — you can select one or both.",

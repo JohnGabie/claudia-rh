@@ -481,6 +481,11 @@ export const pt: Strings = {
     chatPlaceholder:
       "Escreve uma mensagem… (Enter para enviar, Shift+Enter para nova linha)",
     enterHint: "Enter para enviar · Shift+Enter para nova linha",
+    attachFiles: "Anexar arquivos",
+    removeAttachment: "Remover anexo",
+    stopGeneration: "Parar geração",
+    editMessage: "Editar mensagem",
+    attachedNote: "[Arquivos anexados pelo usuário — leia-os com a ferramenta Read:]",
     importBtn: "Importar",
     importQuestion:
       "Que perfis queres importar? Acedo com a tua sessão autenticada — podes selecionar um ou ambos.",
