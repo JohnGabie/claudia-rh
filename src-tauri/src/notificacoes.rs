@@ -1,36 +1,68 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 
-fn query_pending_ids(db: &Arc<Mutex<Connection>>) -> Vec<i64> {
-    let conn = match db.lock() {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
-    let mut stmt = match conn.prepare("SELECT id FROM pendencias WHERE resolvida = 0") {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
-    stmt.query_map([], |r| r.get::<_, i64>(0))
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default()
+use crate::NotifConfig;
+
+struct OpenItem {
+    id: i64,
+    body: String,
 }
 
-fn query_proposta_ids(db: &Arc<Mutex<Connection>>) -> Vec<i64> {
+fn query_open_pendencias(db: &Arc<Mutex<Connection>>) -> Vec<OpenItem> {
     let conn = match db.lock() {
         Ok(c) => c,
         Err(_) => return vec![],
     };
-    let mut stmt = match conn.prepare("SELECT id FROM propostas_perfil WHERE promovida = 0") {
+    let mut stmt = match conn.prepare(
+        "SELECT id, COALESCE(categoria, ''), COALESCE(descricao, '') FROM pendencias WHERE resolvida = 0",
+    ) {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    stmt.query_map([], |r| r.get::<_, i64>(0))
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default()
+    stmt.query_map([], |r| {
+        let id: i64 = r.get(0)?;
+        let cat: String = r.get(1)?;
+        let desc: String = r.get(2)?;
+        let body = match (cat.trim(), desc.trim()) {
+            ("", "") => "Tens uma pendência por resolver.".to_string(),
+            ("", d) => d.to_string(),
+            (c, "") => c.to_string(),
+            (c, d) => format!("{c}: {d}"),
+        };
+        Ok(OpenItem { id, body })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+
+fn query_open_propostas(db: &Arc<Mutex<Connection>>) -> Vec<OpenItem> {
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT id, COALESCE(pergunta, '') FROM propostas_perfil WHERE promovida = 0",
+    ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map([], |r| {
+        let id: i64 = r.get(0)?;
+        let pergunta: String = r.get(1)?;
+        let body = if pergunta.trim().is_empty() {
+            "Há uma pergunta nova para o teu perfil.".to_string()
+        } else {
+            pergunta
+        };
+        Ok(OpenItem { id, body })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,31 +107,96 @@ pub fn decide_notify(
     }
 }
 
-pub fn start(app: AppHandle, db: Arc<Mutex<Connection>>) {
+pub fn start(
+    app: AppHandle,
+    db: Arc<Mutex<Connection>>,
+    notif: Arc<Mutex<NotifConfig>>,
+) {
     tauri::async_runtime::spawn(async move {
         let mut seen_pendencias: HashSet<i64> = HashSet::new();
         let mut seen_propostas: HashSet<i64> = HashSet::new();
+        let mut last_native_pend: HashMap<i64, Instant> = HashMap::new();
+        let mut last_native_prop: HashMap<i64, Instant> = HashMap::new();
 
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
 
-            // Pendências
-            let pend_ids: HashSet<i64> = query_pending_ids(&db).into_iter().collect();
+            let (native_enabled, interval) = {
+                match notif.lock() {
+                    Ok(cfg) => (
+                        cfg.ativo,
+                        Duration::from_secs(cfg.intervalo_minutos.max(1) as u64 * 60),
+                    ),
+                    Err(_) => continue,
+                }
+            };
+            let now = Instant::now();
+
+            let pend = query_open_pendencias(&db);
+            let pend_ids: HashSet<i64> = pend.iter().map(|p| p.id).collect();
             seen_pendencias.retain(|id| pend_ids.contains(id));
-            for &id in &pend_ids {
-                if !seen_pendencias.contains(&id) {
-                    seen_pendencias.insert(id);
-                    let _ = app.emit("nova-pendencia", id);
+            last_native_pend.retain(|id, _| pend_ids.contains(id));
+            for item in &pend {
+                let first_seen = !seen_pendencias.contains(&item.id);
+                let decision = decide_notify(
+                    first_seen,
+                    true,
+                    last_native_pend.get(&item.id).copied(),
+                    now,
+                    interval,
+                    native_enabled,
+                );
+                if decision.emit_event {
+                    seen_pendencias.insert(item.id);
+                    let _ = app.emit("nova-pendencia", item.id);
+                } else if first_seen {
+                    seen_pendencias.insert(item.id);
+                }
+                if decision.send_native {
+                    if let Err(e) = app
+                        .notification()
+                        .builder()
+                        .title("Claudia RH — Pendência")
+                        .body(&item.body)
+                        .show()
+                    {
+                        eprintln!("[notif] show pendencia: {e}");
+                    }
+                    last_native_pend.insert(item.id, now);
                 }
             }
 
-            // Propostas de perfil
-            let prop_ids: HashSet<i64> = query_proposta_ids(&db).into_iter().collect();
+            let prop = query_open_propostas(&db);
+            let prop_ids: HashSet<i64> = prop.iter().map(|p| p.id).collect();
             seen_propostas.retain(|id| prop_ids.contains(id));
-            for &id in &prop_ids {
-                if !seen_propostas.contains(&id) {
-                    seen_propostas.insert(id);
-                    let _ = app.emit("nova-proposta", id);
+            last_native_prop.retain(|id, _| prop_ids.contains(id));
+            for item in &prop {
+                let first_seen = !seen_propostas.contains(&item.id);
+                let decision = decide_notify(
+                    first_seen,
+                    true,
+                    last_native_prop.get(&item.id).copied(),
+                    now,
+                    interval,
+                    native_enabled,
+                );
+                if decision.emit_event {
+                    seen_propostas.insert(item.id);
+                    let _ = app.emit("nova-proposta", item.id);
+                } else if first_seen {
+                    seen_propostas.insert(item.id);
+                }
+                if decision.send_native {
+                    if let Err(e) = app
+                        .notification()
+                        .builder()
+                        .title("Claudia RH — Perfil")
+                        .body(&item.body)
+                        .show()
+                    {
+                        eprintln!("[notif] show proposta: {e}");
+                    }
+                    last_native_prop.insert(item.id, now);
                 }
             }
         }

@@ -240,7 +240,7 @@ pub fn run() {
             // Start background tasks
             idle_watcher::start(app.handle().clone(), idle_arc, Arc::clone(&conn_arc));
             db_watcher::start(app.handle().clone(), Arc::clone(&conn_arc));
-            notificacoes::start(app.handle().clone(), Arc::clone(&conn_arc));
+            notificacoes::start(app.handle().clone(), Arc::clone(&conn_arc), Arc::clone(&notif_arc));
 
             Ok(())
         })
