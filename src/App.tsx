@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { onAction } from "@tauri-apps/plugin-notification";
 import "./styles/tokens.css";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar, type View } from "./components/Sidebar";
@@ -60,12 +61,22 @@ function App() {
       listen("nova-proposta", refreshPropostasCount),
       listen("proposta-resolvida", refreshPropostasCount),
       listen("db-atualizada", () => { refreshPendenciasCount(); refreshPropostasCount(); }),
+      listen("navigate-to-pendencias", () => setView("pendencias")),
     ]).then((fns) => {
       if (active) {
         unlisteners.push(...fns);
       } else {
         fns.forEach((f) => f());
       }
+    });
+
+    onAction(() => {
+      setView("pendencias");
+    }).then((listener) => {
+      if (active) unlisteners.push(() => { void listener.unregister(); });
+      else void listener.unregister();
+    }).catch(() => {
+      // Desktop click routing is best-effort; toast show still works without it.
     });
 
     return () => {
