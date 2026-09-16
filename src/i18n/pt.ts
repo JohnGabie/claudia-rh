@@ -283,6 +283,8 @@ export const pt: Strings = {
     save: "Salvar",
     applicationsToday: "Candidaturas hoje",
     jobsAnalyzed: "Vagas analisadas",
+    editLimit: "Editar limite",
+    todayTotal: "hoje",
     searchTime: "Tempo de procura",
     scheduleStat: "Agendamento",
     goalReached: "Meta atingida ✓",

@@ -364,7 +364,7 @@ export const CoverLettersView: React.FC<{ onBack: () => void }> = ({ onBack }) =
         Cover letters geradas
       </div>
       {loadingList ? (
-        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>A carregar…</div>
+        <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{t.common.loading}</div>
       ) : coverLetters.length === 0 ? (
         <div style={{
           background: "var(--bg-surface)", border: "1px dashed var(--border)",

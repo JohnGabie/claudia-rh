@@ -502,7 +502,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.applicationsToday}</span>
-                    <button onClick={abrirCandidaturas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                    <button onClick={abrirCandidaturas} title={t.dashboard.editLimit} className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
                     <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{loading ? "—" : candidaturasHoje}</span>
@@ -526,7 +526,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.jobsAnalyzed}</span>
-                    <button onClick={abrirVagas} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                    <button onClick={abrirVagas} title={t.dashboard.editLimit} className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
                     <span style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{loading ? "—" : vagasHoje}</span>
@@ -537,7 +537,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                     <div style={{ width: limVagas > 0 ? `${pctVagas}%` : "0%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.5s ease, background 0.3s ease" }} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                    hoje · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
+                    {t.dashboard.todayTotal} · <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{vagasTotal}</span> total
                   </div>
                 </div>
               );
@@ -549,7 +549,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
                 <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.dashboard.searchTime}</span>
-                    <button onClick={abrirTempo} title="Editar limite" className="edit-icon-btn"><Pencil size={11} /></button>
+                    <button onClick={abrirTempo} title={t.dashboard.editLimit} className="edit-icon-btn"><Pencil size={11} /></button>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginBottom: 10 }}>
                     <span style={{ fontSize: 24, fontWeight: 700, color: limiteEsgotado ? "var(--danger)" : "var(--text-primary)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{formatarTempo(tempoMinutos)}</span>

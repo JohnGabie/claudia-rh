@@ -9,6 +9,7 @@ import { CurriculosView } from "./CurriculosView";
 import { CoverLettersView } from "./CoverLettersView";
 import { SectionEditModal } from "./EditModal";
 import { EmptyState } from "./EmptyState";
+import { useT } from "../../i18n";
 
 // ── Main component ─────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
   const [hasProfile, setHasProfile] = useState(false);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const hasLoadedOnce = useRef(false);
+  const t = useT();
 
   const loadData = useCallback(async () => {
     try {
@@ -101,7 +103,7 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
   if (loading) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>A carregar perfil…</span>
+        <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{t.profile.loading}</span>
       </div>
     );
   }

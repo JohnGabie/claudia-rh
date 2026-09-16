@@ -280,6 +280,8 @@ export const en = {
     save: "Save",
     applicationsToday: "Applications today",
     jobsAnalyzed: "Jobs analyzed",
+    editLimit: "Edit limit",
+    todayTotal: "today",
     searchTime: "Search time",
     scheduleStat: "Schedule",
     goalReached: "Goal reached ✓",
