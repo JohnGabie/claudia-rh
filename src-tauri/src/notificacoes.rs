@@ -33,6 +33,48 @@ fn query_proposta_ids(db: &Arc<Mutex<Connection>>) -> Vec<i64> {
         .unwrap_or_default()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotifyDecision {
+    pub send_native: bool,
+    pub emit_event: bool,
+}
+
+pub fn decide_notify(
+    first_seen: bool,
+    still_open: bool,
+    last_native: Option<std::time::Instant>,
+    now: std::time::Instant,
+    interval: std::time::Duration,
+    native_enabled: bool,
+) -> NotifyDecision {
+    if !still_open {
+        return NotifyDecision {
+            send_native: false,
+            emit_event: false,
+        };
+    }
+    if first_seen {
+        return NotifyDecision {
+            emit_event: true,
+            send_native: native_enabled,
+        };
+    }
+    if !native_enabled {
+        return NotifyDecision {
+            send_native: false,
+            emit_event: false,
+        };
+    }
+    let due = match last_native {
+        None => true,
+        Some(t) => now.duration_since(t) >= interval,
+    };
+    NotifyDecision {
+        send_native: due,
+        emit_event: false,
+    }
+}
+
 pub fn start(app: AppHandle, db: Arc<Mutex<Connection>>) {
     tauri::async_runtime::spawn(async move {
         let mut seen_pendencias: HashSet<i64> = HashSet::new();
@@ -62,4 +104,94 @@ pub fn start(app: AppHandle, db: Arc<Mutex<Connection>>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn t0() -> Instant {
+        Instant::now()
+    }
+
+    #[test]
+    fn first_seen_enabled_emits_and_sends() {
+        let now = t0();
+        let d = decide_notify(true, true, None, now, Duration::from_secs(600), true);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: true,
+                emit_event: true
+            }
+        );
+    }
+
+    #[test]
+    fn first_seen_disabled_emits_but_no_native() {
+        let now = t0();
+        let d = decide_notify(true, true, None, now, Duration::from_secs(600), false);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: false,
+                emit_event: true
+            }
+        );
+    }
+
+    #[test]
+    fn repeat_after_interval_native_only() {
+        let t0 = t0();
+        let later = t0 + Duration::from_secs(600);
+        let d = decide_notify(false, true, Some(t0), later, Duration::from_secs(600), true);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: true,
+                emit_event: false
+            }
+        );
+    }
+
+    #[test]
+    fn inside_interval_sends_nothing() {
+        let t0 = t0();
+        let later = t0 + Duration::from_secs(60);
+        let d = decide_notify(false, true, Some(t0), later, Duration::from_secs(600), true);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: false,
+                emit_event: false
+            }
+        );
+    }
+
+    #[test]
+    fn closed_sends_nothing() {
+        let now = t0();
+        let d = decide_notify(true, false, None, now, Duration::from_secs(600), true);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: false,
+                emit_event: false
+            }
+        );
+    }
+
+    #[test]
+    fn not_first_seen_never_toasted_sends_native_if_enabled() {
+        let now = t0();
+        let d = decide_notify(false, true, None, now, Duration::from_secs(600), true);
+        assert_eq!(
+            d,
+            NotifyDecision {
+                send_native: true,
+                emit_event: false
+            }
+        );
+    }
 }
