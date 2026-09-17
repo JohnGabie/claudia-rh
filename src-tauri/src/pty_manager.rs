@@ -213,6 +213,7 @@ pub fn iniciar_claude(
         diagnostics::pty_flush();
 
         let motivo = if checkpoint_requested { "checkpoint" } else { "saiu" };
+        diagnostics::emit_event("session", "ended", Some(session_id), motivo);
 
         // Update sessoes row, being careful not to overwrite a newer session
         if let Ok(conn) = db.lock() {

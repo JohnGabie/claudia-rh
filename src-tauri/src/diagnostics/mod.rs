@@ -159,6 +159,15 @@ pub fn emit_event(cat: &str, evt: &str, sid: Option<i64>, msg: &str) {
     emit_event_to(&p.dir, p.debug_dir.as_deref(), cat, evt, sid, msg);
 }
 
+pub fn previous_unclean(dir: &Path) -> bool {
+    let text = std::fs::read_to_string(dir.join("events.jsonl")).unwrap_or_default();
+    let last_app = text.lines().rev().find(|l| l.contains("\"cat\":\"app\""));
+    match last_app {
+        None => false,
+        Some(l) => !l.contains("\"evt\":\"exit\""),
+    }
+}
+
 fn append_file(root: &Path, name: &str, append_line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -425,5 +434,39 @@ mod tests {
             .unwrap();
         assert!(log.contains("[email]"), "{log}");
         assert!(!log.contains("a@b.com"), "{log}");
+    }
+
+    #[test]
+    fn previous_unclean_true_when_last_app_is_boot() {
+        let dir = std::env::temp_dir().join(format!(
+            "claudia-diag-unclean-boot-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("events.jsonl"),
+            "{\"cat\":\"app\",\"evt\":\"boot\"}\n{\"cat\":\"session\",\"evt\":\"started\"}\n",
+        )
+        .unwrap();
+        assert!(previous_unclean(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn previous_unclean_false_when_last_app_is_exit() {
+        let dir = std::env::temp_dir().join(format!(
+            "claudia-diag-unclean-exit-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("events.jsonl"),
+            "{\"cat\":\"app\",\"evt\":\"boot\"}\n{\"cat\":\"app\",\"evt\":\"exit\"}\n",
+        )
+        .unwrap();
+        assert!(!previous_unclean(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

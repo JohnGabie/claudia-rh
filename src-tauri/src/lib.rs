@@ -176,6 +176,13 @@ pub fn run() {
             let log_dir = app.path().app_log_dir().ok();
             let paths = diagnostics::init_paths(&data_dir, log_dir);
             log::info!("diagnostics dir {}", paths.dir.display());
+            let unclean = diagnostics::previous_unclean(&paths.dir);
+            diagnostics::emit_event(
+                "app",
+                "boot",
+                None,
+                if unclean { "previous_unclean=true" } else { "" },
+            );
             diagnostics::install_panic_hook();
 
             // One-shot migration from the pre-v0.2 data dir (identifier change)
@@ -349,6 +356,12 @@ pub fn run() {
             diagnostics::watchdog::diag_heartbeat,
             exportar_diagnostico,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                crate::diagnostics::emit_event("app", "exit", None, "");
+                crate::diagnostics::pty_flush();
+            }
+        });
 }

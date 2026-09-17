@@ -80,7 +80,9 @@ pub fn iniciar_sessao(
         db,
         workspace.to_string_lossy().into_owned(),
         "Inicia a sessao de candidaturas.".to_string(),
-    )
+    )?;
+    crate::diagnostics::emit_event("session", "started", Some(session_id), motivo);
+    Ok(())
 }
 
 pub fn ler_skip_permissions(data_dir: &std::path::Path) -> bool {
@@ -114,6 +116,7 @@ pub fn registar_pausa_sessao(state: State<'_, DbState>) -> Result<(), String> {
          WHERE id = (SELECT id FROM sessoes WHERE terminada_em IS NULL AND pausada_em IS NULL ORDER BY id DESC LIMIT 1)",
         [],
     ).map_err(|e| e.to_string())?;
+    crate::diagnostics::emit_event("session", "paused", None, "");
     Ok(())
 }
 
@@ -128,6 +131,7 @@ pub fn registar_retoma_sessao(state: State<'_, DbState>) -> Result<(), String> {
          WHERE id = (SELECT id FROM sessoes WHERE terminada_em IS NULL AND pausada_em IS NOT NULL ORDER BY id DESC LIMIT 1)",
         [],
     ).map_err(|e| e.to_string())?;
+    crate::diagnostics::emit_event("session", "resumed", None, "");
     Ok(())
 }
 
