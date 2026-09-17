@@ -1,3 +1,4 @@
+use crate::diagnostics;
 use once_cell::sync::OnceCell;
 use portable_pty::{native_pty_system, CommandBuilder, Child, MasterPty, PtySize};
 use rusqlite::Connection;
@@ -149,6 +150,7 @@ pub fn iniciar_claude(
                 Ok(n) => {
                     let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                     let _ = app_thread.emit("pty-output", chunk.clone());
+                    diagnostics::pty_push(&chunk);
 
                     line_buf.push_str(&chunk);
                     // Keep line_buf bounded. Raw byte offset may land inside a
@@ -169,6 +171,7 @@ pub fn iniciar_claude(
                             *guard = None;
                         }
                         drop(guard);
+                        diagnostics::pty_flush();
                         break;
                     }
 
@@ -180,6 +183,12 @@ pub fn iniciar_claude(
                         line_buf.clear();
                         if reconnect_attempts < 3 {
                             reconnect_attempts += 1;
+                            diagnostics::emit_event(
+                                "pty",
+                                "chrome_reconnect",
+                                Some(session_id),
+                                "",
+                            );
                             if let Ok(mut w) = writer_for_thread.lock() {
                                 let _ = w.write_all(b"/chrome\r");
                                 let _ = w.flush();
@@ -187,12 +196,20 @@ pub fn iniciar_claude(
                         } else if reconnect_attempts == 3 {
                             reconnect_attempts += 1; // prevent repeat
                             let _ = app_thread.emit("chrome-reconnect-failed", ());
+                            diagnostics::emit_event(
+                                "pty",
+                                "chrome_failed",
+                                Some(session_id),
+                                "",
+                            );
                         }
                     }
                 }
                 Err(_) => break,
             }
         }
+
+        diagnostics::pty_flush();
 
         let motivo = if checkpoint_requested { "checkpoint" } else { "saiu" };
 
