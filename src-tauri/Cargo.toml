@@ -36,6 +36,7 @@ rmcp = { version = "2.2.0", features = ["server", "transport-io"] }
 tauri-plugin-dialog = "2.7.2"
 log = "0.4"
 tauri-plugin-log = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

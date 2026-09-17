@@ -145,6 +145,13 @@ fn close_window(window: tauri::Window) {
     let _ = window.close();
 }
 
+#[tauri::command]
+fn exportar_diagnostico(dest: String) -> Result<String, String> {
+    diagnostics::pty_flush();
+    let p = diagnostics::export_zip(std::path::Path::new(&dest))?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -340,6 +347,7 @@ pub fn run() {
             welcome_necessario,
             marcar_welcome_concluido,
             diagnostics::watchdog::diag_heartbeat,
+            exportar_diagnostico,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

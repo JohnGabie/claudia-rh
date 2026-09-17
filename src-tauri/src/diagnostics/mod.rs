@@ -208,6 +208,99 @@ pub fn pty_flush() {
     }
 }
 
+pub fn export_zip(dest: &Path) -> Result<PathBuf, String> {
+    pty_flush();
+    let paths = PATHS
+        .get()
+        .ok_or_else(|| "diagnostics not initialized".to_string())?;
+    export_zip_from(paths, dest)
+}
+
+fn export_zip_from(paths: &DiagPaths, dest: &Path) -> Result<PathBuf, String> {
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+
+    let file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("manifest.txt", opts)
+        .map_err(|e| e.to_string())?;
+    zip.write_all(manifest_body().as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    let mut seen: Vec<String> = Vec::new();
+    for root in std::iter::once(&paths.dir).chain(paths.log_dir.as_ref()) {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || zip_path_forbidden(&path) || !zip_member_allowed(&path) {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if seen.iter().any(|s| s == name) {
+                continue;
+            }
+            seen.push(name.to_string());
+            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+            let redacted = redact_utf8_lossy_lines(&bytes);
+            zip.start_file(name, opts).map_err(|e| e.to_string())?;
+            zip.write_all(redacted.as_bytes())
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(dest.to_path_buf())
+}
+
+fn manifest_body() -> String {
+    format!(
+        "app=claudia-rh\nversion={}\nos={}\nidentifier=io.github.johngabie.claudia-rh\nexported_at={}\n",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        chrono::Local::now().to_rfc3339(),
+    )
+}
+
+fn zip_path_forbidden(path: &Path) -> bool {
+    let lower = path.to_string_lossy().to_ascii_lowercase();
+    lower.contains("candidate_base")
+        || lower.contains("search_variants")
+        || lower.contains("notif.json")
+        || lower.contains(".yaml")
+        || lower.contains(".yml")
+}
+
+fn zip_member_allowed(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    matches!(name, "events.jsonl" | "pty-tail.log" | "panic.log")
+        || name.starts_with("claudia-rh.log")
+}
+
+fn redact_utf8_lossy_lines(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::with_capacity(text.len());
+    for (i, line) in text.split('\n').enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        out.push_str(&redact(line));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +351,79 @@ mod tests {
         assert!(snap.contains("[email]"), "{snap}");
         assert!(!snap.contains("a@b.com"));
         assert!(!snap.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn export_zip_redacts_and_excludes_yaml() {
+        use std::io::Read;
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!(
+            "claudia-diag-zip-{}-{}",
+            std::process::id(),
+            stamp
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let diag = root.join("diagnostics");
+        let log_dir = root.join("logs");
+        std::fs::create_dir_all(&diag).unwrap();
+        std::fs::create_dir_all(&log_dir).unwrap();
+
+        std::fs::write(diag.join("events.jsonl"), "user a@b.com ran a job\n").unwrap();
+        std::fs::write(diag.join("candidate_base.yaml"), "email: leak@x.com\n").unwrap();
+        std::fs::write(diag.join("search_variants.yaml"), "q: secret\n").unwrap();
+        std::fs::write(diag.join("notif.json"), "{\"token\":\"nope\"}\n").unwrap();
+        std::fs::write(root.join("candidate_base.yaml"), "email: secret@x.com\n").unwrap();
+        std::fs::write(log_dir.join("claudia-rh.log"), "mail a@b.com\n").unwrap();
+        std::fs::write(log_dir.join("claudia-rh.log.1"), "rotated a@b.com\n").unwrap();
+
+        let paths = DiagPaths {
+            dir: diag,
+            debug_dir: None,
+            log_dir: Some(log_dir),
+        };
+        let dest = root.join("out.zip");
+        export_zip_from(&paths, &dest).unwrap();
+
+        let file = std::fs::File::open(&dest).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            names.push(archive.by_index(i).unwrap().name().to_string());
+        }
+
+        assert!(
+            !names.iter().any(|n| n.contains("candidate_base")
+                || n.contains("search_variants")
+                || n.contains("notif.json")
+                || n.ends_with(".yaml")
+                || n.ends_with(".yml")),
+            "{names:?}"
+        );
+        assert!(names.iter().any(|n| n == "manifest.txt"), "{names:?}");
+        assert!(names.iter().any(|n| n == "events.jsonl"), "{names:?}");
+        assert!(names.iter().any(|n| n == "claudia-rh.log"), "{names:?}");
+        assert!(names.iter().any(|n| n == "claudia-rh.log.1"), "{names:?}");
+
+        let mut events = String::new();
+        archive
+            .by_name("events.jsonl")
+            .unwrap()
+            .read_to_string(&mut events)
+            .unwrap();
+        assert!(events.contains("[email]"), "{events}");
+        assert!(!events.contains("a@b.com"), "{events}");
+
+        let mut log = String::new();
+        archive
+            .by_name("claudia-rh.log")
+            .unwrap()
+            .read_to_string(&mut log)
+            .unwrap();
+        assert!(log.contains("[email]"), "{log}");
+        assert!(!log.contains("a@b.com"), "{log}");
     }
 }
