@@ -1,5 +1,6 @@
 pub mod ansi;
 pub mod redact;
+pub mod watchdog;
 
 pub use ansi::strip_ansi;
 pub use redact::redact;

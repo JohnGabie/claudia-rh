@@ -54,6 +54,8 @@ function App() {
     let active = true;
     const unlisteners: (() => void)[] = [];
 
+    invoke("diag_heartbeat").catch(() => {});
+
     Promise.all([
       listen("feedback-output-done", () => setSugerirFeedback(false)),
       listen("nova-pendencia", refreshPendenciasCount),
@@ -79,8 +81,13 @@ function App() {
       // Desktop click routing is best-effort; toast show still works without it.
     });
 
+    const hb = window.setInterval(() => {
+      invoke("diag_heartbeat").catch(() => {});
+    }, 5000);
+
     return () => {
       active = false;
+      clearInterval(hb);
       unlisteners.forEach((f) => f());
     };
   }, []);

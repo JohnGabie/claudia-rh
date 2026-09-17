@@ -85,6 +85,10 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
     };
 
     debug_log(cfg, tool, args, &result);
+    match &result {
+        Ok(_) => crate::diagnostics::emit_event("mcp", "tool_ok", None, tool),
+        Err(e) => crate::diagnostics::emit_event("mcp", "tool_err", None, &format!("{tool}: {e}")),
+    }
     result
 }
 

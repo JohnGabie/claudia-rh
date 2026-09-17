@@ -151,6 +151,7 @@ pub fn iniciar_claude(
                     let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                     let _ = app_thread.emit("pty-output", chunk.clone());
                     diagnostics::pty_push(&chunk);
+                    diagnostics::watchdog::tick();
 
                     line_buf.push_str(&chunk);
                     // Keep line_buf bounded. Raw byte offset may land inside a
