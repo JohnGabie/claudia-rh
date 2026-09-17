@@ -4,6 +4,7 @@ mod db_watcher;
 mod idle_watcher;
 pub mod mcp;
 mod migration;
+mod diagnostics;
 mod notificacoes;
 mod prompt;
 mod pty_manager;
