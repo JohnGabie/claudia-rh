@@ -45,6 +45,7 @@ pub fn start(_app: AppHandle, db: Arc<Mutex<Connection>>) {
     tick();
     tauri::async_runtime::spawn(async move {
         let mut already_missing = false;
+        let mut missing_since_ms = 0u64;
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
 
@@ -73,12 +74,13 @@ pub fn start(_app: AppHandle, db: Arc<Mutex<Connection>>) {
             match watchdog_transition(session_active, last_tick_ms, now_ms, already_missing) {
                 Some("heartbeat_miss") => {
                     already_missing = true;
+                    missing_since_ms = last_tick_ms;
                     let duration = now_ms.saturating_sub(last_tick_ms);
                     emit_event("watchdog", "heartbeat_miss", None, &duration.to_string());
                 }
                 Some("recovered") => {
                     already_missing = false;
-                    let duration = now_ms.saturating_sub(last_tick_ms);
+                    let duration = now_ms.saturating_sub(missing_since_ms);
                     emit_event("watchdog", "recovered", None, &duration.to_string());
                 }
                 _ => {}

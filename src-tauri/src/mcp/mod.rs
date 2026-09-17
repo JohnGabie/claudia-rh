@@ -135,6 +135,7 @@ pub fn cli_main() -> bool {
     let data_dir = parse_flag_value(&args, "--data-dir")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    crate::diagnostics::init_paths(&data_dir, None);
     let notify_port = parse_flag_value(&args, "--notify-port").and_then(|p| p.parse().ok());
     let cfg = McpConfig {
         data_dir,
