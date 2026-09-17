@@ -102,51 +102,54 @@ fn mask_bearer(s: &str) -> String {
     // Replace "Bearer <token>" with "Bearer [token]" (preserve original Bearer casing).
     let mut out = String::with_capacity(s.len());
     let lower = s.to_ascii_lowercase();
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
+    while i < s.len() {
         if lower[i..].starts_with("bearer ") {
             let prefix_end = i + "bearer ".len();
             out.push_str(&s[i..prefix_end]);
             out.push_str("[token]");
-            // Skip the original token characters (ASCII alphanumeric / - _).
-            let mut j = prefix_end;
-            while j < bytes.len() {
-                let c = bytes[j] as char;
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                    j += 1;
+            i = prefix_end;
+            while let Some(ch) = s[i..].chars().next() {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    i += ch.len_utf8();
                 } else {
                     break;
                 }
             }
-            i = j;
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let ch = s[i..].chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
 
 fn mask_sk_tokens(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
+    while i < s.len() {
         if let Some(prefix_len) = sk_prefix_len(&s[i..]) {
             let after_prefix = i + prefix_len;
             let mut j = after_prefix;
-            while j < bytes.len() && (bytes[j] as char).is_ascii_alphanumeric() {
-                j += 1;
+            let mut alnum_count = 0;
+            while let Some(ch) = s[j..].chars().next() {
+                if ch.is_ascii_alphanumeric() {
+                    alnum_count += 1;
+                    j += ch.len_utf8();
+                } else {
+                    break;
+                }
             }
-            if j - after_prefix >= 20 {
+            if alnum_count >= 20 {
                 out.push_str("[token]");
                 i = j;
                 continue;
             }
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let ch = s[i..].chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -165,23 +168,25 @@ fn mask_assignment(s: &str, key: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let lower = s.to_ascii_lowercase();
     let key_lower = key.to_ascii_lowercase();
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
+    while i < s.len() {
         if lower[i..].starts_with(&key_lower) {
             // Keep "password=" / "senha=" then replace value with [redacted].
             let eq_end = i + key.len();
             out.push_str(&s[i..eq_end]);
             out.push_str("[redacted]");
-            let mut j = eq_end;
-            while j < bytes.len() && !(bytes[j] as char).is_whitespace() {
-                j += 1;
+            i = eq_end;
+            while let Some(ch) = s[i..].chars().next() {
+                if ch.is_whitespace() {
+                    break;
+                }
+                i += ch.len_utf8();
             }
-            i = j;
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let ch = s[i..].chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -211,6 +216,18 @@ mod tests {
         let out = redact("Authorization: Bearer abcdefghijklmnopqrstuvwxyz12 password=secret123");
         assert!(out.contains("Bearer [token]"), "{out}");
         assert!(out.contains("[redacted]"), "{out}");
+        assert!(!out.contains("abcdefghijklmnopqrstuvwxyz12"), "{out}");
         assert!(!out.contains("secret123"));
+    }
+
+    #[test]
+    fn redacts_utf8_portuguese_logs() {
+        let raw = "José de São Paulo: maria@empresa.com.br senha=segredo123";
+        let out = redact(raw);
+        assert!(out.contains("José de São Paulo"), "{out}");
+        assert!(out.contains("[email]"), "{out}");
+        assert!(out.contains("[redacted]"), "{out}");
+        assert!(!out.contains("maria@empresa.com.br"), "{out}");
+        assert!(!out.contains("segredo123"), "{out}");
     }
 }
