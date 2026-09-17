@@ -43,6 +43,10 @@ Planos: `docs/superpowers/plans/`
 
 Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → review → merge em `dev`.
 
+## Diagnóstico
+
+Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log` na raiz do repo **antes** de perguntar o que aconteceu. Em produção (Windows): `%APPDATA%\io.github.johngabie.claudia-rh\diagnostics\`.
+
 ## Build
 
 - Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.

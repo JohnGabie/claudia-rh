@@ -148,6 +148,16 @@ fn close_window(window: tauri::Window) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .max_file_size(2 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
+                .level(log::LevelFilter::Info)
+                .level_for("tao", log::LevelFilter::Warn)
+                .level_for("webview", log::LevelFilter::Warn)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -155,6 +165,11 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            let log_dir = app.path().app_log_dir().ok();
+            let paths = diagnostics::init_paths(&data_dir, log_dir);
+            log::info!("diagnostics dir {}", paths.dir.display());
+            diagnostics::install_panic_hook();
 
             // One-shot migration from the pre-v0.2 data dir (identifier change)
             migration::migrate_legacy_data_dir(&data_dir);

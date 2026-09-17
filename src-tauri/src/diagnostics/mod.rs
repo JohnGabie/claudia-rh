@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 pub struct DiagPaths {
     pub dir: PathBuf,
     pub debug_dir: Option<PathBuf>,
+    pub log_dir: Option<PathBuf>,
 }
 
 pub static PATHS: once_cell::sync::OnceCell<DiagPaths> = once_cell::sync::OnceCell::new();
@@ -60,7 +61,7 @@ static PTY_RING: Mutex<PtyRing> = Mutex::new(PtyRing {
 });
 static LAST_FLUSH: Mutex<Option<Instant>> = Mutex::new(None);
 
-pub fn init_paths(app_data_dir: &Path) -> DiagPaths {
+pub fn init_paths(app_data_dir: &Path, log_dir: Option<PathBuf>) -> DiagPaths {
     let dir = app_data_dir.join("diagnostics");
     std::fs::create_dir_all(&dir).ok();
     let debug_dir = if cfg!(debug_assertions) {
@@ -72,7 +73,11 @@ pub fn init_paths(app_data_dir: &Path) -> DiagPaths {
     } else {
         None
     };
-    let paths = DiagPaths { dir, debug_dir };
+    let paths = DiagPaths {
+        dir,
+        debug_dir,
+        log_dir,
+    };
     let _ = PATHS.set(paths.clone());
     paths
 }
@@ -83,9 +88,32 @@ pub fn init_paths_for_test(dir: PathBuf) -> DiagPaths {
     let p = DiagPaths {
         dir: dir.clone(),
         debug_dir: None,
+        log_dir: None,
     };
     let _ = PATHS.set(p.clone());
     p
+}
+
+pub fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.to_string();
+        log::error!("panic: {payload}");
+        let line = format!("{} {payload}\n", chrono::Local::now().to_rfc3339());
+        if let Some(p) = PATHS.get() {
+            for root in std::iter::once(&p.dir).chain(p.debug_dir.as_ref()) {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(root.join("panic.log"))
+                {
+                    let _ = f.write_all(line.as_bytes());
+                }
+            }
+        }
+        emit_event("panic", "panic", None, &payload);
+        prev(info);
+    }));
 }
 
 #[derive(Serialize)]
