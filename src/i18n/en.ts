@@ -130,6 +130,12 @@ export const en = {
     installAndRestart: "Install and restart",
     checkUpdates: "Check for updates",
     checkingUpdates: "Checking…",
+    diagnostics: "Diagnostics",
+    diagnosticsDesc:
+      "Creates a file with recent logs (no passwords and no résumé) for you to send to the developer.",
+    diagnosticsExport: "Export diagnostics",
+    diagnosticsSaved: "Saved: ",
+    diagnosticsError: "Could not export diagnostics.",
     credentials: "Credentials",
     credentialsUser: "User",
     credentialsPassword: "Password",

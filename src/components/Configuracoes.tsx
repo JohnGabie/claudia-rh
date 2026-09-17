@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
 import { useT, useLocale } from "../i18n";
 import { ToggleSwitch } from "./ui/ToggleSwitch";
@@ -43,6 +44,7 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "found" | "latest">("idle");
   const [updateVersion, setUpdateVersion] = useState("");
   const [installing, setInstalling] = useState(false);
+  const [diagMsg, setDiagMsg] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<string>("ler_estrategia")
@@ -76,6 +78,20 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
       await invoke("instalar_atualizacao");
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const exportarDiagnostico = async () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const name = `ClaudiaRH-diagnostico-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.zip`;
+    const dest = await save({ defaultPath: name, filters: [{ name: "Zip", extensions: ["zip"] }] });
+    if (!dest) return;
+    try {
+      const path = await invoke<string>("exportar_diagnostico", { dest });
+      setDiagMsg(t.settings.diagnosticsSaved + path);
+    } catch {
+      setDiagMsg(t.settings.diagnosticsError);
     }
   };
 
@@ -345,6 +361,39 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
               {updateStatus === "checking" ? t.settings.checkingUpdates : t.settings.checkUpdates}
             </button>
           </div>
+        </div>
+      </Section>
+
+      {/* 6. Diagnostics */}
+      <Section>
+        <SectionTitle>{t.settings.diagnostics}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.diagnosticsDesc}
+        </p>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", borderRadius: 8,
+          border: "1px solid var(--border)", background: "var(--bg-surface)",
+        }}>
+          <div>
+            {diagMsg && (
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 0 }}>
+                {diagMsg}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={exportarDiagnostico}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--bg-base)",
+              color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            {t.settings.diagnosticsExport}
+          </button>
         </div>
       </Section>
 

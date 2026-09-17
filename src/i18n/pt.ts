@@ -134,6 +134,12 @@ export const pt: Strings = {
     installAndRestart: "Instalar e reiniciar",
     checkUpdates: "Verificar atualizações",
     checkingUpdates: "A verificar…",
+    diagnostics: "Diagnóstico",
+    diagnosticsDesc:
+      "Gera um ficheiro com logs recentes (sem passwords nem o teu currículo) para enviares ao desenvolvedor.",
+    diagnosticsExport: "Exportar diagnóstico",
+    diagnosticsSaved: "Guardado: ",
+    diagnosticsError: "Não foi possível exportar o diagnóstico.",
     credentials: "Credenciais",
     credentialsUser: "Usuário",
     credentialsPassword: "Senha",
