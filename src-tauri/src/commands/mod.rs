@@ -13,6 +13,11 @@ pub mod prompts;
 pub mod pty;
 pub mod sessao;
 
+/// First candidate path that exists as a regular file.
+pub(crate) fn first_existing_claude(candidates: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    candidates.iter().find(|p| p.is_file()).cloned()
+}
+
 /// Resolve o executável do Claude Code a invocar.
 ///
 /// No Windows, o npm instala apenas shims (`claude.cmd`, `claude.ps1`) no PATH —
@@ -62,7 +67,50 @@ pub fn claude_program() -> String {
                 }
             }
         }
+
+        // 3) WinGet install (Claude Code native package)
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let local = PathBuf::from(local);
+            let mut winget = vec![
+                local.join("Microsoft").join("WinGet").join("Links").join("claude.exe"),
+            ];
+            let pkg = local
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Packages");
+            if let Ok(rd) = std::fs::read_dir(&pkg) {
+                for ent in rd.flatten() {
+                    let name = ent.file_name();
+                    let n = name.to_string_lossy();
+                    if n.starts_with("Anthropic.ClaudeCode") {
+                        winget.push(ent.path().join("claude.exe"));
+                    }
+                }
+            }
+            if let Some(p) = first_existing_claude(&winget) {
+                return p.to_string_lossy().into_owned();
+            }
+        }
     }
 
     "claude".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_existing_claude;
+    use std::path::PathBuf;
+
+    #[test]
+    fn first_existing_skips_missing() {
+        let missing = PathBuf::from("C:/definitely-not-a-claude-xxxx.exe");
+        let cargo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let got = first_existing_claude(&[missing, cargo.clone()]);
+        assert_eq!(got.as_ref(), Some(&cargo));
+    }
+
+    #[test]
+    fn first_existing_none() {
+        assert!(first_existing_claude(&[PathBuf::from("C:/nope-a.exe"), PathBuf::from("C:/nope-b.exe")]).is_none());
+    }
 }
