@@ -80,7 +80,6 @@ pub fn iniciar_sessao(
         session_id,
         Arc::clone(&db),
         workspace.to_string_lossy().into_owned(),
-        query,
     );
 
     match spawn {

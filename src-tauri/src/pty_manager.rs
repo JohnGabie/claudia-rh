@@ -89,7 +89,6 @@ pub fn iniciar_claude(
     session_id: i64,
     db: Arc<Mutex<Connection>>,
     cwd: String,
-    _initial_task: String,
 ) -> Result<(), String> {
     *pty_cell().lock().unwrap() = None;
 

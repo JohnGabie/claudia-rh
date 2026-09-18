@@ -62,39 +62,58 @@ pub fn iniciar_busca_linkedin_rede(
 
     let skip_permissions = crate::commands::sessao::ler_skip_permissions(&data_dir);
     let sys_prompt = montar_prompt_linkedin(&data_dir, &db_path_str);
-    let workspace_str = workspace.to_string_lossy().into_owned();
+    let prompt_file = workspace.join(".claude-system-prompt-linkedin.txt");
+    std::fs::write(&prompt_file, &sys_prompt).map_err(|e| e.to_string())?;
 
-    let mut args: Vec<String> = Vec::new();
-    if skip_permissions {
-        args.push("--dangerously-skip-permissions".to_string());
-    }
-    args.push("--chrome".to_string());
-    // Expose claudia's typed tools (register_vaga with fonte_conexao, …)
-    if let Some(mcp_config) = crate::commands::perfil::write_mcp_config(&app) {
-        args.push("--mcp-config".to_string());
-        args.push(mcp_config.to_string_lossy().into_owned());
-    }
-    args.push("--system-prompt".to_string());
-    args.push(sys_prompt);
+    let mcp_config = crate::commands::perfil::write_mcp_config(&app);
+    let debug_file = crate::diagnostics::PATHS
+        .get()
+        .map(|p| p.dir.join("claude-startup.log"));
+    let query = "Starting LinkedIn network scan for jobs shared by connections.";
+    let args = crate::commands::sessao::build_claude_cli_args(
+        skip_permissions,
+        mcp_config.as_deref(),
+        &prompt_file,
+        debug_file.as_deref(),
+        query,
+    );
 
-    app.emit(
-        "pty-output",
-        "\r\n\x1b[1;36m[Claudia RH]\x1b[0m A iniciar varredura da rede LinkedIn…\r\n",
-    ).ok();
-    app.emit("linkedin-session-started", session_id).ok();
-    app.emit("session-started", session_id).ok();
-
-    pty_manager::iniciar_claude(
+    let spawn = pty_manager::iniciar_claude(
         app.clone(),
         crate::commands::claude_program(),
         args,
         24,
         80,
         session_id,
-        db,
-        workspace_str,
-        "Starting LinkedIn network scan for jobs shared by connections.".to_string(),
-    )
+        Arc::clone(&db),
+        workspace.to_string_lossy().into_owned(),
+    );
+
+    match spawn {
+        Ok(()) => {
+            app.emit(
+                "pty-output",
+                "\r\n\x1b[1;36m[Claudia RH]\x1b[0m A iniciar varredura da rede LinkedIn…\r\n",
+            )
+            .ok();
+            app.emit("linkedin-session-started", session_id).ok();
+            app.emit("session-started", session_id).ok();
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("\r\n\x1b[1;31m[Claudia RH]\x1b[0m Falha ao iniciar: {e}\r\n");
+            app.emit("pty-output", msg).ok();
+            if let Ok(conn) = db.lock() {
+                let _ = conn.execute(
+                    "UPDATE sessoes SET terminada_em = datetime('now'), motivo_termino = 'spawn_err' WHERE id = ?1",
+                    rusqlite::params![session_id],
+                );
+            }
+            crate::diagnostics::emit_event("session", "spawn_err", Some(session_id), &e);
+            app.emit("session-ended", "spawn_err".to_string()).ok();
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
