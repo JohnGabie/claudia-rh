@@ -210,3 +210,67 @@ pub fn salvar_config_disparo(
     let content = serde_json::to_string(cfg).map_err(|e| e.to_string())?;
     std::fs::write(data_dir.join("disparo.json"), content).map_err(|e| e.to_string())
 }
+
+pub(crate) fn build_claude_cli_args(
+    skip_permissions: bool,
+    mcp_config: Option<&std::path::Path>,
+    prompt_file: &std::path::Path,
+    debug_file: Option<&std::path::Path>,
+    initial_query: &str,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if skip_permissions {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
+    args.push("--chrome".to_string());
+    if let Some(mcp) = mcp_config {
+        args.push("--mcp-config".to_string());
+        args.push(mcp.to_string_lossy().into_owned());
+        args.push("--strict-mcp-config".to_string());
+    }
+    args.push("--system-prompt-file".to_string());
+    args.push(prompt_file.to_string_lossy().into_owned());
+    if let Some(df) = debug_file {
+        args.push("--debug-file".to_string());
+        args.push(df.to_string_lossy().into_owned());
+    }
+    args.push(initial_query.to_string());
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_claude_cli_args;
+    use std::path::Path;
+
+    #[test]
+    fn args_use_prompt_file_not_body() {
+        let args = build_claude_cli_args(
+            true,
+            Some(Path::new("C:/data/mcp-config.json")),
+            Path::new("C:/data/workspace/.claude-system-prompt.txt"),
+            Some(Path::new("C:/data/diagnostics/claude-startup.log")),
+            "Inicia a sessao de candidaturas.",
+        );
+        let joined = args.join("\x1e");
+        assert!(args.contains(&"--system-prompt-file".to_string()));
+        assert!(!args.iter().any(|a| a == "--system-prompt"));
+        assert!(!joined.contains("nome_completo"));
+        assert!(!args.iter().any(|a| a.len() > 4000), "an arg is huge: {}", args.iter().map(|a| a.len()).max().unwrap_or(0));
+        assert!(args.contains(&"--strict-mcp-config".to_string()));
+        assert!(args.contains(&"--dangerously-skip-permissions".to_string()));
+        assert!(args.contains(&"--chrome".to_string()));
+        assert_eq!(args.last().unwrap(), "Inicia a sessao de candidaturas.");
+        let i = args.iter().position(|a| a == "--system-prompt-file").unwrap();
+        assert!(args[i + 1].replace('\\', "/").ends_with("workspace/.claude-system-prompt.txt"));
+    }
+
+    #[test]
+    fn supervised_omits_skip_permissions() {
+        let args = build_claude_cli_args(false, None, Path::new("p.txt"), None, "hi");
+        assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        assert!(!args.iter().any(|a| a == "--mcp-config"));
+        assert!(!args.iter().any(|a| a == "--debug-file"));
+        assert_eq!(args.last().unwrap(), "hi");
+    }
+}
