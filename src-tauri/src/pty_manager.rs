@@ -89,7 +89,7 @@ pub fn iniciar_claude(
     session_id: i64,
     db: Arc<Mutex<Connection>>,
     cwd: String,
-    initial_task: String,
+    _initial_task: String,
 ) -> Result<(), String> {
     *pty_cell().lock().unwrap() = None;
 
@@ -113,27 +113,6 @@ pub fn iniciar_claude(
     let raw_writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let writer = Arc::new(Mutex::new(raw_writer as Box<dyn Write + Send>));
     let writer_for_thread = Arc::clone(&writer);
-
-    // Send the initial task after a fixed delay. Pattern detection on raw PTY
-    // output is unreliable because ANSI escape codes are interspersed between
-    // characters, breaking any simple contains() check.
-    let writer_for_timer = Arc::clone(&writer);
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        // Type text into the readline buffer first, flush it...
-        if let Ok(mut w) = writer_for_timer.lock() {
-            let _ = w.write_all(initial_task.as_bytes());
-            let _ = w.flush();
-        }
-        // ...then send Enter as a separate write after readline has processed
-        // all typed characters. Sending text+\r in one atomic write causes \r
-        // to arrive before readline finishes buffering the text, breaking the line.
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if let Ok(mut w) = writer_for_timer.lock() {
-            let _ = w.write_all(b"\r");
-            let _ = w.flush();
-        }
-    });
 
     let app_thread = app.clone();
     std::thread::spawn(move || {
