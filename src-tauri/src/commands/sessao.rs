@@ -47,42 +47,70 @@ pub fn iniciar_sessao(
         let conn = db.lock().map_err(|e| e.to_string())?;
         prompt::montar_prompt_sistema(&conn, &data_dir, &db_path)
     };
+    let prompt_file = workspace.join(".claude-system-prompt.txt");
+    std::fs::write(&prompt_file, &sys_prompt).map_err(|e| e.to_string())?;
 
     let skip_permissions = ler_skip_permissions(&data_dir);
-    let mut args: Vec<String> = Vec::new();
-    if skip_permissions {
-        args.push("--dangerously-skip-permissions".to_string());
-    }
-    args.push("--chrome".to_string());
-    // Expose claudia's typed tools (register_vaga, update_vaga_status, …)
-    if let Some(mcp_config) = crate::commands::perfil::write_mcp_config(app) {
-        args.push("--mcp-config".to_string());
-        args.push(mcp_config.to_string_lossy().into_owned());
-    }
-    args.push("--system-prompt".to_string());
-    args.push(sys_prompt);
-
-    let modo_txt = if skip_permissions { "autonomous" } else { "supervised" };
-    let notice = format!(
-        "\r\n\x1b[1;33m[Claudia RH]\x1b[0m Starting Claude session (reason: {} · mode: {})…\r\n",
-        motivo, modo_txt
+    let mcp_config = crate::commands::perfil::write_mcp_config(app);
+    let debug_file = crate::diagnostics::PATHS
+        .get()
+        .map(|p| p.dir.join("claude-startup.log"));
+    let query = "Inicia a sessao de candidaturas.".to_string();
+    let args = build_claude_cli_args(
+        skip_permissions,
+        mcp_config.as_deref(),
+        &prompt_file,
+        debug_file.as_deref(),
+        &query,
     );
-    app.emit("pty-output", notice).ok();
-    app.emit("session-started", session_id).ok();
 
-    pty_manager::iniciar_claude(
+    let claude = crate::commands::claude_program();
+    if cfg!(windows) && claude == "claude" {
+        // last-resort string; still try spawn, but warn
+        let msg = "\r\n\x1b[1;31m[Claudia RH]\x1b[0m claude.exe not found on PATH/WinGet/npm — trying 'claude' anyway.\r\n";
+        app.emit("pty-output", msg).ok();
+    }
+
+    let spawn = pty_manager::iniciar_claude(
         app.clone(),
-        crate::commands::claude_program(),
+        claude.clone(),
         args,
         24,
         80,
         session_id,
-        db,
+        Arc::clone(&db),
         workspace.to_string_lossy().into_owned(),
-        "Inicia a sessao de candidaturas.".to_string(),
-    )?;
-    crate::diagnostics::emit_event("session", "started", Some(session_id), motivo);
-    Ok(())
+        query,
+    );
+
+    match spawn {
+        Ok(()) => {
+            let modo_txt = if skip_permissions { "autonomous" } else { "supervised" };
+            let notice = format!(
+                "\r\n\x1b[1;33m[Claudia RH]\x1b[0m Starting Claude session (reason: {motivo} · mode: {modo_txt} · bin: {claude})…\r\n"
+            );
+            app.emit("pty-output", notice).ok();
+            app.emit("session-started", session_id).ok();
+            crate::diagnostics::emit_event("session", "spawn_ok", Some(session_id), motivo);
+            crate::diagnostics::emit_event("session", "started", Some(session_id), motivo);
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!(
+                "\r\n\x1b[1;31m[Claudia RH]\x1b[0m Falha ao iniciar: {e}\r\n"
+            );
+            app.emit("pty-output", msg).ok();
+            if let Ok(conn) = db.lock() {
+                let _ = conn.execute(
+                    "UPDATE sessoes SET terminada_em = datetime('now'), motivo_termino = 'spawn_err' WHERE id = ?1",
+                    rusqlite::params![session_id],
+                );
+            }
+            crate::diagnostics::emit_event("session", "spawn_err", Some(session_id), &e);
+            app.emit("session-ended", "spawn_err".to_string()).ok();
+            Err(e)
+        }
+    }
 }
 
 pub fn ler_skip_permissions(data_dir: &std::path::Path) -> bool {

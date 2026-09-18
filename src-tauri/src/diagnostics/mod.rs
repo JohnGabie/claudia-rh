@@ -293,7 +293,7 @@ fn zip_member_allowed(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    matches!(name, "events.jsonl" | "pty-tail.log" | "panic.log")
+    matches!(name, "events.jsonl" | "pty-tail.log" | "panic.log" | "claude-startup.log")
         || name.starts_with("claudia-rh.log")
 }
 
