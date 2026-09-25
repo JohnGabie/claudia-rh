@@ -27,7 +27,6 @@ pub fn iniciar_sessao(
     };
 
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let db_path = data_dir.join("claudia_rh.db");
 
     // Use a dedicated workspace directory that is a git repo.
     // Claude Code's trust-folder prompt is suppressed in git repositories,
@@ -43,10 +42,9 @@ pub fn iniciar_sessao(
             .ok();
     }
 
-    let sys_prompt = {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-        prompt::montar_prompt_sistema(&conn, &data_dir, &db_path)
-    };
+    // No db lock needed: the prompt is static rules now, and the session reads
+    // profile and memory through MCP tools instead.
+    let sys_prompt = prompt::montar_prompt_sistema(&data_dir);
     let prompt_file = workspace.join(".claude-system-prompt.txt");
     std::fs::write(&prompt_file, &sys_prompt).map_err(|e| e.to_string())?;
 

@@ -84,7 +84,9 @@ Existem dois mecanismos de disparo, ambos invocando exatamente o mesmo caminho d
 
 Em ambos os casos, o passo seguinte é idêntico:
 
-1. O Tauri monta o prompt de invocação, injetando: conteúdo de `candidate_base.yaml` e `search_variants.yaml`, caminho para o arquivo de estratégia ativa (se existir), e um resumo da memória recente (últimos N dias de atividade, lido da base de dados).
+1. O Tauri grava o prompt de invocação num arquivo e passa o **caminho** ao `claude` (`--system-prompt-file`). O prompt contém apenas as regras de operação: nada do perfil, das variantes, da estratégia ou da memória é injetado nele. A sessão lê esses dados em tempo de execução pelas ferramentas MCP `get_candidate_profile`, `get_search_variants`, `get_strategy` e `get_memory_summary`.
+
+   Isto não é detalhe de implementação. Injetar os dados fazia a linha de comando crescer com a carreira do candidato até ultrapassar o limite de 32 767 caracteres do `CreateProcessW`, e colocava CPF e endereço na lista de argumentos do processo, legível por qualquer outro processo da máquina. O prompt passa a ter tamanho fixo.
 2. O Tauri spawna o processo `claude` com a flag de skip de permissões e a flag `--chrome` (que ativa a integração com a extensão Claude in Chrome via native messaging), ligado ao PTY do terminal embutido.
 3. O terminal embutido começa a mostrar o output em tempo real; o Chrome abre como janela visível separada.
 4. A sessão processa vagas até esgotar o orçamento do dia, encontrar um motivo de pausa total, ou decidir que deve encerrar e ser reaberta pelo Tauri (ver seção 7).
@@ -223,7 +225,9 @@ Se este arquivo não existir ou estiver vazio, a sessão de execução usa apena
 
 ### 5.3 Memória de execução
 
-Vive inteiramente na base de dados SQLite (ver seção 10), nunca na janela de contexto de uma sessão. No início de cada sessão de execução, o Tauri lê um resumo (não o histórico completo) e injeta-o no prompt: número de candidaturas dos últimos 7 dias, vagas puladas recentemente e motivo, pendências ainda não resolvidas pelo usuário. Isto é o que permite à sessão "lembrar-se" sem depender de continuidade de processo.
+Vive inteiramente na base de dados SQLite (ver seção 10), nunca na janela de contexto de uma sessão. A sessão obtém um resumo (não o histórico completo) chamando a ferramenta MCP `get_memory_summary`: número de candidaturas de hoje e dos últimos 7 dias, vagas puladas recentemente e motivo, pendências ainda não resolvidas pelo usuário. Isto é o que permite à sessão "lembrar-se" sem depender de continuidade de processo.
+
+O resumo é recalculado a cada chamada. Enquanto era injetado no prompt, era um retrato tirado no spawn: ficava desatualizado assim que a sessão se candidatava a alguma coisa, e a sessão raciocinava sobre um estado que já não existia.
 
 ## 6. Regras de pausa
 
