@@ -42,7 +42,11 @@ modo_autonomo.json
 
 # Claude workspace and session data
 workspace/
-.claude/
+.claude/*
+# ...menos os skills, que são convenções do projeto e devem ser versionados.
+# Git não permite re-incluir dentro de um diretório excluído, daí `.claude/*`
+# em vez de `.claude/` — settings.local.json e dados de sessão continuam fora.
+!.claude/skills/
 
 # Signing keys — never commit
 *.key

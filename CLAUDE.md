@@ -43,6 +43,8 @@ Planos: `docs/superpowers/plans/`
 
 Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → review → merge em `dev`.
 
+Tasks, bugs e o que entra em cada versão vivem no Linear (time `CLA`), não em listas neste ficheiro. Como registar e quando pode fechar: skill `linear-claudia`.
+
 ## Diagnóstico
 
 Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log` na raiz do repo **antes** de perguntar o que aconteceu. Em produção (Windows): `%APPDATA%\io.github.johngabie.claudia-rh\diagnostics\`.
