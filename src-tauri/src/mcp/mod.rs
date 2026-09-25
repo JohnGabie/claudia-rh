@@ -14,10 +14,36 @@ mod server;
 use std::io::Write;
 use std::path::PathBuf;
 
+/// Which session spawned this MCP server. The profile is writable only from a
+/// session where the user is present and watching the conversation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SessionKind {
+    /// Profile / LinkedIn sessions: turn-based, user reads every reply.
+    Interactive,
+    /// The `claude --chrome` run: nobody is necessarily looking.
+    Autonomous,
+}
+
+impl SessionKind {
+    /// Anything that is not an explicit "interactive" is autonomous. A call
+    /// site that forgets the flag loses write access rather than gaining it.
+    pub fn from_flag(raw: &str) -> Self {
+        if raw == "interactive" { Self::Interactive } else { Self::Autonomous }
+    }
+
+    pub fn as_flag(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::Autonomous => "autonomous",
+        }
+    }
+}
+
 pub struct McpConfig {
     pub data_dir: PathBuf,
     pub notify_port: Option<u16>,
     pub debug: bool,
+    pub session: SessionKind,
 }
 
 /// Single entry point for every tool invocation. Owns cross-cutting concerns:
@@ -104,7 +130,22 @@ mod dispatch_tests {
     use crate::mcp::tools::test_support::{seed_db, temp_dir};
 
     fn cfg_for(dir: &std::path::Path) -> McpConfig {
-        McpConfig { data_dir: dir.to_path_buf(), notify_port: None, debug: false }
+        McpConfig {
+            data_dir: dir.to_path_buf(),
+            notify_port: None,
+            debug: false,
+            session: SessionKind::Interactive,
+        }
+    }
+
+    /// Falling open would mean a new call site that forgets the flag gets write
+    /// access to the profile by accident. It must fall closed.
+    #[test]
+    fn unknown_or_missing_session_flag_means_autonomous() {
+        assert_eq!(SessionKind::from_flag("interactive"), SessionKind::Interactive);
+        assert_eq!(SessionKind::from_flag("autonomous"), SessionKind::Autonomous);
+        assert_eq!(SessionKind::from_flag("whatever"), SessionKind::Autonomous);
+        assert_eq!(SessionKind::from_flag(""), SessionKind::Autonomous);
     }
 
     /// A read tool that exists but is not wired into dispatch is invisible to the
@@ -173,10 +214,14 @@ pub fn cli_main() -> bool {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     crate::diagnostics::init_paths(&data_dir, None);
     let notify_port = parse_flag_value(&args, "--notify-port").and_then(|p| p.parse().ok());
+    let session = parse_flag_value(&args, "--session-kind")
+        .map(|s| SessionKind::from_flag(&s))
+        .unwrap_or(SessionKind::Autonomous);
     let cfg = McpConfig {
         data_dir,
         notify_port,
         debug: args.iter().any(|a| a == "--debug"),
+        session,
     };
 
     if serve {

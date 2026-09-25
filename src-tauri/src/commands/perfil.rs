@@ -444,7 +444,10 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
 /// so the claude CLI exposes claudia's typed tools to the model. Zero user
 /// config: current_exe() resolves the path in dev and installed builds alike.
 /// Shared by every claude spawn (profile chat, main PTY session, linkedin).
-pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
+pub fn write_mcp_config(
+    app: &AppHandle,
+    session: crate::mcp::SessionKind,
+) -> Option<std::path::PathBuf> {
     let data_dir = app.path().app_data_dir().ok()?;
     let exe = std::env::current_exe().ok()?;
     let notify_port = app.try_state::<crate::McpNotifyPort>().and_then(|s| s.0);
@@ -458,6 +461,8 @@ pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
         args.push("--notify-port".to_string());
         args.push(port.to_string());
     }
+    args.push("--session-kind".to_string());
+    args.push(session.as_flag().to_string());
     if cfg!(debug_assertions) {
         args.push("--debug".to_string());
     }
@@ -503,7 +508,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
             "--include-partial-messages",
         ]);
         // Expose claudia's typed tools (update_profile, close_pendencia, …)
-        if let Some(mcp_config) = write_mcp_config(&app) {
+        if let Some(mcp_config) = write_mcp_config(&app, crate::mcp::SessionKind::Interactive) {
             cmd.arg("--mcp-config").arg(mcp_config);
         }
         let mut child = match cmd
@@ -705,7 +710,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
             "--include-partial-messages",
         ]);
         // Expose claudia's typed tools (update_profile, close_pendencia, …)
-        if let Some(mcp_config) = write_mcp_config(&app) {
+        if let Some(mcp_config) = write_mcp_config(&app, crate::mcp::SessionKind::Interactive) {
             cmd.arg("--mcp-config").arg(mcp_config);
         }
         let mut child = match cmd
