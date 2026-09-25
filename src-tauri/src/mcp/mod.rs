@@ -52,7 +52,8 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
     let result = match tool {
         "update_profile" => {
             let yaml = args["yaml"].as_str().ok_or("parâmetro 'yaml' em falta")?;
-            tools::update_profile(&cfg.data_dir, yaml).inspect(|_| notify(cfg, "perfil"))
+            tools::update_profile(&cfg.data_dir, yaml, cfg.session)
+                .inspect(|_| notify(cfg, "perfil"))
         }
         "close_pendencia" => {
             let id = args["id"].as_i64().ok_or("parâmetro 'id' em falta")?;

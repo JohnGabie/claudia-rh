@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::commands::perfil::CandidatoBase;
+use crate::mcp::SessionKind;
 
 /// Reads one of the candidate's configuration files from data_dir.
 ///
@@ -164,7 +165,22 @@ fn describe_change(prev: Option<&CandidatoBase>, next: &CandidatoBase) -> Change
 /// YAMLs keep loading — which means a one-line document deserializes into a
 /// complete, empty profile. That is exactly how the 2026-09-25 wipe happened.
 /// The defenses here are the backup and the diff, not the parse.
-pub fn update_profile(data_dir: &Path, yaml: &str) -> Result<String, String> {
+///
+/// Only an interactive session may write: the diff lands in a conversation the
+/// user is reading, which is what makes a destructive write visible at all.
+pub fn update_profile(
+    data_dir: &Path,
+    yaml: &str,
+    session: SessionKind,
+) -> Result<String, String> {
+    if session == SessionKind::Autonomous {
+        return Err(
+            "O perfil só pode ser alterado numa sessão de Perfil, onde o usuário acompanha a \
+             conversa. Para registar uma mudança que o usuário deve rever, use \
+             propose_profile_change."
+                .to_string(),
+        );
+    }
     if yaml.trim().is_empty() {
         return Err("YAML vazio — envie o conteúdo completo do candidate_base.yaml".to_string());
     }
@@ -198,7 +214,7 @@ mod tests {
     #[test]
     fn rejects_invalid_yaml() {
         let dir = temp_dir("prof-invalid");
-        let err = update_profile(&dir, "experiencia: [ { empresa: 'x'").unwrap_err();
+        let err = update_profile(&dir, "experiencia: [ { empresa: 'x'", SessionKind::Interactive).unwrap_err();
         assert!(err.contains("YAML parse error"), "got: {err}");
         assert!(!dir.join("candidate_base.yaml").exists(), "invalid YAML must not be written");
     }
@@ -206,7 +222,7 @@ mod tests {
     #[test]
     fn rejects_empty_yaml() {
         let dir = temp_dir("prof-empty");
-        assert!(update_profile(&dir, "   \n").is_err());
+        assert!(update_profile(&dir, "   \n", SessionKind::Interactive).is_err());
     }
 
     #[test]
@@ -320,19 +336,41 @@ mod tests {
     }
 
     #[test]
+    fn autonomous_session_cannot_write_the_profile() {
+        let dir = temp_dir("prof-auto");
+        let yaml = "experiencia:\n  - empresa: A\n";
+        let err = update_profile(&dir, yaml, SessionKind::Autonomous).unwrap_err();
+        assert!(err.contains("propose_profile_change"), "must name the alternative; got: {err}");
+        assert!(!dir.join("candidate_base.yaml").exists(), "autonomous write must not land");
+    }
+
+    #[test]
+    fn autonomous_refusal_does_not_touch_an_existing_profile() {
+        let dir = temp_dir("prof-auto-keep");
+        let yaml = "experiencia:\n  - empresa: A\n";
+        update_profile(&dir, yaml, SessionKind::Interactive).unwrap();
+        assert!(update_profile(&dir, "experiencia: []\n", SessionKind::Autonomous).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap(), yaml);
+        assert!(
+            !dir.join("candidate_base.yaml.bak-1").exists(),
+            "a refusal must not rotate backups"
+        );
+    }
+
+    #[test]
     fn write_keeps_the_previous_profile_in_bak1() {
         let dir = temp_dir("prof-keeps");
         let v1 = "experiencia:\n  - empresa: A\n  - empresa: B\n";
-        update_profile(&dir, v1).unwrap();
-        update_profile(&dir, "experiencia: []\n").unwrap();
+        update_profile(&dir, v1, SessionKind::Interactive).unwrap();
+        update_profile(&dir, "experiencia: []\n", SessionKind::Interactive).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-1")).unwrap(), v1);
     }
 
     #[test]
     fn write_that_removes_content_says_so_and_points_at_the_backup() {
         let dir = temp_dir("prof-says");
-        update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n").unwrap();
-        let msg = update_profile(&dir, "experiencia: []\n").unwrap();
+        update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n", SessionKind::Interactive).unwrap();
+        let msg = update_profile(&dir, "experiencia: []\n", SessionKind::Interactive).unwrap();
         assert!(msg.contains("−2 experiências"), "got: {msg}");
         assert!(msg.contains("bak-1"), "a lossy write must point at the backup; got: {msg}");
     }
@@ -340,8 +378,8 @@ mod tests {
     #[test]
     fn write_without_losses_does_not_mention_the_backup() {
         let dir = temp_dir("prof-nomention");
-        update_profile(&dir, "experiencia:\n  - empresa: A\n").unwrap();
-        let msg = update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n").unwrap();
+        update_profile(&dir, "experiencia:\n  - empresa: A\n", SessionKind::Interactive).unwrap();
+        let msg = update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n", SessionKind::Interactive).unwrap();
         assert!(!msg.contains("bak-1"), "nothing was lost; got: {msg}");
     }
 
@@ -353,9 +391,10 @@ mod tests {
         update_profile(
             &dir,
             "dados_pessoais:\n  nome_completo: Maria\n  cpf: \"000.111.222-33\"\n",
+            SessionKind::Interactive,
         )
         .unwrap();
-        let msg = update_profile(&dir, "dados_pessoais:\n  nome_completo: Maria\n").unwrap();
+        let msg = update_profile(&dir, "dados_pessoais:\n  nome_completo: Maria\n", SessionKind::Interactive).unwrap();
         assert!(msg.contains("cpf"), "got: {msg}");
         assert!(msg.contains("bak-1"), "got: {msg}");
     }
@@ -373,13 +412,13 @@ mod tests {
         let first = "experiencia:\n  - empresa: A\n";
         // Fill the rotation so the slot before the oldest is occupied.
         for _ in 0..BACKUP_DEPTH {
-            update_profile(&dir, first).unwrap();
+            update_profile(&dir, first, SessionKind::Interactive).unwrap();
         }
         let blocker = backup_path(&dir, BACKUP_DEPTH);
         std::fs::create_dir(&blocker).unwrap();
         std::fs::write(blocker.join("occupied"), "x").unwrap();
 
-        assert!(update_profile(&dir, "experiencia: []\n").is_err());
+        assert!(update_profile(&dir, "experiencia: []\n", SessionKind::Interactive).is_err());
         let still = std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap();
         assert!(still.contains("empresa: A"), "profile must be untouched; got: {still}");
     }
@@ -418,7 +457,7 @@ mod tests {
     fn writes_valid_yaml() {
         let dir = temp_dir("prof-valid");
         let yaml = "dados_pessoais:\n  nome_completo: \"Maria\"\nexperiencia:\n  - empresa: \"ACME\"\n    cargo: \"Dev\"\n";
-        let msg = update_profile(&dir, yaml).unwrap();
+        let msg = update_profile(&dir, yaml, SessionKind::Interactive).unwrap();
         assert!(msg.contains("1 experiência"), "got: {msg}");
         let written = std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap();
         assert_eq!(written, yaml);
