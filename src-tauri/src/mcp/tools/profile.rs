@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use crate::commands::perfil::CandidatoBase;
+
 /// Reads one of the candidate's configuration files from data_dir.
 ///
 /// Fails loud when the file is absent. The prompt path these tools replace used
@@ -54,6 +56,103 @@ fn rotate_backups(data_dir: &Path) -> Result<(), String> {
     }
     std::fs::rename(&current, backup_path(data_dir, 1))
         .map_err(|e| format!("erro ao criar backup do perfil: {e}"))
+}
+
+/// The blocks whose size we report. Names are the user-facing singular/plural
+/// pair, in pt-BR, because this string is read by the model and shown to the user.
+fn block_counts(base: &CandidatoBase) -> [(&'static str, &'static str, usize); 6] {
+    [
+        ("experiência", "experiências", base.experiencia.len()),
+        ("projeto", "projetos", base.projetos.len()),
+        ("formação", "formações", base.formacao.len()),
+        ("competência", "competências", base.competencias.len()),
+        ("idioma", "idiomas", base.idiomas.len()),
+        ("gap", "gaps", base.gaps_conhecidos.len()),
+    ]
+}
+
+/// Personal fields worth naming when they go from filled to blank. `links` is a
+/// list and is not covered here; losing every link is rare and the block counts
+/// do not track it — accepted gap, documented rather than silently ignored.
+fn personal_fields(base: &CandidatoBase) -> [(&'static str, &str); 8] {
+    let d = &base.dados_pessoais;
+    [
+        ("nome_completo", d.nome_completo.as_str()),
+        ("email", d.email.as_str()),
+        ("telefone", d.telefone.as_str()),
+        ("localizacao_atual", d.localizacao_atual.as_str()),
+        ("endereco", d.endereco.as_str()),
+        ("nacionalidade", d.nacionalidade.as_str()),
+        ("data_nascimento", d.data_nascimento.as_str()),
+        ("cpf", d.cpf.as_str()),
+    ]
+}
+
+/// What a write did, and whether anything was lost doing it.
+struct ChangeSummary {
+    text: String,
+    lossy: bool,
+}
+
+/// Builds the sentence the model gets back after a write.
+///
+/// Counts, not a textual diff: what matters is what disappeared, not how the
+/// YAML was reformatted. The minus sign is U+2212, so it survives terminals
+/// that would swallow a leading hyphen.
+fn describe_change(prev: Option<&CandidatoBase>, next: &CandidatoBase) -> ChangeSummary {
+    let Some(prev) = prev else {
+        let created: Vec<String> = block_counts(next)
+            .iter()
+            .filter(|(_, _, n)| *n > 0)
+            .map(|(one, many, n)| format!("{n} {}", if *n == 1 { one } else { many }))
+            .collect();
+        let text = if created.is_empty() {
+            "Perfil criado, ainda sem conteúdo.".to_string()
+        } else {
+            format!("Perfil criado: {}.", created.join(", "))
+        };
+        return ChangeSummary { text, lossy: false };
+    };
+
+    let before = block_counts(prev);
+    let after = block_counts(next);
+    let mut changes: Vec<String> = Vec::new();
+    let mut lossy = false;
+    for (i, (one, many, new_n)) in after.iter().enumerate() {
+        let old_n = before[i].2;
+        let delta = *new_n as i64 - old_n as i64;
+        if delta == 0 {
+            continue;
+        }
+        let magnitude = delta.unsigned_abs();
+        let noun = if magnitude == 1 { one } else { many };
+        let sign = if delta > 0 {
+            "+"
+        } else {
+            lossy = true;
+            "−"
+        };
+        changes.push(format!("{sign}{magnitude} {noun}"));
+    }
+
+    let prev_personal = personal_fields(prev);
+    let blanked: Vec<&str> = personal_fields(next)
+        .iter()
+        .enumerate()
+        .filter(|(i, (_, value))| value.trim().is_empty() && !prev_personal[*i].1.trim().is_empty())
+        .map(|(_, (name, _))| *name)
+        .collect();
+    if !blanked.is_empty() {
+        lossy = true;
+        changes.push(format!("apagado(s) em dados_pessoais: {}", blanked.join(", ")));
+    }
+
+    let text = if changes.is_empty() {
+        "Perfil gravado, sem alterações de conteúdo.".to_string()
+    } else {
+        format!("Perfil gravado. {}.", changes.join(", "))
+    };
+    ChangeSummary { text, lossy }
 }
 
 /// Validates the full candidate_base.yaml content against the serde structs
@@ -145,6 +244,68 @@ mod tests {
         let dir = temp_dir("strategy-missing");
         let err = get_strategy(&dir).unwrap_err();
         assert!(err.contains("strategy.md"), "got: {err}");
+    }
+
+    fn base_from(yaml: &str) -> CandidatoBase {
+        crate::commands::perfil::parse_candidato_base_str(yaml).unwrap()
+    }
+
+    #[test]
+    fn diff_reports_losses_per_block() {
+        let prev = base_from(
+            "experiencia:\n  - empresa: A\n  - empresa: B\ncompetencias:\n  - Rust\n  - Go\n",
+        );
+        let next = base_from("experiencia:\n  - empresa: A\n");
+        let out = describe_change(Some(&prev), &next);
+        assert!(out.text.contains("−1 experiência"), "got: {}", out.text);
+        assert!(out.text.contains("−2 competências"), "got: {}", out.text);
+        assert!(out.lossy);
+    }
+
+    #[test]
+    fn diff_reports_gains() {
+        let prev = base_from("experiencia:\n  - empresa: A\n");
+        let next = base_from("experiencia:\n  - empresa: A\n  - empresa: B\n");
+        let out = describe_change(Some(&prev), &next);
+        assert!(out.text.contains("+1 experiência"), "got: {}", out.text);
+        assert!(!out.lossy, "a pure addition is not lossy");
+    }
+
+    /// Review Focus 3: re-saving the same content must not invent movement.
+    #[test]
+    fn diff_says_nothing_changed_when_nothing_changed() {
+        let yaml = "experiencia:\n  - empresa: A\ncompetencias:\n  - Rust\n";
+        let prev = base_from(yaml);
+        let next = base_from(yaml);
+        let out = describe_change(Some(&prev), &next);
+        assert!(out.text.contains("sem alterações"), "got: {}", out.text);
+        assert!(!out.lossy);
+    }
+
+    /// Review Focus 4: block counts are unchanged, but personal data vanished.
+    /// This is the case that a "does the text contain a minus sign" check would miss.
+    #[test]
+    fn diff_flags_personal_fields_that_went_blank() {
+        let prev =
+            base_from("dados_pessoais:\n  nome_completo: Maria\n  cpf: \"000.111.222-33\"\n");
+        let next = base_from("dados_pessoais:\n  nome_completo: Maria\n");
+        let out = describe_change(Some(&prev), &next);
+        assert!(out.text.contains("cpf"), "got: {}", out.text);
+        assert!(
+            !out.text.contains("nome_completo"),
+            "unchanged field must stay quiet; got: {}",
+            out.text
+        );
+        assert!(out.lossy, "losing a personal field is a loss even with no block change");
+    }
+
+    /// Review Focus 1: first write ever — there is no previous profile to compare against.
+    #[test]
+    fn diff_describes_a_first_write() {
+        let next = base_from("experiencia:\n  - empresa: A\n");
+        let out = describe_change(None, &next);
+        assert!(out.text.contains("Perfil criado"), "got: {}", out.text);
+        assert!(!out.lossy, "a first write cannot lose anything");
     }
 
     #[test]
