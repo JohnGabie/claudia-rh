@@ -297,7 +297,10 @@ pub fn guardar_candidato_base(app: AppHandle, dados: CandidatoBase) -> Result<()
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = serde_yaml::to_string(&dados).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    // Same backup-then-atomic-replace the MCP tool uses. This path is the Perfil
+    // tab's form saves, and it used to be a bare fs::write.
+    let data_dir = path.parent().ok_or("caminho do perfil sem diretório")?;
+    crate::mcp::tools::write_profile_atomically(data_dir, &content)
 }
 
 #[tauri::command]
@@ -444,7 +447,20 @@ fn build_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
 /// so the claude CLI exposes claudia's typed tools to the model. Zero user
 /// config: current_exe() resolves the path in dev and installed builds alike.
 /// Shared by every claude spawn (profile chat, main PTY session, linkedin).
-pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
+/// One config file per session kind.
+///
+/// The file used to be identical for every spawn, so overwriting it was
+/// harmless. It now carries --session-kind, which decides who may write the
+/// profile: a shared path means a Perfil spawn can hand the autonomous session
+/// write access, or steal it from the user mid-conversation.
+fn mcp_config_filename(session: crate::mcp::SessionKind) -> String {
+    format!("mcp-config-{}.json", session.as_flag())
+}
+
+pub fn write_mcp_config(
+    app: &AppHandle,
+    session: crate::mcp::SessionKind,
+) -> Option<std::path::PathBuf> {
     let data_dir = app.path().app_data_dir().ok()?;
     let exe = std::env::current_exe().ok()?;
     let notify_port = app.try_state::<crate::McpNotifyPort>().and_then(|s| s.0);
@@ -458,6 +474,8 @@ pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
         args.push("--notify-port".to_string());
         args.push(port.to_string());
     }
+    args.push("--session-kind".to_string());
+    args.push(session.as_flag().to_string());
     if cfg!(debug_assertions) {
         args.push("--debug".to_string());
     }
@@ -467,7 +485,7 @@ pub fn write_mcp_config(app: &AppHandle) -> Option<std::path::PathBuf> {
             "claudia": { "command": exe.to_string_lossy(), "args": args }
         }
     });
-    let path = data_dir.join("mcp-config.json");
+    let path = data_dir.join(mcp_config_filename(session));
     std::fs::write(&path, serde_json::to_string_pretty(&config).ok()?).ok()?;
     Some(path)
 }
@@ -503,7 +521,7 @@ fn spawn_perfil_claude(app: AppHandle, message: String) {
             "--include-partial-messages",
         ]);
         // Expose claudia's typed tools (update_profile, close_pendencia, …)
-        if let Some(mcp_config) = write_mcp_config(&app) {
+        if let Some(mcp_config) = write_mcp_config(&app, crate::mcp::SessionKind::Interactive) {
             cmd.arg("--mcp-config").arg(mcp_config);
         }
         let mut child = match cmd
@@ -705,7 +723,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
             "--include-partial-messages",
         ]);
         // Expose claudia's typed tools (update_profile, close_pendencia, …)
-        if let Some(mcp_config) = write_mcp_config(&app) {
+        if let Some(mcp_config) = write_mcp_config(&app, crate::mcp::SessionKind::Interactive) {
             cmd.arg("--mcp-config").arg(mcp_config);
         }
         let mut child = match cmd
@@ -855,6 +873,20 @@ pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result
 
 #[cfg(test)]
 mod tests {
+    /// Before the session gate, every spawn wrote the same mcp-config.json and
+    /// clobbering it was harmless. Now its contents decide who may write the
+    /// profile, so a shared path is a race: an interactive spawn overwriting the
+    /// autonomous session's config hands that session write access.
+    #[test]
+    fn each_session_kind_gets_its_own_mcp_config_file() {
+        use crate::mcp::SessionKind;
+        let interactive = super::mcp_config_filename(SessionKind::Interactive);
+        let autonomous = super::mcp_config_filename(SessionKind::Autonomous);
+        assert_ne!(interactive, autonomous, "a shared config file makes the gate racy");
+        assert!(interactive.ends_with(".json"), "got: {interactive}");
+        assert!(autonomous.ends_with(".json"), "got: {autonomous}");
+    }
+
     use super::*;
 
     #[test]

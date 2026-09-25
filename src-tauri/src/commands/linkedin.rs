@@ -65,7 +65,7 @@ pub fn iniciar_busca_linkedin_rede(
     let prompt_file = workspace.join(".claude-system-prompt-linkedin.txt");
     std::fs::write(&prompt_file, &sys_prompt).map_err(|e| e.to_string())?;
 
-    let mcp_config = crate::commands::perfil::write_mcp_config(&app);
+    let mcp_config = crate::commands::perfil::write_mcp_config(&app, crate::mcp::SessionKind::Autonomous);
     let debug_file = crate::diagnostics::PATHS
         .get()
         .map(|p| p.dir.join("claude-startup.log"));

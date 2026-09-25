@@ -31,6 +31,16 @@ struct ClosePendenciaArgs {
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+struct ProposeProfileChangeArgs {
+    /// A pergunta ou mudança que o perfil precisa, em uma frase
+    pergunta: String,
+    /// Porque surgiu: a vaga, o formulário, o padrão observado
+    contexto: Option<String>,
+    /// ID da vaga que motivou a proposta; omita quando a questão for geral
+    vaga_id: Option<i64>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 struct VagaIdArgs {
     /// ID da vaga
     vaga_id: i64,
@@ -106,6 +116,23 @@ impl ClaudiaMcp {
         Parameters(args): Parameters<UpdateProfileArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.call("update_profile", serde_json::json!({ "yaml": args.yaml }))
+    }
+
+    #[tool(
+        description = "Regista uma mudança que o perfil do candidato precisa, para o usuário rever mais tarde. Use quando perceber que falta um dado no perfil ou que uma resposta se repete entre vagas. Omita vaga_id quando a questão não for sobre uma vaga específica. Esta é a forma correta de propor mudanças ao perfil durante a sessão de execução — update_profile não funciona aí."
+    )]
+    async fn propose_profile_change(
+        &self,
+        Parameters(args): Parameters<ProposeProfileChangeArgs>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call(
+            "propose_profile_change",
+            serde_json::json!({
+                "pergunta": args.pergunta,
+                "contexto": args.contexto,
+                "vaga_id": args.vaga_id,
+            }),
+        )
     }
 
     #[tool(
