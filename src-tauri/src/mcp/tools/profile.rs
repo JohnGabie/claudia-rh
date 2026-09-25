@@ -158,6 +158,12 @@ fn describe_change(prev: Option<&CandidatoBase>, next: &CandidatoBase) -> Change
 /// Validates the full candidate_base.yaml content against the serde structs
 /// BEFORE writing. Invalid YAML never reaches disk; the parse error goes back
 /// to the model so it can self-correct.
+///
+/// Parsing alone is not enough. Every field of CandidatoBase carries
+/// #[serde(default)] (see commands/perfil.rs) so that legacy Claude-written
+/// YAMLs keep loading — which means a one-line document deserializes into a
+/// complete, empty profile. That is exactly how the 2026-09-25 wipe happened.
+/// The defenses here are the backup and the diff, not the parse.
 pub fn update_profile(data_dir: &Path, yaml: &str) -> Result<String, String> {
     if yaml.trim().is_empty() {
         return Err("YAML vazio — envie o conteúdo completo do candidate_base.yaml".to_string());
@@ -165,18 +171,23 @@ pub fn update_profile(data_dir: &Path, yaml: &str) -> Result<String, String> {
     let parsed = crate::commands::perfil::parse_candidato_base_str(yaml)?;
 
     let path = data_dir.join("candidate_base.yaml");
+    let previous = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| crate::commands::perfil::parse_candidato_base_str(&raw).ok());
+
+    // No backup, no write.
+    rotate_backups(data_dir)?;
+
     let tmp = data_dir.join("candidate_base.yaml.tmp");
     std::fs::write(&tmp, yaml).map_err(|e| format!("erro ao escrever ficheiro temporário: {e}"))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("erro ao gravar candidate_base.yaml: {e}"))?;
 
-    Ok(format!(
-        "Perfil atualizado com sucesso: {} experiência(s), {} projeto(s), {} formação(ões), {} competência(s), {} idioma(s).",
-        parsed.experiencia.len(),
-        parsed.projetos.len(),
-        parsed.formacao.len(),
-        parsed.competencias.len(),
-        parsed.idiomas.len(),
-    ))
+    let summary = describe_change(previous.as_ref(), &parsed);
+    Ok(if summary.lossy {
+        format!("{}\nAnterior em candidate_base.yaml.bak-1.", summary.text)
+    } else {
+        summary.text
+    })
 }
 
 #[cfg(test)]
@@ -306,6 +317,71 @@ mod tests {
         let out = describe_change(None, &next);
         assert!(out.text.contains("Perfil criado"), "got: {}", out.text);
         assert!(!out.lossy, "a first write cannot lose anything");
+    }
+
+    #[test]
+    fn write_keeps_the_previous_profile_in_bak1() {
+        let dir = temp_dir("prof-keeps");
+        let v1 = "experiencia:\n  - empresa: A\n  - empresa: B\n";
+        update_profile(&dir, v1).unwrap();
+        update_profile(&dir, "experiencia: []\n").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-1")).unwrap(), v1);
+    }
+
+    #[test]
+    fn write_that_removes_content_says_so_and_points_at_the_backup() {
+        let dir = temp_dir("prof-says");
+        update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n").unwrap();
+        let msg = update_profile(&dir, "experiencia: []\n").unwrap();
+        assert!(msg.contains("−2 experiências"), "got: {msg}");
+        assert!(msg.contains("bak-1"), "a lossy write must point at the backup; got: {msg}");
+    }
+
+    #[test]
+    fn write_without_losses_does_not_mention_the_backup() {
+        let dir = temp_dir("prof-nomention");
+        update_profile(&dir, "experiencia:\n  - empresa: A\n").unwrap();
+        let msg = update_profile(&dir, "experiencia:\n  - empresa: A\n  - empresa: B\n").unwrap();
+        assert!(!msg.contains("bak-1"), "nothing was lost; got: {msg}");
+    }
+
+    /// A loss with no change in block counts must still point at the backup.
+    /// This is the case the `lossy` flag exists for.
+    #[test]
+    fn write_that_blanks_a_personal_field_points_at_the_backup() {
+        let dir = temp_dir("prof-blank");
+        update_profile(
+            &dir,
+            "dados_pessoais:\n  nome_completo: Maria\n  cpf: \"000.111.222-33\"\n",
+        )
+        .unwrap();
+        let msg = update_profile(&dir, "dados_pessoais:\n  nome_completo: Maria\n").unwrap();
+        assert!(msg.contains("cpf"), "got: {msg}");
+        assert!(msg.contains("bak-1"), "got: {msg}");
+    }
+
+    /// Review Focus 2: no backup, no write. Losing the rollback silently is the
+    /// failure mode this whole task exists to prevent.
+    ///
+    /// The obstacle is a NON-EMPTY directory in the OLDEST slot. Two properties
+    /// of rotation make the other slots useless for this: an empty directory is
+    /// renamed aside like any file, and the loop walks downward precisely to
+    /// clear each slot before using it. Only the last slot is never vacated.
+    #[test]
+    fn write_aborts_when_the_backup_cannot_be_made() {
+        let dir = temp_dir("prof-noback");
+        let first = "experiencia:\n  - empresa: A\n";
+        // Fill the rotation so the slot before the oldest is occupied.
+        for _ in 0..BACKUP_DEPTH {
+            update_profile(&dir, first).unwrap();
+        }
+        let blocker = backup_path(&dir, BACKUP_DEPTH);
+        std::fs::create_dir(&blocker).unwrap();
+        std::fs::write(blocker.join("occupied"), "x").unwrap();
+
+        assert!(update_profile(&dir, "experiencia: []\n").is_err());
+        let still = std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap();
+        assert!(still.contains("empresa: A"), "profile must be untouched; got: {still}");
     }
 
     #[test]
