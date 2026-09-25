@@ -108,6 +108,16 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
             tools::create_pendencia(&cfg.data_dir, vaga_id, categoria, descricao)
                 .inspect(|_| notify(cfg, "db"))
         }
+        "propose_profile_change" => {
+            let pergunta = args["pergunta"].as_str().ok_or("parâmetro 'pergunta' em falta")?;
+            tools::propose_profile_change(
+                &cfg.data_dir,
+                pergunta,
+                args["contexto"].as_str(),
+                args["vaga_id"].as_i64(),
+            )
+            .inspect(|_| notify(cfg, "db"))
+        }
         // Read tools: they replace what the runtime prompt used to carry inline.
         // No notify() — reads change nothing the GUI needs to refresh for.
         "get_candidate_profile" => tools::get_candidate_profile(&cfg.data_dir),
@@ -147,6 +157,20 @@ mod dispatch_tests {
         assert_eq!(SessionKind::from_flag("autonomous"), SessionKind::Autonomous);
         assert_eq!(SessionKind::from_flag("whatever"), SessionKind::Autonomous);
         assert_eq!(SessionKind::from_flag(""), SessionKind::Autonomous);
+    }
+
+    #[test]
+    fn propose_profile_change_is_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-propose");
+        seed_db(&dir);
+        let cfg = cfg_for(&dir);
+        let out = dispatch(
+            &cfg,
+            "propose_profile_change",
+            &serde_json::json!({ "pergunta": "Aceita viajar?" }),
+        )
+        .unwrap();
+        assert!(out.contains("Aceita viajar?"), "got: {out}");
     }
 
     /// A read tool that exists but is not wired into dispatch is invisible to the
