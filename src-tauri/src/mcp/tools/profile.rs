@@ -38,15 +38,26 @@ fn backup_path(data_dir: &Path, n: usize) -> std::path::PathBuf {
     data_dir.join(format!("candidate_base.yaml.bak-{n}"))
 }
 
-/// Slides candidate_base.yaml.bak-N to .bak-(N+1) and moves the current profile
-/// into .bak-1. The oldest backup falls off the end.
-///
-/// A missing profile is not an error: the first write has nothing to preserve.
-fn rotate_backups(data_dir: &Path) -> Result<(), String> {
-    let current = data_dir.join("candidate_base.yaml");
-    if !current.exists() {
-        return Ok(());
+/// Rejects the rotation before it mutates anything if a slot is occupied by a
+/// directory. Renaming a file onto a non-empty directory fails, and the sliding
+/// loop has no rollback — without this check a mid-loop failure would destroy
+/// the oldest generation and leave a hole in the numbering, for a write that
+/// never happened.
+fn check_slots_are_writable(data_dir: &Path) -> Result<(), String> {
+    for n in 1..=BACKUP_DEPTH {
+        let slot = backup_path(data_dir, n);
+        if slot.is_dir() {
+            return Err(format!(
+                "candidate_base.yaml.bak-{n} é uma pasta; remova-a para o backup poder ser criado"
+            ));
+        }
     }
+    Ok(())
+}
+
+/// Slides candidate_base.yaml.bak-N to .bak-(N+1). The oldest backup falls off
+/// the end. Does not touch the live profile — see `archive_current`.
+fn slide_backups(data_dir: &Path) -> Result<(), String> {
     // Walk down so each slot is free before we move into it.
     for n in (1..BACKUP_DEPTH).rev() {
         let from = backup_path(data_dir, n);
@@ -55,8 +66,52 @@ fn rotate_backups(data_dir: &Path) -> Result<(), String> {
                 .map_err(|e| format!("erro ao rodar backup {n}: {e}"))?;
         }
     }
-    std::fs::rename(&current, backup_path(data_dir, 1))
+    Ok(())
+}
+
+/// Copies the live profile into .bak-1.
+///
+/// A copy, not a move: the profile must never be absent from its canonical
+/// path. Moving it away meant a later failure — a full disk, a scanner holding
+/// the file — left the app with no profile at all, and the error message said
+/// nothing about where it went.
+fn archive_current(data_dir: &Path) -> Result<(), String> {
+    std::fs::copy(data_dir.join("candidate_base.yaml"), backup_path(data_dir, 1))
+        .map(|_| ())
         .map_err(|e| format!("erro ao criar backup do perfil: {e}"))
+}
+
+/// Preserves the current profile before it is overwritten.
+///
+/// A missing profile is not an error: the first write has nothing to preserve.
+fn rotate_backups(data_dir: &Path) -> Result<(), String> {
+    if !data_dir.join("candidate_base.yaml").exists() {
+        return Ok(());
+    }
+    check_slots_are_writable(data_dir)?;
+    slide_backups(data_dir)?;
+    archive_current(data_dir)
+}
+
+/// Backs up, then replaces candidate_base.yaml atomically.
+///
+/// Every path that overwrites the profile goes through here — the MCP tool and
+/// the Perfil tab's form saves alike. The form path used to be a bare
+/// fs::write: no backup, and a crash mid-save left a truncated profile with
+/// nothing to fall back on.
+pub(crate) fn write_profile_atomically(data_dir: &Path, yaml: &str) -> Result<(), String> {
+    // No backup, no write.
+    rotate_backups(data_dir)?;
+
+    let tmp = data_dir.join("candidate_base.yaml.tmp");
+    std::fs::write(&tmp, yaml).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("erro ao escrever ficheiro temporário: {e}")
+    })?;
+    std::fs::rename(&tmp, data_dir.join("candidate_base.yaml")).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("erro ao gravar candidate_base.yaml: {e}")
+    })
 }
 
 /// The blocks whose size we report. Names are the user-facing singular/plural
@@ -95,24 +150,53 @@ struct ChangeSummary {
     lossy: bool,
 }
 
+/// What was on disk before this write.
+enum Previous<'a> {
+    /// No profile existed.
+    None,
+    /// A profile existed but could not be parsed, so there is nothing to diff
+    /// against. Distinct from None: this write REPLACES something.
+    Unreadable,
+    Parsed(&'a CandidatoBase),
+}
+
 /// Builds the sentence the model gets back after a write.
 ///
 /// Counts, not a textual diff: what matters is what disappeared, not how the
 /// YAML was reformatted. The minus sign is U+2212, so it survives terminals
 /// that would swallow a leading hyphen.
-fn describe_change(prev: Option<&CandidatoBase>, next: &CandidatoBase) -> ChangeSummary {
-    let Some(prev) = prev else {
-        let created: Vec<String> = block_counts(next)
-            .iter()
-            .filter(|(_, _, n)| *n > 0)
-            .map(|(one, many, n)| format!("{n} {}", if *n == 1 { one } else { many }))
-            .collect();
-        let text = if created.is_empty() {
-            "Perfil criado, ainda sem conteúdo.".to_string()
-        } else {
-            format!("Perfil criado: {}.", created.join(", "))
-        };
-        return ChangeSummary { text, lossy: false };
+///
+/// `bytes_identical` is what separates "nothing happened" from "everything was
+/// rewritten and the counts happen to match" — the counts alone cannot tell
+/// those apart, and the second one is a data loss.
+fn describe_change(
+    prev: Previous<'_>,
+    next: &CandidatoBase,
+    bytes_identical: bool,
+) -> ChangeSummary {
+    let prev = match prev {
+        Previous::None => {
+            let created: Vec<String> = block_counts(next)
+                .iter()
+                .filter(|(_, _, n)| *n > 0)
+                .map(|(one, many, n)| format!("{n} {}", if *n == 1 { one } else { many }))
+                .collect();
+            let text = if created.is_empty() {
+                "Perfil criado, ainda sem conteúdo.".to_string()
+            } else {
+                format!("Perfil criado: {}.", created.join(", "))
+            };
+            return ChangeSummary { text, lossy: false };
+        }
+        Previous::Unreadable => {
+            return ChangeSummary {
+                text: "Perfil gravado. O ficheiro anterior não era legível, por isso não há \
+                       comparação — verifique o backup antes de continuar."
+                    .to_string(),
+                lossy: true,
+            };
+        }
+        Previous::Parsed(p) => p,
     };
 
     let before = block_counts(prev);
@@ -148,12 +232,27 @@ fn describe_change(prev: Option<&CandidatoBase>, next: &CandidatoBase) -> Change
         changes.push(format!("apagado(s) em dados_pessoais: {}", blanked.join(", ")));
     }
 
-    let text = if changes.is_empty() {
-        "Perfil gravado, sem alterações de conteúdo.".to_string()
-    } else {
-        format!("Perfil gravado. {}.", changes.join(", "))
-    };
-    ChangeSummary { text, lossy }
+    if changes.is_empty() {
+        // Counts and personal scalars see only a slice of the profile: nothing
+        // here tracks descriptions, achievements, technologies, respostas_modelo
+        // or links. A body gutted entry by entry moves none of them. Saying
+        // "sem alterações" there would be a false statement about the one thing
+        // the user relies on this message for.
+        return if bytes_identical {
+            ChangeSummary {
+                text: "Perfil gravado, sem alterações de conteúdo.".to_string(),
+                lossy: false,
+            }
+        } else {
+            ChangeSummary {
+                text: "Perfil gravado. O conteúdo foi reescrito sem mudar as contagens — \
+                       confirme o que ficou."
+                    .to_string(),
+                lossy: true,
+            }
+        };
+    }
+    ChangeSummary { text: format!("Perfil gravado. {}.", changes.join(", ")), lossy }
 }
 
 /// Validates the full candidate_base.yaml content against the serde structs
@@ -187,18 +286,20 @@ pub fn update_profile(
     let parsed = crate::commands::perfil::parse_candidato_base_str(yaml)?;
 
     let path = data_dir.join("candidate_base.yaml");
-    let previous = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| crate::commands::perfil::parse_candidato_base_str(&raw).ok());
+    let previous_raw = std::fs::read_to_string(&path).ok();
+    let previous_parsed = previous_raw
+        .as_deref()
+        .and_then(|raw| crate::commands::perfil::parse_candidato_base_str(raw).ok());
+    let previous = match (&previous_raw, &previous_parsed) {
+        (None, _) => Previous::None,
+        (Some(_), None) => Previous::Unreadable,
+        (Some(_), Some(p)) => Previous::Parsed(p),
+    };
+    let bytes_identical = previous_raw.as_deref() == Some(yaml);
 
-    // No backup, no write.
-    rotate_backups(data_dir)?;
+    write_profile_atomically(data_dir, yaml)?;
 
-    let tmp = data_dir.join("candidate_base.yaml.tmp");
-    std::fs::write(&tmp, yaml).map_err(|e| format!("erro ao escrever ficheiro temporário: {e}"))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("erro ao gravar candidate_base.yaml: {e}"))?;
-
-    let summary = describe_change(previous.as_ref(), &parsed);
+    let summary = describe_change(previous, &parsed, bytes_identical);
     Ok(if summary.lossy {
         format!("{}\nAnterior em candidate_base.yaml.bak-1.", summary.text)
     } else {
@@ -283,7 +384,7 @@ mod tests {
             "experiencia:\n  - empresa: A\n  - empresa: B\ncompetencias:\n  - Rust\n  - Go\n",
         );
         let next = base_from("experiencia:\n  - empresa: A\n");
-        let out = describe_change(Some(&prev), &next);
+        let out = describe_change(Previous::Parsed(&prev), &next, false);
         assert!(out.text.contains("−1 experiência"), "got: {}", out.text);
         assert!(out.text.contains("−2 competências"), "got: {}", out.text);
         assert!(out.lossy);
@@ -293,7 +394,7 @@ mod tests {
     fn diff_reports_gains() {
         let prev = base_from("experiencia:\n  - empresa: A\n");
         let next = base_from("experiencia:\n  - empresa: A\n  - empresa: B\n");
-        let out = describe_change(Some(&prev), &next);
+        let out = describe_change(Previous::Parsed(&prev), &next, false);
         assert!(out.text.contains("+1 experiência"), "got: {}", out.text);
         assert!(!out.lossy, "a pure addition is not lossy");
     }
@@ -304,7 +405,7 @@ mod tests {
         let yaml = "experiencia:\n  - empresa: A\ncompetencias:\n  - Rust\n";
         let prev = base_from(yaml);
         let next = base_from(yaml);
-        let out = describe_change(Some(&prev), &next);
+        let out = describe_change(Previous::Parsed(&prev), &next, true);
         assert!(out.text.contains("sem alterações"), "got: {}", out.text);
         assert!(!out.lossy);
     }
@@ -316,7 +417,7 @@ mod tests {
         let prev =
             base_from("dados_pessoais:\n  nome_completo: Maria\n  cpf: \"000.111.222-33\"\n");
         let next = base_from("dados_pessoais:\n  nome_completo: Maria\n");
-        let out = describe_change(Some(&prev), &next);
+        let out = describe_change(Previous::Parsed(&prev), &next, false);
         assert!(out.text.contains("cpf"), "got: {}", out.text);
         assert!(
             !out.text.contains("nome_completo"),
@@ -330,9 +431,128 @@ mod tests {
     #[test]
     fn diff_describes_a_first_write() {
         let next = base_from("experiencia:\n  - empresa: A\n");
-        let out = describe_change(None, &next);
+        let out = describe_change(Previous::None, &next, false);
         assert!(out.text.contains("Perfil criado"), "got: {}", out.text);
         assert!(!out.lossy, "a first write cannot lose anything");
+    }
+
+    /// I1: the Perfil tab's form saves went through a bare fs::write — no
+    /// backup, no temp file. Roughly half the profile writes a real user makes.
+    /// Spec objective 1 is unqualified: no write destroys the previous state
+    /// without leaving a copy.
+    #[test]
+    fn the_shared_writer_backs_up_and_is_atomic() {
+        let dir = temp_dir("prof-shared-writer");
+        let original = "experiencia:\n  - empresa: A\n";
+        write_profile_atomically(&dir, original).unwrap();
+        write_profile_atomically(&dir, "experiencia: []\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(backup_path(&dir, 1)).unwrap(),
+            original,
+            "the shared writer must leave a backup"
+        );
+
+        std::fs::create_dir(dir.join("candidate_base.yaml.tmp")).unwrap();
+        assert!(write_profile_atomically(&dir, "experiencia:\n  - empresa: C\n").is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap(),
+            "experiencia: []\n",
+            "a failed write must leave the profile where it was"
+        );
+    }
+
+    /// C1: block counts and personal scalars can both be unchanged while the
+    /// body of every entry is gutted. Claiming "sem alterações" there is worse
+    /// than the wipe this branch fixes — that one at least announced zeros.
+    #[test]
+    fn write_that_guts_entry_bodies_is_not_reported_as_unchanged() {
+        let dir = temp_dir("prof-gutted");
+        let full = "experiencia:\n  - empresa: A\n    cargo: Dev\n    descricao: \"Liderou a migração\"\n    conquistas:\n      - \"Reduziu custos 40%\"\nrespostas_modelo:\n  pretensao_salarial_texto: \"8000 EUR\"\n";
+        let gutted = "experiencia:\n  - empresa: A\n    cargo: Dev\n";
+        update_profile(&dir, full, SessionKind::Interactive).unwrap();
+        let msg = update_profile(&dir, gutted, SessionKind::Interactive).unwrap();
+        assert!(!msg.contains("sem alterações"), "content was lost; got: {msg}");
+        assert!(msg.contains("bak-1"), "a lossy write must point at the backup; got: {msg}");
+    }
+
+    /// C1, other half: a byte-identical re-save must still stay quiet.
+    #[test]
+    fn identical_bytes_are_still_reported_as_unchanged() {
+        let dir = temp_dir("prof-identical");
+        let yaml = "experiencia:\n  - empresa: A\n    descricao: \"x\"\n";
+        update_profile(&dir, yaml, SessionKind::Interactive).unwrap();
+        let msg = update_profile(&dir, yaml, SessionKind::Interactive).unwrap();
+        assert!(msg.contains("sem alterações"), "got: {msg}");
+        assert!(!msg.contains("bak-1"), "nothing was lost; got: {msg}");
+    }
+
+    /// C2: the profile must never be absent from its canonical path. Rotating the
+    /// live file away before writing turned a harmless disk error into a profile
+    /// that vanished — with an error message that never named the backup.
+    #[test]
+    fn profile_survives_a_failed_write() {
+        let dir = temp_dir("prof-survives");
+        let original = "experiencia:\n  - empresa: A\n";
+        update_profile(&dir, original, SessionKind::Interactive).unwrap();
+        // A directory where the temp file goes makes the write fail.
+        std::fs::create_dir(dir.join("candidate_base.yaml.tmp")).unwrap();
+        assert!(update_profile(&dir, "experiencia: []\n", SessionKind::Interactive).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap(),
+            original,
+            "the profile must still be at its canonical path after a failed write"
+        );
+    }
+
+    /// I4: "there was no profile" and "there was one and I could not read it" are
+    /// very different states. Reporting the second as "Perfil criado" gives the
+    /// most alarming case the most reassuring message.
+    #[test]
+    fn unreadable_previous_profile_is_not_announced_as_a_creation() {
+        let dir = temp_dir("prof-unreadable");
+        std::fs::write(dir.join("candidate_base.yaml"), "experiencia: [ { unclosed").unwrap();
+        let msg =
+            update_profile(&dir, "experiencia:\n  - empresa: A\n", SessionKind::Interactive)
+                .unwrap();
+        assert!(!msg.contains("Perfil criado"), "a replacement is not a creation; got: {msg}");
+        assert!(msg.contains("bak-1"), "got: {msg}");
+    }
+
+    /// I5: the property is "no backup, no write". The obstacle-in-the-last-slot
+    /// test proves the sliding loop aborts; this one proves the archive step does.
+    #[test]
+    fn write_aborts_when_the_current_profile_cannot_be_archived() {
+        let dir = temp_dir("prof-noarchive");
+        let original = "experiencia:\n  - empresa: A\n";
+        update_profile(&dir, original, SessionKind::Interactive).unwrap();
+        // A non-empty directory in the .bak-1 slot cannot be replaced by a file.
+        let blocker = backup_path(&dir, 1);
+        std::fs::create_dir(&blocker).unwrap();
+        std::fs::write(blocker.join("occupied"), "x").unwrap();
+        assert!(update_profile(&dir, "experiencia: []\n", SessionKind::Interactive).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap(), original);
+    }
+
+    /// I6: a rotation that fails halfway must not have eaten a generation of
+    /// history for a write that never happened.
+    #[test]
+    fn failed_rotation_does_not_destroy_older_backups() {
+        let dir = temp_dir("prof-partial");
+        let yaml = "experiencia:\n  - empresa: A\n";
+        update_profile(&dir, yaml, SessionKind::Interactive).unwrap();
+        update_profile(&dir, yaml, SessionKind::Interactive).unwrap(); // .bak-1 exists
+        std::fs::write(backup_path(&dir, 2), "generation-2").unwrap();
+
+        let blocker = backup_path(&dir, 3);
+        std::fs::create_dir(&blocker).unwrap();
+        std::fs::write(blocker.join("occupied"), "x").unwrap();
+
+        assert!(update_profile(&dir, yaml, SessionKind::Interactive).is_err());
+        assert_eq!(
+            std::fs::read_to_string(backup_path(&dir, 2)).unwrap(),
+            "generation-2",
+            "an aborted rotation must leave the numbering intact"
+        );
     }
 
     #[test]
@@ -424,12 +644,16 @@ mod tests {
     }
 
     #[test]
-    fn rotation_moves_current_to_bak1() {
+    fn rotation_copies_current_into_bak1_without_removing_it() {
         let dir = temp_dir("prof-rot-1");
         std::fs::write(dir.join("candidate_base.yaml"), "v1").unwrap();
         rotate_backups(&dir).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-1")).unwrap(), "v1");
-        assert!(!dir.join("candidate_base.yaml").exists(), "current must have been moved");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("candidate_base.yaml")).unwrap(),
+            "v1",
+            "the live profile must stay in place — moving it away is what left users with none"
+        );
     }
 
     #[test]

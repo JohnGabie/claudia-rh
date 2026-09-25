@@ -9,6 +9,7 @@ mod vagas;
 
 pub use memory::get_memory_summary;
 pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga, list_pendencias};
+pub(crate) use profile::write_profile_atomically;
 pub use propostas::propose_profile_change;
 pub use profile::{get_candidate_profile, get_search_variants, get_strategy, update_profile};
 pub use vagas::{create_pendencia, register_candidatura, register_vaga, update_vaga_status};
