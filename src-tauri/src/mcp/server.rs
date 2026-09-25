@@ -127,6 +127,34 @@ impl ClaudiaMcp {
     }
 
     #[tool(
+        description = "Devolve o candidate_base.yaml COMPLETO do candidato: dados pessoais, experiência, projetos, formação, competências e idiomas. O perfil NÃO está no prompt — chame esta ferramenta antes de avaliar uma vaga ou gerar currículo/carta. Nunca invente nem assuma dados do candidato."
+    )]
+    async fn get_candidate_profile(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_candidate_profile", serde_json::json!({}))
+    }
+
+    #[tool(
+        description = "Devolve o search_variants.yaml: os termos e filtros de pesquisa que o candidato definiu. Chame antes de começar a procurar vagas."
+    )]
+    async fn get_search_variants(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_search_variants", serde_json::json!({}))
+    }
+
+    #[tool(
+        description = "Devolve o strategy.md: as preferências do candidato sobre a que vagas se candidatar e quais evitar. Chame antes de decidir se uma vaga vale a pena."
+    )]
+    async fn get_strategy(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_strategy", serde_json::json!({}))
+    }
+
+    #[tool(
+        description = "Devolve o estado recente da sessão: candidaturas de hoje e da semana, pendências por resolver e vagas puladas recentemente. Recalculado a cada chamada — chame de novo depois de se candidatar para ver os contadores atualizados."
+    )]
+    async fn get_memory_summary(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_memory_summary", serde_json::json!({}))
+    }
+
+    #[tool(
         description = "Fecha TODAS as pendências abertas de uma vaga (usar ao terminar uma vaga que estava em pendente_revisao). Preserva o texto de resolução que o usuário já tiver escrito."
     )]
     async fn close_pendencias_vaga(
@@ -217,9 +245,13 @@ impl ServerHandler for ClaudiaMcp {
         info.server_info = Implementation::new("claudia-rh", env!("CARGO_PKG_VERSION"));
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.instructions = Some(
-            "Ferramentas da Claudia RH: use update_profile para gravar o perfil \
-             (nunca escreva candidate_base.yaml diretamente) e \
-             list_pendencias/close_pendencia para gerir pendências."
+            "Ferramentas da Claudia RH. O perfil do candidato NÃO está no prompt: \
+             leia-o com get_candidate_profile, e leia get_search_variants e \
+             get_strategy antes de procurar ou avaliar vagas. Nunca invente dados \
+             do candidato — se uma leitura falhar, pare e reporte em vez de assumir. \
+             Use update_profile para gravar o perfil (nunca escreva \
+             candidate_base.yaml diretamente) e list_pendencias/close_pendencia \
+             para gerir pendências."
                 .into(),
         );
         info

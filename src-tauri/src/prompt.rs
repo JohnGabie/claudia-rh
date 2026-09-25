@@ -26,7 +26,7 @@ pub fn montar_prompt_sistema(
         .replace("{{DB_PATH}}", &db_path_str)
 }
 
-fn build_memory_summary(conn: &Connection) -> String {
+pub(crate) fn build_memory_summary(conn: &Connection) -> String {
     let hoje: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM candidaturas WHERE date(enviada_em) = date('now')",

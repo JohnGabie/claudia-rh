@@ -1,12 +1,14 @@
 // One file per domain (see .claude/MCP-DESIGN.md — extensibility contract):
 // adding tool #10 must cost the same as tool #4. Shared helpers live here.
 
+mod memory;
 mod pendencias;
 mod profile;
 mod vagas;
 
+pub use memory::get_memory_summary;
 pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga, list_pendencias};
-pub use profile::update_profile;
+pub use profile::{get_candidate_profile, get_search_variants, get_strategy, update_profile};
 pub use vagas::{create_pendencia, register_candidatura, register_vaga, update_vaga_status};
 
 use std::path::Path;

@@ -81,6 +81,12 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
             tools::create_pendencia(&cfg.data_dir, vaga_id, categoria, descricao)
                 .inspect(|_| notify(cfg, "db"))
         }
+        // Read tools: they replace what the runtime prompt used to carry inline.
+        // No notify() — reads change nothing the GUI needs to refresh for.
+        "get_candidate_profile" => tools::get_candidate_profile(&cfg.data_dir),
+        "get_search_variants" => tools::get_search_variants(&cfg.data_dir),
+        "get_strategy" => tools::get_strategy(&cfg.data_dir),
+        "get_memory_summary" => tools::get_memory_summary(&cfg.data_dir),
         other => Err(format!("ferramenta desconhecida: {other}")),
     };
 
@@ -90,6 +96,36 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
         Err(e) => crate::diagnostics::emit_event("mcp", "tool_err", None, &format!("{tool}: {e}")),
     }
     result
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use crate::mcp::tools::test_support::{seed_db, temp_dir};
+
+    fn cfg_for(dir: &std::path::Path) -> McpConfig {
+        McpConfig { data_dir: dir.to_path_buf(), notify_port: None, debug: false }
+    }
+
+    /// A read tool that exists but is not wired into dispatch is invisible to the
+    /// model, which is indistinguishable from not having written it at all.
+    #[test]
+    fn read_tools_are_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-reads");
+        seed_db(&dir);
+        std::fs::write(dir.join("candidate_base.yaml"), "dados_pessoais:\n").unwrap();
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n").unwrap();
+        std::fs::write(dir.join("strategy.md"), "# Estratégia\n").unwrap();
+        let cfg = cfg_for(&dir);
+        let none = serde_json::json!({});
+
+        assert_eq!(dispatch(&cfg, "get_candidate_profile", &none).unwrap(), "dados_pessoais:\n");
+        assert_eq!(dispatch(&cfg, "get_search_variants", &none).unwrap(), "variantes:\n");
+        assert_eq!(dispatch(&cfg, "get_strategy", &none).unwrap(), "# Estratégia\n");
+        assert!(dispatch(&cfg, "get_memory_summary", &none)
+            .unwrap()
+            .contains("Applications today:"));
+    }
 }
 
 /// Push notification to the GUI: connect to the localhost port the app opened

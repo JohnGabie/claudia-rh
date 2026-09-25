@@ -2,6 +2,32 @@
 
 use std::path::Path;
 
+/// Reads one of the candidate's configuration files from data_dir.
+///
+/// Fails loud when the file is absent. The prompt path these tools replace used
+/// unwrap_or_default(), so a missing file became an empty string and the model
+/// worked from a blank profile without ever knowing — inventing CV data is worse
+/// than refusing to start.
+fn read_data_file(data_dir: &Path, name: &str) -> Result<String, String> {
+    std::fs::read_to_string(data_dir.join(name))
+        .map_err(|e| format!("erro ao ler {name}: {e}"))
+}
+
+/// Reads candidate_base.yaml so the runtime prompt no longer has to carry it.
+pub fn get_candidate_profile(data_dir: &Path) -> Result<String, String> {
+    read_data_file(data_dir, "candidate_base.yaml")
+}
+
+/// Reads search_variants.yaml — the search terms the session should try.
+pub fn get_search_variants(data_dir: &Path) -> Result<String, String> {
+    read_data_file(data_dir, "search_variants.yaml")
+}
+
+/// Reads strategy.md — the candidate's standing preferences about what to apply to.
+pub fn get_strategy(data_dir: &Path) -> Result<String, String> {
+    read_data_file(data_dir, "strategy.md")
+}
+
 /// Validates the full candidate_base.yaml content against the serde structs
 /// BEFORE writing. Invalid YAML never reaches disk; the parse error goes back
 /// to the model so it can self-correct.
@@ -43,6 +69,54 @@ mod tests {
     fn rejects_empty_yaml() {
         let dir = temp_dir("prof-empty");
         assert!(update_profile(&dir, "   \n").is_err());
+    }
+
+    #[test]
+    fn get_profile_returns_file_contents() {
+        let dir = temp_dir("prof-get");
+        let yaml = "dados_pessoais:\n  nome_completo: \"Maria\"\n";
+        std::fs::write(dir.join("candidate_base.yaml"), yaml).unwrap();
+        assert_eq!(get_candidate_profile(&dir).unwrap(), yaml);
+    }
+
+    /// The prompt path used unwrap_or_default(), so a missing profile became an
+    /// empty string and the model invented data without knowing. A read tool
+    /// must fail loud instead.
+    #[test]
+    fn get_profile_fails_when_file_missing() {
+        let dir = temp_dir("prof-get-missing");
+        let err = get_candidate_profile(&dir).unwrap_err();
+        assert!(err.contains("candidate_base.yaml"), "got: {err}");
+    }
+
+    #[test]
+    fn get_search_variants_returns_file_contents() {
+        let dir = temp_dir("variants-get");
+        let yaml = "variantes:\n  - termo: \"rust developer\"\n";
+        std::fs::write(dir.join("search_variants.yaml"), yaml).unwrap();
+        assert_eq!(get_search_variants(&dir).unwrap(), yaml);
+    }
+
+    #[test]
+    fn get_search_variants_fails_when_file_missing() {
+        let dir = temp_dir("variants-missing");
+        let err = get_search_variants(&dir).unwrap_err();
+        assert!(err.contains("search_variants.yaml"), "got: {err}");
+    }
+
+    #[test]
+    fn get_strategy_returns_file_contents() {
+        let dir = temp_dir("strategy-get");
+        let md = "# Estratégia\n\nPriorizar vagas remotas.\n";
+        std::fs::write(dir.join("strategy.md"), md).unwrap();
+        assert_eq!(get_strategy(&dir).unwrap(), md);
+    }
+
+    #[test]
+    fn get_strategy_fails_when_file_missing() {
+        let dir = temp_dir("strategy-missing");
+        let err = get_strategy(&dir).unwrap_err();
+        assert!(err.contains("strategy.md"), "got: {err}");
     }
 
     #[test]
