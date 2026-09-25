@@ -28,6 +28,34 @@ pub fn get_strategy(data_dir: &Path) -> Result<String, String> {
     read_data_file(data_dir, "strategy.md")
 }
 
+/// How many previous versions of the profile we keep.
+const BACKUP_DEPTH: usize = 5;
+
+fn backup_path(data_dir: &Path, n: usize) -> std::path::PathBuf {
+    data_dir.join(format!("candidate_base.yaml.bak-{n}"))
+}
+
+/// Slides candidate_base.yaml.bak-N to .bak-(N+1) and moves the current profile
+/// into .bak-1. The oldest backup falls off the end.
+///
+/// A missing profile is not an error: the first write has nothing to preserve.
+fn rotate_backups(data_dir: &Path) -> Result<(), String> {
+    let current = data_dir.join("candidate_base.yaml");
+    if !current.exists() {
+        return Ok(());
+    }
+    // Walk down so each slot is free before we move into it.
+    for n in (1..BACKUP_DEPTH).rev() {
+        let from = backup_path(data_dir, n);
+        if from.exists() {
+            std::fs::rename(&from, backup_path(data_dir, n + 1))
+                .map_err(|e| format!("erro ao rodar backup {n}: {e}"))?;
+        }
+    }
+    std::fs::rename(&current, backup_path(data_dir, 1))
+        .map_err(|e| format!("erro ao criar backup do perfil: {e}"))
+}
+
 /// Validates the full candidate_base.yaml content against the serde structs
 /// BEFORE writing. Invalid YAML never reaches disk; the parse error goes back
 /// to the model so it can self-correct.
@@ -117,6 +145,36 @@ mod tests {
         let dir = temp_dir("strategy-missing");
         let err = get_strategy(&dir).unwrap_err();
         assert!(err.contains("strategy.md"), "got: {err}");
+    }
+
+    #[test]
+    fn rotation_moves_current_to_bak1() {
+        let dir = temp_dir("prof-rot-1");
+        std::fs::write(dir.join("candidate_base.yaml"), "v1").unwrap();
+        rotate_backups(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-1")).unwrap(), "v1");
+        assert!(!dir.join("candidate_base.yaml").exists(), "current must have been moved");
+    }
+
+    #[test]
+    fn rotation_slides_older_backups_and_drops_the_sixth() {
+        let dir = temp_dir("prof-rot-slide");
+        for i in 1..=6 {
+            std::fs::write(dir.join("candidate_base.yaml"), format!("v{i}")).unwrap();
+            rotate_backups(&dir).unwrap();
+        }
+        // Newest write is v6; it is now .bak-1, and v1 fell off the end.
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-1")).unwrap(), "v6");
+        assert_eq!(std::fs::read_to_string(dir.join("candidate_base.yaml.bak-5")).unwrap(), "v2");
+        assert!(!dir.join("candidate_base.yaml.bak-6").exists(), "only five backups are kept");
+    }
+
+    /// Review Focus 1: first write ever — nothing to rotate, and that is not an error.
+    #[test]
+    fn rotation_is_a_noop_without_a_current_file() {
+        let dir = temp_dir("prof-rot-none");
+        rotate_backups(&dir).unwrap();
+        assert!(!dir.join("candidate_base.yaml.bak-1").exists());
     }
 
     #[test]
