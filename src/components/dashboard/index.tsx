@@ -147,6 +147,7 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
       listen("linkedin-session-started", () => { setLinkedinScanning(true); setSessionActive(true); }),
       listen("db-atualizada", () => { carregar(); carregarLinkedin(); carregarVariantes(); }),
       listen("chrome-reconnect-failed", () => console.warn("[Claudia RH] Chrome extension reconnection failed")),
+      listen("api-continue-exhausted", () => console.warn("[Claudia RH] API stall: continue sent 5 times, still failing")),
     ]).then((fns) => {
       if (active) {
         unlisteners.push(...fns);

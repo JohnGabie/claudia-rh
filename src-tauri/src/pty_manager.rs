@@ -4,6 +4,7 @@ use portable_pty::{native_pty_system, CommandBuilder, Child, MasterPty, PtySize}
 use rusqlite::Connection;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 struct PtyState {
@@ -17,6 +18,25 @@ static PTY: OnceCell<Mutex<Option<PtyState>>> = OnceCell::new();
 
 fn pty_cell() -> &'static Mutex<Option<PtyState>> {
     PTY.get_or_init(|| Mutex::new(None))
+}
+
+fn is_api_stall(haystack: &str) -> bool {
+    // Escapes sit between letters in PTY output, so `contains` needs the plain text.
+    let plain = diagnostics::strip_ansi(haystack);
+    plain.contains("Waiting for API response")
+        || plain.contains("stalled mid-stream")
+}
+
+fn send_continue(writer: &Arc<Mutex<Box<dyn Write + Send>>>) {
+    if let Ok(mut w) = writer.lock() {
+        let _ = w.write_all(b"continue");
+        let _ = w.flush();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    if let Ok(mut w) = writer.lock() {
+        let _ = w.write_all(b"\r");
+        let _ = w.flush();
+    }
 }
 
 /// Spawn a generic PTY process, streaming output to the frontend via `pty-output` events.
@@ -119,11 +139,13 @@ pub fn iniciar_claude(
         let mut line_buf = String::new();
         let mut checkpoint_requested = false;
         let mut reconnect_attempts: u32 = 0;
+        let mut api_continue_attempts: u32 = 0;
+        let mut last_api_continue: Option<Instant> = None;
 
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    std::thread::sleep(Duration::from_millis(5));
                 }
                 Ok(n) => {
                     let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
@@ -181,6 +203,29 @@ pub fn iniciar_claude(
                                 Some(session_id),
                                 "",
                             );
+                        }
+                    }
+
+                    // Network retry / stalled stream: skip the 2m wait and resume.
+                    // Same "continue" the dashboard Resume button already sends.
+                    if is_api_stall(&line_buf) {
+                        line_buf.clear();
+                        let cooled_down = last_api_continue
+                            .map(|t| t.elapsed() >= Duration::from_secs(20))
+                            .unwrap_or(true);
+                        if cooled_down && api_continue_attempts < 5 {
+                            api_continue_attempts += 1;
+                            last_api_continue = Some(Instant::now());
+                            let _ = app_thread.emit(
+                                "pty-output",
+                                format!(
+                                    "\r\n\x1b[1;33m[Claudia RH]\x1b[0m API stall — sending continue ({api_continue_attempts}/5)\r\n"
+                                ),
+                            );
+                            send_continue(&writer_for_thread);
+                        } else if cooled_down && api_continue_attempts == 5 {
+                            api_continue_attempts += 1;
+                            let _ = app_thread.emit("api-continue-exhausted", ());
                         }
                     }
                 }
@@ -251,4 +296,24 @@ pub fn redimensionar(rows: u16, cols: u16) -> Result<(), String> {
 
 pub fn parar() {
     *pty_cell().lock().unwrap() = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_waiting_retry_status() {
+        let msg = "Waiting for API response · will retry in 2m 33s · check your network";
+        assert!(is_api_stall(msg));
+        assert!(is_api_stall(&format!("\u{1b}[2m{msg}\u{1b}[0m")));
+    }
+
+    #[test]
+    fn detects_stalled_mid_stream() {
+        let msg = "API Error: Response stalled mid-stream. The response above may be incomplete";
+        assert!(is_api_stall(msg));
+        assert!(!is_api_stall("SESSION_CHECKPOINT_REQUESTED"));
+        assert!(!is_api_stall("Browser extension is not connected"));
+    }
 }
