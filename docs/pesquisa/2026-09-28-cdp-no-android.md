@@ -88,17 +88,57 @@ Três formas tentadas para mudar o currículo selecionado, todas falharam:
 
 A terceira é a mais informativa: o clique **registou** (o nó respondeu `clicou: INPUT`) e produziu efeito, mas o efeito errado.
 
-### Duas causas, ambas identificadas depois
+### Três causas, e a minha hipótese principal estava errada
 
-Um teste independente no Chrome do **desktop** correu os mesmos verbos e **todos funcionaram** — `dispatchMouseEvent`, `dispatchTouchEvent`, `dispatchKeyEvent`, `insertText`, e a cadeia completa árvore → `getBoxModel` → clique → verificação. Isso separa duas coisas que eu tinha juntado:
+Dois testes independentes — um no Chrome do desktop, outro no próprio emulador — isolaram o que se passava. **A escrita não estava partida; eu é que estava a escrever na aba errada.**
 
-**1. O pipeline de input do emulador estava partido.** O utilizador notou que o teclado dele, que normalmente funciona no emulador, não estava a funcionar nesse dia. Isso explica os dois primeiros falhanços: eventos de input não chegavam, enquanto o `.click()` por JavaScript — que não passa pelo pipeline — funcionava. É a assinatura exata.
+**1. A aba alvo não estava visível.** Esta é a causa principal, e é minha.
 
-**2. A coordenada apontava para o elemento errado.** No desktop, a mesma falha reproduziu-se e foi diagnosticada: o `input[type=radio]` do LinkedIn tem `opacity: 0` e 13×13 px, e a caixa dele fica **por baixo do botão de download**. `elementFromPoint` devolvia `BUTTON "Baixar resume…"`.
+O Chrome no Android mantém **um** renderer visível. Uma sondagem encontrou 13 abas nesse emulador: 1 `visible`, 11 em `<TIMEOUT>` — congeladas ou descartadas, incluindo a do LinkedIn. E os meus scripts escolhiam a aba por URL e **nunca a ativavam**:
 
-A correção: subir do `input` até ao `label[for]` visível e clicar na caixa desse. Passou a funcionar, com reversão confirmada.
+```js
+const p = alvos.find((t) => t.type === "page" && /jobs\/view/.test(t.url || ""));
+```
 
-**Provavelmente é esta a causa do "efeito errado" no Android também** — o nó que resolvi era o input cru, não o elemento que recebe a interação.
+Verificado: `t20-android-vaga.mjs`, `t21-android-modal.mjs` e `t25-resolve.mjs` têm **zero** chamadas a `/json/activate` ou `Page.bringToFront`.
+
+Um A/B controlado numa página neutra, mesma coordenada, mesma sessão, reproduz exatamente a tabela de falhas acima:
+
+| Verbo | aba **visível** | aba **escondida** |
+|---|---|---|
+| `Input.dispatchTouchEvent` | OK | **nada — o comando nem responde** |
+| `Input.dispatchMouseEvent` | OK | OK *(caminho diferente)* |
+| `adb shell input tap` | OK | nada |
+| `JS .click()` | OK | **OK** |
+| `adb shell input text` | OK | **nada** |
+| `Input.insertText` | OK | OK |
+
+Touch morto, `.click()` vivo — o meu sintoma, explicado.
+
+A correção, verificada na mesma aba que antes falhava:
+
+```js
+await fetch(`http://localhost:${PORT}/json/activate/${alvo.id}`);  // ou cdp("Page.bringToFront")
+// depois esperar por document.visibilityState === "visible"
+```
+
+Uma aba congelada revive 3–5 s depois da ativação — tem de ser *poll*, não `sleep` fixo.
+
+**2. A coordenada apontava para o elemento errado.** Causa adicional e independente, encontrada no desktop: o `input[type=radio]` do LinkedIn tem `opacity: 0` e 13×13 px, e a caixa dele fica **por baixo do botão de download**. `elementFromPoint` devolvia `BUTTON "Baixar resume…"`.
+
+A correção: subir do `input` até ao `label[for]` visível. Ativar a aba **não** resolve esta — são problemas diferentes que calharam ao mesmo tempo.
+
+**3. `hw.keyboard=no` no AVD.** O teclado do utilizador, e nada a ver com o CDP.
+
+`D:\Android\avd\bruna_pixel7_api36.avd\config.ini`, linha 77. Com `no`, o Android regista `BuiltInKeyboardId=-2` e trata o teclado como não-alfabético: teclas de navegação passam, alfanuméricas em campos de texto não.
+
+**Não era regressão desse dia** — o `config.ini` não era tocado desde 01/09/2026. O que mudou foi o contexto: mais abas abertas, e eu a falar com a errada.
+
+### A premissa que eu dei aos agentes estava invertida
+
+Eu disse que `Input.dispatchMouseEvent` passava pelo pipeline de input do Android, e que o teclado partido explicava o clique falhado. **Não passa.** Os verbos de input do CDP são injetados diretamente no renderer do Chrome, não no `InputDispatcher` do Android.
+
+Prova: `adb shell input tap` e `input text` funcionavam **antes e depois** de qualquer correção, no mesmo AVD. Os dois sintomas nunca estiveram ligados.
 
 ### E uma armadilha de segurança que saiu daí
 
@@ -130,12 +170,41 @@ Claudia RH ──CDP──► Chrome do desktop          rápido, sem custo, sem
 
 Não é uma decisão que tenha de ser tomada agora. É a mesma implementação a servir as duas.
 
+## Alterações feitas ao ambiente do utilizador
+
+Durante o diagnóstico, dois valores foram mudados em
+`D:\Android\avd\bruna_pixel7_api36.avd\config.ini`. **Original guardado em
+`config.ini.bak-20260928`**, verificado.
+
+| | antes | depois | porquê |
+|---|---|---|---|
+| `hw.keyboard` | `no` | `yes` | o teclado do utilizador passa a funcionar |
+| `hw.ramSize` | `2G` | `4096` | com 2.5 GB e 13 abas o Chrome descartava as de segundo plano — era isso que as tornava indirigíveis |
+
+Ambos sobrevivem a reboot: verificado em boot frio, o `hardware-qemu.ini` mostra
+`hw.keyboard = true` e `hw.ramSize = 4096`.
+
+**Nenhum passo manual recorrente.** A ativação da aba é código — duas linhas num
+script, não estado do emulador.
+
 ## O que continua por testar
 
-- **Escrita por índice** dentro do modal, que foi o que funcionou no desktop.
-- **Candidatura externa** por este caminho — deve funcionar (mesmo Chrome), não foi medido.
-- **`Input.insertText`** para campos de texto.
+- **Repetir a medição da escrita com a aba ativada.** Todas as falhas de escrita
+  registadas acima foram medidas contra uma aba escondida. Os números de leitura
+  continuam válidos (a leitura funciona em abas congeladas); os de escrita não
+  provam nada.
+- **Candidatura externa** por este caminho — deve funcionar, é o mesmo Chrome.
 - **Sessão longa**, ritmo, e se o LinkedIn trata um emulador de forma diferente.
+
+## Nota sobre o método
+
+Este documento foi corrigido duas vezes no mesmo dia. Primeiro porque afirmava
+que o desktop dava 0 de 20 campos com nome — media o Playwright, não a página.
+Depois porque atribuía a falha de escrita a um pipeline de input partido, quando
+a causa era eu nunca ativar a aba.
+
+As duas correções vieram de testes independentes. Nenhuma teria aparecido se eu
+tivesse confiado na primeira explicação que encaixava nos sintomas.
 
 ## Nota sobre o método
 
