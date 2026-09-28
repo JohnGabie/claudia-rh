@@ -32,11 +32,27 @@ E resolve as candidaturas externas pela mesma razão: é o mesmo Chrome, o mesmo
 
 Vaga real, autenticada, com a árvore estabilizada:
 
-| | Desktop (hoje) | **Android via CDP** | |
+| | Desktop via **Playwright** | Desktop via **CDP puro** | **Android via CDP** |
 |---|---|---|---|
-| árvore da vaga | 13 528 tok | **799 tok** | **16.9× menor** |
-| árvore do modal Easy Apply | 20 320 tok | **2 378 tok** | **8.5× menor** |
-| campos com nome utilizável | **0 de 20** | **12 de 12** | — |
+| árvore da vaga | 13 528 tok | 10 467 tok | **799 tok** |
+| árvore do modal Easy Apply | 20 320 tok | 4 313 tok | **2 378 tok** |
+| campos com nome utilizável | 0 de 20 | **12 de 12** | **12 de 12** |
+
+> **Correção (mesma data, depois de um teste independente).** A primeira versão
+> desta tabela tinha só duas colunas e afirmava que o desktop dava **0 de 20**
+> campos com nome. Isso media o *snapshot do Playwright MCP*, não a
+> acessibilidade da página. O `Accessibility.getFullAXTree` do CDP calcula o
+> nome acessível pelo algoritmo completo — elemento `label`, `aria-labelledby`,
+> conteúdo de texto — e não apenas o atributo `aria-label`, que de facto está
+> vazio.
+>
+> **O desktop por CDP puro nomeia os 12 campos, tal como o Android.** Incluindo
+> o truque do estado no rótulo (`Desmarcar seleção de X` / `Selecionar X`), que
+> eu julgava exclusivo do móvel.
+>
+> Isto reduz a vantagem do Android de 20 320 → 2 378 para **4 313 → 2 378**. O
+> emulador continua a ganhar em tokens e no sandbox, mas deixa de ser o único
+> sítio onde a árvore presta.
 
 O 16.9× não é só o ecrã ser estreito. É a versão móvel do LinkedIn não carregar os cards de recomendação, as promoções Premium e o rodapé gigante que enchiam 93% da árvore no desktop.
 
@@ -70,13 +86,25 @@ Três formas tentadas para mudar o currículo selecionado, todas falharam:
 | mesma caixa → `Input.dispatchTouchEvent` | **nada mudou** |
 | `DOM.resolveNode` → `Runtime.callFunctionOn(click)` | clicou no `INPUT` e **desmarcou os dois** — grupo ficou sem seleção |
 
-A terceira é a mais informativa: o clique **registou** (o nó respondeu `clicou: INPUT`) e produziu efeito, mas o efeito errado. Provavelmente o LinkedIn usa um controlo próprio em que o `input[type=radio]` cru não é o alvo da interação — há um wrapper que gere a seleção.
+A terceira é a mais informativa: o clique **registou** (o nó respondeu `clicou: INPUT`) e produziu efeito, mas o efeito errado.
 
-**O que funcionou:** abrir o modal, por `Runtime.evaluate` com um `.click()` no botão encontrado por `aria-label`. Esse caminho é fiável.
+### Duas causas, ambas identificadas depois
 
-**O que não funcionou:** mudar um campo específico dentro do modal.
+Um teste independente no Chrome do **desktop** correu os mesmos verbos e **todos funcionaram** — `dispatchMouseEvent`, `dispatchTouchEvent`, `dispatchKeyEvent`, `insertText`, e a cadeia completa árvore → `getBoxModel` → clique → verificação. Isso separa duas coisas que eu tinha juntado:
 
-Isto é a mesma classe de problema do desktop — e ali a solução foi o índice, que aqui não testei. A leitura melhorou muito; a escrita continua por resolver.
+**1. O pipeline de input do emulador estava partido.** O utilizador notou que o teclado dele, que normalmente funciona no emulador, não estava a funcionar nesse dia. Isso explica os dois primeiros falhanços: eventos de input não chegavam, enquanto o `.click()` por JavaScript — que não passa pelo pipeline — funcionava. É a assinatura exata.
+
+**2. A coordenada apontava para o elemento errado.** No desktop, a mesma falha reproduziu-se e foi diagnosticada: o `input[type=radio]` do LinkedIn tem `opacity: 0` e 13×13 px, e a caixa dele fica **por baixo do botão de download**. `elementFromPoint` devolvia `BUTTON "Baixar resume…"`.
+
+A correção: subir do `input` até ao `label[for]` visível e clicar na caixa desse. Passou a funcionar, com reversão confirmada.
+
+**Provavelmente é esta a causa do "efeito errado" no Android também** — o nó que resolvi era o input cru, não o elemento que recebe a interação.
+
+### E uma armadilha de segurança que saiu daí
+
+`DOM.getBoxModel` devolve coordenadas relativas ao viewport **sem validar se o elemento lá está**. O botão "Enviar candidatura" dava `y = 966` com `innerHeight = 905` — fora do ecrã. A guarda `elementFromPoint` devolvia `NADA` e recusava o clique: **decisão certa pelo motivo errado.**
+
+É preciso `DOM.scrollIntoViewIfNeeded` antes de qualquer `getBoxModel`. Sem isso, uma coordenada fora do viewport pode cair noutro elemento em vez de em nada — e aí a guarda lê o rótulo errado.
 
 ## O que isto custa
 
