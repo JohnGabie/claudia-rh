@@ -141,9 +141,73 @@ precisa de validação de que apanhou a coisa certa, não de que apanhou alguma 
 LinkedIn no formulário. O ficheiro está coberto pelo `.gitignore` do protótipo e nunca
 foi versionado. Apagar com a pasta.
 
+## Escrever nos campos: resolvido, e a solução é o achado
+
+A primeira versão deste documento dizia que os campos tinham sido lidos mas não
+preenchidos. Foram, depois — e o caminho até lá é o resultado mais útil do teste.
+
+### Quatro tentativas, e onde cada uma partiu
+
+| # | Estratégia | Resultado |
+|---|---|---|
+| 1 | `browser_click` do MCP com o `ref` da árvore | **não faz nada** — nem no botão, nem no rádio |
+| 2 | `.click()` no DOM, elemento por `aria-label` | abre o botão ✓, **não encontra os campos** |
+| 3 | `.click()` no DOM, elemento por texto do rótulo | **"radio não localizado"** |
+| 4 | `.click()` no DOM, **por índice** | **funciona** ✓ |
+
+### Porque as três primeiras falham
+
+O modal do Easy Apply tem uma assimetria que não esperava:
+
+**A árvore de acessibilidade tem os nomes:**
+```
+- radio "cv_fullstack_engineer.pdf" [checked] [ref=e1273]
+- radio "cv_joao_gabriel_hire_feed.pdf" [ref=e1291]
+```
+
+**O DOM não tem identificador nenhum:**
+```json
+{ "tag": "input", "type": "radio", "aria": "", "id": "«re»" }
+{ "tag": "input", "type": "radio", "aria": "", "id": "«rf»" }
+```
+
+`aria-label` vazio. IDs gerados pelo React, com guilhemetes: `«re»`, `«rf»`, `«rg»`.
+Nada estável para endereçar. E o `ref` que a árvore fornece não funciona com o
+`browser_click` deste servidor, dentro deste modal.
+
+**Consegue-se ver os campos e não se consegue tocar neles** — por nome.
+
+### A ponte é a ordem
+
+A árvore e o DOM listam os rádios na **mesma ordem**. Isso dá o endereço:
+
+```
+árvore (tem os nomes)                        DOM (tem os elementos)
+  [0] ● cv_fullstack_engineer.pdf     ────►  radios[0]
+  [1] ○ cv_joao_gabriel_hire_feed.pdf ────►  radios[1]   ← clicar aqui
+```
+
+Verificado: cliquei no índice 1, o snapshot passou a marcar o índice 1, restaurei o 0,
+fechei o modal, **nada submetido**.
+
+### O padrão para a Fase 2
+
+```
+LER    ← árvore de acessibilidade   (tem os rótulos; o DOM não)
+ESCREVER → DOM por índice           (a árvore não consegue clicar aqui)
+VERIFICAR ← árvore outra vez        (a única fonte de verdade)
+```
+
+Três superfícies diferentes para uma operação. **Nenhuma sozinha chega.**
+
+E a fragilidade é evidente: se o LinkedIn reordenar os elementos, ou meter um campo
+escondido no meio, o índice aponta para outro sítio — e o clique acontece na mesma, sem
+erro. É a sexta falha silenciosa possível, e esta ainda não aconteceu.
+
 ## O que continua por testar
 
-- **Preencher os campos.** O modal foi aberto e lido, não preenchido.
+- **Escrever em campo de texto.** O rádio funcionou; o telefone é `input[type=tel]` com
+  `aria-label` vazio, mesma classe de problema, não testado.
 - **Sessão longa.** Ritmo e volume reais.
 - **Outras plataformas.** O usuário não tem conta em todas; este teste é só LinkedIn.
 - **Candidatura completa**, que exige atravessar a fronteira e só o usuário pode decidir.
