@@ -6,3 +6,8 @@
 !mcp-config-teste.json
 !medicoes/
 !medicoes/*.md
+!emulacao/
+!emulacao/*.md
+!emulacao/*.json
+!emulacao/*.cmd
+emulacao/perfil-monitor/
