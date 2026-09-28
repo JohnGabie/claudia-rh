@@ -1,0 +1,8 @@
+# Tudo é descartável exceto as medições e a documentação.
+*
+!.gitignore
+!README.md
+!ACHADOS.md
+!mcp-config-teste.json
+!medicoes/
+!medicoes/*.md
