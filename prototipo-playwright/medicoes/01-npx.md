@@ -55,3 +55,13 @@ acontece uma vez.
 A condição: o app não distribui Node. Adotar isto significa exigir Node na máquina do
 usuário, ou empacotá-lo. Essa decisão é da Fase 2, não deste protótipo — mas fica dito
 que a dependência existe e não é gratuita.
+
+## Correção da revisão: "a frio" ainda é morno
+
+A revisão apanhou que limpei apenas `_npx`, não o `_cacache` do npm. Os tarballs de
+19 MB continuavam locais, portanto os **3s são "cache de resolução limpo, cache de
+pacotes quente"** — não o número de uma máquina nova.
+
+Numa máquina sem nada, o primeiro arranque será mais lento. Não o corrigi porque o
+custo de decisão é baixo (3s contra talvez 15s, uma vez) e a ressalva que importa para
+a Q4 é outra e já está escrita: **o app não distribui Node.**
