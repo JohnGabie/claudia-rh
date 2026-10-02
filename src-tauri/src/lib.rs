@@ -3,6 +3,7 @@ mod db;
 mod db_watcher;
 mod idle_watcher;
 pub mod mcp;
+pub mod browser;
 mod migration;
 mod diagnostics;
 mod notificacoes;

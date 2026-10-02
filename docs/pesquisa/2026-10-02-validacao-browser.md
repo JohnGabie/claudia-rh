@@ -94,3 +94,7 @@ Fase 0 — validação de limitações técnicas e requisitos antes da implement
 **Limites do teste:** perfil novo e deslogado, poucas visitas, nenhuma interação, rede doméstica. Não mede o que os sites fazem com **muitas candidaturas seguidas**, com cliques em velocidade de máquina, nem com a conta do usuário logada. O LinkedIn real (sessão logada, candidatura enviada) já tinha funcionado por CDP em 2026-09-28 com o Chrome 153. A Tarefa 6.3 repete isso com o binário final.
 
 **Decisão:** hipótese **não confirmada**: sem sinal de captcha extra para o Chrome for Testing. Não é argumento para trocar de binário; o motivo para reavaliar continua sendo a faixa fixa e o uso pretendido (CLA-34). Acrescentar `intl.accept_languages` ao tema (Tarefa 1.6).
+
+## Baseline: Clippy warnings before Task 1.1
+
+**Baseline clippy warnings:** 4 warnings (2026-10-02, before adding browser module and dependencies).
