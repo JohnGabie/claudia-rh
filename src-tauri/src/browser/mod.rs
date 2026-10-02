@@ -1,4 +1,5 @@
 // Browser engine: our own Chrome for Testing, driven over CDP.
+pub mod install;
 pub mod pin;
 
 use std::path::{Path, PathBuf};
