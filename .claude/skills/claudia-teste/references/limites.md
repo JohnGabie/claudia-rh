@@ -40,57 +40,45 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 - **O código confirma:** `src/components/dashboard/index.tsx:229`, `handleModoDragEnd = () => { /* ... sem backend por agora */ }`, e nenhum comando Tauri que guarde os modos.
 - **Limite do que provei:** não movi um slider. Mostrei que não há onde o valor possa ser guardado. Mover o controle e reler o estado confirmaria a divergência de ponta a ponta.
 
-## Evals de disparo (2026-10-01)
+## Evals de disparo (2026-10-01 e 02)
 
-**Resultado: 16/16 nas duas rodadas, com a descrição atual, no Sonnet.** Zero execuções inválidas (nenhuma saiu como `INVALIDO` nem com `session limit`).
+Medidos com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
 
-Medido com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet`, duas vezes em sequência. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste)`. Descrição inalterada entre as rodadas (mesmo hash do frontmatter).
+### Antigo e novo, lado a lado
 
-| Caso | Esperado | Rodada 1 | Rodada 2 |
-|---|---|---|---|
-| testa o Dashboard rodando | disparar | disparou | disparou |
-| o badge de notificações bate com o banco? | disparar | disparou | disparou |
-| tem um bug no Perfil, reproduz | disparar | disparou | disparou |
-| chama o comando obter_modo_autonomo e vê o retorno | disparar | disparou | disparou |
-| o agente parou onde devia? | disparar | disparou | disparou |
-| compara Claude e Grok na mesma tarefa | disparar | disparou | disparou |
-| **não gostei do layout do Dashboard** | disparar | disparou | disparou |
-| **o bug do Perfil tá acontecendo de novo** | disparar | disparou | disparou |
-| **olha o que tá errado nessa tela** | disparar | disparou | disparou |
-| **só mexi no CSS, confere se ficou bom** | disparar | disparou | disparou |
-| **corrige este bug no Perfil** | disparar | disparou | disparou |
-| roda cargo test | não disparar | não disparou | não disparou |
-| candidata nessa vaga do LinkedIn | não disparar | não disparou | não disparou |
-| registra uma issue no Linear | não disparar | não disparou | não disparou |
-| explica o pty_manager.rs | não disparar | não disparou | não disparou |
-| qual a cor do tema? | não disparar | não disparou | não disparou |
+| Modelo | Descrição antiga (935 chars) | Descrição nova (965 chars) |
+|---|---|---|
+| Sonnet, rodada 1 | 16/16 | 16/16 |
+| Sonnet, rodada 2 | 16/16 | 16/16 |
+| Opus, rodada 1 | 15/16 | 16/16 |
+| Opus, rodada 2 | 15/16 | 16/16 |
 
-Em negrito, os 5 que tinham falhado numa corrida anterior. Aquelas falhas coincidiram com o limite de uso da conta se esgotando durante a corrida; com o limite renovado, os 5 disparam nas duas rodadas.
+Execuções inválidas na medição que valeu: **0** em todas as oito. Antes dela, 17 execuções foram descartadas por `session limit` (1 numa rodada do Sonnet e 16 na rodada seguinte), e a medição foi refeita inteira depois do limite renovar.
 
+### O caso que mudou
 
-### Opus (2026-10-01)
+`corrige este bug no Perfil`:
 
-**Resultado: 15/16 nas duas rodadas.** Zero execuções inválidas. Descrição inalterada (mesmo hash do frontmatter).
+| | Antiga | Nova |
+|---|---|---|
+| Opus r1 | falha: primeira ferramenta `Bash` | dispara `Skill(claudia-teste)` |
+| Opus r2 | falha: primeira ferramenta `ToolSearch` | dispara `Skill(claudia-teste)` |
+| Sonnet r1 e r2 | dispara | dispara |
 
-Os outros 15 casos se comportam como no Sonnet: todos os "deve disparar" restantes disparam, e os 5 "não deve disparar" não disparam, nas duas rodadas.
+Nenhum dos outros 15 casos piorou em nenhum dos dois modelos: os 11 "deve disparar" disparam e os 5 "não deve disparar" não disparam, nas quatro rodadas com a descrição nova.
 
-**O caso que falha, nas duas rodadas, é `corrige este bug no Perfil`:**
+### O que mudou na descrição
 
-| Rodada | Primeira ferramenta do modelo |
-|---|---|
-| 1 | `Bash` |
-| 2 | `ToolSearch` |
+- Entrou um gatilho explícito de bug: "QUALQUER bug do app, inclusive pedido curto como 'corrige este bug', 'o bug tá acontecendo de novo' ou 'tem um bug no X': carregue esta skill ANTES de abrir ou editar código, porque o primeiro passo é reproduzir no app rodando."
+- Para caber em 1.024 caracteres, saiu "Notificações" da lista de telas, saiu o exemplo "o agente parou onde devia?" e os exemplos de bug que estavam dentro de um parêntese foram fundidos no gatilho novo. Isso não piorou nenhum caso medido, mas "Notificações" e esse exemplo deixaram de estar escritos na descrição.
 
-O Opus vai direto ao código, sem carregar a skill primeiro. Ao contrário das falhas anteriores, esta **não** coincide com limite de uso (zero inválidas). É uma falha real do disparo neste modelo, num pedido de correção que não diz "reproduz" nem descreve sintoma.
+### Casos de falha de medição já descartados
 
-O `SKILL.md` já diz "corrige este bug — reproduzir antes de corrigir". Isso não foi suficiente para o Opus nesse prompt curto.
+Os números 5/16, 6/16, 7/16 e 11/16 de corridas anteriores deste documento foram descartados. Vinham de um runner com defeito (`shell: true` cortava o prompt em vários argumentos), do `run_eval.py` oficial (que não funciona no Windows, `WinError 10038`), ou de execuções falhadas contadas como "não disparou".
 
-**Não alterei a descrição.** A medição pedia só a descrição atual. Se quiser corrigir, é uma decisão separada: e qualquer mudança precisa ser remedida nos dois modelos, para não trocar um disparo por outro.
+### Limites desta medição
 
-**Sobre corridas anteriores:** os números 5/16, 6/16, 7/16 e 11/16 foram descartados. Vinham de um runner com defeito (`shell: true` cortava o prompt em vários argumentos), do `run_eval.py` oficial (que não funciona no Windows, `WinError 10038`), ou de execuções falhadas contadas como "não disparou".
-
-**Limites desta medição**
-
-- Sonnet (16/16) e Opus (15/16). O Haiku não foi remedido de forma válida.
+- Sonnet e Opus. O Haiku não foi remedido de forma válida.
 - Duas repetições por prompt, não dez. Um prompt de fronteira pode oscilar.
 - Mede o disparo, não se o fluxo seguinte presta. A skill disparar e depois seguir o fluxo certo é outra verificação.
+- O conjunto tem 16 prompts escritos por quem escreveu a descrição. Não cobre formas de pedir que ninguém previu.

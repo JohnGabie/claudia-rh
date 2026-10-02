@@ -2,7 +2,8 @@
 name: claudia-teste
 description: >-
   Olha o Claudia RH (app Tauri) RODANDO, por CDP no WebView2, para ver a tela, clicar, chamar comandos do backend e ler o que os agentes fazem dentro dele.
-  Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico, Notificações), comparar o que a UI mostra com o banco, qualquer BUG ou problema no app (tem um bug no X, o bug tá acontecendo de novo, corrige este bug — reproduzir antes de corrigir), qualquer queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS e quero conferir), perguntar se o agente ou a sessão se comportou como devia (o agente parou onde devia?), comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
+  Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico), comparar a UI com o banco, queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS e quero conferir), perguntar se o agente ou a sessão se comportou como devia, comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
+  QUALQUER bug do app, inclusive pedido curto como "corrige este bug", "o bug tá acontecendo de novo" ou "tem um bug no X": carregue esta skill ANTES de abrir ou editar código, porque o primeiro passo é reproduzir no app rodando.
   Use também antes de dar por concluída qualquer mudança em UI ou em comandos Tauri.
   NÃO use para cargo test puro, automação de sites de vagas, nem registrar no Linear.
 ---

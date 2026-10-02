@@ -57,4 +57,6 @@ for (const [i, item] of SET.entries()) {
   if (passou) ok++;
   console.log(`${passou ? "PASS" : "FAIL"}  disparou=${String(r.disparou).padEnd(5)} esperado=${String(item.should_trigger).padEnd(5)}  ${item.query}  [${r.motivo}]`);
 }
-console.log(`\n${ok}/${SET.length} (modelo ${MODELO})`);
+// Invalid runs (usage limit, crash) are neither passes nor misses, so report them apart.
+console.log(`\n${ok}/${SET.length - invalidos} validos, ${invalidos} invalidos (modelo ${MODELO})`);
+if (invalidos) process.exitCode = 3;
