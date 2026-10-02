@@ -52,7 +52,7 @@ impl CdpClient {
                 if let Some(id) = v.get("id").and_then(Value::as_u64) {
                     if let Some(s) = p2.lock().await.remove(&id) {
                         let r = match v.get("error") {
-                            Some(e) => Err(e.to_string()),
+                            Some(e) => Err(e["message"].as_str().map(String::from).unwrap_or_else(|| e.to_string())),
                             None => Ok(v.get("result").cloned().unwrap_or(Value::Null)),
                         };
                         let _ = s.send(r);
@@ -175,6 +175,25 @@ pub async fn first_page(port: u16) -> Result<Target, String> {
         .ok_or_else(|| "the browser has no open page".to_string())
 }
 
+/// Opens a NEW tab for the agent, so it never drives (or steals) the tab the user is using.
+/// Chrome only accepts PUT on /json/new. Only a local page target is accepted back.
+pub async fn new_page(port: u16) -> Result<Target, String> {
+    let r = http()
+        .put(format!("http://127.0.0.1:{port}/json/new?about:blank"))
+        .send()
+        .await
+        .map_err(|e| format!("browser unreachable on port {port}: {e}"))?;
+    if !r.status().is_success() {
+        return Err(format!("the browser refused to open a tab (HTTP {})", r.status()));
+    }
+    let t = r.json::<Target>().await.map_err(|e| format!("bad /json/new reply: {e}"))?;
+    if t.kind == "page" && t.ws_url.starts_with(&format!("ws://127.0.0.1:{port}/")) {
+        Ok(t)
+    } else {
+        Err("the browser returned a tab that is not a local page".to_string())
+    }
+}
+
 /// A hidden tab silently swallows input events. Activate it and wait until the
 /// page reports itself visible (trap 1 from the prototype).
 pub async fn bring_to_front(port: u16, target_id: &str, client: &CdpClient) -> Result<(), String> {
@@ -249,7 +268,7 @@ mod tests {
     async fn error_reply_becomes_err() {
         let c = CdpClient::connect(&fake_server().await).await.unwrap();
         let e = c.call("Boom", json!({})).await.unwrap_err();
-        assert!(e.contains("nope"), "{e}");
+        assert_eq!(e, "nope", "only the error message, not the raw JSON");
     }
 
     #[tokio::test]
@@ -557,5 +576,66 @@ mod tests {
         assert_eq!(b_val.unwrap()["echo"], "Fast", "Call B should get the Fast reply");
         // ...and the replies really did arrive out of order: B (sent second) finished first.
         assert!(b_done < a_done, "the fast call must finish before the slow one, or this test proves nothing");
+    }
+}
+
+#[cfg(test)]
+mod new_page_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Answers ONE request: 200 with `body_for(port)` if the request line starts with `want`,
+    /// otherwise 405. Returns the port and a handle to the request line the server saw.
+    async fn serve_once(want: &'static str, body_for: impl FnOnce(u16) -> String) -> (u16, Arc<Mutex<String>>) {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let body = body_for(port);
+        let seen = Arc::new(Mutex::new(String::new()));
+        let s2 = seen.clone();
+        tokio::spawn(async move {
+            let (mut s, _) = l.accept().await.unwrap();
+            let mut buf = [0u8; 2048];
+            let n = s.read(&mut buf).await.unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let line = req.lines().next().unwrap_or("").to_string();
+            *s2.lock().unwrap() = line.clone();
+            let reply = if line.starts_with(want) {
+                format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+            } else {
+                "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+            };
+            let _ = s.write_all(reply.as_bytes()).await;
+        });
+        (port, seen)
+    }
+
+    fn target_json(port: u16, host: &str, kind: &str) -> String {
+        format!(r#"{{"id":"NEW1","type":"{kind}","title":"","url":"about:blank","webSocketDebuggerUrl":"ws://{host}:{port}/devtools/page/NEW1"}}"#)
+    }
+
+    #[tokio::test]
+    async fn new_page_opens_a_tab_with_put() {
+        // Recent Chrome refuses GET on /json/new: the request must be a PUT.
+        let (port, seen) = serve_once("PUT /json/new", |p| target_json(p, "127.0.0.1", "page")).await;
+        let t = new_page(port).await.unwrap();
+        assert_eq!(t.id, "NEW1");
+        assert!(seen.lock().unwrap().starts_with("PUT /json/new"), "{}", seen.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn new_page_rejects_a_target_that_is_not_a_local_page() {
+        let (port, _) = serve_once("PUT /json/new", |p| target_json(p, "evil.example", "page")).await;
+        assert!(new_page(port).await.is_err(), "foreign ws_url");
+        let (port, _) = serve_once("PUT /json/new", |p| target_json(p, "127.0.0.1", "service_worker")).await;
+        assert!(new_page(port).await.is_err(), "not a page");
+    }
+
+    #[tokio::test]
+    async fn new_page_reports_a_refusal() {
+        // A server that answers 405 to PUT (an old or odd Chrome) is an error, not a panic.
+        let (port, _) = serve_once("GET /never", |_| String::new()).await;
+        let e = new_page(port).await.unwrap_err();
+        assert!(e.contains("refused") && e.contains("405"), "{e}");
     }
 }

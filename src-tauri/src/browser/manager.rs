@@ -96,6 +96,13 @@ fn devtools_active_port(profile_dir: &Path) -> Option<u16> {
     std::fs::read_to_string(profile_dir.join("DevToolsActivePort")).ok()?.lines().next()?.trim().parse().ok()
 }
 
+/// True when a browser string ("Chrome/154.0.8037.92", "HeadlessChrome/...") is EXACTLY the pinned
+/// version: a prefix match would accept 154.0.8037.9 for 154.0.8037.92. An empty version accepts
+/// any build (live tests only).
+pub fn is_pinned(browser: &str, version: &str) -> bool {
+    version.is_empty() || browser.rsplit('/').next() == Some(version)
+}
+
 /// A browser of the pinned version already answering on one of the known ports
 /// (state.json first, then the profile's DevToolsActivePort). Anything else
 /// answering there (the user's own Chrome, say) is NOT ours and is ignored.
@@ -110,9 +117,8 @@ async fn reusable(o: &LaunchOptions, version: &str, state_path: &Path) -> Option
             candidates.push((p, 0));
         }
     }
-    let wanted = format!("Chrome/{version}");
     for (port, pid) in candidates {
-        if probe(port).await.is_some_and(|b| b.contains(&wanted)) {
+        if probe(port).await.is_some_and(|b| is_pinned(&b, version)) {
             return Some(BrowserState { port, pid, version: version.to_string() });
         }
     }
@@ -515,5 +521,25 @@ mod launch_tests {
         std::env::remove_var("HTTP_PROXY");
         std::env::remove_var("http_proxy");
         assert_eq!(got.as_deref(), Some("Chrome/154.0.1.2"));
+    }
+}
+
+#[cfg(test)]
+mod pinned_tests {
+    use super::is_pinned;
+
+    #[test]
+    fn the_pinned_version_must_match_exactly() {
+        assert!(is_pinned("Chrome/154.0.8037.92", "154.0.8037.92"));
+        assert!(is_pinned("HeadlessChrome/154.0.8037.92", "154.0.8037.92"));
+        assert!(!is_pinned("Chrome/154.0.8037.9", "154.0.8037.92"), "shorter build");
+        assert!(!is_pinned("Chrome/154.0.8037.921", "154.0.8037.92"), "longer build: a prefix match would accept it");
+        assert!(!is_pinned("Chrome/153.0.8037.92", "154.0.8037.92"), "other major");
+        assert!(!is_pinned("Chrome/154.0.8037.92", "54.0.8037.92"), "suffix of the major");
+    }
+
+    #[test]
+    fn an_empty_pin_accepts_any_build_for_live_tests() {
+        assert!(is_pinned("Chrome/120.0.0.0", ""));
     }
 }
