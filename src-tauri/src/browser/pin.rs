@@ -31,5 +31,12 @@ mod tests {
         assert!(p.sha256.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(p.zip_url().starts_with("https://"));
         assert!(p.zip_url().ends_with("/win64/chrome-win64.zip"));
+        // The exact shape: a URL that dropped the version or double-slashed the base would still pass the checks above.
+        assert_eq!(
+            p.zip_url(),
+            format!("{}/{}/win64/chrome-win64.zip", p.base_url.trim_end_matches('/'), p.version)
+        );
+        assert!(p.zip_url().contains(&p.version));
+        assert!(!p.zip_url().replace("https://", "").contains("//"));
     }
 }
