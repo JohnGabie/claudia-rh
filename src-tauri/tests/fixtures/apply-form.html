@@ -9,17 +9,32 @@
   <div style="position:relative;height:24px">
     <!-- trap 3: a real radio, invisible, under another element -->
     <input id="r1" type="radio" name="g" style="opacity:0;position:absolute;left:0;top:0;width:13px;height:13px">
-    <label for="r1">Sim</label>
+    <span style="position:absolute;left:0;top:0;width:13px;height:13px;background:#ccc;z-index:2"></span>
+    <label style="margin-left:20px" for="r1">Sim</label>
   </div>
   <button id="adv">Avançar</button>
   <a id="lnk" href="#next">Link</a>
 </div>
 <button id="outside">Fora do modal</button>
+<form id="f" onsubmit="window.__formSubmitted = true; return false;">
+  <input id="q" type="text" aria-label="Busca">
+  <button type="submit" id="fsub">Enviar candidatura</button>
+</form>
+<form id="f2" onsubmit="window.__anonSubmitted = true; return false;">
+  <button type="submit" id="anon" style="display:block;width:40px;height:40px"></button>
+</form>
+<form id="f3" onsubmit="window.__nextClicked = true; return false;">
+  <button type="submit" id="next3">Próximo</button>
+</form>
+<iframe id="fr" srcdoc="<button style=&quot;width:100px;height:30px&quot;>Ok</button>" style="display:block;width:200px;height:60px"></iframe>
 <script>
   // trap 5: the advance button renames itself. The last label is the submit.
   const labels = ["Avançar", "Avaliar", "Enviar candidatura"];
   let step = 0;
   window.__submitted = false;
+  window.__formSubmitted = false;
+  window.__anonSubmitted = false;
+  window.__nextClicked = false;
   const adv = document.getElementById("adv");
   adv.addEventListener("click", () => {
     if (labels[step] === "Enviar candidatura") { window.__submitted = true; return; }

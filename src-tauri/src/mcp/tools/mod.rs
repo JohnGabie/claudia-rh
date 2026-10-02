@@ -6,6 +6,7 @@ mod pendencias;
 mod profile;
 mod propostas;
 mod vagas;
+pub mod browser;
 
 pub use memory::get_memory_summary;
 pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga, list_pendencias};
