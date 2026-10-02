@@ -61,9 +61,12 @@ pub fn read_state(path: &Path) -> Option<BrowserState> {
 }
 
 pub async fn probe(port: u16) -> Option<String> {
-    let r = reqwest::Client::new()
-        .get(format!("http://127.0.0.1:{port}/json/version"))
+    let r = reqwest::Client::builder()
+        .no_proxy() // localhost: never through a system proxy
         .timeout(Duration::from_secs(2))
+        .build()
+        .ok()?
+        .get(format!("http://127.0.0.1:{port}/json/version"))
         .send()
         .await
         .ok()?;
@@ -82,22 +85,85 @@ pub async fn wait_ready(port: u16, timeout: Duration) -> Result<String, String> 
     Err(format!("the browser did not answer on port {port} within {timeout:?}"))
 }
 
-pub async fn ensure_running(o: &LaunchOptions, version: &str, state_path: &Path) -> Result<BrowserState, String> {
-    if let Some(s) = read_state(state_path) {
-        if let Some(b) = probe(s.port).await {
-            if b.contains(version) {
-                return Ok(s);
-            }
+/// One launch at a time in this process: two callers (the startup task and a tool
+/// call, say) must never start two Chromes on the same profile.
+static LAUNCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Chrome itself writes DevToolsActivePort into the profile folder: its first line
+/// is the debug port. It lets us find a Chrome that is still alive even when
+/// state.json was lost or is stale.
+fn devtools_active_port(profile_dir: &Path) -> Option<u16> {
+    std::fs::read_to_string(profile_dir.join("DevToolsActivePort")).ok()?.lines().next()?.trim().parse().ok()
+}
+
+/// A browser of the pinned version already answering on one of the known ports
+/// (state.json first, then the profile's DevToolsActivePort). Anything else
+/// answering there (the user's own Chrome, say) is NOT ours and is ignored.
+async fn reusable(o: &LaunchOptions, version: &str, state_path: &Path) -> Option<BrowserState> {
+    let known = read_state(state_path);
+    let mut candidates: Vec<(u16, u32)> = Vec::new();
+    if let Some(s) = &known {
+        candidates.push((s.port, s.pid));
+    }
+    if let Some(p) = devtools_active_port(&o.profile_dir) {
+        if !candidates.iter().any(|(port, _)| *port == p) {
+            candidates.push((p, 0));
         }
+    }
+    let wanted = format!("Chrome/{version}");
+    for (port, pid) in candidates {
+        if probe(port).await.is_some_and(|b| b.contains(&wanted)) {
+            return Some(BrowserState { port, pid, version: version.to_string() });
+        }
+    }
+    None
+}
+
+/// Starts Chrome for real and returns its pid.
+fn spawn_chrome(o: &LaunchOptions, port: u16) -> Result<u32, String> {
+    std::process::Command::new(&o.exe)
+        .args(build_args(o, port))
+        .spawn()
+        .map(|c| c.id())
+        .map_err(|e| format!("could not spawn the browser ({}): {e}", o.exe.display()))
+}
+
+/// Best effort: a Chrome that never became ready must not be left running.
+fn kill_tree(pid: u32) {
+    let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+}
+
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Reuses a live browser of the pinned version; otherwise launches ours.
+/// Never starts a second Chrome on the same profile.
+pub async fn ensure_running(o: &LaunchOptions, version: &str, state_path: &Path) -> Result<BrowserState, String> {
+    ensure_running_with(o, version, state_path, spawn_chrome, kill_tree, READY_TIMEOUT).await
+}
+
+pub(crate) async fn ensure_running_with(
+    o: &LaunchOptions,
+    version: &str,
+    state_path: &Path,
+    spawn: impl Fn(&LaunchOptions, u16) -> Result<u32, String>,
+    kill: impl Fn(u32),
+    ready_timeout: Duration,
+) -> Result<BrowserState, String> {
+    let _one_launch_at_a_time = LAUNCH_LOCK.lock().await;
+    if let Some(s) = reusable(o, version, state_path).await {
+        if read_state(state_path).as_ref() != Some(&s) {
+            write_state(state_path, &s)?; // recovered through DevToolsActivePort: remember it
+        }
+        return Ok(s);
     }
     let port = free_port()?;
     std::fs::create_dir_all(&o.profile_dir).map_err(|e| e.to_string())?;
-    let child = std::process::Command::new(&o.exe)
-        .args(build_args(o, port))
-        .spawn()
-        .map_err(|e| format!("could not spawn the browser ({}): {e}", o.exe.display()))?;
-    wait_ready(port, Duration::from_secs(20)).await.map_err(|e| format!("launch failed: {e}"))?;
-    let state = BrowserState { port, pid: child.id(), version: version.to_string() };
+    let pid = spawn(o, port)?;
+    if let Err(e) = wait_ready(port, ready_timeout).await {
+        kill(pid);
+        return Err(format!("launch failed: {e}"));
+    }
+    let state = BrowserState { port, pid, version: version.to_string() };
     write_state(state_path, &state)?;
     Ok(state)
 }
@@ -205,48 +271,249 @@ mod tests {
         let o = LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("p"));
         assert!(ensure_running(&o, "154.0.1.2", &state_path).await.is_err());
     }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const VER: &str = "154.0.1.2";
+    // A pid that cannot belong to a real process, so a stray `kill` can never hurt anything.
+    const FAKE_PID: u32 = u32::MAX - 7;
+
+    fn temp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "claudia-launch-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Starts a fake /json/version endpoint on `port` (0 = pick one). Returns the port.
+    /// Binds with std so it can run inside a synchronous spawn closure.
+    fn serve_version(port: u16, browser: &'static str) -> u16 {
+        let std_l = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        std_l.set_nonblocking(true).unwrap();
+        let port = std_l.local_addr().unwrap().port();
+        let l = tokio::net::TcpListener::from_std(std_l).unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut b = [0u8; 1024];
+                let _ = s.read(&mut b).await;
+                let body = format!(r#"{{"Browser":"{browser}"}}"#);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = s.write_all(head.as_bytes()).await;
+            }
+        });
+        port
+    }
+
+    fn opts(dir: &Path) -> LaunchOptions {
+        LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("profile"))
+    }
 
     #[tokio::test]
-    async fn concurrent_ensure_running_calls_spawn_only_once() {
-        // Two concurrent calls on the same state file with a fake version server:
-        // they must spawn the browser exactly once, not twice.
-        let port = fake_version("Chrome/154.0.1.2").await;
-        let dir = temp();
-        let state_path = std::sync::Arc::new(dir.join("state.json"));
-        let o = std::sync::Arc::new(LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("p")));
+    async fn two_callers_at_once_start_exactly_one_browser() {
+        let dir = temp("two");
+        let state_path = dir.join("state.json");
+        let o = opts(&dir);
+        let spawns = Arc::new(AtomicUsize::new(0));
+        let call = || {
+            let spawns = spawns.clone();
+            ensure_running_with(
+                &o,
+                VER,
+                &state_path,
+                move |_, port| {
+                    spawns.fetch_add(1, Ordering::SeqCst);
+                    serve_version(port, "Chrome/154.0.1.2");
+                    Ok(FAKE_PID)
+                },
+                |_| {},
+                Duration::from_secs(5),
+            )
+        };
+        let (a, b) = tokio::join!(call(), call());
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(a.port, b.port, "both callers must end up with the same browser");
+        assert_eq!(spawns.load(Ordering::SeqCst), 1, "a second Chrome on the same profile must never start");
+    }
 
-        // Pre-write state so the test doesn't actually launch
-        write_state(&state_path, &BrowserState { port, pid: 1, version: "154.0.1.2".into() }).unwrap();
+    #[tokio::test]
+    async fn a_second_call_after_a_successful_launch_reuses_it() {
+        let dir = temp("reuse");
+        let state_path = dir.join("state.json");
+        let o = opts(&dir);
+        let spawns = AtomicUsize::new(0);
+        let spawn = |_: &LaunchOptions, port: u16| {
+            spawns.fetch_add(1, Ordering::SeqCst);
+            serve_version(port, "Chrome/154.0.1.2");
+            Ok(FAKE_PID)
+        };
+        let first = ensure_running_with(&o, VER, &state_path, &spawn, |_| {}, Duration::from_secs(5)).await.unwrap();
+        let second = ensure_running_with(&o, VER, &state_path, &spawn, |_| {}, Duration::from_secs(5)).await.unwrap();
+        assert_eq!(first.port, second.port);
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(read_state(&state_path), Some(first));
+    }
 
-        // Two concurrent calls must both succeed and reuse the same port
-        let h1 = tokio::spawn({
-            let o = o.clone();
-            let p = state_path.clone();
-            async move { ensure_running(&o, "154.0.1.2", &p).await }
-        });
-        let h2 = tokio::spawn({
-            let o = o.clone();
-            let p = state_path.clone();
-            async move { ensure_running(&o, "154.0.1.2", &p).await }
-        });
+    #[tokio::test]
+    async fn a_failed_spawn_is_an_error_and_does_not_poison_the_next_call() {
+        let dir = temp("fail");
+        let state_path = dir.join("state.json");
+        let o = opts(&dir);
+        let e = ensure_running_with(&o, VER, &state_path, |_, _| Err("boom".to_string()), |_| {}, Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        assert!(e.contains("boom"), "{e}");
+        let ok = ensure_running_with(
+            &o,
+            VER,
+            &state_path,
+            |_, port| {
+                serve_version(port, "Chrome/154.0.1.2");
+                Ok(FAKE_PID)
+            },
+            |_| {},
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(ok.is_ok(), "the launch lock must be released after a failure: {ok:?}");
+    }
 
-        let r1 = h1.await.unwrap().unwrap();
-        let r2 = h2.await.unwrap().unwrap();
-        assert_eq!(r1.port, r2.port);
-        assert_eq!(r1.port, port);
+    #[tokio::test]
+    async fn a_chrome_that_never_becomes_ready_is_killed_and_reported() {
+        let dir = temp("never");
+        let state_path = dir.join("state.json");
+        let killed = Arc::new(AtomicU32::new(0));
+        let k = killed.clone();
+        let e = ensure_running_with(
+            &opts(&dir),
+            VER,
+            &state_path,
+            |_, _| Ok(FAKE_PID), // nothing listens on the chosen port
+            move |pid| k.store(pid, Ordering::SeqCst),
+            Duration::from_millis(400),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.contains("launch failed"), "{e}");
+        assert_eq!(killed.load(Ordering::SeqCst), FAKE_PID, "the orphan process must be killed");
+        assert!(read_state(&state_path).is_none(), "no state may be written for a browser that never came up");
+    }
+
+    #[tokio::test]
+    async fn a_chrome_found_through_devtools_active_port_is_reused_and_remembered() {
+        // state.json was lost, but the profile's own DevToolsActivePort points at a live Chrome of ours.
+        let dir = temp("dtap");
+        let o = opts(&dir);
+        std::fs::create_dir_all(&o.profile_dir).unwrap();
+        let port = serve_version(0, "Chrome/154.0.1.2");
+        std::fs::write(o.profile_dir.join("DevToolsActivePort"), format!("{port}\n/devtools/browser/abc")).unwrap();
+        let state_path = dir.join("state.json");
+        let spawned = Mutex::new(false);
+        let s = ensure_running_with(
+            &o,
+            VER,
+            &state_path,
+            |_, _| {
+                *spawned.lock().unwrap() = true;
+                Ok(FAKE_PID)
+            },
+            |_| {},
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(s.port, port);
+        assert!(!*spawned.lock().unwrap(), "must not start a second Chrome on a profile that already has one");
+        assert_eq!(read_state(&state_path).map(|x| x.port), Some(port), "the recovered port is written back to state.json");
+    }
+
+    #[tokio::test]
+    async fn a_devtools_active_port_that_belongs_to_another_chrome_version_is_not_reused() {
+        let dir = temp("dtap-other");
+        let o = opts(&dir);
+        std::fs::create_dir_all(&o.profile_dir).unwrap();
+        let port = serve_version(0, "Chrome/120.0.0.0");
+        std::fs::write(o.profile_dir.join("DevToolsActivePort"), format!("{port}\n/x")).unwrap();
+        let state_path = dir.join("state.json");
+        let spawned = AtomicUsize::new(0);
+        let r = ensure_running_with(
+            &o,
+            VER,
+            &state_path,
+            |_, p| {
+                spawned.fetch_add(1, Ordering::SeqCst);
+                serve_version(p, "Chrome/154.0.1.2");
+                Ok(FAKE_PID)
+            },
+            |_| {},
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        assert_ne!(r.port, port);
+        assert_eq!(spawned.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn version_check_uses_substring_match() {
-        // The probe returns "Chrome/154.0.8037.92", the pinned version is "154.0.8037.92".
-        // Substring match means both must match: the pinned version string must be IN the probe result.
-        // This test verifies that a partial version is correctly detected.
-        let probe_result = "Chrome/154.0.1.2";
-        let pinned_version = "154.0.1.2";
-        assert!(probe_result.contains(pinned_version));
+    fn devtools_active_port_parsing() {
+        let dir = temp("parse");
+        assert_eq!(devtools_active_port(&dir), None, "missing file");
+        std::fs::write(dir.join("DevToolsActivePort"), "9333\n/devtools/browser/x").unwrap();
+        assert_eq!(devtools_active_port(&dir), Some(9333));
+        std::fs::write(dir.join("DevToolsActivePort"), "not a port").unwrap();
+        assert_eq!(devtools_active_port(&dir), None, "garbage");
+    }
 
-        // Different version should not match
-        let different_version = "120.0.0.0";
-        assert!(!probe_result.contains(different_version));
+    #[test]
+    fn state_is_never_seen_half_written() {
+        // The MCP processes read state.json while the app rewrites it: a reader must see the
+        // old or the new content, never an empty or truncated file.
+        let dir = temp("atomic");
+        let path = dir.join("state.json");
+        write_state(&path, &BrowserState { port: 1, pid: 1, version: VER.into() }).unwrap();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (p2, s2) = (path.clone(), stop.clone());
+        let writer = std::thread::spawn(move || {
+            let mut n = 0u32;
+            while !s2.load(Ordering::SeqCst) {
+                n += 1;
+                let long = "x".repeat(2000 + (n % 7) as usize);
+                let _ = write_state(&p2, &BrowserState { port: (n % 60000) as u16 + 1, pid: n, version: long });
+            }
+        });
+        let mut torn = 0;
+        for _ in 0..2000 {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if serde_json::from_str::<BrowserState>(&text).is_err() {
+                    torn += 1;
+                }
+            }
+        }
+        stop.store(true, Ordering::SeqCst);
+        writer.join().unwrap();
+        assert_eq!(torn, 0, "a reader saw a half-written state.json {torn} times");
+    }
+
+    #[tokio::test]
+    async fn the_probe_ignores_a_system_proxy() {
+        // Even with a bogus proxy in the environment, the localhost probe must go direct.
+        let port = serve_version(0, "Chrome/154.0.1.2");
+        std::env::set_var("HTTP_PROXY", "http://127.0.0.1:1");
+        std::env::set_var("http_proxy", "http://127.0.0.1:1");
+        let got = probe(port).await;
+        std::env::remove_var("HTTP_PROXY");
+        std::env::remove_var("http_proxy");
+        assert_eq!(got.as_deref(), Some("Chrome/154.0.1.2"));
     }
 }
