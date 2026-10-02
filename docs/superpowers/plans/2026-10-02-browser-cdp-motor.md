@@ -1684,6 +1684,27 @@ pub async fn ensure_running(o: &LaunchOptions, version: &str, state_path: &Path)
 
 # FASE 2: Chrome de verdade e MCP
 
+> **Interfaces reais da Fase 1 (vencem o código dos trechos abaixo).** A revisão do Opus da Fase 1 comparou os trechos desta fase com o código commitado. Onde divergem, vale o código real:
+>
+> | Trecho do plano | O que o código real exige |
+> |---|---|
+> | `guard::check_submit(&n.name, confirm, ctx)` | `check_submit(name, page_url, confirm, ctx)`: ler `location.href` antes e passar. No `click`, passar **o nome guardado e o nome vivo** (`Accessibility.getPartialAXTree` por `backendNodeId`), ver Ajustes item 6. |
+> | `cdp::first_page(st.port)` para a aba do agente | `first_page` devolve a aba que o usuário tocou por último. Usar `cdp::new_page(port)` (já existe: `PUT /json/new`, valida que é página local) uma vez, **guardar o id da aba em memória no processo MCP** (não em `state.json`: o app o reescreve atomicamente e várias sessões MCP coexistem) e reconectar por id (`list_targets` + filtro por id) se o cliente cair. |
+> | Conferir versão ao reconectar | `manager::is_pinned(browser, version)` (já existe, comparação **exata**) sobre `manager::probe(st.port)`, contra `st.version`. |
+> | Mensagens de erro do CDP | `CdpClient::call` já devolve só `error.message`. Ainda falta mapear "connection closed" e "timeout calling X" para pt-BR acionável na camada das tools. |
+> | `ensure_running(&o, "", ...)` nos testes live | `"Chrome/"` aceita qualquer build, inclusive `HeadlessChrome/…`. Repetir `first_page` por até 3 s: `wait_ready` pode voltar antes de existir alguma aba. |
+> | `install::ensure_installed(..., &cb)` na 2.4 | Assinatura igual; a extração já roda em `spawn_blocking`. Falta limitar `on_progress` (1% ou 200 ms) no `service.rs`. |
+> | `theme::apply_theme` antes de `ensure_running` na 2.4 | Aplicar o tema **só no caminho de lançamento**, nunca com um Chrome já vivo (reescreveria `Preferences` por baixo dele). Para isso `ensure_running_with` ganha um parâmetro `prepare: impl Fn(&Path)` chamado imediatamente antes do `spawn`. |
+> | `mod.rs::chrome_exe` | Removida: usar `install::exe_path` (pública). |
+>
+> **Decisões de comportamento para a Tarefa 2.4**, registradas como rulings (custo se erradas: pequeno, cada uma é uma linha de código):
+> 1. **Relançar o Chrome se ele morrer** (spec §4 e §5.2; hoje nenhuma tarefa o faz): `manager::spawn_watcher` com sonda a cada 3 s, relança depois de 2 falhas seguidas, no máximo 5 relançamentos em 10 minutos, avisa a UI por evento. Testável com `spawn`/`kill` injetados.
+> 2. **Troca de versão do Chrome:** se há um Chrome vivo **de outra versão** no nosso perfil (o `DevToolsActivePort` aponta para ele), fechá-lo antes de lançar (`Browser.close` pelo WebSocket de `/json/version`) e esperar a porta morrer. Senão o novo `chrome.exe` entrega a janela ao antigo e sai, e o lançamento falha depois de 20 s.
+> 3. **Sem janela de console piscando:** `creation_flags(CREATE_NO_WINDOW)` (0x08000000) e `Stdio::null()` no `spawn` do Chrome e no `taskkill`.
+> 4. **Ao sair do app, o Chrome fecha.** Um Chrome com porta de debug aberta e contas logadas, sem o app vigiando, é exposição desnecessária. Em `RunEvent::Exit`: `manager::shutdown(state_path)` mata a árvore do `pid` de `state.json` e remove o arquivo. (O usuário pode discordar; é um ponto da revisão final.)
+> 5. **`LaunchOptions::headless_for_tests` é `pub`**: um teste varre `src/` fora de `manager.rs` e do diretório de testes atrás desse nome, para o código de produção nunca poder chamá-lo.
+> 6. Duplicação de helpers de teste (`temp()` em vários módulos, servidores HTTP falsos): extrair um `browser::test_support` (`#[cfg(test)]`) na 2.1.
+
 ### Task 2.1: Página de teste e harness de integração (valida o CDP em Rust com um Chrome real)
 
 **Files:**
