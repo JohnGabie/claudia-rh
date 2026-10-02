@@ -11,3 +11,13 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 - **Ressalva:** o texto lido veio de uma instância da mesma biblioteca e versão, não da instância do app com uma sessão ativa. Não iniciei uma sessão para provar o último passo, porque isso gasta tokens do `claude` e pode agir; a spec evita isso. O que fica provado é que o renderer do app é DOM e que esse renderer expõe texto. Falta ver o texto real de uma sessão, o que a Tarefa 9 faz se o usuário iniciar uma pela UI.
 - **Consequência:** `observar.mjs` lê o Terminal por `.xterm-rows > div` e devolve `indisponivel` com o motivo quando o terminal está vazio ou sem esse renderer. Nunca finge ler.
 - **Data / app:** 2026-10-01, `tauri dev`, Edg/154.0.4258.48.
+
+## 2. Clicar na UI do app
+
+- **Veredito:** ambos os mecanismos funcionam (DOM `.click()` e mouse CDP).
+- **Evidência:** a sonda clicou em History, que só troca a vista. Medido pela árvore de acessibilidade inteira: o Dashboard tem 23 nós úteis e `heading:Dashboard`; depois do clique ficou `heading:Jobs` com 1.424 nós.
+  - A) DOM `.click()`: árvore mudou.
+  - B) `Input.dispatchMouseEvent` no centro do botão (110, 200), com `elementFromPoint` confirmando que o elemento sob o ponto é o botão: árvore mudou.
+- **Ressalva sobre o método:** a primeira sonda usava o primeiro `h1/h2` da página como oráculo e deu "nada" nos dois. Estava errada: aquele seletor não pegava o heading que muda. Um oráculo fraco dá falso negativo tão facilmente quanto falso positivo. A skill compara a árvore inteira, não um seletor.
+- **Consequência:** `ver.mjs` clica por mouse CDP, com a guarda `elementFromPoint` e o rótulo conferidos antes, por ser o mais fiel a um usuário.
+- **Data / app:** 2026-10-01, `tauri dev`, Edg/154.0.4258.48.
