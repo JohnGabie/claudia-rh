@@ -42,18 +42,35 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 
 ## Evals de disparo (2026-10-01)
 
-**Resultado: inconclusivo.** Não há medição confiável do disparo da descrição. O que se sabe e o que não se sabe:
+**Resultado: 16/16 nas duas rodadas, com a descrição atual, no Sonnet.** Zero execuções inválidas (nenhuma saiu como `INVALIDO` nem com `session limit`).
 
-**Sabido**
-- O `run_eval.py` oficial não funciona no Windows: `WinError 10038` em `select()` sobre pipes, e ele registra 0 disparos em tudo. Os "5/16" iniciais eram isso.
-- O runner em Node (`evals/rodar-evals.mjs`) decide pela **primeira** chamada de ferramenta do modelo: disparou se for `Skill(claudia-teste)`.
-- Lançar `claude` com `shell: true` corta prompts de várias palavras em argumentos separados, e o modelo nunca vê a pergunta real. Foi preciso `shell: false`.
-- Rodados **sozinhos**, `tem um bug no Perfil, reproduz`, `o agente parou onde devia?` e `não gostei do layout do Dashboard` dispararam `Skill(claudia-teste)` e seguiram para `subir.mjs`, que é o fluxo da skill.
-- Com o runner corrigido, o Sonnet deu **11/16**: os 5 casos "não deve disparar" corretos, os 6 primeiros "deve disparar" corretos.
+Medido com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet`, duas vezes em sequência. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste)`. Descrição inalterada entre as rodadas (mesmo hash do frontmatter).
 
-**Não sabido, e por quê**
-- Os 5 "deve disparar" que falharam nessa corrida (layout, bug recorrente, "tá errado nessa tela", CSS, "corrige este bug") podem ser descrição fraca **ou** o limite de uso da conta se esgotando durante a corrida. Repetições posteriores falharam em 100% com `You've hit your session limit` e `exit=1`, e o runner as lia como "não disparou". Não consigo separar as duas causas.
-- Não medi a descrição antiga com o runner válido, então **não sei se a reescrita da descrição melhorou algo**.
-- Os resultados do Haiku (5/16, tudo "sem ferramenta") não são confiáveis e foram descartados.
+| Caso | Esperado | Rodada 1 | Rodada 2 |
+|---|---|---|---|
+| testa o Dashboard rodando | disparar | disparou | disparou |
+| o badge de notificações bate com o banco? | disparar | disparou | disparou |
+| tem um bug no Perfil, reproduz | disparar | disparou | disparou |
+| chama o comando obter_modo_autonomo e vê o retorno | disparar | disparou | disparou |
+| o agente parou onde devia? | disparar | disparou | disparou |
+| compara Claude e Grok na mesma tarefa | disparar | disparou | disparou |
+| **não gostei do layout do Dashboard** | disparar | disparou | disparou |
+| **o bug do Perfil tá acontecendo de novo** | disparar | disparou | disparou |
+| **olha o que tá errado nessa tela** | disparar | disparou | disparou |
+| **só mexi no CSS, confere se ficou bom** | disparar | disparou | disparou |
+| **corrige este bug no Perfil** | disparar | disparou | disparou |
+| roda cargo test | não disparar | não disparou | não disparou |
+| candidata nessa vaga do LinkedIn | não disparar | não disparou | não disparou |
+| registra uma issue no Linear | não disparar | não disparou | não disparou |
+| explica o pty_manager.rs | não disparar | não disparou | não disparou |
+| qual a cor do tema? | não disparar | não disparou | não disparou |
 
-**O que fazer:** rodar `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet` com a conta fora do limite, de preferência 2-3 vezes por prompt. O runner agora marca execução falhada como `INVALIDO` e sai com código 3, em vez de contá-la como "não disparou".
+Em negrito, os 5 que tinham falhado numa corrida anterior. Aquelas falhas coincidiram com o limite de uso da conta se esgotando durante a corrida; com o limite renovado, os 5 disparam nas duas rodadas.
+
+**Sobre corridas anteriores:** os números 5/16, 6/16, 7/16 e 11/16 foram descartados. Vinham de um runner com defeito (`shell: true` cortava o prompt em vários argumentos), do `run_eval.py` oficial (que não funciona no Windows, `WinError 10038`), ou de execuções falhadas contadas como "não disparou".
+
+**Limites desta medição**
+
+- Só o Sonnet. O Haiku não foi remedido de forma válida.
+- Duas repetições por prompt, não dez. Um prompt de fronteira pode oscilar.
+- Mede o disparo, não se o fluxo seguinte presta. A skill disparar e depois seguir o fluxo certo é outra verificação.
