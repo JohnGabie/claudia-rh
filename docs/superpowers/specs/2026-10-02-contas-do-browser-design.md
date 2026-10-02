@@ -25,7 +25,7 @@ Tabela `contas_browser` (no banco principal do app):
 | `chave` | identificador estável (`linkedin`, `indeed`, …; para site do usuário, gerado do domínio) |
 | `nome` | rótulo exibido |
 | `url_login` | para onde o botão "Abrir" leva |
-| `dominios` | domínios que pertencem à conta (usado para recusar navegação em `browser_abrir`) |
+| `dominios` | domínios que pertencem à conta (usado para recusar navegação em `browser_open`) |
 | `regra_login` | como saber se há sessão (ver seção 4) |
 | `ia_pode_usar` | permissão explícita do usuário, desligada por padrão |
 | `embutida` | se veio com o app ou foi adicionada pelo usuário |
@@ -56,7 +56,7 @@ A regra é um **dado** da conta, não código espalhado:
 
 A regra "pular o que não está logado" vale **no código**, não no prompt:
 
-- `browser_abrir(url)` resolve o domínio da URL para uma conta. Se a conta existe e está `precisa_login`, `desconhecido` ou com `ia_pode_usar` desligado, a tool **recusa** com texto claro ("conta LinkedIn não está logada; pule esta fonte"), e o agente segue para a próxima.
+- `browser_open(url)` resolve o domínio da URL para uma conta. Se a conta existe e está `precisa_login`, `desconhecido` ou com `ia_pode_usar` desligado, a tool **recusa** com texto claro ("conta LinkedIn não está logada; pule esta fonte"), e o agente segue para a próxima.
 - Domínios sem conta cadastrada (sites de empresa, onde o agente só lê a vaga) **não são bloqueados**: só se bloqueia o que é conta gerenciada.
 - `browser_contas()` devolve ao agente quais contas estão logadas e permitidas, para ele planejar a rodada.
 - A recusa fica no activity log do modo desenvolvedor, e o item pulado entra no resumo da rodada com o motivo.
@@ -72,7 +72,7 @@ Também entra neste ciclo a **linha do tempo por vaga** no modo desenvolvedor, e
 ## 8. Testes
 
 - **Unidade:** cada regra de login contra cookies simulados; transição de estados (`logada` → `desconhecido` quando a checagem falha); o verde nunca aparece sem checagem bem-sucedida; resolução de domínio para conta; permissão desligada bloqueia.
-- **Integração:** Chrome real (headless) com cookies plantados no perfil de teste: `li_at` presente dá `logada`, ausente dá `precisa_login`; `browser_abrir` recusa e permite conforme o estado.
+- **Integração:** Chrome real (headless) com cookies plantados no perfil de teste: `li_at` presente dá `logada`, ausente dá `precisa_login`; `browser_open` recusa e permite conforme o estado.
 - **Persistência:** as contas e permissões sobrevivem a reiniciar o app.
 - **Manual curto:** logar de verdade numa conta no browser da Claudia, ver o verde, deixar a sessão expirar e ver voltar.
 

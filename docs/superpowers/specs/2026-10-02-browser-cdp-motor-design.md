@@ -52,7 +52,7 @@ App Tauri (processo principal)                 Processo MCP (um por sessão de I
         └──── lança ──► Chrome (--remote-debugging-port, --user-data-dir) ◄─ WebSocket
 ```
 
-- O app escreve a porta de debug num arquivo em `<dados-locais>/browser/estado.json` e a passa ao processo MCP por `--browser-port`, como já faz com `--notify-port`.
+- O app escreve a porta de debug num arquivo em `<dados-locais>/browser/estado.json` e a passa o caminho dele ao processo MCP por `--browser-state` (a porta muda quando o Chrome religa; o MCP relê o arquivo a cada conexão), como já faz com `--notify-port`.
 - O processo MCP é só cliente: conecta, executa o comando CDP, devolve.
 - `dispatch` (`src-tauri/src/mcp/mod.rs`) hoje é síncrono e devolve `String`. As tools de browser precisam de um caminho assíncrono e de resposta com **imagem** (`ContentBlock` de imagem do `rmcp`). Isso é mudança estrutural e entra no plano como tarefa própria.
 
@@ -88,13 +88,13 @@ Cliente fino sobre `tokio-tungstenite`. Faz: conectar ao alvo `type=page`, envia
 
 | Tool | O que faz |
 |---|---|
-| `browser_abrir(url)` | navega. Recusa domínio de conta não logada ou não permitida (ciclo 2) |
-| `browser_ler(recorte?)` | árvore de acessibilidade com **refs** (`e12`) por elemento; `recorte` limita a um nó, ex.: o modal |
-| `browser_clicar(ref, confirmar_envio?)` | resolve, rola até o elemento, clica. Se o alvo é um `<input>` escondido (rádio), clica no `label[for]` |
-| `browser_escrever(ref, texto)` | foca e insere o texto |
-| `browser_tecla(tecla)` | Enter, Tab, Esc |
-| `browser_recortar(x,y,w,h)` | imagem do recorte (~390 tok) |
-| `browser_clicar_em(x,y)` | clique por coordenada, para o que a árvore não expõe |
+| `browser_open(url)` | navega. Recusa domínio de conta não logada ou não permitida (ciclo 2) |
+| `browser_read(recorte?)` | árvore de acessibilidade com **refs** (`e12`) por elemento; `recorte` limita a um nó, ex.: o modal |
+| `browser_click(ref, confirm_submit?)` | resolve, rola até o elemento, clica. Se o alvo é um `<input>` escondido (rádio), clica no `label[for]` |
+| `browser_type(ref, texto)` | foca e insere o texto |
+| `browser_key(tecla)` | Enter, Tab, Esc |
+| `browser_crop(x,y,w,h)` | imagem do recorte (~390 tok) |
+| `browser_click_at(x,y)` | clique por coordenada, para o que a árvore não expõe |
 
 As armadilhas 1 (aba congelada), 2 (modal sem `role=dialog` no DOM, só na árvore de acessibilidade), 3 (rádio com `opacity:0`), 4 (`getBoxModel` exige `scrollIntoViewIfNeeded`) e 5 (botão de avanço que muda de nome) ficam **dentro do app**. O agente não precisa saber delas.
 
@@ -102,7 +102,7 @@ As armadilhas 1 (aba congelada), 2 (modal sem `role=dialog` no DOM, só na árvo
 
 ### 5.5 Guarda de envio
 
-`browser_clicar` e `browser_clicar_em` verificam o nome acessível do alvo. Se parece envio ("Enviar candidatura", "Submit application", "Send application", "Postuler", etc., lista em um arquivo de configuração testado), o clique é **recusado** a menos que a chamada traga `confirmar_envio: <vaga_id>` e as três condições valham:
+`browser_click` e `browser_click_at` verificam o nome acessível do alvo. Se parece envio ("Enviar candidatura", "Submit application", "Send application", "Postuler", etc., lista em um arquivo de configuração testado), o clique é **recusado** a menos que a chamada traga `confirm_submit: <vaga_id>` e as três condições valham:
 
 1. a vaga está em `candidatando`;
 2. o orçamento diário não estourou;
@@ -130,10 +130,10 @@ Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o mo
 
 | Tipo | O que grava |
 |---|---|
-| **Ação** | instante, sessão de IA, vaga (se houver), tool (`browser_clicar`, …), alvo por **nome acessível** e papel (não só o ref `e12`), texto digitado, URL da página, resultado (ok, erro, ou recusado pela guarda, com o motivo), duração |
+| **Ação** | instante, sessão de IA, vaga (se houver), tool (`browser_click`, …), alvo por **nome acessível** e papel (não só o ref `e12`), texto digitado, URL da página, resultado (ok, erro, ou recusado pela guarda, com o motivo), duração |
 | **Evento do browser** | download e instalação (progresso, falha), Chrome lançado, queda e religação, crash de aba, aba ativada, diálogo inesperado |
 | **Falha** | erro do CDP com a mensagem original, exceção do app, e a captura completa da tela no instante |
-| **Navegação** | o histórico de navegação: cada página que o browser carregou, em ordem. Instante, URL, título, código HTTP, tempo de carga, cadeia de redirecionamentos e **quem navegou** (agente via `browser_abrir`, clique em link, redirecionamento do site, ou o próprio usuário na janela) |
+| **Navegação** | o histórico de navegação: cada página que o browser carregou, em ordem. Instante, URL, título, código HTTP, tempo de carga, cadeia de redirecionamentos e **quem navegou** (agente via `browser_open`, clique em link, redirecionamento do site, ou o próprio usuário na janela) |
 
 **Histórico de navegação.** O app escuta os eventos do CDP (`Page.frameNavigated`, `Page.navigatedWithinDocument`, `Network.responseReceived` do frame principal) e grava uma linha por navegação, ligada à sessão de IA e à vaga em curso. Distinguir quem navegou é possível porque o app sabe quando uma tool `browser_*` está em andamento: navegação durante a tool é do agente; fora dela, é do site ou do usuário. Isso responde perguntas de debug como "por que o agente caiu na página de login?" ou "em que ponto o LinkedIn nos redirecionou?". Navegações do **usuário** (por exemplo, o login que ele faz na janela) são gravadas só como URL e instante, sem print. O histórico que o próprio Chrome guarda no perfil continua existindo, mas é do browser e não separa agente de usuário; o activity log é a fonte para o debug. Na tela, entra como uma visão "navegação" ao lado da lista de ações, com o caminho de URLs em ordem.
 
@@ -141,7 +141,7 @@ Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o mo
 - **antes:** recorte em volta do alvo, com margem, para ver *no que* ele clicou;
 - **depois:** a janela inteira, reduzida, para ver *o que aconteceu*.
 
-Ação só de leitura (`browser_ler`, `browser_recortar`) não gera print, pois a resposta dela já é a imagem ou o texto. Em **falha**, a janela inteira em tamanho cheio. As imagens são JPEG (qualidade ~70) para caber muito sem pesar. Tirar o print usa o mesmo `Page.captureScreenshot` com `clip` que o recorte já usa; nenhum comando CDP novo.
+Ação só de leitura (`browser_read`, `browser_crop`) não gera print, pois a resposta dela já é a imagem ou o texto. Em **falha**, a janela inteira em tamanho cheio. As imagens são JPEG (qualidade ~70) para caber muito sem pesar. Tirar o print usa o mesmo `Page.captureScreenshot` com `clip` que o recorte já usa; nenhum comando CDP novo.
 
 **Privacidade e limites:**
 - O texto digitado é gravado; **campos de senha nunca**, e o recorte "antes" de um campo de senha **não é gravado**.
@@ -207,3 +207,14 @@ Estas hipóteses ainda não foram testadas, e o plano começa por elas, antes de
 - Senhas guardadas pelo app. Descartado por decisão de segurança; reabrir só com cofre criptografado e confirmação.
 - Android como destino (opção futura documentada em `docs/pesquisa/2026-09-28-android-emulador.md`).
 - Observabilidade além de crash e queda: erros de console e de rede, screenshot em falha, detecção de captcha.
+
+
+## 10. Ajustes feitos ao escrever o plano (2026-10-02)
+
+Registrados em `docs/superpowers/plans/2026-10-02-browser-cdp-motor.md`. Onde divergem do texto acima, valem estes:
+
+1. Nomes das tools em **inglês**, pela convenção do repo: `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_key`, `browser_crop`, `browser_click_at`; parâmetro `confirm_submit`. As descrições seguem em pt-BR.
+2. O processo MCP recebe `--browser-state <arquivo>` e `--local-data-dir`, não uma porta fixa.
+3. O browser é preparado **em segundo plano na abertura do app** (baixar, tema, lançar). Na primeira abertura, é a "primeira vez que o app precisa". A primeira sessão de IA não espera o download.
+4. O histórico de navegação **só é gravado durante sessões de IA**: o rastreador roda no processo MCP, onde está a conexão CDP. Navegação do usuário fora de uma sessão não é registrada. A tela avisa isso.
+5. Sessão e vaga de cada registro vêm do banco principal (`sessoes` sem `terminada_em`; vaga em `candidatando`).
