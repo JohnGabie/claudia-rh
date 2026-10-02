@@ -59,7 +59,7 @@ A regra "pular o que não está logado" vale **no código**, não no prompt:
 - `browser_abrir(url)` resolve o domínio da URL para uma conta. Se a conta existe e está `precisa_login`, `desconhecido` ou com `ia_pode_usar` desligado, a tool **recusa** com texto claro ("conta LinkedIn não está logada; pule esta fonte"), e o agente segue para a próxima.
 - Domínios sem conta cadastrada (sites de empresa, onde o agente só lê a vaga) **não são bloqueados**: só se bloqueia o que é conta gerenciada.
 - `browser_contas()` devolve ao agente quais contas estão logadas e permitidas, para ele planejar a rodada.
-- A recusa fica na trilha do modo desenvolvedor, e o item pulado entra no resumo da rodada com o motivo.
+- A recusa fica no activity log do modo desenvolvedor, e o item pulado entra no resumo da rodada com o motivo.
 
 Isso também alimenta a condição 3 da guarda de envio do ciclo 1 (site logado e permitido).
 
@@ -67,7 +67,7 @@ Isso também alimenta a condição 3 da guarda de envio do ciclo 1 (site logado 
 
 Uma lista de contas dentro do app. **Onde ela mora na navegação** é decidido no plano, depois de ler `docs/padrao-design-claudia-rh.md` seção de navegação, porque o design vence e não vou propor aqui uma aba que contradiga o documento. Segue os tokens existentes (`--accent` `#D97757` como destaque; verde, âmbar e vermelho só como estado semântico, nunca como decoração).
 
-Também entra neste ciclo a **linha do tempo por vaga** no modo desenvolvedor, em cima da trilha e da lista simples que o ciclo 1 já entrega (ver seção 5.6 do motor): agrupa as ações, os eventos e os prints de uma candidatura, do início ao envio.
+Também entra neste ciclo a **linha do tempo por vaga** no modo desenvolvedor, em cima do activity log e da lista simples que o ciclo 1 já entrega (ver seção 5.6 do motor): agrupa as ações, os eventos e os prints de uma candidatura, do início ao envio.
 
 ## 8. Testes
 

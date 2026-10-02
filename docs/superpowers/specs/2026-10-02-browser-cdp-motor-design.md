@@ -33,7 +33,7 @@ O app passa a **fornecer** o controle do browser, como tools no servidor MCP que
 | Tema | Laranja `#D97757` (`--accent` do design) como padrão | Pedido do usuário | posteriormente modificar o icone do browser para uma versao todo laranja para fazer a diferença
 | Cliente CDP | **Escrito por nós** sobre WebSocket, ~12 comandos. Sem `chromiumoxide` | O protótipo inteiro é um cliente de 40 linhas; uma dependência grande a menos; testável com servidor WebSocket falso |
 | Envio de candidatura | O agente decide sozinho, **dentro da guarda** (seção 5.5) | Princípio do projeto: autonomia com contenção no código, sem confirmação humana por rodada |
-| Trilha de ações | **Só em modo desenvolvedor**, banco separado, sem tool MCP para ler | Debug e desenvolvimento, não auditoria do usuário |
+| Activity log | **Só em modo desenvolvedor**, banco separado, sem tool MCP para ler | Debug e desenvolvimento, não auditoria do usuário |
 
 ## 4. Arquitetura
 
@@ -74,7 +74,7 @@ A URL base e a pasta de destino são **parâmetros**, para o teste apontar para 
 
 - Lança o Chrome com `--remote-debugging-port=<livre>`, `--user-data-dir=<dados-locais>/browser/perfil`, `--no-first-run`, `--no-default-browser-check`. **Nunca** `--headless` em execução.
 - Escolhe porta livre e grava `estado.json`. A porta 9222 costuma ser do Chrome pessoal do usuário (já aconteceu no teste do WebView2).
-- Vigia: se o processo morre, religa e emite evento. A trilha registra a queda.
+- Vigia: se o processo morre, religa e emite evento. O activity log registra a queda.
 - **Aba ativa:** antes de qualquer ação, `/json/activate/{id}` e poll de `document.visibilityState` até `visible`. Aba congelada engole input em silêncio (armadilha 1).
 - **Tema:** grava a cor no `Preferences` do perfil **antes** da primeira abertura. Se o Chrome não aceitar, o plano tem tarefa de investigar a alternativa (política `BrowserThemeColor` por registro em HKCU, que não exige administrador).
 
@@ -110,7 +110,7 @@ As armadilhas 1 (aba congelada), 2 (modal sem `role=dialog` no DOM, só na árvo
 
 Recusa devolve texto claro ao agente, que se corrige. A guarda é código do app, não instrução de prompt. Em clique por coordenada, a guarda lê o elemento sob o ponto antes de clicar.
 
-### 5.6 Trilha do modo desenvolvedor
+### 5.6 Activity log (modo desenvolvedor)
 
 Serve para **debug e desenvolvimento**: reconstruir, passo a passo e com imagem, o que o agente fez no browser e onde algo quebrou. Não é auditoria para o usuário final.
 
@@ -120,7 +120,7 @@ Serve para **debug e desenvolvimento**: reconstruir, passo a passo e com imagem,
 
 ```
 dev/
-  trilha.db          banco SQLite só da trilha (nunca o banco das vagas)
+  activity-log.db          banco SQLite só do activity log (nunca o banco das vagas)
   capturas/          os prints, um arquivo por imagem; o banco guarda só o caminho
 ```
 
@@ -135,7 +135,7 @@ Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o mo
 | **Falha** | erro do CDP com a mensagem original, exceção do app, e a captura completa da tela no instante |
 | **Navegação** | o histórico de navegação: cada página que o browser carregou, em ordem. Instante, URL, título, código HTTP, tempo de carga, cadeia de redirecionamentos e **quem navegou** (agente via `browser_abrir`, clique em link, redirecionamento do site, ou o próprio usuário na janela) |
 
-**Histórico de navegação.** O app escuta os eventos do CDP (`Page.frameNavigated`, `Page.navigatedWithinDocument`, `Network.responseReceived` do frame principal) e grava uma linha por navegação, ligada à sessão de IA e à vaga em curso. Distinguir quem navegou é possível porque o app sabe quando uma tool `browser_*` está em andamento: navegação durante a tool é do agente; fora dela, é do site ou do usuário. Isso responde perguntas de debug como "por que o agente caiu na página de login?" ou "em que ponto o LinkedIn nos redirecionou?". Navegações do **usuário** (por exemplo, o login que ele faz na janela) são gravadas só como URL e instante, sem print. O histórico que o próprio Chrome guarda no perfil continua existindo, mas é do browser e não separa agente de usuário; a trilha é a fonte para o debug. Na tela, entra como uma visão "navegação" ao lado da lista de ações, com o caminho de URLs em ordem.
+**Histórico de navegação.** O app escuta os eventos do CDP (`Page.frameNavigated`, `Page.navigatedWithinDocument`, `Network.responseReceived` do frame principal) e grava uma linha por navegação, ligada à sessão de IA e à vaga em curso. Distinguir quem navegou é possível porque o app sabe quando uma tool `browser_*` está em andamento: navegação durante a tool é do agente; fora dela, é do site ou do usuário. Isso responde perguntas de debug como "por que o agente caiu na página de login?" ou "em que ponto o LinkedIn nos redirecionou?". Navegações do **usuário** (por exemplo, o login que ele faz na janela) são gravadas só como URL e instante, sem print. O histórico que o próprio Chrome guarda no perfil continua existindo, mas é do browser e não separa agente de usuário; o activity log é a fonte para o debug. Na tela, entra como uma visão "navegação" ao lado da lista de ações, com o caminho de URLs em ordem.
 
 **Prints.** Em toda ação que muda a página (clicar, escrever, navegar, tecla) o app grava duas imagens:
 - **antes:** recorte em volta do alvo, com margem, para ver *no que* ele clicou;
@@ -147,9 +147,9 @@ Ação só de leitura (`browser_ler`, `browser_recortar`) não gera print, pois 
 - O texto digitado é gravado; **campos de senha nunca**, e o recorte "antes" de um campo de senha **não é gravado**.
 - Os prints podem mostrar dados pessoais (CV, telefone, mensagens). Ficam só nesta máquina, só com o modo ligado, e saem no "Limpar tudo" e no desinstalador (seção 5.7).
 - Retenção de 30 dias **e** teto de espaço (1 GB): ao passar, apaga o mais antigo primeiro. Rodar com o modo ligado por semanas não pode encher o disco.
-- Uma falha ao gravar a trilha (disco cheio, banco travado) **nunca derruba nem atrasa** a ação do agente: o erro é só registrado no `diagnostics` já existente e a ação segue.
+- Uma falha ao gravar o activity log (disco cheio, banco travado) **nunca derruba nem atrasa** a ação do agente: o erro é só registrado no `diagnostics` já existente e a ação segue.
 
-**Quem escreve.** O processo MCP grava as ações (é onde elas acontecem); o app grava os eventos do browser. Os dois escrevem no mesmo `trilha.db`, com SQLite em modo WAL para os dois processos não se bloquearem.
+**Quem escreve.** O processo MCP grava as ações (é onde elas acontecem); o app grava os eventos do browser. Os dois escrevem no mesmo `activity-log.db`, com SQLite em modo WAL para os dois processos não se bloquearem.
 
 **A tela (entra neste ciclo, versão simples).** Dentro do modo desenvolvedor, uma lista cronológica com filtro por sessão e por vaga. Cada linha mostra hora, tool, alvo, resultado e a miniatura do print "depois"; clicar abre o antes e o depois lado a lado, em tamanho cheio, e o JSON cru do registro. Linhas de falha em destaque. A linha do tempo mais rica por vaga fica para o ciclo 2.
 
@@ -162,7 +162,7 @@ Ação só de leitura (`browser_ler`, `browser_recortar`) não gera print, pois 
 O desinstalador oferece duas opções, **ambas desmarcadas por padrão**, porque apagar é irreversível:
 
 1. **Remover o browser e as sessões:** apaga `<dados-locais>/browser/` (o Chrome e as contas logadas).
-2. **Remover também os meus dados:** apaga o que o app guarda em `%APPDATA%\io.github.johngabie.claudia-rh` (perfil do candidato, banco de vagas e candidaturas, arquivos gerados, diagnósticos) e `<dados-locais>` inteiro, incluindo a trilha do modo desenvolvedor. A opção 2 inclui a 1. O texto da opção diz o que será apagado, em português claro, e que não há como desfazer.
+2. **Remover também os meus dados:** apaga o que o app guarda em `%APPDATA%\io.github.johngabie.claudia-rh` (perfil do candidato, banco de vagas e candidaturas, arquivos gerados, diagnósticos) e `<dados-locais>` inteiro, incluindo o activity log do modo desenvolvedor. A opção 2 inclui a 1. O texto da opção diz o que será apagado, em português claro, e que não há como desfazer.
 
 Sem nenhuma marcada, desinstalar não apaga nada do usuário (comportamento de hoje).
 
@@ -183,7 +183,7 @@ Tudo automatizado, incluindo a instalação.
 
 | Camada | O que roda | Browser |
 |---|---|---|
-| Unidade | cliente CDP contra servidor WebSocket falso; parser de refs e nomes; guarda de envio (lista de nomes, as três condições); gravação e retenção da trilha; redação de campo de senha | nenhum |
+| Unidade | cliente CDP contra servidor WebSocket falso; parser de refs e nomes; guarda de envio (lista de nomes, as três condições); gravação e retenção do activity log; redação de campo de senha | nenhum |
 | Instalação | download, hash errado, zip corrompido, sem rede, disco cheio, instalação pela metade, versão já presente, contra servidor HTTP local com zip falso | nenhum |
 | Integração | Chrome real contra uma página HTML local que reproduz as armadilhas: rádio `opacity:0`, botão que muda de nome, modal sem `role=dialog`, aba em segundo plano | **headless só aqui** |
 | Visível | um teste com janela de verdade: tema laranja aplicado, `visibilityState` visível, perfil persiste entre duas aberturas | com janela |
