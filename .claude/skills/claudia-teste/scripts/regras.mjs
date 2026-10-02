@@ -22,10 +22,6 @@ export function decidirSubida({ appRodando, appTemCdp }) {
   return appTemCdp ? "reutilizar" : "perguntar";
 }
 
-/** Only free :1420 when its owner is something we recognise as ours. */
-export function podeMatarDonoDaPorta(cmd) {
-  return /vite|tauri|claudia-rh/i.test(cmd || "");
-}
 
 /** A button we cannot name, or that deletes/sends, is never clicked blind. */
 export function rotuloPerigoso(rotulo) {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validarVersaoApp, decidirSubida, podeMatarDonoDaPorta } from "../regras.mjs";
+import { validarVersaoApp, decidirSubida } from "../regras.mjs";
 
 const versaoApp = { Browser: "Edg/154.0.4258.48", "Protocol-Version": "1.3" };
 const paginaApp = [{ type: "page", url: "http://localhost:1420/" }];
@@ -38,12 +38,6 @@ test("app parado: sobe", () => {
   assert.equal(decidirSubida({ appRodando: false, appTemCdp: false }), "subir");
 });
 
-test("só mata dono da porta que seja vite ou tauri", () => {
-  assert.equal(podeMatarDonoDaPorta("node.exe ... vite --port 1420"), true);
-  assert.equal(podeMatarDonoDaPorta("claudia-rh.exe"), true);
-  assert.equal(podeMatarDonoDaPorta('"C:\Program Files\Google\Chrome\Application\chrome.exe"'), false);
-  assert.equal(podeMatarDonoDaPorta(""), false);
-});
 
 import { rotuloPerigoso } from "../regras.mjs";
 

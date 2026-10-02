@@ -1,9 +1,9 @@
 // Starts `tauri dev` with a CDP port, or reuses one already running.
 // Usage: node subir.mjs
-import { spawn, execSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { validarVersaoApp, decidirSubida, podeMatarDonoDaPorta } from "./regras.mjs";
+import { validarVersaoApp, decidirSubida } from "./regras.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
 const CANDIDATAS = [9333, 9334, 9335, 9336];
@@ -27,16 +27,6 @@ async function acharAppComCdp() {
     if (r.ok) return p;
   }
   return null;
-}
-
-function donoDaPorta(porta) {
-  const linha = execSync(`netstat -ano | findstr :${porta} | findstr LISTENING`, { encoding: "utf8" }).split("\n")[0] || "";
-  const pid = linha.trim().split(/\s+/).pop();
-  if (!pid) return null;
-  const cmd = execSync(
-    `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
-    { encoding: "utf8" }).trim();
-  return { pid, cmd };
 }
 
 const portaApp = await acharAppComCdp();
