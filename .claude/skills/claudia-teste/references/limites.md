@@ -67,10 +67,30 @@ Medido com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet`, dua
 
 Em negrito, os 5 que tinham falhado numa corrida anterior. Aquelas falhas coincidiram com o limite de uso da conta se esgotando durante a corrida; com o limite renovado, os 5 disparam nas duas rodadas.
 
+
+### Opus (2026-10-01)
+
+**Resultado: 15/16 nas duas rodadas.** Zero execuções inválidas. Descrição inalterada (mesmo hash do frontmatter).
+
+Os outros 15 casos se comportam como no Sonnet: todos os "deve disparar" restantes disparam, e os 5 "não deve disparar" não disparam, nas duas rodadas.
+
+**O caso que falha, nas duas rodadas, é `corrige este bug no Perfil`:**
+
+| Rodada | Primeira ferramenta do modelo |
+|---|---|
+| 1 | `Bash` |
+| 2 | `ToolSearch` |
+
+O Opus vai direto ao código, sem carregar a skill primeiro. Ao contrário das falhas anteriores, esta **não** coincide com limite de uso (zero inválidas). É uma falha real do disparo neste modelo, num pedido de correção que não diz "reproduz" nem descreve sintoma.
+
+O `SKILL.md` já diz "corrige este bug — reproduzir antes de corrigir". Isso não foi suficiente para o Opus nesse prompt curto.
+
+**Não alterei a descrição.** A medição pedia só a descrição atual. Se quiser corrigir, é uma decisão separada: e qualquer mudança precisa ser remedida nos dois modelos, para não trocar um disparo por outro.
+
 **Sobre corridas anteriores:** os números 5/16, 6/16, 7/16 e 11/16 foram descartados. Vinham de um runner com defeito (`shell: true` cortava o prompt em vários argumentos), do `run_eval.py` oficial (que não funciona no Windows, `WinError 10038`), ou de execuções falhadas contadas como "não disparou".
 
 **Limites desta medição**
 
-- Só o Sonnet. O Haiku não foi remedido de forma válida.
+- Sonnet (16/16) e Opus (15/16). O Haiku não foi remedido de forma válida.
 - Duas repetições por prompt, não dez. Um prompt de fronteira pode oscilar.
 - Mede o disparo, não se o fluxo seguinte presta. A skill disparar e depois seguir o fluxo certo é outra verificação.
