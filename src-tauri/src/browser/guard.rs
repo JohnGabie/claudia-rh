@@ -468,21 +468,78 @@ mod tests {
         assert!(matches!(result, Verdict::Refuse(m) if m.contains("já foi enviada")));
     }
 
+    /// A context that COUNTS how many times the single allowed submit of a vaga was claimed.
+    struct CountingCtx {
+        status: &'static str,
+        today: i64,
+        limit: i64,
+        allowed: bool,
+        active: Option<i64>,
+        claims: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingCtx {
+        fn good() -> Self {
+            Self { status: "candidatando", today: 0, limit: 10, allowed: true, active: Some(7), claims: Default::default() }
+        }
+        fn claims(&self) -> usize {
+            self.claims.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl GuardContext for CountingCtx {
+        fn vaga_status(&self, _: i64) -> Option<String> {
+            Some(self.status.to_string())
+        }
+        fn applications_today(&self) -> i64 {
+            self.today
+        }
+        fn daily_limit(&self) -> i64 {
+            self.limit
+        }
+        fn site_allowed(&self, _: &str) -> bool {
+            self.allowed
+        }
+        fn active_vaga(&self) -> Option<i64> {
+            self.active
+        }
+        fn claim_submit(&self, _: i64) -> bool {
+            self.claims.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            true
+        }
+    }
+
     #[test]
-    fn refused_attempt_does_not_call_claim_submit() {
-        // Verify that when a submit is refused (e.g., wrong status), claim_submit is not called.
-        // This is implicitly tested by second_submit_for_same_vaga_in_one_session_is_refused:
-        // if a refused attempt had called claim_submit, it would consume one of the allowed claims.
-        // The test verifies that refused attempts don't consume claims by checking that
-        // a second attempt for the same vaga succeeds if the first was refused.
+    fn a_refused_attempt_never_spends_the_vagas_single_submit() {
+        // Every way of being refused, each with a context that counts claims.
+        let cases: Vec<(&str, CountingCtx, Option<i64>)> = vec![
+            ("no confirmation", CountingCtx::good(), None),
+            ("vaga not in candidatando", CountingCtx { status: "analisada", ..CountingCtx::good() }, Some(7)),
+            ("daily budget used", CountingCtx { today: 10, ..CountingCtx::good() }, Some(7)),
+            ("zero limit", CountingCtx { limit: 0, ..CountingCtx::good() }, Some(7)),
+            ("site not allowed", CountingCtx { allowed: false, ..CountingCtx::good() }, Some(7)),
+            ("confirmation for another vaga", CountingCtx::good(), Some(9)),
+            ("no active vaga", CountingCtx { active: None, ..CountingCtx::good() }, Some(7)),
+        ];
+        for (why, ctx, confirm) in cases {
+            let v = check_submit("Enviar candidatura", "https://example.com", confirm, &ctx);
+            assert!(matches!(v, Verdict::Refuse(_)), "{why}: expected a refusal");
+            assert_eq!(ctx.claims(), 0, "{why}: a refused attempt must not claim the vaga");
+        }
+    }
 
-        // First attempt with wrong status is refused
-        let ctx = Ctx { status: Some("analisada"), active: Some(7), ..ok() };
-        let result = check_submit("Enviar candidatura", "https://example.com", Some(7), &ctx);
-        assert!(matches!(result, Verdict::Refuse(_)));
+    #[test]
+    fn an_allowed_submit_claims_exactly_once() {
+        let ctx = CountingCtx::good();
+        assert_eq!(check_submit("Enviar candidatura", "https://example.com", Some(7), &ctx), Verdict::Allow);
+        assert_eq!(ctx.claims(), 1);
+    }
 
-        // The second_submit test verifies claim_submit wasn't called on refusal
-        // by checking that a second attempt for the same vaga succeeds if the first was refused.
+    #[test]
+    fn a_name_that_is_not_a_submit_never_claims() {
+        let ctx = CountingCtx::good();
+        assert_eq!(check_submit("Avançar", "https://example.com", None, &ctx), Verdict::Allow);
+        assert_eq!(ctx.claims(), 0);
     }
 
     #[test]
