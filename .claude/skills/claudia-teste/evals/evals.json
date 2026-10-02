@@ -1,0 +1,22 @@
+{
+  "deve_disparar": [
+    "testa o Dashboard rodando",
+    "o badge de notificações bate com o banco?",
+    "tem um bug no Perfil, reproduz",
+    "chama o comando obter_modo_autonomo e vê o retorno",
+    "o agente parou onde devia?",
+    "compara Claude e Grok na mesma tarefa",
+    "não gostei do layout do Dashboard",
+    "o bug do Perfil tá acontecendo de novo",
+    "olha o que tá errado nessa tela",
+    "só mexi no CSS, confere se ficou bom",
+    "corrige este bug no Perfil"
+  ],
+  "nao_deve_disparar": [
+    "roda cargo test",
+    "candidata nessa vaga do LinkedIn",
+    "registra uma issue no Linear",
+    "explica o pty_manager.rs",
+    "qual a cor do tema?"
+  ]
+}
