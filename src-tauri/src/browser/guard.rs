@@ -71,6 +71,9 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
             if let Some(exact_pattern) = p.strip_prefix('=') {
                 // Exact match pattern (without the '=' prefix)
                 name == exact_pattern
+            } else if let Some(word) = p.strip_prefix('~') {
+                // Whole-word pattern: "Submit now", "Ansøg nu", "Confirm and submit" all count
+                name.split(' ').any(|w| w == word)
             } else {
                 // Substring match pattern, with or without spaces
                 name.contains(p) || name_no_spaces.contains(&p.replace(" ", ""))
@@ -98,14 +101,13 @@ pub enum Verdict {
     Refuse(String),
 }
 
-pub fn check_submit(name: &str, page_url: &str, confirm: Option<i64>, ctx: &dyn GuardContext) -> Verdict {
-    if !looks_like_submit(name) {
-        return Verdict::Allow;
-    }
+/// Everything the guard checks about a CONFIRMATION, without spending the vaga's single allowed
+/// submit. Used both by check_submit and for targets that are only STRUCTURALLY submit-like
+/// (an iframe, a nameless button): those need a valid confirmation but must not burn it.
+pub fn check_confirmation(page_url: &str, confirm: Option<i64>, ctx: &dyn GuardContext) -> Verdict {
     let Some(vaga_id) = confirm else {
         return Verdict::Refuse(
-            "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga> \
-             (a vaga precisa estar em 'candidatando')."
+            "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga>              (a vaga precisa estar em 'candidatando')."
                 .into(),
         );
     };
@@ -128,19 +130,30 @@ pub fn check_submit(name: &str, page_url: &str, confirm: Option<i64>, ctx: &dyn 
     if !ctx.site_allowed(page_url) {
         return Verdict::Refuse("RECUSADO: este site não está permitido para envio.".into());
     }
-    // Verify confirmation is for the active vaga
+    // The confirmation must be for THE active vaga. The message never says which one it is: it would
+    // hand the model the id to retry with, even when it is a stale vaga left by a crashed session.
     match ctx.active_vaga() {
-        Some(active_id) if active_id != vaga_id => {
-            return Verdict::Refuse(format!(
-                "RECUSADO: a confirmação é para vaga {vaga_id}, mas a vaga ativa em candidatando é {active_id}."
-            ))
-        }
-        None => {
-            return Verdict::Refuse("RECUSADO: nenhuma vaga ativa em candidatando.".into())
-        }
-        Some(_) => {}
+        Some(active_id) if active_id == vaga_id => Verdict::Allow,
+        Some(_) => Verdict::Refuse(format!(
+            "RECUSADO: a confirmação para a vaga {vaga_id} não corresponde à vaga que está sendo candidatada agora."
+        )),
+        None => Verdict::Refuse(
+            "RECUSADO: não há exatamente uma vaga em candidatando; resolva isso antes de enviar.".into(),
+        ),
     }
-    // Claim the submit for this vaga in this session
+}
+
+pub fn check_submit(name: &str, page_url: &str, confirm: Option<i64>, ctx: &dyn GuardContext) -> Verdict {
+    if !looks_like_submit(name) {
+        return Verdict::Allow;
+    }
+    match check_confirmation(page_url, confirm, ctx) {
+        Verdict::Allow => {}
+        refused => return refused,
+    }
+    // check_confirmation proved confirm is Some.
+    let vaga_id = confirm.expect("confirmed above");
+    // Spend the vaga's single allowed submit only now that everything else passed.
     if !ctx.claim_submit(vaga_id) {
         return Verdict::Refuse(format!("RECUSADO: já foi enviada nesta sessão a vaga {vaga_id}."));
     }
@@ -237,6 +250,9 @@ mod tests {
                     assert_eq!(pattern, fold(pattern), "pattern '{}' is not already folded", line);
                     assert!(pattern.chars().all(|c| c.is_ascii_lowercase()),
                         "pattern '{}' contains non-ASCII-lowercase characters", line);
+                } else if let Some(word) = line.strip_prefix('~') {
+                    assert_eq!(word, fold(word), "pattern '{}' is not already folded", line);
+                    assert!(!word.contains(' '), "a whole-word pattern is a single word: {line}");
                 } else {
                     // Substring patterns
                     assert_eq!(line, fold(line), "pattern '{}' is not already folded", line);
@@ -255,6 +271,9 @@ mod tests {
                 if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: test matching the bare name (without the '=' prefix)
                     assert!(looks_like_submit(pattern), "pattern '{}' not recognised by looks_like_submit", line);
+                } else if let Some(word) = line.strip_prefix('~') {
+                    assert!(looks_like_submit(word), "{line}");
+                    assert!(looks_like_submit(&format!("Confirm {word} now")), "{line} inside a longer label");
                 } else {
                     // Substring patterns: test both bare and in longer labels
                     assert!(looks_like_submit(line), "pattern '{}' not recognised by looks_like_submit", line);
@@ -422,17 +441,18 @@ mod tests {
     }
 
     #[test]
-    fn confirm_for_different_vaga_than_active_is_refused_and_names_both_ids() {
+    fn confirm_for_different_vaga_than_active_is_refused_without_revealing_the_active_id() {
         let ctx = Ctx { active: Some(7), ..ok() };
         let result = check_submit("Enviar candidatura", "https://example.com", Some(99), &ctx);
-        assert!(matches!(result, Verdict::Refuse(m) if m.contains("99") && m.contains("7")));
+        assert!(matches!(&result, Verdict::Refuse(m) if m.contains("99")), "{result:?}");
+        assert!(matches!(&result, Verdict::Refuse(m) if !m.contains('7')), "the message must not reveal the active vaga id: {result:?}");
     }
 
     #[test]
     fn no_active_vaga_is_refused() {
         let ctx = Ctx { active: None, ..ok() };
         let result = check_submit("Enviar candidatura", "https://example.com", Some(7), &ctx);
-        assert!(matches!(result, Verdict::Refuse(m) if m.contains("nenhuma vaga ativa")));
+        assert!(matches!(result, Verdict::Refuse(m) if m.contains("exatamente uma vaga")));
     }
 
     #[test]
@@ -601,5 +621,24 @@ mod tests {
         // Vaga 7 again fails - but we can't test a different active vaga in same session without changing active_vaga
         // This test verifies claim_submit independently tracks vagas
         // For a full test, we'd need a context that updates active_vaga after each claim
+    }
+
+    #[test]
+    fn generic_submit_words_count_anywhere_in_the_name() {
+        for n in ["Submit now", "Confirm and submit", "Ansøg nu", "Indsend nu", "Send now", "Final submit"] {
+            assert!(looks_like_submit(n), "{n}");
+        }
+        for n in ["Resubmitted", "Submitted jobs", "Enviar mensagem", "Send message", "Avançar"] {
+            assert!(!looks_like_submit(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn a_confirmation_can_be_checked_without_spending_the_submit() {
+        let ctx = CountingCtx::good();
+        assert_eq!(check_confirmation("https://example.com", Some(7), &ctx), Verdict::Allow);
+        assert_eq!(ctx.claims(), 0, "check_confirmation never claims");
+        assert!(matches!(check_confirmation("https://example.com", None, &ctx), Verdict::Refuse(_)));
+        assert!(matches!(check_confirmation("https://example.com", Some(9), &ctx), Verdict::Refuse(_)));
     }
 }

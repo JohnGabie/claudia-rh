@@ -14,10 +14,12 @@ bewerbung abschicken
 bewerbung einreichen
 envoyer la candidature
 envoyer ma candidature
-=submit
+~submit
 =enviar
 =send
-=indsend
-=ansog
+~indsend
+~ansog
 =postuler
 =senden
+send now
+confirm and submit
