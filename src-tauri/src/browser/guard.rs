@@ -132,14 +132,14 @@ mod tests {
     // Import PATTERNS for the extra tests
     use super::PATTERNS;
 
-    struct Ctx { status: Option<&'static str>, today: i64, limit: i64, allowed: bool, received_url: Option<&'static str> }
+    struct Ctx { status: Option<&'static str>, today: i64, limit: i64, allowed: bool }
     impl GuardContext for Ctx {
         fn vaga_status(&self, _id: i64) -> Option<String> { self.status.map(String::from) }
         fn applications_today(&self) -> i64 { self.today }
         fn daily_limit(&self) -> i64 { self.limit }
         fn site_allowed(&self, _url: &str) -> bool { self.allowed }
     }
-    fn ok() -> Ctx { Ctx { status: Some("candidatando"), today: 2, limit: 10, allowed: true, received_url: None } }
+    fn ok() -> Ctx { Ctx { status: Some("candidatando"), today: 2, limit: 10, allowed: true } }
 
     #[test]
     fn recognises_submit_buttons_in_several_languages_and_cases() {
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn non_submit_clicks_are_always_allowed() {
-        let ctx = Ctx { status: None, today: 99, limit: 1, allowed: false, received_url: None };
+        let ctx = Ctx { status: None, today: 99, limit: 1, allowed: false };
         assert_eq!(check_submit("Avançar", "https://example.com", None, &ctx), Verdict::Allow);
     }
 
@@ -208,9 +208,8 @@ mod tests {
         for line in PATTERNS.lines() {
             let line = line.trim();
             if !line.is_empty() {
-                if line.starts_with('=') {
+                if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: check the part after '='
-                    let pattern = &line[1..];
                     assert_eq!(pattern, fold(pattern), "pattern '{}' is not already folded", line);
                     assert!(pattern.chars().all(|c| c.is_ascii_lowercase()),
                         "pattern '{}' contains non-ASCII-lowercase characters", line);
@@ -229,9 +228,8 @@ mod tests {
         for line in PATTERNS.lines() {
             let line = line.trim();
             if !line.is_empty() {
-                if line.starts_with('=') {
+                if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: test matching the bare name (without the '=' prefix)
-                    let pattern = &line[1..];
                     assert!(looks_like_submit(pattern), "pattern '{}' not recognised by looks_like_submit", line);
                 } else {
                     // Substring patterns: test both bare and in longer labels

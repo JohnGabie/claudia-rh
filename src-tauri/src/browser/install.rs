@@ -57,7 +57,7 @@ fn stalled(idle: Duration) -> InstallError {
     InstallError::Network(format!("download parado: sem dados há {idle:?}"))
 }
 
-fn exe_path(root: &Path, version: &str) -> PathBuf {
+pub fn exe_path(root: &Path, version: &str) -> PathBuf {
     root.join(version).join("chrome-win64").join("chrome.exe")
 }
 

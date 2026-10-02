@@ -30,24 +30,11 @@ pub fn apply_theme(profile_dir: &Path) -> Result<(), String> {
     if let Some(p) = cfg.get("preferences").filter(|p| !p.is_null()) {
         apply_preferences(profile_dir, p)?;
     }
-    #[cfg(windows)]
-    if let Some(pol) = cfg.get("policy").filter(|p| !p.is_null()) {
-        apply_policy(pol)?;
-    }
+    // browser-theme.json has a "policy" key kept for the format, but the app never writes to the
+    // registry (spec section 4): it must stay null, which a test enforces.
     Ok(())
 }
 
-#[cfg(windows)]
-fn apply_policy(pol: &Value) -> Result<(), String> {
-    use winreg::enums::HKEY_CURRENT_USER;
-    use winreg::RegKey;
-    let key = pol["key"].as_str().ok_or("policy.key missing")?;
-    let (k, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(key).map_err(|e| e.to_string())?;
-    for (name, v) in pol["values"].as_object().into_iter().flatten() {
-        k.set_value(name, &v.as_str().unwrap_or("").to_string()).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -101,7 +88,8 @@ mod tests {
     #[test]
     fn the_shipped_theme_file_parses() {
         let cfg: Value = serde_json::from_str(include_str!("../../browser-theme.json")).unwrap();
-        assert!(cfg.get("preferences").is_some() && cfg.get("policy").is_some());
+        assert!(cfg.get("preferences").is_some());
+        assert!(cfg["policy"].is_null(), "the app never writes to the registry");
     }
 
     #[test]
