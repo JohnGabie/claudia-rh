@@ -93,7 +93,7 @@ Fase 0 — validação de limitações técnicas e requisitos antes da implement
 
 **Limites do teste:** perfil novo e deslogado, poucas visitas, nenhuma interação, rede doméstica. Não mede o que os sites fazem com **muitas candidaturas seguidas**, com cliques em velocidade de máquina, nem com a conta do usuário logada. O LinkedIn real (sessão logada, candidatura enviada) já tinha funcionado por CDP em 2026-09-28 com o Chrome 153. A Tarefa 6.3 repete isso com o binário final.
 
-**Decisão:** hipótese **não confirmada**: sem sinal de captcha extra para o Chrome for Testing. Não é argumento para trocar de binário; o motivo para reavaliar continua sendo a faixa fixa e o uso pretendido (CLA-34). Acrescentar `intl.accept_languages` ao tema (Tarefa 1.6).
+**Decisão:** hipótese **não confirmada**: sem sinal de captcha extra para o Chrome for Testing. Não é argumento para trocar de binário; o motivo para reavaliar continua sendo a faixa fixa e o uso pretendido (CLA-34). **Correção (2026-10-02, Tarefa 2.1):** gravar `intl.accept_languages` no `Preferences` **não muda** `navigator.languages` (testado com 4 variações e com as flags `--accept-lang` e `--lang`: sempre `["pt-BR"]`). O que funciona é `Emulation.setUserAgentOverride` com `acceptLanguage` por CDP: `["pt-BR","pt","en-US","en"]` e o User-Agent intacto, a partir da próxima navegação da aba e enquanto a sessão CDP estiver conectada. Implementado em `cdp::emulate_normal_languages`, chamado pela Tarefa 2.2 ao conectar.
 
 ## Baseline do clippy (antes da Tarefa 1.1)
 

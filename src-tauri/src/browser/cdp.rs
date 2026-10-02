@@ -194,6 +194,42 @@ pub async fn new_page(port: u16) -> Result<Target, String> {
     }
 }
 
+/// "pt-BR" -> "pt-BR,pt,en-US,en": the list a real Chrome reports once its user has a couple of
+/// languages configured. A fresh profile reports only the OS language, a weak automation signal.
+/// (Writing intl.accept_languages into Preferences does NOT change this: verified on Chrome 154.)
+pub fn language_list(primary: &str) -> String {
+    let primary = if primary.trim().is_empty() { "en-US" } else { primary.trim() };
+    let mut list = vec![primary.to_string()];
+    if let Some((base, _)) = primary.split_once('-') {
+        list.push(base.to_string());
+    }
+    for extra in ["en-US", "en"] {
+        if !list.iter().any(|l| l == extra) {
+            list.push(extra.to_string());
+        }
+    }
+    list.join(",")
+}
+
+/// Makes `navigator.languages` and the Accept-Language header look like a normal profile.
+/// Applies from the next navigation of this tab and lasts while this CDP session is attached;
+/// the user-agent string itself is left exactly as it is.
+pub async fn emulate_normal_languages(client: &CdpClient) -> Result<(), String> {
+    let version = client.call("Browser.getVersion", json!({})).await?;
+    let user_agent = version["userAgent"].as_str().ok_or("Browser.getVersion returned no userAgent")?.to_string();
+    let current = client
+        .call("Runtime.evaluate", json!({ "expression": "navigator.language", "returnByValue": true }))
+        .await?;
+    let primary = current["result"]["value"].as_str().unwrap_or("en-US");
+    client
+        .call(
+            "Emulation.setUserAgentOverride",
+            json!({ "userAgent": user_agent, "acceptLanguage": language_list(primary) }),
+        )
+        .await?;
+    Ok(())
+}
+
 /// A hidden tab silently swallows input events. Activate it and wait until the
 /// page reports itself visible (trap 1 from the prototype).
 pub async fn bring_to_front(port: u16, target_id: &str, client: &CdpClient) -> Result<(), String> {
@@ -637,5 +673,29 @@ mod new_page_tests {
         let (port, _) = serve_once("GET /never", |_| String::new()).await;
         let e = new_page(port).await.unwrap_err();
         assert!(e.contains("refused") && e.contains("405"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::language_list;
+
+    #[test]
+    fn a_regional_language_gets_its_base_then_english() {
+        assert_eq!(language_list("pt-BR"), "pt-BR,pt,en-US,en");
+        assert_eq!(language_list("da-DK"), "da-DK,da,en-US,en");
+    }
+
+    #[test]
+    fn english_is_not_duplicated() {
+        assert_eq!(language_list("en-US"), "en-US,en");
+        assert_eq!(language_list("en-GB"), "en-GB,en,en-US");
+        assert_eq!(language_list("en"), "en,en-US");
+    }
+
+    #[test]
+    fn an_empty_or_blank_primary_falls_back_to_english() {
+        assert_eq!(language_list(""), "en-US,en");
+        assert_eq!(language_list("   "), "en-US,en");
     }
 }

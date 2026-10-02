@@ -1696,6 +1696,7 @@ pub async fn ensure_running(o: &LaunchOptions, version: &str, state_path: &Path)
 > | `install::ensure_installed(..., &cb)` na 2.4 | Assinatura igual; a extração já roda em `spawn_blocking`. Falta limitar `on_progress` (1% ou 200 ms) no `service.rs`. |
 > | `theme::apply_theme` antes de `ensure_running` na 2.4 | Aplicar o tema **só no caminho de lançamento**, nunca com um Chrome já vivo (reescreveria `Preferences` por baixo dele). Para isso `ensure_running_with` ganha um parâmetro `prepare: impl Fn(&Path)` chamado imediatamente antes do `spawn`. |
 > | `mod.rs::chrome_exe` | Removida: usar `install::exe_path` (pública). |
+> | Idioma do navegador (Tarefa 0.6) | A chave `intl.accept_languages` do tema **não funciona** (removida). A Tarefa 2.2 chama `cdp::emulate_normal_languages(&client)` ao conectar cada aba do agente (já existe, com teste live). |
 >
 > **Decisões de comportamento para a Tarefa 2.4**, registradas como rulings (custo se erradas: pequeno, cada uma é uma linha de código):
 > 1. **Relançar o Chrome se ele morrer** (spec §4 e §5.2; hoje nenhuma tarefa o faz): `manager::spawn_watcher` com sonda a cada 3 s, relança depois de 2 falhas seguidas, no máximo 5 relançamentos em 10 minutos, avisa a UI por evento. Testável com `spawn`/`kill` injetados.

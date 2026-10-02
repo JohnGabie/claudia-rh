@@ -103,6 +103,9 @@ async fn real_chrome_answers_cdp_and_we_can_read_the_accessibility_tree() {
     let dialog_names: Vec<&str> = dialog_nodes.iter().map(|n| n.name.as_str()).collect();
     assert!(dialog_names.contains(&"Nome"), "Nome not in dialog scope");
     assert!(dialog_names.contains(&"Avançar"), "Avançar not in dialog scope");
+    // And the scope really EXCLUDES what is outside the modal (the trap: the modal has no role=dialog in the DOM).
+    assert!(names.contains(&"Fora do modal"), "the button outside the modal is in the full tree");
+    assert!(!dialog_names.contains(&"Fora do modal"), "dialog scope must exclude it: {dialog_names:?}");
 }
 
 #[tokio::test]
@@ -128,29 +131,16 @@ async fn the_chrome_we_launched_reports_itself_visible() {
 
 #[tokio::test]
 #[ignore]
-async fn the_applied_profile_preferences_give_a_normal_language_list() {
-    // Task 0.6: a one-language navigator.languages is a weak automation signal.
-    // Apply the shipped theme/preferences to the profile BEFORE launching, as the app does.
-    let profile = std::env::temp_dir().join(format!("claudia-lang-{}", std::process::id()));
-    claudia_rh_lib::browser::theme::apply_theme(&profile.join("p")).unwrap();
-
-    // Verify that the theme was actually written to the Preferences file
-    let prefs_path = profile.join("p").join("Default").join("Preferences");
-    let prefs_content = std::fs::read_to_string(&prefs_path).expect("Preferences file was created");
-    let prefs: serde_json::Value = serde_json::from_str(&prefs_content).unwrap();
-    let accept_langs = prefs["intl"]["accept_languages"].as_str().unwrap_or("");
-    assert!(!accept_langs.is_empty(), "accept_languages not set in Preferences");
-
-    let state_path = profile.join("state.json");
-    let o = LaunchOptions::headless_for_tests(chrome(), profile.join("p"));
-    let st = manager::ensure_running(&o, "", &state_path).await.unwrap();
-    let page = cdp::first_page(st.port).await.unwrap();
-    let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
-
-    // Wait for page to load
-    client.call("Page.navigate", json!({ "url": fixture_url() })).await.unwrap();
-    for _ in 0..20 {
-        let r = client
+async fn emulated_languages_make_navigator_languages_look_normal() {
+    // Task 0.6: a one-language navigator.languages is a weak automation signal. Writing
+    // intl.accept_languages into Preferences does NOT change it (verified on Chrome 154); the CDP
+    // emulation does, from the next navigation on.
+    let l = launch().await;
+    cdp::emulate_normal_languages(&l.client).await.unwrap();
+    l.client.call("Page.navigate", json!({ "url": format!("{}?again", fixture_url()) })).await.unwrap();
+    for _ in 0..40 {
+        let r = l
+            .client
             .call("Runtime.evaluate", json!({ "expression": "document.readyState", "returnByValue": true }))
             .await
             .unwrap();
@@ -159,17 +149,14 @@ async fn the_applied_profile_preferences_give_a_normal_language_list() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-
-    let n = eval(&client, "navigator.languages.length").await;
-    let _ = std::process::Command::new("taskkill")
-        .args(&["/PID", &st.pid.to_string(), "/T", "/F"])
-        .output();
-    let _ = std::fs::remove_dir_all(&profile);
-
-    // Chrome's navigator.languages should reflect the accept_languages setting.
-    // At minimum, we verify the theme was applied and the setting was written.
-    assert!(n.as_i64().unwrap() >= 1, "navigator.languages has {n} entries");
-    assert!(accept_langs.contains("pt"), "Theme should have pt-BR or pt in accept_languages");
+    let langs = eval(&l.client, "navigator.languages").await;
+    let langs: Vec<String> = langs.as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    let primary = eval(&l.client, "navigator.language").await;
+    assert!(langs.len() >= 2, "still a single language: {langs:?}");
+    assert_eq!(langs[0], primary.as_str().unwrap(), "the first language stays the browser's own");
+    assert!(langs.iter().any(|x| x == "en"), "English is in the list: {langs:?}");
+    let ua = eval(&l.client, "navigator.userAgent").await;
+    assert!(ua.as_str().unwrap().contains("Chrome/"), "the user agent is untouched: {ua}");
 }
 
 #[tokio::test]
