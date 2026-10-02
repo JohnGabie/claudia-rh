@@ -44,3 +44,22 @@ test("só mata dono da porta que seja vite ou tauri", () => {
   assert.equal(podeMatarDonoDaPorta('"C:\Program Files\Google\Chrome\Application\chrome.exe"'), false);
   assert.equal(podeMatarDonoDaPorta(""), false);
 });
+
+import { rotuloPerigoso } from "../regras.mjs";
+
+test("rótulos destrutivos ou de envio são perigosos", () => {
+  for (const r of ["Apagar perfil", "Excluir", "Remover vaga", "Enviar candidatura", "Submit application"]) {
+    assert.equal(rotuloPerigoso(r), true, r);
+  }
+});
+
+test("rótulos de navegação não são perigosos", () => {
+  for (const r of ["Dashboard", "Profile", "History", "Notifications 9+", "Terminal"]) {
+    assert.equal(rotuloPerigoso(r), false, r);
+  }
+});
+
+test("rótulo vazio é tratado como perigoso: sem nome não há como julgar", () => {
+  assert.equal(rotuloPerigoso(""), true);
+  assert.equal(rotuloPerigoso(undefined), true);
+});

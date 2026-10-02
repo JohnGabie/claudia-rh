@@ -26,3 +26,9 @@ export function decidirSubida({ appRodando, appTemCdp }) {
 export function podeMatarDonoDaPorta(cmd) {
   return /vite|tauri|claudia-rh/i.test(cmd || "");
 }
+
+/** A button we cannot name, or that deletes/sends, is never clicked blind. */
+export function rotuloPerigoso(rotulo) {
+  if (!rotulo || !String(rotulo).trim()) return true;
+  return /apagar|excluir|remover|delete|enviar|submit|disparar/i.test(rotulo);
+}
