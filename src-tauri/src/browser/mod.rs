@@ -4,6 +4,7 @@ pub mod guard;
 pub mod install;
 pub mod pin;
 pub mod refs;
+pub mod theme;
 
 use std::path::{Path, PathBuf};
 
