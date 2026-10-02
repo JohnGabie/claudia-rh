@@ -29,13 +29,15 @@ O app passa a **fornecer** o controle do browser, como tools no servidor MCP que
 | De onde vem | **Chrome for Testing**, baixado na primeira vez que o app precisa | Build oficial da Google para automação; instalador do Claudia continua pequeno; a licença do Chrome provavelmente não permite redistribuir dentro do nosso instalador (a confirmar no plano) |
 | Integridade do download | Versão e SHA-256 **fixados no código do app** | O JSON da Google (`last-known-good-versions-with-downloads.json`) não traz hash; fixar também dá versão travada |
 | Janela | **Sempre visível** em execução. Headless só em teste | O usuário tem de ver o que a IA faz |
-| Memória das contas | Perfil persistente em `<dados>/browser/perfil/`. **Só sessão (cookies); nenhuma senha passa pelo app** | Igual a um browser normal; sem cofre de senhas num app que entrega ações a agentes de terceiros |
+| Memória das contas | Perfil persistente em `<dados-locais>/browser/perfil/`. **Só sessão (cookies); nenhuma senha passa pelo app** | Igual a um browser normal; sem cofre de senhas num app que entrega ações a agentes de terceiros |
 | Tema | Laranja `#D97757` (`--accent` do design) como padrão | Pedido do usuário | posteriormente modificar o icone do browser para uma versao todo laranja para fazer a diferença
 | Cliente CDP | **Escrito por nós** sobre WebSocket, ~12 comandos. Sem `chromiumoxide` | O protótipo inteiro é um cliente de 40 linhas; uma dependência grande a menos; testável com servidor WebSocket falso |
 | Envio de candidatura | O agente decide sozinho, **dentro da guarda** (seção 5.5) | Princípio do projeto: autonomia com contenção no código, sem confirmação humana por rodada |
 | Trilha de ações | **Só em modo desenvolvedor**, banco separado, sem tool MCP para ler | Debug e desenvolvimento, não auditoria do usuário |
 
 ## 4. Arquitetura
+
+**Onde o browser mora.** Tudo do browser (o Chrome extraído e o perfil com as sessões) fica numa pasta só, `<dados-locais>/browser/`, onde `<dados-locais>` é `%LOCALAPPDATA%\io.github.johngabie.claudia-rh` (`app_local_data_dir` do Tauri). Não é a pasta de instalação, porque um update do app a substitui e levaria as contas logadas, e `Program Files` exigiria administrador. Também não é `%APPDATA%` (Roaming), que perfis corporativos sincronizam pela rede, e não deve carregar 150 MB de binário e cookies. O instalador e o app **não escrevem no registro** nem tocam no Chrome do usuário por causa do browser. A remoção no desinstalador está na seção 5.7.
 
 O servidor MCP **não vive dentro do app**. É o mesmo binário em `--mcp-serve`, subido por cada sessão de IA via stdio, e morre com ela. O browser tem de sobreviver às sessões, logo o dono é o app.
 
@@ -50,7 +52,7 @@ App Tauri (processo principal)                 Processo MCP (um por sessão de I
         └──── lança ──► Chrome (--remote-debugging-port, --user-data-dir) ◄─ WebSocket
 ```
 
-- O app escreve a porta de debug num arquivo em `<dados>/browser/estado.json` e a passa ao processo MCP por `--browser-port`, como já faz com `--notify-port`.
+- O app escreve a porta de debug num arquivo em `<dados-locais>/browser/estado.json` e a passa ao processo MCP por `--browser-port`, como já faz com `--notify-port`.
 - O processo MCP é só cliente: conecta, executa o comando CDP, devolve.
 - `dispatch` (`src-tauri/src/mcp/mod.rs`) hoje é síncrono e devolve `String`. As tools de browser precisam de um caminho assíncrono e de resposta com **imagem** (`ContentBlock` de imagem do `rmcp`). Isso é mudança estrutural e entra no plano como tarefa própria.
 
@@ -58,7 +60,7 @@ App Tauri (processo principal)                 Processo MCP (um por sessão de I
 
 ### 5.1 `browser::instalacao`
 
-Garante que o Chrome existe em `<dados>/browser/<versão>/chrome-win64/chrome.exe`.
+Garante que o Chrome existe em `<dados-locais>/browser/<versão>/chrome-win64/chrome.exe`.
 
 1. Se existe e o `chrome.exe --version` bate com a versão fixada: usa.
 2. Senão: baixa `https://storage.googleapis.com/chrome-for-testing-public/<versão>/win64/chrome-win64.zip`, confere o SHA-256 fixado, extrai numa pasta temporária e **só então** renomeia para a pasta final (nunca deixa instalação pela metade).
@@ -70,7 +72,7 @@ A URL base e a pasta de destino são **parâmetros**, para o teste apontar para 
 
 ### 5.2 `browser::gestor` (BrowserManager)
 
-- Lança o Chrome com `--remote-debugging-port=<livre>`, `--user-data-dir=<dados>/browser/perfil`, `--no-first-run`, `--no-default-browser-check`. **Nunca** `--headless` em execução.
+- Lança o Chrome com `--remote-debugging-port=<livre>`, `--user-data-dir=<dados-locais>/browser/perfil`, `--no-first-run`, `--no-default-browser-check`. **Nunca** `--headless` em execução.
 - Escolhe porta livre e grava `estado.json`. A porta 9222 costuma ser do Chrome pessoal do usuário (já aconteceu no teste do WebView2).
 - Vigia: se o processo morre, religa e emite evento. A trilha registra a queda.
 - **Aba ativa:** antes de qualquer ação, `/json/activate/{id}` e poll de `document.visibilityState` até `visible`. Aba congelada engole input em silêncio (armadilha 1).
