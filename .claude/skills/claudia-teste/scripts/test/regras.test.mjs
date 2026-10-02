@@ -63,3 +63,42 @@ test("rótulo vazio é tratado como perigoso: sem nome não há como julgar", ()
   assert.equal(rotuloPerigoso(""), true);
   assert.equal(rotuloPerigoso(undefined), true);
 });
+
+import { classificarComando, sqlSomenteLeitura } from "../regras.mjs";
+
+test("comandos com prefixo de leitura são leitura", () => {
+  for (const c of ["obter_modo_autonomo", "obter_config_disparo", "listar_pendencias", "ler_candidato_base", "verificar_setup"]) {
+    assert.equal(classificarComando(c), "leitura", c);
+  }
+});
+
+test("comandos que gravam são escrita", () => {
+  for (const c of ["configurar_modo_autonomo", "guardar_pesos_variantes", "apagar_curriculo", "iniciar_pty", "escrever_pty"]) {
+    assert.equal(classificarComando(c), "escrita", c);
+  }
+});
+
+test("prefixo desconhecido é escrita: na dúvida, exige --escrever", () => {
+  assert.equal(classificarComando("fazer_algo_novo"), "escrita");
+  assert.equal(classificarComando(""), "escrita");
+});
+
+test("aceita SELECT simples", () => {
+  assert.equal(sqlSomenteLeitura("SELECT COUNT(*) FROM vagas").ok, true);
+  assert.equal(sqlSomenteLeitura("  select id from sessoes order by id desc limit 3;").ok, true);
+});
+
+test("recusa escrita e DDL", () => {
+  for (const s of ["INSERT INTO vagas VALUES (1)", "UPDATE vagas SET status='x'", "DELETE FROM vagas",
+                   "DROP TABLE vagas", "ATTACH DATABASE 'x' AS y", "PRAGMA writable_schema=1", "CREATE TABLE t(a)"]) {
+    assert.equal(sqlSomenteLeitura(s).ok, false, s);
+  }
+});
+
+test("recusa múltiplos statements, mesmo que o primeiro seja SELECT", () => {
+  assert.equal(sqlSomenteLeitura("SELECT 1; DELETE FROM vagas").ok, false);
+});
+
+test("recusa SQL vazio", () => {
+  assert.equal(sqlSomenteLeitura("").ok, false);
+});

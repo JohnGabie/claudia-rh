@@ -32,3 +32,22 @@ export function rotuloPerigoso(rotulo) {
   if (!rotulo || !String(rotulo).trim()) return true;
   return /apagar|excluir|remover|delete|enviar|submit|disparar/i.test(rotulo);
 }
+
+const PREFIXOS_LEITURA = /^(obter|listar|ler|verificar|consultar|contar|abrir_leitura)_/;
+
+/** Unknown prefixes count as writes: calling a mutating command by accident is the costly mistake. */
+export function classificarComando(nome) {
+  return PREFIXOS_LEITURA.test(nome || "") ? "leitura" : "escrita";
+}
+
+/** The DB is opened read-only as well; this rule just fails early with a clear reason. */
+export function sqlSomenteLeitura(sql) {
+  const s = String(sql ?? "").trim().replace(/;+\s*$/, "");
+  if (!s) return { ok: false, motivo: "SQL vazio" };
+  if (s.includes(";")) return { ok: false, motivo: "um único statement por chamada" };
+  if (!/^select\b/i.test(s)) return { ok: false, motivo: "só SELECT; escrita passa por invocar.mjs --escrever" };
+  if (/\b(insert|update|delete|drop|alter|create|attach|pragma|replace)\b/i.test(s)) {
+    return { ok: false, motivo: "palavra de escrita dentro do SELECT" };
+  }
+  return { ok: true, motivo: "ok" };
+}
