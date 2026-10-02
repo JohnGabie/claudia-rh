@@ -1800,6 +1800,26 @@ async fn the_chrome_we_launched_reports_itself_visible() {
     cdp::bring_to_front(l.port, &page.id, &l.client).await.unwrap();
     assert_eq!(eval(&l.client, "document.visibilityState").await, "visible");
 }
+
+#[tokio::test]
+#[ignore]
+async fn the_applied_profile_preferences_give_a_normal_language_list() {
+    // Task 0.6: a one-language navigator.languages is a weak automation signal.
+    // Apply the shipped theme/preferences to the profile BEFORE launching, as the app does.
+    let profile = std::env::temp_dir().join(format!("claudia-lang-{}", std::process::id()));
+    claudia_rh_lib::browser::theme::apply_theme(&profile.join("p")).unwrap();
+    let state_path = profile.join("state.json");
+    let o = LaunchOptions::headless_for_tests(chrome(), profile.join("p"));
+    let st = manager::ensure_running(&o, "", &state_path).await.unwrap();
+    let page = cdp::first_page(st.port).await.unwrap();
+    let client = CdpClient::connect(&page.ws_url).await.unwrap();
+    client.call("Page.navigate", json!({ "url": fixture_url() })).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let n = eval(&client, "navigator.languages.length").await;
+    let _ = std::process::Command::new("taskkill").args(["/PID", &st.pid.to_string(), "/T", "/F"]).output();
+    let _ = std::fs::remove_dir_all(&profile);
+    assert!(n.as_i64().unwrap() >= 2, "navigator.languages has {n} entries");
+}
 ```
 Nota: `ensure_running(&o, "", ...)` usa a versão vazia (`b.contains("")` é sempre verdadeiro) nos testes, porque o Chrome do teste pode não ser o fixado.
 
