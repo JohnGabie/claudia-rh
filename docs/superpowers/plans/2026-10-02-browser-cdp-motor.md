@@ -36,6 +36,10 @@ Decididos ao ler o código; a spec é atualizada junto com este plano.
 3. **O browser é preparado em segundo plano na abertura do app** (baixar, tema, lançar), não no clique de "iniciar sessão". Na primeira abertura é o "primeira vez que precisa". Assim a primeira sessão não espera 150 MB.
 4. **Navegação do usuário só é gravada durante sessões de IA.** O rastreador de navegação roda no processo MCP (onde está a conexão CDP). Fora de sessão, nada é gravado. Limite a documentar na UI.
 5. **Sessão e vaga do registro** vêm do banco principal (`sessoes` sem `terminada_em`; vaga em `candidatando`), sem mudar a assinatura de `write_mcp_config`.
+6. **Itens adiados pelas revisões do Opus nas Tarefas 1.2 e 1.3.** O executor de cada tarefa abaixo os trata como parte dela, com teste:
+   - **Tarefa 2.2:** (a) `first_page` pega a primeira aba da lista, que o Chrome ordena pela atividade mais recente, ou seja, pode ser a aba que o usuário tocou por último. Guardar o `id` da aba do agente (criada com `Target.createTarget` ou gravada em `state.json`) e usá-la primeiro. (b) Antes de reconectar com a porta lida do `state.json`, conferir `/json/version` contra a versão fixada (a porta pode ter virado o Chrome pessoal do usuário). (c) Mapear os erros do `CdpClient` para mensagens em pt-BR acionáveis ("conexão com o browser fechou, chame browser_read de novo"); `Err(e.to_string())` do CDP passa o JSON cru: passar só `error.message`. (d) Conferir que o `ws_url` devolvido começa com `ws://127.0.0.1:{porta}/`.
+   - **Tarefa 2.4:** `on_progress` dispara a cada chunk (10 mil ou mais `app.emit` para 150 MB): limitar a mudança de 1% ou 200 ms. Extração do zip e escrita do arquivo bloqueiam um worker do tokio: usar `spawn_blocking`.
+   - **Tarefa 3.4:** o laço do rastreador usa `while let Ok(ev) = rx.recv()`; um `Lagged` o encerra em silêncio e a navegação deixa de ser gravada. Usar `match`: `Lagged` continua, `Closed` sai. Subir a capacidade do canal de eventos para 2048.
 
 ## Review Focus
 
