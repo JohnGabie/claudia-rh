@@ -2,6 +2,7 @@
 pub mod cdp;
 pub mod install;
 pub mod pin;
+pub mod refs;
 
 use std::path::{Path, PathBuf};
 
