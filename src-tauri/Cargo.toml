@@ -42,6 +42,7 @@ sha2 = "0.10"
 futures-util = "0.3"
 tokio-tungstenite = "0.26"
 base64 = "0.22"
+unicode-normalization = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

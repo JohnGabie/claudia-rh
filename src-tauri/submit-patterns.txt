@@ -1,9 +1,23 @@
 enviar candidatura
 enviar solicitacao
+enviar solicitud
 submit application
 submit your application
 send application
 postuler
 indsend ansogning
+indsend din ansogning
 send ansogning
 bewerbung absenden
+bewerbung senden
+bewerbung abschicken
+bewerbung einreichen
+envoyer la candidature
+envoyer ma candidature
+=submit
+=enviar
+=send
+=indsend
+=ansog
+=postuler
+=senden
