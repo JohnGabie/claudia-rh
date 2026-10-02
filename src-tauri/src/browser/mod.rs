@@ -1,5 +1,6 @@
 // Browser engine: our own Chrome for Testing, driven over CDP.
 pub mod cdp;
+pub mod guard;
 pub mod install;
 pub mod pin;
 pub mod refs;
