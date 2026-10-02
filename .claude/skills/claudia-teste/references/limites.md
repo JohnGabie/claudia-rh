@@ -8,7 +8,7 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 - **Evidência:**
   - No app (aba Terminal aberta): `.xterm` presente, `.xterm-rows` presente, **0 canvas**, 23 linhas no DOM, 4 nós de acessibilidade com "terminal". O texto estava vazio porque nenhuma sessão tinha rodado.
   - Num `Terminal` do mesmo `@xterm/xterm` criado dentro da página do app, escrever `linha-um` e `linha-dois 123` e ler `.xterm-rows > div` devolveu `linha-um|linha-dois 123 |||`, também com 0 canvas.
-- **Ressalva:** o texto lido veio de uma instância da mesma biblioteca e versão, não da instância do app com uma sessão ativa. Não iniciei uma sessão para provar o último passo, porque isso gasta tokens do `claude` e pode agir; a spec evita isso. O que fica provado é que o renderer do app é DOM e que esse renderer expõe texto. Falta ver o texto real de uma sessão, o que a Tarefa 9 faz se o usuário iniciar uma pela UI.
+- **Fechado na Tarefa 6:** emiti o evento `pty-output` pelo canal do Tauri (`plugin:event|emit`). O listener do próprio app o escreveu no xterm real, e `observar.mjs` leu o marcador de volta pelo DOM. Isso exercita o caminho real (backend -> evento -> xterm -> DOM) sem iniciar sessão do agente nem gastar tokens. Ainda não vi o texto de uma sessão `claude` de verdade; a Tarefa 9 cobre se o usuário iniciar uma.
 - **Consequência:** `observar.mjs` lê o Terminal por `.xterm-rows > div` e devolve `indisponivel` com o motivo quando o terminal está vazio ou sem esse renderer. Nunca finge ler.
 - **Data / app:** 2026-10-01, `tauri dev`, Edg/154.0.4258.48.
 
