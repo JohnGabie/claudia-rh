@@ -1,0 +1,76 @@
+// Starts `tauri dev` with a CDP port, or reuses one already running.
+// Usage: node subir.mjs
+import { spawn, execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { validarVersaoApp, decidirSubida, podeMatarDonoDaPorta } from "./regras.mjs";
+
+const RAIZ = path.resolve(import.meta.dirname, "../../../..");
+const CANDIDATAS = [9333, 9334, 9335, 9336];
+
+async function ler(url) {
+  try { return await (await fetch(url, { signal: AbortSignal.timeout(2000) })).json(); }
+  catch { return null; }
+}
+
+/** A port is free only if nothing answers at all — an answer, even a 404, means it is taken. */
+async function portaLivre(porta) {
+  try { await fetch(`http://127.0.0.1:${porta}/json/version`, { signal: AbortSignal.timeout(1500) }); return false; }
+  catch { return true; }
+}
+
+async function acharAppComCdp() {
+  for (const p of CANDIDATAS) {
+    const v = await ler(`http://127.0.0.1:${p}/json/version`);
+    if (!v) continue;
+    const r = validarVersaoApp(v, await ler(`http://127.0.0.1:${p}/json/list`));
+    if (r.ok) return p;
+  }
+  return null;
+}
+
+function donoDaPorta(porta) {
+  const linha = execSync(`netstat -ano | findstr :${porta} | findstr LISTENING`, { encoding: "utf8" }).split("\n")[0] || "";
+  const pid = linha.trim().split(/\s+/).pop();
+  if (!pid) return null;
+  const cmd = execSync(
+    `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
+    { encoding: "utf8" }).trim();
+  return { pid, cmd };
+}
+
+const portaApp = await acharAppComCdp();
+// :1420 answering means a vite (and probably the app) is up even without CDP.
+let vite1420 = false;
+try { await fetch("http://127.0.0.1:1420/", { signal: AbortSignal.timeout(1500) }); vite1420 = true; } catch { /* nothing there */ }
+const appRodando = portaApp !== null || vite1420;
+const decisao = decidirSubida({ appRodando, appTemCdp: portaApp !== null });
+
+if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", porta: portaApp })); process.exit(0); }
+if (decisao === "perguntar") {
+  console.log(JSON.stringify({ acao: "perguntar", motivo: "o app já roda sem CDP; reiniciar fecha a sessão do usuário" }));
+  process.exit(2);
+}
+
+let porta = null;
+for (const p of CANDIDATAS) { if (await portaLivre(p)) { porta = p; break; } }
+if (!porta) { console.log(JSON.stringify({ acao: "abortar", motivo: "nenhuma porta livre entre 9333 e 9336" })); process.exit(3); }
+
+const log = path.join(process.env.TEMP || ".", "tauri-cdp.log");
+const fd = fs.openSync(log, "w");
+const filho = spawn("npm", ["run", "tauri", "dev"], {
+  cwd: RAIZ, shell: true, detached: true, stdio: ["ignore", fd, fd],
+  env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${porta}` },
+});
+filho.unref();
+
+for (let i = 0; i < 60; i++) {
+  await new Promise((r) => setTimeout(r, 3000));
+  const v = await ler(`http://127.0.0.1:${porta}/json/version`);
+  if (v && validarVersaoApp(v, await ler(`http://127.0.0.1:${porta}/json/list`)).ok) {
+    console.log(JSON.stringify({ acao: "subiu", porta, pid: filho.pid, log }));
+    process.exit(0);
+  }
+}
+console.log(JSON.stringify({ acao: "falhou", motivo: "CDP não respondeu em 180 s", log }));
+process.exit(4);
