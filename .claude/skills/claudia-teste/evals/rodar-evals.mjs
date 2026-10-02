@@ -20,7 +20,7 @@ function rodar(query) {
     const env = { ...process.env }; delete env.CLAUDECODE;
     const p = spawn("claude", ["-p", query, "--output-format", "stream-json", "--verbose", "--model", MODELO],
       { cwd: RAIZ, env, shell: false });
-    let buf = "", decidido = null;
+    let buf = "", decidido = null, erro = null;
     const fim = (v, motivo) => { if (decidido === null) { decidido = { disparou: v === true, motivo }; try { p.kill(); } catch {} resolve(decidido); } };
     const t = setTimeout(() => fim(false, "timeout"), 110000);
     p.stdout.on("data", (d) => {
@@ -29,6 +29,7 @@ function rodar(query) {
       while ((i = buf.indexOf("\n")) >= 0) {
         const linha = buf.slice(0, i); buf = buf.slice(i + 1);
         let ev; try { ev = JSON.parse(linha); } catch { continue; }
+        if (ev.type === "result" && ev.is_error) erro = String(ev.result || "erro").slice(0, 80);
         if (ev.type !== "assistant") continue;
         const uso = (ev.message?.content ?? []).find((c) => c.type === "tool_use");
         if (!uso) continue;                       // text-only message so far
@@ -37,7 +38,7 @@ function rodar(query) {
         else { clearTimeout(t); fim(false, `primeira ferramenta: ${uso.name}`); }
       }
     });
-    p.on("close", () => { clearTimeout(t); fim(false, "terminou sem ferramenta"); });
+    p.on("close", () => { clearTimeout(t); if (erro) { if (decidido === null) { decidido = { disparou: false, invalido: true, motivo: "EXECUCAO FALHOU: " + erro }; resolve(decidido); } } else fim(false, "terminou sem ferramenta"); });
     p.on("error", () => fim(false, "erro ao lançar claude"));
   });
 }
@@ -48,9 +49,10 @@ await Promise.all(Array.from({ length: 3 }, async () => {
   while (prox < SET.length) { const i = prox++; res[i] = await rodar(SET[i].query); process.stderr.write("."); }
 }));
 
-let ok = 0;
+let ok = 0, invalidos = 0;
 for (const [i, item] of SET.entries()) {
   const r = res[i];
+  if (r.invalido) { invalidos++; console.log(`INVALIDO  ${item.query}  [${r.motivo}]`); continue; }
   const passou = r.disparou === item.should_trigger;
   if (passou) ok++;
   console.log(`${passou ? "PASS" : "FAIL"}  disparou=${String(r.disparou).padEnd(5)} esperado=${String(item.should_trigger).padEnd(5)}  ${item.query}  [${r.motivo}]`);

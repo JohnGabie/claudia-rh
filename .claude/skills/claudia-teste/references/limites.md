@@ -39,3 +39,21 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 - **O que o backend sabe:** `obter_config_disparo` devolve só `ativo`, `limiar_minutos`, `limite_diario`, `limite_tempo_minutos` e `janelas`. Em disco só existem `modo_autonomo.json` (outra coisa) e `search_variants.yaml`. **Nenhum campo de modo de busca persistido.**
 - **O código confirma:** `src/components/dashboard/index.tsx:229`, `handleModoDragEnd = () => { /* ... sem backend por agora */ }`, e nenhum comando Tauri que guarde os modos.
 - **Limite do que provei:** não movi um slider. Mostrei que não há onde o valor possa ser guardado. Mover o controle e reler o estado confirmaria a divergência de ponta a ponta.
+
+## Evals de disparo (2026-10-01)
+
+**Resultado: inconclusivo.** Não há medição confiável do disparo da descrição. O que se sabe e o que não se sabe:
+
+**Sabido**
+- O `run_eval.py` oficial não funciona no Windows: `WinError 10038` em `select()` sobre pipes, e ele registra 0 disparos em tudo. Os "5/16" iniciais eram isso.
+- O runner em Node (`evals/rodar-evals.mjs`) decide pela **primeira** chamada de ferramenta do modelo: disparou se for `Skill(claudia-teste)`.
+- Lançar `claude` com `shell: true` corta prompts de várias palavras em argumentos separados, e o modelo nunca vê a pergunta real. Foi preciso `shell: false`.
+- Rodados **sozinhos**, `tem um bug no Perfil, reproduz`, `o agente parou onde devia?` e `não gostei do layout do Dashboard` dispararam `Skill(claudia-teste)` e seguiram para `subir.mjs`, que é o fluxo da skill.
+- Com o runner corrigido, o Sonnet deu **11/16**: os 5 casos "não deve disparar" corretos, os 6 primeiros "deve disparar" corretos.
+
+**Não sabido, e por quê**
+- Os 5 "deve disparar" que falharam nessa corrida (layout, bug recorrente, "tá errado nessa tela", CSS, "corrige este bug") podem ser descrição fraca **ou** o limite de uso da conta se esgotando durante a corrida. Repetições posteriores falharam em 100% com `You've hit your session limit` e `exit=1`, e o runner as lia como "não disparou". Não consigo separar as duas causas.
+- Não medi a descrição antiga com o runner válido, então **não sei se a reescrita da descrição melhorou algo**.
+- Os resultados do Haiku (5/16, tudo "sem ferramenta") não são confiáveis e foram descartados.
+
+**O que fazer:** rodar `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet` com a conta fora do limite, de preferência 2-3 vezes por prompt. O runner agora marca execução falhada como `INVALIDO` e sai com código 3, em vez de contá-la como "não disparou".
