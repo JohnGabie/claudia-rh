@@ -117,6 +117,19 @@ Recusa devolve texto claro ao agente, que se corrige. A guarda é código do app
 - **Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. O arquivo fora da pasta de trabalho, nunca citado em prompt ou tool, e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo.
 - A tela de visualização é do ciclo 2. No ciclo 1 só grava.
 
+### 5.7 Desinstalação
+
+O desinstalador oferece duas opções, **ambas desmarcadas por padrão**, porque apagar é irreversível:
+
+1. **Remover o browser e as sessões:** apaga `<dados-locais>/browser/` (o Chrome e as contas logadas).
+2. **Remover também os meus dados:** apaga o que o app guarda em `%APPDATA%\io.github.johngabie.claudia-rh` (perfil do candidato, banco de vagas e candidaturas, arquivos gerados, diagnósticos) e `<dados-locais>` inteiro, incluindo a trilha do modo desenvolvedor. A opção 2 inclui a 1. O texto da opção diz o que será apagado, em português claro, e que não há como desfazer.
+
+Sem nenhuma marcada, desinstalar não apaga nada do usuário (comportamento de hoje).
+
+- A lógica de apagar vive numa função do app, `limpar_dados(opcoes)`, que recebe as pastas por parâmetro. O desinstalador só a chama. Assim ela é testável contra pastas temporárias, sem desinstalar nada de verdade.
+- O Tauri v2 já tem uma caixa "Delete the application data" no desinstalador NSIS. A primeira tarefa desta parte do plano é **verificar o que ela já apaga** e completar com um hook de desinstalação (`NSIS_HOOK_POSTUNINSTALL`) só o que faltar, em vez de reescrever o desinstalador.
+- Teste automatizado: instalar em modo silencioso, criar arquivos em ambas as pastas, desinstalar com cada combinação de opções e conferir o que sobrou. O `identifier` Tauri não muda (regra dura do projeto); os caminhos dependem dele.
+
 ## 6. Remoção da dependência do Claude
 
 - Sessão de execução deixa de passar `--chrome` (`src-tauri/src/commands/sessao.rs:250`) e a sessão de perfil idem (`commands/perfil.rs:720`). O MCP do app é registrado na sessão, como já é.
