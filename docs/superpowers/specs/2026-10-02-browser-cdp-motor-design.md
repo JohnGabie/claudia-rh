@@ -29,7 +29,7 @@ O app passa a **fornecer** o controle do browser, como tools no servidor MCP que
 | De onde vem | **Chrome for Testing**, baixado na primeira vez que o app precisa | Build oficial da Google para automação; instalador do Claudia continua pequeno; a licença do Chrome provavelmente não permite redistribuir dentro do nosso instalador (a confirmar no plano) |
 | Integridade do download | Versão e SHA-256 **fixados no código do app** | O JSON da Google (`last-known-good-versions-with-downloads.json`) não traz hash; fixar também dá versão travada |
 | Janela | **Sempre visível** em execução. Headless só em teste | O usuário tem de ver o que a IA faz |
-| Memória das contas | Perfil persistente em `<dados-locais>/browser/perfil/`. **Só sessão (cookies); nenhuma senha passa pelo app** | Igual a um browser normal; sem cofre de senhas num app que entrega ações a agentes de terceiros |
+| Memória das contas | Perfil persistente em `<dados-locais>/browser/profile/`. **Só sessão (cookies); nenhuma senha passa pelo app** | Igual a um browser normal; sem cofre de senhas num app que entrega ações a agentes de terceiros |
 | Tema | Laranja `#D97757` (`--accent` do design) como padrão | Pedido do usuário | posteriormente modificar o icone do browser para uma versao todo laranja para fazer a diferença
 | Cliente CDP | **Escrito por nós** sobre WebSocket, ~12 comandos. Sem `chromiumoxide` | O protótipo inteiro é um cliente de 40 linhas; uma dependência grande a menos; testável com servidor WebSocket falso |
 | Envio de candidatura | O agente decide sozinho, **dentro da guarda** (seção 5.5) | Princípio do projeto: autonomia com contenção no código, sem confirmação humana por rodada |
@@ -52,7 +52,7 @@ App Tauri (processo principal)                 Processo MCP (um por sessão de I
         └──── lança ──► Chrome (--remote-debugging-port, --user-data-dir) ◄─ WebSocket
 ```
 
-- O app escreve a porta de debug num arquivo em `<dados-locais>/browser/estado.json` e a passa o caminho dele ao processo MCP por `--browser-state` (a porta muda quando o Chrome religa; o MCP relê o arquivo a cada conexão), como já faz com `--notify-port`.
+- O app escreve a porta de debug num arquivo em `<dados-locais>/browser/state.json` e passa o caminho dele ao processo MCP por `--browser-state` (a porta muda quando o Chrome religa; o MCP relê o arquivo a cada conexão), como já faz com `--notify-port`.
 - O processo MCP é só cliente: conecta, executa o comando CDP, devolve.
 - `dispatch` (`src-tauri/src/mcp/mod.rs`) hoje é síncrono e devolve `String`. As tools de browser precisam de um caminho assíncrono e de resposta com **imagem** (`ContentBlock` de imagem do `rmcp`). Isso é mudança estrutural e entra no plano como tarefa própria.
 
@@ -72,8 +72,8 @@ A URL base e a pasta de destino são **parâmetros**, para o teste apontar para 
 
 ### 5.2 `browser::gestor` (BrowserManager)
 
-- Lança o Chrome com `--remote-debugging-port=<livre>`, `--user-data-dir=<dados-locais>/browser/perfil`, `--no-first-run`, `--no-default-browser-check`. **Nunca** `--headless` em execução.
-- Escolhe porta livre e grava `estado.json`. A porta 9222 costuma ser do Chrome pessoal do usuário (já aconteceu no teste do WebView2).
+- Lança o Chrome com `--remote-debugging-port=<livre>`, `--user-data-dir=<dados-locais>/browser/profile`, `--no-first-run`, `--no-default-browser-check`. **Nunca** `--headless` em execução.
+- Escolhe porta livre e grava `state.json`. A porta 9222 costuma ser do Chrome pessoal do usuário (já aconteceu no teste do WebView2).
 - Vigia: se o processo morre, religa e emite evento. O activity log registra a queda.
 - **Aba ativa:** antes de qualquer ação, `/json/activate/{id}` e poll de `document.visibilityState` até `visible`. Aba congelada engole input em silêncio (armadilha 1).
 - **Tema:** grava a cor no `Preferences` do perfil **antes** da primeira abertura. Se o Chrome não aceitar, o plano tem tarefa de investigar a alternativa (política `BrowserThemeColor` por registro em HKCU, que não exige administrador).

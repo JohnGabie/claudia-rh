@@ -95,6 +95,6 @@ Fase 0 — validação de limitações técnicas e requisitos antes da implement
 
 **Decisão:** hipótese **não confirmada**: sem sinal de captcha extra para o Chrome for Testing. Não é argumento para trocar de binário; o motivo para reavaliar continua sendo a faixa fixa e o uso pretendido (CLA-34). Acrescentar `intl.accept_languages` ao tema (Tarefa 1.6).
 
-## Baseline: Clippy warnings before Task 1.1
+## Baseline do clippy (antes da Tarefa 1.1)
 
-**Baseline clippy warnings:** 4 warnings (2026-10-02, before adding browser module and dependencies).
+**3 warnings**, todos já existentes e sem relação com o browser (2026-10-02, antes de acrescentar o módulo e as dependências): `associated function new is never used`, `function write_both is never used` e `name LASTINPUTINFO contains a capitalized acronym`. Saída completa guardada em `.superpowers/sdd/.../clippy-baseline.txt`. Os arquivos novos de `browser/` não podem somar warnings a este número.
