@@ -44,6 +44,10 @@ pub struct McpConfig {
     pub notify_port: Option<u16>,
     pub debug: bool,
     pub session: SessionKind,
+    /// state.json written by the app: tells this process which port its browser listens on.
+    pub browser_state: Option<PathBuf>,
+    /// <dados-locais>: where the browser and the dev-mode Activity log live.
+    pub local_data_dir: Option<PathBuf>,
 }
 
 /// Single entry point for every tool invocation. Owns cross-cutting concerns:
@@ -146,6 +150,8 @@ mod dispatch_tests {
             notify_port: None,
             debug: false,
             session: SessionKind::Interactive,
+            browser_state: None,
+            local_data_dir: None,
         }
     }
 
@@ -247,6 +253,8 @@ pub fn cli_main() -> bool {
         notify_port,
         debug: args.iter().any(|a| a == "--debug"),
         session,
+        browser_state: parse_flag_value(&args, "--browser-state").map(PathBuf::from),
+        local_data_dir: parse_flag_value(&args, "--local-data-dir").map(PathBuf::from),
     };
 
     if serve {

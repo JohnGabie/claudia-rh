@@ -10,10 +10,12 @@ use rmcp::model::{
 use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler, ServiceExt};
 
 use super::{dispatch, McpConfig};
+use super::tools::browser::{BrowserTools, DbGuardContext, NoSink, ToolOutput};
 
 #[derive(Clone)]
 struct ClaudiaMcp {
     cfg: Arc<McpConfig>,
+    browser: Arc<BrowserTools>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -96,7 +98,73 @@ struct CreatePendenciaArgs {
     descricao: String,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserOpenArgs {
+    /// URL completa, http ou https
+    url: String,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserReadArgs {
+    /// Limita a leitura ao elemento cujo papel ou nome contém este texto, ex.: "dialog" para só o modal
+    scope: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserClickArgs {
+    /// Referência do elemento, ex.: "e12", vinda de browser_read
+    reference: String,
+    /// Só para botões que enviam a candidatura: ID da vaga (precisa ser a vaga ativa, em 'candidatando')
+    confirm_submit: Option<i64>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserTypeArgs {
+    /// Referência do campo, ex.: "e5", vinda de browser_read
+    reference: String,
+    /// Texto a escrever
+    text: String,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserKeyArgs {
+    /// Enter, Tab, Escape ou Space
+    key: String,
+    /// Só se o foco estiver num botão de enviar candidatura (ou num campo de um formulário que a envia): ID da vaga ativa
+    confirm_submit: Option<i64>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserCropArgs {
+    /// Canto superior esquerdo do recorte, em pixels CSS
+    x: f64,
+    y: f64,
+    /// Largura e altura do recorte, em pixels CSS
+    width: f64,
+    height: f64,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserClickAtArgs {
+    x: f64,
+    y: f64,
+    /// Só para botões que enviam a candidatura: ID da vaga ativa
+    confirm_submit: Option<i64>,
+}
+
 impl ClaudiaMcp {
+    fn browser_text(&self, tool: &str, r: Result<String, String>) -> Result<CallToolResult, rmcp::ErrorData> {
+        match &r {
+            Ok(_) => crate::diagnostics::emit_event("mcp", "tool_ok", None, tool),
+            Err(e) => crate::diagnostics::emit_event("mcp", "tool_err", None, &format!("{tool}: {e}")),
+        }
+        match r {
+            Ok(m) => Ok(CallToolResult::success(vec![ContentBlock::text(m)])),
+            // Tool-level error: the model sees the message and can self-correct.
+            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(e)])),
+        }
+    }
+
     fn call(&self, tool: &str, args: serde_json::Value) -> Result<CallToolResult, rmcp::ErrorData> {
         match dispatch(&self.cfg, tool, &args) {
             Ok(msg) => Ok(CallToolResult::success(vec![ContentBlock::text(msg)])),
@@ -263,6 +331,60 @@ impl ClaudiaMcp {
             }),
         )
     }
+
+    #[tool(
+        description = "Abre uma URL (http ou https) no browser da Claudia, numa aba própria do agente. Depois chame browser_read para ver a página."
+    )]
+    async fn browser_open(&self, Parameters(a): Parameters<BrowserOpenArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_open", self.browser.open(&a.url).await)
+    }
+
+    #[tool(
+        description = "Lista os elementos interativos da página, cada um com uma ref (e1, e2, ...) para usar em browser_click e browser_type. 'scope' limita a um bloco, ex.: \"dialog\" para só o modal. As refs valem só até a página mudar."
+    )]
+    async fn browser_read(&self, Parameters(a): Parameters<BrowserReadArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_read", self.browser.read(a.scope.as_deref()).await)
+    }
+
+    #[tool(
+        description = "Clica no elemento pela ref de browser_read. Botões que enviam a candidatura são RECUSADOS a menos que confirm_submit traga o ID da vaga ativa (em 'candidatando'), dentro do orçamento diário e uma só vez por vaga."
+    )]
+    async fn browser_click(&self, Parameters(a): Parameters<BrowserClickArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_click", self.browser.click(&a.reference, a.confirm_submit).await)
+    }
+
+    #[tool(description = "Escreve texto no campo indicado pela ref de browser_read.")]
+    async fn browser_type(&self, Parameters(a): Parameters<BrowserTypeArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_type", self.browser.type_text(&a.reference, &a.text).await)
+    }
+
+    #[tool(
+        description = "Pressiona uma tecla (Enter, Tab, Escape ou Space) no elemento em foco. Enter ou Space sobre um botão de enviar candidatura, ou Enter num campo de um formulário que a envia, passam pela mesma guarda do clique."
+    )]
+    async fn browser_key(&self, Parameters(a): Parameters<BrowserKeyArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_key", self.browser.key(&a.key, a.confirm_submit).await)
+    }
+
+    #[tool(
+        description = "Devolve uma imagem de um recorte da página (x, y, largura, altura em pixels CSS). Use quando a árvore de browser_read não mostrar o que você precisa."
+    )]
+    async fn browser_crop(&self, Parameters(a): Parameters<BrowserCropArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        match self.browser.crop(a.x, a.y, a.width, a.height).await {
+            Ok(ToolOutput::Image { data_base64, mime }) => {
+                crate::diagnostics::emit_event("mcp", "tool_ok", None, "browser_crop");
+                Ok(CallToolResult::success(vec![ContentBlock::image(data_base64, mime)]))
+            }
+            Ok(ToolOutput::Text(t)) => self.browser_text("browser_crop", Ok(t)),
+            Err(e) => self.browser_text("browser_crop", Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "Clica numa coordenada da página, só quando a árvore de browser_read não expõe o elemento. A guarda de envio olha o elemento que está sob o ponto."
+    )]
+    async fn browser_click_at(&self, Parameters(a): Parameters<BrowserClickAtArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_text("browser_click_at", self.browser.click_at(a.x, a.y, a.confirm_submit).await)
+    }
 }
 
 #[tool_handler]
@@ -288,7 +410,11 @@ impl ServerHandler for ClaudiaMcp {
 pub fn run(cfg: McpConfig) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
-        let service = ClaudiaMcp { cfg: Arc::new(cfg) }
+        // Without --browser-state the tools still exist and answer "ainda não está pronto".
+        let state_file = cfg.browser_state.clone().unwrap_or_else(|| cfg.data_dir.join("browser-state-not-configured.json"));
+        let guard = Arc::new(DbGuardContext::new(cfg.data_dir.clone()));
+        let browser = Arc::new(BrowserTools::new(state_file, guard, Arc::new(NoSink)));
+        let service = ClaudiaMcp { cfg: Arc::new(cfg), browser }
             .serve(rmcp::transport::stdio())
             .await
             .map_err(|e| e.to_string())?;

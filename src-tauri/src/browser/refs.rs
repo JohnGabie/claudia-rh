@@ -190,3 +190,129 @@ mod tests {
         assert_eq!(refs, vec!["e1", "e2"]);
     }
 }
+
+/// Hands out refs that are STABLE per element inside one document: the same node always gets the
+/// same ref, a number is never reused, and a narrower (scoped) read never renumbers anything.
+/// Without this, `browser_read` with a scope would silently re-point every old ref at a different
+/// element, and a click on "e3" could land on the wrong button.
+#[derive(Default)]
+pub struct RefBook {
+    doc: String,
+    next: u64,
+    by_backend: std::collections::HashMap<i64, String>,
+    nodes: std::collections::HashMap<String, RefNode>,
+}
+
+impl RefBook {
+    /// Registers a read of the page and returns its nodes carrying the book's stable refs.
+    /// A different doc (the page changed) starts a fresh book; the same document keeps every ref
+    /// already handed out, so a scoped read cannot renumber the full one.
+    pub fn update(&mut self, doc: &str, mut fresh: Vec<RefNode>) -> Vec<RefNode> {
+        if self.doc != doc {
+            *self = RefBook { doc: doc.to_string(), ..Default::default() };
+        }
+        let RefBook { next, by_backend, nodes, .. } = self;
+        for n in fresh.iter_mut() {
+            let reference = by_backend
+                .entry(n.backend_node_id)
+                .or_insert_with(|| {
+                    *next += 1;
+                    format!("e{next}")
+                })
+                .clone();
+            n.reference = reference.clone();
+            nodes.insert(reference, n.clone());
+        }
+        fresh
+    }
+
+    /// The element a ref points to, only while the page is still the document it was read in.
+    pub fn find(&self, doc: &str, reference: &str) -> Option<&RefNode> {
+        if self.doc != doc {
+            return None;
+        }
+        self.nodes.get(reference)
+    }
+
+    /// True when refs exist for exactly this document.
+    pub fn is_current(&self, doc: &str) -> bool {
+        !self.doc.is_empty() && self.doc == doc
+    }
+}
+
+#[cfg(test)]
+mod refbook_tests {
+    use super::*;
+
+    fn node(backend: i64, name: &str) -> RefNode {
+        // The reference a fresh `build_refs` would give is meaningless here: the book assigns its own.
+        RefNode { reference: "e1".into(), role: "button".into(), name: name.into(), backend_node_id: backend, disabled: false }
+    }
+
+    #[test]
+    fn the_same_element_keeps_its_ref_across_reads() {
+        let mut book = RefBook::default();
+        let full = book.update("doc1", vec![node(10, "A"), node(11, "B"), node(12, "C")]);
+        let b_ref = full[1].reference.clone();
+        // A SCOPED read returns only B, renumbered from e1 by build_refs: B must keep its old ref.
+        let scoped = book.update("doc1", vec![node(11, "B")]);
+        assert_eq!(scoped[0].reference, b_ref, "a narrower read must not renumber the element");
+        assert_eq!(book.find("doc1", &b_ref).unwrap().backend_node_id, 11);
+    }
+
+    #[test]
+    fn a_new_element_never_reuses_a_ref_that_was_handed_out() {
+        let mut book = RefBook::default();
+        let first = book.update("doc1", vec![node(10, "A"), node(11, "B")]);
+        let second = book.update("doc1", vec![node(11, "B"), node(20, "New")]);
+        let new_ref = &second[1].reference;
+        assert!(first.iter().all(|n| &n.reference != new_ref), "{new_ref} was already given to another element");
+    }
+
+    #[test]
+    fn refs_of_elements_missing_from_a_later_read_stay_resolvable() {
+        let mut book = RefBook::default();
+        let full = book.update("doc1", vec![node(10, "A"), node(11, "B")]);
+        let a_ref = full[0].reference.clone();
+        book.update("doc1", vec![node(11, "B")]); // a scoped read that does not include A
+        assert_eq!(book.find("doc1", &a_ref).unwrap().name, "A", "an earlier ref still points to ITS element");
+    }
+
+    #[test]
+    fn a_new_document_starts_a_new_book() {
+        let mut book = RefBook::default();
+        let old = book.update("doc1", vec![node(10, "A")]);
+        let old_ref = old[0].reference.clone();
+        // A DIFFERENT backend id in the new page: if the old book leaked, it would get e2, not e1.
+        let fresh = book.update("doc2", vec![node(99, "Other page")]);
+        assert!(book.find("doc1", &old_ref).is_none(), "refs of the previous document are gone");
+        assert_eq!(fresh[0].reference, "e1", "numbering restarts with the document");
+        assert_eq!(book.find("doc2", "e1").unwrap().name, "Other page", "e1 of the new page is the new element, not the old one");
+    }
+
+    #[test]
+    fn a_ref_is_only_valid_for_the_document_it_was_read_in() {
+        let mut book = RefBook::default();
+        let r = book.update("doc1", vec![node(10, "A")])[0].reference.clone();
+        assert!(book.find("doc1", &r).is_some());
+        assert!(book.find("doc2", &r).is_none(), "the page changed: the ref must not resolve");
+        assert!(!book.is_current("doc2"));
+        assert!(book.is_current("doc1"));
+        assert!(!RefBook::default().is_current(""), "an empty book is never current");
+    }
+
+    #[test]
+    fn the_latest_read_wins_for_the_data_of_an_element() {
+        let mut book = RefBook::default();
+        let r = book.update("doc1", vec![node(10, "Avançar")])[0].reference.clone();
+        book.update("doc1", vec![node(10, "Enviar candidatura")]);
+        assert_eq!(book.find("doc1", &r).unwrap().name, "Enviar candidatura");
+    }
+
+    #[test]
+    fn an_unknown_ref_resolves_to_nothing() {
+        let mut book = RefBook::default();
+        book.update("doc1", vec![node(10, "A")]);
+        assert!(book.find("doc1", "e999").is_none());
+    }
+}

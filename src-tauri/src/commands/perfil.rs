@@ -474,6 +474,12 @@ pub fn write_mcp_config(
         args.push("--notify-port".to_string());
         args.push(port.to_string());
     }
+    if let Ok(local) = app.path().app_local_data_dir() {
+        args.push("--browser-state".to_string());
+        args.push(crate::browser::state_file(&local).to_string_lossy().into_owned());
+        args.push("--local-data-dir".to_string());
+        args.push(local.to_string_lossy().into_owned());
+    }
     args.push("--session-kind".to_string());
     args.push(session.as_flag().to_string());
     if cfg!(debug_assertions) {
