@@ -76,3 +76,21 @@ Fase 0 — validação de limitações técnicas e requisitos antes da implement
 - (d) `$DeleteAppDataCheckboxState` é legível nos hooks; o binário ainda existe no `PREUNINSTALL`.
 
 **Decisão:** a caixa nativa cobre a **opção 2** da spec (apagar os dados, o que inclui a pasta do browser em `%LOCALAPPDATA%`), **sem código nosso**. O modo `--cleanup` da Tarefa 4.2 só é necessário para a opção 1 ("só o browser"), que exige uma página própria de nsDialogs (80 a 130 linhas de NSIS segundo o Haiku, estimativa não verificada). Proposta ao usuário no portão: adotar só a caixa nativa na primeira versão.
+
+
+## 0.6: O Chrome for Testing dispara captcha onde não deveria?
+
+**Hipótese:** o Chrome for Testing, com a porta de debug aberta, é tratado como bot por sites de vagas e por detectores, mais do que um Chrome normal.
+
+**O que foi feito (2026-10-02):** o Chrome for Testing 154 e o Chrome normal 154 foram abertos **com janela visível e perfil novo**, lado a lado, na mesma rede, cada um com `--remote-debugging-port` e dirigido por CDP (como o app fará). Cada um visitou, **sem logar em nada** e só em leitura, com 9 a 14 s de espera por página: `bot.sannysoft.com`, `nowsecure.nl` (Cloudflare), Google Search, LinkedIn Jobs (público), Indeed DK, Glassdoor, Jobindex, Himalayas, Wellfound, o detector de pontuação do reCAPTCHA v3 (`antcpt.com/score_detector`) e `browserscan.net/bot-detection`. O script procurou textos de desafio ("verify you are human", "just a moment", "unusual traffic", "access denied", etc.) e iframes de captcha, e salvou um screenshot da página de cada visita. Um primeiro endereço do reCAPTCHA (`recaptcha-demo.appspot.com`) deu 404 por erro nosso e foi substituído.
+
+**Resultado:**
+- **Nenhum desafio, bloqueio ou texto de captcha** em nenhum dos 12 sites, em nenhum dos dois browsers. LinkedIn (público), Indeed, Glassdoor, Jobindex, Himalayas e Wellfound carregaram o conteúdo real das vagas nos dois. Os iframes que o script marcou em LinkedIn e Himalayas são componentes invisíveis da própria página (confirmado nos screenshots).
+- **Pontuação reCAPTCHA v3: 0,9 nos dois** (1,0 = humano; abaixo de 0,3 vira desafio difícil).
+- **BrowserScan: "Normal"** no Chrome for Testing.
+- **Sannysoft:** tudo verde nos dois; `navigator.webdriver` ausente ("missing (passed)"), `window.chrome` presente, `PHANTOM_UA` ok.
+- **Única diferença visível:** `navigator.languages` no Chrome for Testing de perfil novo é só `pt-BR`; no Chrome normal é `pt-BR,pt,en-US,en`. Uma lista de um idioma é um sinal fraco de automação. Corrigir gravando `intl.accept_languages` no `Preferences` do perfil (junto do tema, na Tarefa 1.6).
+
+**Limites do teste:** perfil novo e deslogado, poucas visitas, nenhuma interação, rede doméstica. Não mede o que os sites fazem com **muitas candidaturas seguidas**, com cliques em velocidade de máquina, nem com a conta do usuário logada. O LinkedIn real (sessão logada, candidatura enviada) já tinha funcionado por CDP em 2026-09-28 com o Chrome 153. A Tarefa 6.3 repete isso com o binário final.
+
+**Decisão:** hipótese **não confirmada**: sem sinal de captcha extra para o Chrome for Testing. Não é argumento para trocar de binário; o motivo para reavaliar continua sendo a faixa fixa e o uso pretendido (CLA-34). Acrescentar `intl.accept_languages` ao tema (Tarefa 1.6).
