@@ -126,13 +126,16 @@ dev/
 
 Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o modo ligado, lê.
 
-**Três tipos de registro, na mesma linha do tempo:**
+**Quatro tipos de registro, na mesma linha do tempo:**
 
 | Tipo | O que grava |
 |---|---|
 | **Ação** | instante, sessão de IA, vaga (se houver), tool (`browser_clicar`, …), alvo por **nome acessível** e papel (não só o ref `e12`), texto digitado, URL da página, resultado (ok, erro, ou recusado pela guarda, com o motivo), duração |
 | **Evento do browser** | download e instalação (progresso, falha), Chrome lançado, queda e religação, crash de aba, aba ativada, diálogo inesperado |
 | **Falha** | erro do CDP com a mensagem original, exceção do app, e a captura completa da tela no instante |
+| **Navegação** | o histórico de navegação: cada página que o browser carregou, em ordem. Instante, URL, título, código HTTP, tempo de carga, cadeia de redirecionamentos e **quem navegou** (agente via `browser_abrir`, clique em link, redirecionamento do site, ou o próprio usuário na janela) |
+
+**Histórico de navegação.** O app escuta os eventos do CDP (`Page.frameNavigated`, `Page.navigatedWithinDocument`, `Network.responseReceived` do frame principal) e grava uma linha por navegação, ligada à sessão de IA e à vaga em curso. Distinguir quem navegou é possível porque o app sabe quando uma tool `browser_*` está em andamento: navegação durante a tool é do agente; fora dela, é do site ou do usuário. Isso responde perguntas de debug como "por que o agente caiu na página de login?" ou "em que ponto o LinkedIn nos redirecionou?". Navegações do **usuário** (por exemplo, o login que ele faz na janela) são gravadas só como URL e instante, sem print. O histórico que o próprio Chrome guarda no perfil continua existindo, mas é do browser e não separa agente de usuário; a trilha é a fonte para o debug. Na tela, entra como uma visão "navegação" ao lado da lista de ações, com o caminho de URLs em ordem.
 
 **Prints.** Em toda ação que muda a página (clicar, escrever, navegar, tecla) o app grava duas imagens:
 - **antes:** recorte em volta do alvo, com margem, para ver *no que* ele clicou;
@@ -152,7 +155,7 @@ Ação só de leitura (`browser_ler`, `browser_recortar`) não gera print, pois 
 
 **Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. Estar fora da pasta de trabalho, não ser citado em prompt ou tool e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo. Aqui isso é aceitável porque o conteúdo é o do próprio usuário, na máquina dele.
 
-**Testes:** gravação e leitura do banco; retenção por idade e por teto de espaço (apaga o mais antigo); campo de senha sem texto nem print; falha de gravação não afeta a ação; modo desligado não cria arquivo algum; dois processos escrevendo ao mesmo tempo; o recorte "antes" cai sobre o alvo certo, conferido contra a página local de teste.
+**Testes:** gravação e leitura do banco; retenção por idade e por teto de espaço (apaga o mais antigo); campo de senha sem texto nem print; falha de gravação não afeta a ação; modo desligado não cria arquivo algum; dois processos escrevendo ao mesmo tempo; navegação do agente, de redirecionamento e do usuário classificadas certo na página local de teste; cadeia de redirecionamentos completa; o recorte "antes" cai sobre o alvo certo, conferido contra a página local de teste.
 
 ### 5.7 Desinstalação
 
