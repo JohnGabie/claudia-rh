@@ -2,6 +2,7 @@
 pub mod cdp;
 pub mod guard;
 pub mod install;
+pub mod manager;
 pub mod pin;
 pub mod refs;
 pub mod theme;
