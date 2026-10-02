@@ -132,9 +132,30 @@ pub struct Target {
     pub ws_url: String,
 }
 
+/// Every plain-HTTP call to the browser gets this timeout: a Chrome that accepts
+/// the connection but never answers must not hang a tool call forever.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn http_with(timeout: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .no_proxy() // this is localhost: never route it through a system proxy
+        .build()
+        .expect("static HTTP client configuration is valid")
+}
+
+fn http() -> reqwest::Client {
+    http_with(HTTP_TIMEOUT)
+}
+
 pub async fn list_targets(port: u16) -> Result<Vec<Target>, String> {
-    let client = http();
-    let r = client
+    list_targets_with(port, HTTP_TIMEOUT).await
+}
+
+/// The real implementation of `list_targets`, with the timeout injectable so a
+/// test can exercise the production path in milliseconds.
+pub(crate) async fn list_targets_with(port: u16, timeout: Duration) -> Result<Vec<Target>, String> {
+    let r = http_with(timeout)
         .get(format!("http://127.0.0.1:{port}/json/list"))
         .send()
         .await
@@ -152,31 +173,6 @@ pub async fn first_page(port: u16) -> Result<Target, String> {
                 && t.ws_url.starts_with(&format!("ws://127.0.0.1:{}/", port))
         })
         .ok_or_else(|| "the browser has no open page".to_string())
-}
-
-/// Helper for testing with a custom timeout.
-#[cfg(test)]
-pub(crate) async fn list_targets_with(port: u16, timeout: Duration) -> Result<Vec<Target>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .no_proxy()
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    let r = client
-        .get(format!("http://127.0.0.1:{port}/json/list"))
-        .send()
-        .await
-        .map_err(|e| format!("browser unreachable on port {port}: {e}"))?;
-    r.json::<Vec<Target>>().await.map_err(|e| format!("bad /json/list reply: {e}"))
-}
-
-/// HTTP client with default timeout and no proxy.
-fn http() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .no_proxy()
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
 }
 
 /// A hidden tab silently swallows input events. Activate it and wait until the
@@ -399,8 +395,8 @@ mod tests {
             let (mut s, _) = listener.accept().await.unwrap();
             let mut b = [0u8; 1024];
             let _ = s.read(&mut b).await;
-            // Put service_worker FIRST to catch if the filter is removed.
-            let body = format!(r#"[{{"id":"S1","type":"service_worker","title":"sw","url":"u","webSocketDebuggerUrl":"ws://x"}},{{"id":"T1","type":"page","title":"x","url":"about:blank","webSocketDebuggerUrl":"ws://127.0.0.1:{}/devtools/page/T1"}}]"#, port);
+            // service_worker FIRST and with a VALID localhost ws_url: only the kind filter can exclude it.
+            let body = format!(r#"[{{"id":"S1","type":"service_worker","title":"sw","url":"u","webSocketDebuggerUrl":"ws://127.0.0.1:{0}/devtools/page/S1"}},{{"id":"T1","type":"page","title":"x","url":"about:blank","webSocketDebuggerUrl":"ws://127.0.0.1:{0}/devtools/page/T1"}}]"#, port);
             let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await;
         });
         let t = first_page(port).await.unwrap();
@@ -504,19 +500,27 @@ mod tests {
                 tokio::spawn(async move {
                     let ws = tokio_tungstenite::accept_async(sock).await.unwrap();
                     let (mut tx, mut rx) = ws.split();
+                    // Every request is answered from its OWN task, so a slow one
+                    // really is overtaken by a fast one that arrived after it.
+                    let (reply_tx, mut reply_rx) = mpsc::unbounded_channel::<String>();
+                    tokio::spawn(async move {
+                        while let Some(m) = reply_rx.recv().await {
+                            if tx.send(Message::Text(m.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
                     while let Some(Ok(Message::Text(t))) = rx.next().await {
                         let v: Value = serde_json::from_str(t.as_str()).unwrap();
                         let id = v["id"].clone();
-                        let method = v["method"].as_str().unwrap();
-
-                        // "Slow" method takes 200ms before replying
-                        if method == "Slow" {
-                            tokio::time::sleep(Duration::from_millis(200)).await;
-                            let _ = tx.send(Message::Text(json!({"id": id, "result": {"echo": method}}).to_string().into())).await;
-                        } else {
-                            // Others reply immediately
-                            let _ = tx.send(Message::Text(json!({"id": id, "result": {"echo": method}}).to_string().into())).await;
-                        }
+                        let method = v["method"].as_str().unwrap().to_string();
+                        let reply_tx = reply_tx.clone();
+                        tokio::spawn(async move {
+                            if method == "Slow" {
+                                tokio::time::sleep(Duration::from_millis(300)).await;
+                            }
+                            let _ = reply_tx.send(json!({"id": id, "result": {"echo": method}}).to_string());
+                        });
                     }
                 });
             }
@@ -526,26 +530,32 @@ mod tests {
 
         // Send A (Slow) and B (Fast) concurrently - they arrive at server in order A, B
         // but B should complete first, proving ID-based matching works
+        // Each task reports (reply, the instant it finished).
         let a_handle = {
             let c = c.clone();
-            tokio::spawn(async move { c.call("Slow", json!({})).await })
+            tokio::spawn(async move {
+                let r = c.call("Slow", json!({})).await;
+                (r, std::time::Instant::now())
+            })
         };
 
         let b_handle = {
             let c = c.clone();
             // Small delay to ensure A is sent first
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            tokio::spawn(async move { c.call("Fast", json!({})).await })
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            tokio::spawn(async move {
+                let r = c.call("Fast", json!({})).await;
+                (r, std::time::Instant::now())
+            })
         };
 
         let (res_a, res_b) = tokio::join!(a_handle, b_handle);
+        let ((a_val, a_done), (b_val, b_done)) = (res_a.unwrap(), res_b.unwrap());
 
-        // The key test: each call gets its OWN response, not the other's
-        // This proves the client matches by ID, not FIFO order
-        let res_a_val = res_a.unwrap().unwrap();
-        let res_b_val = res_b.unwrap().unwrap();
-
-        assert_eq!(res_a_val["echo"], "Slow", "Call A should get Slow response");
-        assert_eq!(res_b_val["echo"], "Fast", "Call B should get Fast response (even though it completed before A)");
+        // Each call gets its OWN reply (matched by id)...
+        assert_eq!(a_val.unwrap()["echo"], "Slow", "Call A should get the Slow reply");
+        assert_eq!(b_val.unwrap()["echo"], "Fast", "Call B should get the Fast reply");
+        // ...and the replies really did arrive out of order: B (sent second) finished first.
+        assert!(b_done < a_done, "the fast call must finish before the slow one, or this test proves nothing");
     }
 }
