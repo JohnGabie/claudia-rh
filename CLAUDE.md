@@ -41,7 +41,14 @@ Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de 
 Specs: `docs/superpowers/specs/`
 Planos: `docs/superpowers/plans/`
 
-Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → review → merge em `dev`.
+Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → **teste no app rodando (`claudia-teste`)** → review → merge em `dev`.
+
+O passo de teste é obrigatório:
+
+- Roda o app de verdade (`tauri dev` com CDP) e exercita o que mudou. `cargo test` e `tsc` não bastam.
+- O resultado entra no ledger ou na descrição do PR, com evidência: o que foi aberto, o que foi chamado, o que a tela mostrou.
+- Mudança só de backend, sem efeito visível: chama o comando por `invoke` e confere o banco.
+- Bug corrigido só fecha depois de reproduzido antes e confirmado depois.
 
 Tasks, bugs e o que entra em cada versão vivem no Linear (time `CLA`), não em listas neste ficheiro. Como registar e quando pode fechar: skill `linear-claudia`.
 
