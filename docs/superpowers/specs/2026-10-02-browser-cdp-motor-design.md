@@ -112,12 +112,47 @@ Recusa devolve texto claro ao agente, que se corrige. A guarda é código do app
 
 ### 5.6 Trilha do modo desenvolvedor
 
-- Opção **"Modo desenvolvedor"** nas configurações, **desligada por padrão**. Desligada, a trilha não é gravada.
-- Banco **separado**, `<dados>/dev-trilha.db`, fora da pasta onde as sessões de IA trabalham. Nenhuma tool MCP lê esse banco. Só a UI do app, dentro do modo desenvolvedor, o lê.
-- Uma linha por chamada: instante, sessão, vaga (se houver), ação, alvo por nome acessível (não só o ref), página, resultado. Entram também: crash de aba, queda do Chrome, ação falhada, clique recusado pela guarda.
-- O texto digitado é gravado; **campos de senha nunca**. Retenção de 30 dias.
-- **Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. O arquivo fora da pasta de trabalho, nunca citado em prompt ou tool, e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo.
-- A tela de visualização é do ciclo 2. No ciclo 1 só grava.
+Serve para **debug e desenvolvimento**: reconstruir, passo a passo e com imagem, o que o agente fez no browser e onde algo quebrou. Não é auditoria para o usuário final.
+
+**Ligar e desligar.** Opção **"Modo desenvolvedor"** nas configurações, **desligada por padrão**. Desligada, nada é gravado. Ligada, tudo abaixo passa a ser gravado, e a aba de desenvolvedor aparece. Há um botão "Limpar tudo".
+
+**Onde fica.** `<dados-locais>/dev/`, **fora** da pasta onde as sessões de IA trabalham e separado do banco principal:
+
+```
+dev/
+  trilha.db          banco SQLite só da trilha (nunca o banco das vagas)
+  capturas/          os prints, um arquivo por imagem; o banco guarda só o caminho
+```
+
+Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o modo ligado, lê.
+
+**Três tipos de registro, na mesma linha do tempo:**
+
+| Tipo | O que grava |
+|---|---|
+| **Ação** | instante, sessão de IA, vaga (se houver), tool (`browser_clicar`, …), alvo por **nome acessível** e papel (não só o ref `e12`), texto digitado, URL da página, resultado (ok, erro, ou recusado pela guarda, com o motivo), duração |
+| **Evento do browser** | download e instalação (progresso, falha), Chrome lançado, queda e religação, crash de aba, aba ativada, diálogo inesperado |
+| **Falha** | erro do CDP com a mensagem original, exceção do app, e a captura completa da tela no instante |
+
+**Prints.** Em toda ação que muda a página (clicar, escrever, navegar, tecla) o app grava duas imagens:
+- **antes:** recorte em volta do alvo, com margem, para ver *no que* ele clicou;
+- **depois:** a janela inteira, reduzida, para ver *o que aconteceu*.
+
+Ação só de leitura (`browser_ler`, `browser_recortar`) não gera print, pois a resposta dela já é a imagem ou o texto. Em **falha**, a janela inteira em tamanho cheio. As imagens são JPEG (qualidade ~70) para caber muito sem pesar. Tirar o print usa o mesmo `Page.captureScreenshot` com `clip` que o recorte já usa; nenhum comando CDP novo.
+
+**Privacidade e limites:**
+- O texto digitado é gravado; **campos de senha nunca**, e o recorte "antes" de um campo de senha **não é gravado**.
+- Os prints podem mostrar dados pessoais (CV, telefone, mensagens). Ficam só nesta máquina, só com o modo ligado, e saem no "Limpar tudo" e no desinstalador (seção 5.7).
+- Retenção de 30 dias **e** teto de espaço (1 GB): ao passar, apaga o mais antigo primeiro. Rodar com o modo ligado por semanas não pode encher o disco.
+- Uma falha ao gravar a trilha (disco cheio, banco travado) **nunca derruba nem atrasa** a ação do agente: o erro é só registrado no `diagnostics` já existente e a ação segue.
+
+**Quem escreve.** O processo MCP grava as ações (é onde elas acontecem); o app grava os eventos do browser. Os dois escrevem no mesmo `trilha.db`, com SQLite em modo WAL para os dois processos não se bloquearem.
+
+**A tela (entra neste ciclo, versão simples).** Dentro do modo desenvolvedor, uma lista cronológica com filtro por sessão e por vaga. Cada linha mostra hora, tool, alvo, resultado e a miniatura do print "depois"; clicar abre o antes e o depois lado a lado, em tamanho cheio, e o JSON cru do registro. Linhas de falha em destaque. A linha do tempo mais rica por vaga fica para o ciclo 2.
+
+**Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. Estar fora da pasta de trabalho, não ser citado em prompt ou tool e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo. Aqui isso é aceitável porque o conteúdo é o do próprio usuário, na máquina dele.
+
+**Testes:** gravação e leitura do banco; retenção por idade e por teto de espaço (apaga o mais antigo); campo de senha sem texto nem print; falha de gravação não afeta a ação; modo desligado não cria arquivo algum; dois processos escrevendo ao mesmo tempo; o recorte "antes" cai sobre o alvo certo, conferido contra a página local de teste.
 
 ### 5.7 Desinstalação
 
@@ -163,7 +198,7 @@ Estas hipóteses ainda não foram testadas, e o plano começa por elas, antes de
 
 ## 9. Fora do escopo deste ciclo
 
-- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-02-contas-do-browser-design.md`), e a tela do modo desenvolvedor.
+- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-02-contas-do-browser-design.md`), e a linha do tempo por vaga no modo desenvolvedor (a lista simples com prints é deste ciclo, seção 5.6).
 - **Ciclo 3:** a IA entrar num site, puxar o perfil do usuário e configurar o app. Depende dos dois primeiros.
 - Várias contas por site, perfis múltiplos.
 - Senhas guardadas pelo app. Descartado por decisão de segurança; reabrir só com cofre criptografado e confirmação.
