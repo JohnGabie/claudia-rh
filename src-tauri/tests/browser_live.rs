@@ -360,7 +360,8 @@ async fn a_confirmation_for_another_vaga_than_the_active_one_is_refused() {
     t.open(&fixture_url()).await.unwrap();
     let submit = walk_to_submit(&t).await;
     let e = t.click(&submit, Some(9)).await.unwrap_err();
-    assert!(e.starts_with("RECUSADO") && e.contains('7') && e.contains('9'), "{e}");
+    assert!(e.starts_with("RECUSADO") && e.contains('9'), "{e}");
+    assert!(!e.contains('7'), "the refusal must not reveal which vaga is active: {e}");
     let a = agent_client(&l).await;
     assert_eq!(eval(&a, "window.__submitted").await, false);
 }
@@ -454,15 +455,19 @@ async fn a_submit_button_with_no_name_is_guarded() {
 
 #[tokio::test]
 #[ignore]
-async fn a_click_inside_an_iframe_needs_confirmation() {
-    // The inner button of a cross-origin iframe is invisible to us: the frame itself is opaque.
+async fn a_submit_button_inside_an_iframe_is_guarded_by_what_is_inside() {
+    // Chrome's hit test looks INTO a same-origin iframe: the button there is what gets described.
     let l = launch().await;
     let t = tools(&l, Ctx::candidatando(7));
     t.open(&fixture_url()).await.unwrap();
     let a = agent_client(&l).await;
-    let (x, y) = center_of(&a, "#fr").await;
+    let (x, y) = center_of(&a, "#fr2").await;
     let e = t.click_at(x, y, None).await.unwrap_err();
     assert!(e.starts_with("RECUSADO"), "{e}");
+    assert_eq!(eval(&a, "window.__frameSubmitted").await, serde_json::Value::Null);
+    // A harmless button inside an iframe is not stopped.
+    let (hx, hy) = center_of(&a, "#fr").await;
+    t.click_at(hx, hy, None).await.unwrap();
 }
 
 #[tokio::test]
@@ -536,7 +541,7 @@ async fn urls_that_are_not_http_are_refused_before_touching_the_browser() {
 async fn opening_a_dead_address_reports_the_browser_error() {
     let l = launch().await;
     let t = tools(&l, Ctx::candidatando(7));
-    let e = t.open("http://127.0.0.1:1/").await.unwrap_err();
+    let e = t.open("https://this-host-does-not-exist.invalid/").await.unwrap_err();
     assert!(e.contains("falhou") && e.to_lowercase().contains("err_"), "{e}");
 }
 
@@ -588,4 +593,168 @@ async fn a_named_submit_type_button_in_a_form_is_not_blocked_just_for_its_type()
     t.click(&ref_of(&list, "button", "Próximo"), None).await.unwrap();
     let a = agent_client(&l).await;
     assert_eq!(eval(&a, "window.__nextClicked").await, true);
+}
+
+// ───────────── Task 2.2 security fixes: what the guard must survive ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_page_that_poisons_its_own_javascript_cannot_blind_the_guard() {
+    // The page redefines the things a naive guard would ask: JSON.stringify, closest, activeElement.
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let a = agent_client(&l).await;
+    eval(
+        &a,
+        "(()=>{ JSON.stringify = () => '{}'; Element.prototype.closest = () => null; \
+           Object.defineProperty(document, 'activeElement', { get: () => null }); \
+           const b = document.getElementById('adv'); b.textContent = 'Enviar candidatura'; b.focus(); return true })()",
+    )
+    .await;
+    let e = t.key("Enter", None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "the keyboard path must not trust document.activeElement: {e}");
+    assert_eq!(eval(&a, "window.__submitted").await, false);
+    // And the pointer path.
+    let (x, y) = center_of(&a, "#adv").await;
+    let e2 = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e2.starts_with("RECUSADO"), "{e2}");
+    assert_eq!(eval(&a, "window.__submitted").await, false);
+    // A NAMELESS submit is recognised only by structure, which is read in an isolated world: the
+    // poisoned page script (JSON.stringify now returns "{}") must not be able to hide it.
+    let (ax, ay) = center_of(&a, "#anon").await;
+    let e3 = t.click_at(ax, ay, None).await.unwrap_err();
+    assert!(e3.starts_with("RECUSADO"), "structure must be read from an isolated world: {e3}");
+    assert_eq!(eval(&a, "window.__anonSubmitted").await, false);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_submit_button_inside_a_shadow_root_is_guarded_on_the_keyboard_path() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let a = agent_client(&l).await;
+    eval(
+        &a,
+        "(()=>{ const host = document.createElement('div'); document.body.append(host); \
+           const root = host.attachShadow({mode:'open'}); const b = document.createElement('button'); \
+           b.textContent = 'Enviar candidatura'; b.onclick = () => { window.__shadowSubmitted = true }; \
+           root.append(b); b.focus(); window.__shadowSubmitted = false; return true })()",
+    )
+    .await;
+    let e = t.key("Enter", None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert_eq!(eval(&a, "window.__shadowSubmitted").await, false);
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_overlay_that_appears_over_a_harmless_button_is_caught_by_the_hit_test() {
+    // The model's cached view says "Avançar"; by click time a submit button covers it.
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let adv = ref_of(&list, "button", "Avançar");
+    let a = agent_client(&l).await;
+    eval(
+        &a,
+        "(()=>{ const r = document.getElementById('adv').getBoundingClientRect(); const o = document.createElement('button'); \
+           o.textContent = 'Enviar candidatura'; o.style.cssText = `position:fixed;z-index:99999;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px`; \
+           o.onclick = () => { window.__overlayClicked = true }; document.body.append(o); window.__overlayClicked = false; return true })()",
+    )
+    .await;
+    let e = t.click(&adv, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "what is really under the click point must be guarded: {e}");
+    assert_eq!(eval(&a, "window.__overlayClicked").await, false);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_nameless_submit_with_a_valid_confirmation_does_not_spend_the_single_submit() {
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let t = tools(&l, ctx.clone());
+    t.open(&fixture_url()).await.unwrap();
+    let a = agent_client(&l).await;
+    let (x, y) = center_of(&a, "#anon").await;
+    t.click_at(x, y, Some(7)).await.unwrap();
+    t.click_at(x, y, Some(7)).await.unwrap();
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "a structural (nameless) submit must not burn the vaga's submit");
+    let submit = walk_to_submit(&t).await;
+    t.click(&submit, Some(7)).await.unwrap();
+    assert_eq!(eval(&a, "window.__submitted").await, true, "the real submit still works afterwards");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_nameless_text_field_is_not_mistaken_for_a_submit() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let a = agent_client(&l).await;
+    let (x, y) = center_of(&a, "#anonText").await;
+    t.click_at(x, y, None).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_failed_locate_does_not_spend_the_single_submit() {
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let t = tools(&l, ctx.clone());
+    t.open(&fixture_url()).await.unwrap();
+    let submit = walk_to_submit(&t).await;
+    let a = agent_client(&l).await;
+    // The submit button leaves the DOM: locate fails with a stale ref, BEFORE the guard runs.
+    eval(&a, "[...document.querySelectorAll('button')].filter(b => b.textContent === 'Enviar candidatura').forEach(b => b.remove()); true").await;
+    let e = t.click(&submit, Some(7)).await.unwrap_err();
+    assert!(e.contains("obsoleta"), "{e}");
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "a click that never happened must not claim the vaga");
+}
+
+#[tokio::test]
+#[ignore]
+async fn refs_stay_stable_across_a_scoped_read() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let full = t.read(None).await.unwrap();
+    let adv = ref_of(&full, "button", "Avançar");
+    let scoped = t.read(Some("dialog")).await.unwrap();
+    assert_eq!(ref_of(&scoped, "button", "Avançar"), adv, "a narrower read must not renumber the element");
+    t.click(&adv, None).await.unwrap();
+    let a = agent_client(&l).await;
+    assert_eq!(eval(&a, "document.getElementById('adv').textContent").await, "Avaliar");
+}
+
+#[tokio::test]
+#[ignore]
+async fn oversized_inputs_are_refused_before_touching_the_browser() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.crop(0.0, 0.0, 100000.0, 100000.0).await.unwrap_err();
+    assert!(e.contains("recorte inválido"), "{e}");
+    assert!(t.crop(0.0, 0.0, 0.0, 10.0).await.is_err());
+    assert!(t.crop(0.0, 0.0, f64::NAN, 10.0).await.is_err());
+    let big = "x".repeat(60_000);
+    let e2 = t.type_text(&ref_of(&list, "textbox", "Nome"), &big).await.unwrap_err();
+    assert!(e2.contains("grande demais"), "{e2}");
+    let long_url = format!("https://example.com/{}", "a".repeat(9000));
+    assert!(t.open(&long_url).await.unwrap_err().contains("grande"));
+    assert!(t.click_at(-5.0, 10.0, None).await.is_err());
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_browsers_own_debug_endpoint_cannot_be_opened() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    for url in [format!("http://127.0.0.1:{}/json/list", l.port), format!("http://localhost:{}/json/version", l.port), "http://169.254.169.254/".to_string()] {
+        let e = t.open(&url).await.unwrap_err();
+        assert!(e.contains("locais"), "{url}: {e}");
+    }
 }

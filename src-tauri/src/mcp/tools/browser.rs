@@ -1,9 +1,16 @@
 // The agent-facing browser actions. Each one: make sure the agent's own tab is visible, run the
-// send guard (ONCE per action), act, and (if the Activity log is on) report what happened.
-use std::collections::HashSet;
+// send guard (ONCE per action, AFTER the element is located and hit-tested), act, and (if the
+// Activity log is on) report what happened.
+//
+// Security model: the thing being guarded against is a careless or manipulated MODEL, not a page
+// that fights back. Still, every guard decision is built from what the BROWSER computes (the
+// accessibility tree, DOM.getNodeForLocation) plus a small script that runs in an ISOLATED world,
+// so a page that redefines `Element.prototype`, `JSON.stringify` or `document.activeElement`
+// cannot blind the guard. Anything the guard cannot read is treated as a submit (fail closed).
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -15,7 +22,14 @@ use crate::browser::cdp::{self, CdpClient};
 use crate::browser::guard::{self, GuardContext, Verdict};
 use crate::browser::manager::{is_pinned, probe, read_state};
 use crate::browser::nav::NavRecord;
-use crate::browser::refs::{self, RefNode};
+use crate::browser::refs::{self, RefBook, RefNode};
+
+/// Largest crop side, in CSS pixels: a 100000x100000 clip would crash the renderer and push a huge
+/// image into the model's context.
+const MAX_CROP_SIDE: f64 = 4000.0;
+const MAX_TYPED_CHARS: usize = 50_000;
+const MAX_READ_REFS: usize = 400;
+const MAX_URL_BYTES: usize = 8 * 1024;
 
 #[derive(Debug)]
 pub enum ToolOutput {
@@ -62,23 +76,38 @@ struct Outcome {
     shot_before: Option<Vec<u8>>,
 }
 
-/// What the page says about an element, computed IN the page (see `INFO_FN`).
-#[derive(Debug, Default, Deserialize)]
-struct Info {
+/// What the page's element says about itself, read from an ISOLATED world (see `INFO_FN`).
+#[derive(Debug, Default, Deserialize, PartialEq)]
+pub(crate) struct Info {
     #[serde(default)]
     name: String,
-    /// A nameless button/input inside a form (its name cannot say what it does).
+    /// A nameless `<button>` or `<input type=submit|image>` inside a form: its name cannot say what
+    /// it does, so it counts as a submit by structure.
     #[serde(default, rename = "isSubmit")]
     is_submit: bool,
-    /// An IFRAME/FRAME: its inner content (maybe another origin) is invisible to us.
+    /// An IFRAME/FRAME: what is inside (maybe another origin) is invisible to us.
     #[serde(default)]
     opaque: bool,
     /// Name of the form's default submit button, if the element is inside a form.
     #[serde(default, rename = "formDefault")]
     form_default: String,
+    /// The info could not be read at all (script failed or returned garbage). Fail closed.
+    #[serde(default)]
+    unknown: bool,
 }
 
-/// Runs with `this` = the element. Returns a JSON string.
+impl Info {
+    fn unreadable() -> Self {
+        Info { unknown: true, ..Default::default() }
+    }
+
+    /// True when the element looks like a submit by structure alone, whatever its name says.
+    fn structural_submit(&self) -> bool {
+        self.is_submit || self.opaque || self.unknown
+    }
+}
+
+/// Runs with `this` = the element, inside an isolated world. Returns a JSON string.
 const INFO_FN: &str = r#"function(){
   const el = this;
   const nameOf = (e) => {
@@ -91,14 +120,14 @@ const INFO_FN: &str = r#"function(){
     return ((e.getAttribute && e.getAttribute('aria-label')) || e.innerText || e.value || e.title || e.alt || e.textContent || '').toString().trim();
   };
   const tag = (el.tagName || '').toUpperCase();
+  const type = (el.type || '').toLowerCase();
   const form = el.form || (el.closest && el.closest('form'));
-  const submitBtn = form ? form.querySelector('button[type=submit],input[type=submit],button:not([type])') : null;
+  const submitBtn = form ? form.querySelector('button[type=submit],input[type=submit],input[type=image],button:not([type])') : null;
   const empty = nameOf(el) === '';
+  const submitLike = (tag === 'BUTTON' && type === 'submit') || (tag === 'INPUT' && (type === 'submit' || type === 'image'));
   return JSON.stringify({
     name: nameOf(el),
-    // A <button> with no type attribute reports type==="submit" in the DOM, so the type alone proves nothing:
-    // only a button/input with NO NAME inside a form is treated as a submit by its structure.
-    isSubmit: empty && !!form && (tag === 'BUTTON' || tag === 'INPUT'),
+    isSubmit: empty && !!form && submitLike,
     opaque: tag === 'IFRAME' || tag === 'FRAME',
     formDefault: submitBtn ? nameOf(submitBtn) : ''
   });
@@ -118,6 +147,96 @@ fn friendly(e: String) -> String {
     }
 }
 
+// ── URL policy ────────────────────────────────────────────────────────────
+
+/// Host of an http(s) URL, lowercase, without port or userinfo; IPv6 without brackets.
+fn host_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit('@').next()?;
+    let host = if let Some(inner) = authority.strip_prefix('[') {
+        inner.split(']').next()?
+    } else {
+        authority.split(':').next()?
+    };
+    if host.is_empty() { None } else { Some(host.to_lowercase()) }
+}
+
+fn private_v4(ip: Ipv4Addr) -> bool {
+    ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified() || ip.is_broadcast()
+}
+
+fn private_v6(ip: Ipv6Addr) -> bool {
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return private_v4(v4);
+    }
+    let first = ip.segments()[0];
+    ip.is_loopback() || ip.is_unspecified() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+}
+
+/// True for hosts that are this machine or its network: the agent must not reach the browser's
+/// own debug endpoint (`/json/list` lists the user's tabs) or the user's router.
+fn is_local_host(host: &str) -> bool {
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") || host.ends_with(".internal") {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return match ip {
+            IpAddr::V4(v4) => private_v4(v4),
+            IpAddr::V6(v6) => private_v6(v6),
+        };
+    }
+    // "2130706433", "127.1" or "0x7f000001": Chrome reads those as 127.0.0.1. Refuse every numeric host
+    // that is not a plain dotted quad (those were parsed above).
+    let numeric = !host.is_empty() && host.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let hex = host.starts_with("0x") && host[2..].chars().all(|c| c.is_ascii_hexdigit() || c == '.' || c == 'x');
+    numeric || hex
+}
+
+/// Why `url` may not be opened, or None if it may.
+fn url_refusal(url: &str, allow_file: bool, allow_local: bool) -> Option<String> {
+    if url.len() > MAX_URL_BYTES {
+        return Some(format!("URL grande demais (máximo {MAX_URL_BYTES} bytes)"));
+    }
+    let lower = url.to_lowercase();
+    if lower.starts_with("file://") && allow_file {
+        return None;
+    }
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Some("só URLs http ou https são permitidas".to_string());
+    }
+    match host_of(url) {
+        None => Some("URL sem endereço válido".to_string()),
+        Some(h) if is_local_host(&h) && !allow_local => {
+            Some("endereços locais ou de rede interna não são permitidos".to_string())
+        }
+        Some(_) => None,
+    }
+}
+
+// ── what the guard looks at ──────────────────────────────────────────────
+
+/// Everything the guard knows about one action's target(s): the names to match and whether the
+/// target is a submit by structure alone.
+#[derive(Default)]
+struct Probe {
+    names: Vec<String>,
+    structural: bool,
+}
+
+impl Probe {
+    fn add_name(&mut self, n: &str) {
+        if !n.trim().is_empty() {
+            self.names.push(n.to_string());
+        }
+    }
+
+    fn add_info(&mut self, info: &Info) {
+        self.add_name(&info.name);
+        self.structural |= info.structural_submit();
+    }
+}
+
 struct Tab {
     client: Arc<CdpClient>,
     target_id: String,
@@ -129,9 +248,10 @@ pub struct BrowserTools {
     guard: Arc<dyn GuardContext>,
     sink: Arc<dyn ActionSink>,
     allow_file_urls: bool,
+    allow_local_hosts: bool,
     tab: Mutex<Option<Tab>>,
-    /// (document id at read time, refs). The id changes on every real navigation.
-    refs: Mutex<(String, Vec<RefNode>)>,
+    /// Stable refs per element within one document (see `RefBook`).
+    refs: Mutex<RefBook>,
     agent_active: Arc<AtomicBool>,
 }
 
@@ -142,8 +262,10 @@ impl BrowserTools {
             guard,
             sink,
             allow_file_urls: false,
+            // Only a debug build, and only on request: a release build can never open local addresses.
+            allow_local_hosts: cfg!(debug_assertions) && std::env::var_os("CLAUDIA_ALLOW_LOCAL_URLS").is_some(),
             tab: Mutex::new(None),
-            refs: Mutex::new((String::new(), Vec::new())),
+            refs: Mutex::new(RefBook::default()),
             agent_active: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -210,28 +332,44 @@ impl BrowserTools {
     }
 
     async fn resolve_ref(&self, c: &CdpClient, reference: &str) -> Result<RefNode, String> {
-        let g = self.refs.lock().await;
-        if g.0.is_empty() || g.0 != Self::doc_id(c).await {
+        let doc = Self::doc_id(c).await;
+        let book = self.refs.lock().await;
+        if !book.is_current(&doc) {
             return Err(STALE.into());
         }
-        refs::find(&g.1, reference).cloned().ok_or_else(|| format!("ref {reference} não existe. Chame browser_read."))
+        book.find(&doc, reference).cloned().ok_or_else(|| format!("ref {reference} não existe. Chame browser_read."))
     }
 
-    // ── what the page says about an element ──────────────────────────────
+    // ── what the page says about an element: browser-computed, never page-trusted ──
     fn parse_info(v: &Value) -> Info {
-        v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default()
+        v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(Info::unreadable)
     }
 
-    async fn info_for_node(c: &CdpClient, backend_id: i64) -> Result<Info, String> {
-        let o = c.call("DOM.resolveNode", json!({ "backendNodeId": backend_id })).await.map_err(|_| STALE.to_string())?;
-        let oid = o["object"]["objectId"].as_str().ok_or(STALE)?;
-        let r = c
-            .call("Runtime.callFunctionOn", json!({ "objectId": oid, "functionDeclaration": INFO_FN, "returnByValue": true }))
-            .await?;
-        Ok(Self::parse_info(&r["result"]["value"]))
+    /// An isolated JavaScript world in the main frame: its built-ins are pristine, whatever the
+    /// page did to its own prototypes.
+    async fn guard_world(c: &CdpClient) -> Result<i64, String> {
+        let tree = c.call("Page.getFrameTree", json!({})).await?;
+        let frame = tree["frameTree"]["frame"]["id"].as_str().ok_or("sem frame principal")?.to_string();
+        let w = c.call("Page.createIsolatedWorld", json!({ "frameId": frame, "worldName": "claudia-guard" })).await?;
+        w["executionContextId"].as_i64().ok_or_else(|| "sem contexto isolado".to_string())
     }
 
-    /// The accessible name RIGHT NOW (not the one cached at the last browser_read).
+    /// Info about a DOM node. Any failure reads as "unreadable", which the guard treats as a submit.
+    async fn info_for_node(c: &CdpClient, backend_id: i64) -> Info {
+        let r = async {
+            let world = Self::guard_world(c).await?;
+            let o = c.call("DOM.resolveNode", json!({ "backendNodeId": backend_id, "executionContextId": world })).await?;
+            let oid = o["object"]["objectId"].as_str().ok_or("sem objeto")?.to_string();
+            let r = c
+                .call("Runtime.callFunctionOn", json!({ "objectId": oid, "functionDeclaration": INFO_FN, "returnByValue": true }))
+                .await?;
+            Ok::<Info, String>(Self::parse_info(&r["result"]["value"]))
+        }
+        .await;
+        r.unwrap_or_else(|_| Info::unreadable())
+    }
+
+    /// The accessible name RIGHT NOW (not the one cached at the last browser_read), computed by Chrome.
     async fn live_name(c: &CdpClient, backend_id: i64) -> String {
         c.call("Accessibility.getPartialAXTree", json!({ "backendNodeId": backend_id, "fetchRelatives": false }))
             .await
@@ -240,32 +378,53 @@ impl BrowserTools {
             .unwrap_or_default()
     }
 
-    async fn info_at_point(c: &CdpClient, x: f64, y: f64) -> Result<Info, String> {
-        // Descends into OPEN shadow roots; a cross-origin iframe stays opaque (flagged by INFO_FN).
-        let expr = format!(
-            "(function(){{ let e = document.elementFromPoint({x},{y}); \
-               while (e && e.shadowRoot) {{ const i = e.shadowRoot.elementFromPoint({x},{y}); if (!i || i === e) break; e = i; }} \
-               if (!e) return null; \
-               const t = e.closest('button,a,[role=button],input[type=submit],iframe,frame') || e; \
-               return ({INFO_FN}).call(t); }})()"
-        );
-        Ok(Self::parse_info(&Self::eval(c, &expr).await?))
+    /// Names and structure of a node, as the browser reports them.
+    async fn probe_node(c: &CdpClient, backend_id: i64, into: &mut Probe) {
+        into.add_name(&Self::live_name(c, backend_id).await);
+        into.add_info(&Self::info_for_node(c, backend_id).await);
     }
 
-    async fn info_of_focus(c: &CdpClient) -> Result<Info, String> {
-        let expr = format!("({INFO_FN}).call(document.activeElement || document.body)");
-        Ok(Self::parse_info(&Self::eval(c, &expr).await?))
+    /// The node under a point, decided by Chrome (hit test), not by page script.
+    async fn node_at_point(c: &CdpClient, x: f64, y: f64) -> Option<i64> {
+        let r = c
+            .call("DOM.getNodeForLocation", json!({ "x": x.round() as i64, "y": y.round() as i64, "includeUserAgentShadowDOM": false }))
+            .await
+            .ok()?;
+        r["backendNodeId"].as_i64()
     }
 
-    /// The guard is consulted at most ONCE per action: `check_submit` can spend the vaga's single
-    /// allowed submit, so asking twice about the same click would refuse a legitimate one.
-    fn run_guard(&self, names: &[&str], info: &Info, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
-        let submit_like = info.is_submit || info.opaque || names.iter().any(|n| guard::looks_like_submit(n));
-        if !submit_like {
-            return Ok(());
-        }
-        // "submit" is an exact pattern: whatever made this look like a submit, the guard sees one.
-        match guard::check_submit("submit", page_url, confirm, self.guard.as_ref()) {
+    /// The node that has the keyboard focus, from the accessibility tree (`focused` is computed by
+    /// Chrome; a page cannot fake it by redefining `document.activeElement`). None = nothing
+    /// focusable has focus; Err = the tree could not be read.
+    async fn focused_node(c: &CdpClient) -> Result<Option<i64>, String> {
+        let ax = c.call("Accessibility.getFullAXTree", json!({})).await?;
+        let nodes = ax["nodes"].as_array().cloned().unwrap_or_default();
+        Ok(nodes
+            .iter()
+            .rev()
+            .find(|n| {
+                n["properties"]
+                    .as_array()
+                    .is_some_and(|ps| ps.iter().any(|p| p["name"] == "focused" && p["value"]["value"] == true))
+            })
+            .and_then(|n| n["backendDOMNodeId"].as_i64()))
+    }
+
+    /// Decides whether the action may proceed. Called exactly ONCE per action, after the target is
+    /// located: a name that matches a submit pattern SPENDS the vaga's single allowed submit; a target
+    /// that is only submit-like by structure (iframe, nameless button, unreadable) needs a valid
+    /// confirmation but does not spend it.
+    fn run_guard(&self, p: &Probe, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
+        let name_match = p.names.iter().any(|n| guard::looks_like_submit(n));
+        let verdict = if name_match {
+            // "submit" is a whole-word pattern: whatever the real label was, the guard sees a submit.
+            guard::check_submit("submit", page_url, confirm, self.guard.as_ref())
+        } else if p.structural {
+            guard::check_confirmation(page_url, confirm, self.guard.as_ref())
+        } else {
+            Verdict::Allow
+        };
+        match verdict {
             Verdict::Allow => Ok(()),
             Verdict::Refuse(why) => Err(why),
         }
@@ -383,10 +542,8 @@ impl BrowserTools {
     // ── tools ─────────────────────────────────────────────────────────────
     pub async fn open(&self, url: &str) -> Result<String, String> {
         let started = Instant::now();
-        let lower = url.to_lowercase();
-        let ok_scheme = lower.starts_with("http://") || lower.starts_with("https://") || (self.allow_file_urls && lower.starts_with("file://"));
-        if !ok_scheme {
-            return self.finish("browser_open", started, Err("só URLs http ou https são permitidas".into()), None).await;
+        if let Some(why) = url_refusal(url, self.allow_file_urls, self.allow_local_hosts) {
+            return self.finish("browser_open", started, Err(why), None).await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
         let (c, _, _) = match self.tab().await {
@@ -404,7 +561,6 @@ impl BrowserTools {
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            *self.refs.lock().await = (String::new(), Vec::new());
             Ok(Outcome { message: format!("Abriu {url}. Chame browser_read para ver a página."), target: Some(url.to_string()), ..Default::default() })
         }
         .await;
@@ -420,9 +576,15 @@ impl BrowserTools {
         };
         let r = async {
             let ax = c.call("Accessibility.getFullAXTree", json!({})).await?;
-            let nodes = refs::build_refs(&ax, scope)?;
-            let text = refs::render(&nodes);
-            *self.refs.lock().await = (Self::doc_id(&c).await, nodes);
+            let mut nodes = refs::build_refs(&ax, scope)?;
+            let total = nodes.len();
+            nodes.truncate(MAX_READ_REFS);
+            let doc = Self::doc_id(&c).await;
+            let nodes = self.refs.lock().await.update(&doc, nodes);
+            let mut text = refs::render(&nodes);
+            if total > MAX_READ_REFS {
+                text.push_str(&format!("\n(mostrando {MAX_READ_REFS} de {total} elementos; use o parâmetro scope para ver o resto)"));
+            }
             Ok(Outcome { message: text, ..Default::default() })
         }
         .await;
@@ -438,12 +600,20 @@ impl BrowserTools {
         };
         let r = async {
             let n = self.resolve_ref(&c, reference).await?;
-            // Guard on the cached name AND the live one: the same node can turn from "Revisar" into "Enviar candidatura".
-            let live = Self::live_name(&c, n.backend_node_id).await;
-            let info = Self::info_for_node(&c, n.backend_node_id).await?;
-            let url = Self::page_url(&c).await;
-            self.run_guard(&[n.name.as_str(), live.as_str(), info.name.as_str()], &info, &url, confirm)?;
+            // 1. Locate FIRST (scroll, box): a failure here must not spend the single allowed submit.
             let (shot, x, y) = self.locate(&c, &n, true).await?;
+            // 2. What is REALLY under the point, decided by Chrome, and what the target is called now.
+            let mut probe = Probe::default();
+            probe.add_name(&n.name); // cached: the model's own view
+            Self::probe_node(&c, n.backend_node_id, &mut probe).await;
+            match Self::node_at_point(&c, x, y).await {
+                Some(hit) if hit != n.backend_node_id => Self::probe_node(&c, hit, &mut probe).await,
+                Some(_) => {}
+                None => probe.structural = true, // cannot tell what is under the point: fail closed
+            }
+            // 3. Only now the guard (once), then the click.
+            let url = Self::page_url(&c).await;
+            self.run_guard(&probe, &url, confirm)?;
             if n.role == "radio" || n.role == "checkbox" {
                 Self::click_label_or_self(&c, n.backend_node_id).await?;
             } else {
@@ -457,6 +627,11 @@ impl BrowserTools {
 
     pub async fn type_text(&self, reference: &str, text: &str) -> Result<String, String> {
         let started = Instant::now();
+        if text.chars().count() > MAX_TYPED_CHARS {
+            return self
+                .finish("browser_type", started, Err(format!("texto grande demais (máximo {MAX_TYPED_CHARS} caracteres)")), None)
+                .await;
+        }
         self.agent_active.store(true, Ordering::SeqCst);
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
@@ -502,15 +677,23 @@ impl BrowserTools {
                 other => return Err(format!("tecla não suportada: {other} (use Enter, Tab, Escape ou Space)")),
             };
             if code == "Enter" || code == "Space" {
-                // The keyboard must not bypass the guard: check what has the focus, and for Enter also
-                // the default submit button of its form (Enter in a text field submits the form).
-                let info = Self::info_of_focus(&c).await?;
-                let url = Self::page_url(&c).await;
-                let mut names = vec![info.name.as_str()];
-                if code == "Enter" {
-                    names.push(info.form_default.as_str());
+                // The keyboard must not bypass the guard: look at what has the focus (as Chrome reports
+                // it) and, for Enter, at the default submit button of its form (Enter in a text field
+                // submits the form).
+                let mut probe = Probe::default();
+                match Self::focused_node(&c).await {
+                    Ok(Some(id)) => {
+                        Self::probe_node(&c, id, &mut probe).await;
+                        if code == "Enter" {
+                            let info = Self::info_for_node(&c, id).await;
+                            probe.add_name(&info.form_default);
+                        }
+                    }
+                    Ok(None) => {} // nothing focused: the key goes to the page body
+                    Err(_) => probe.structural = true, // cannot tell what has the focus: fail closed
                 }
-                self.run_guard(&names, &info, &url, confirm)?;
+                let url = Self::page_url(&c).await;
+                self.run_guard(&probe, &url, confirm)?;
             }
             let key_name = if code == "Space" { " " } else { code };
             for t in ["keyDown", "keyUp"] {
@@ -528,13 +711,15 @@ impl BrowserTools {
 
     pub async fn crop(&self, x: f64, y: f64, w: f64, h: f64) -> Result<ToolOutput, String> {
         let started = Instant::now();
+        let valid = [x, y, w, h].iter().all(|v| v.is_finite()) && w > 0.0 && h > 0.0 && w <= MAX_CROP_SIDE && h <= MAX_CROP_SIDE;
+        if !valid {
+            let why = format!("recorte inválido: largura e altura entre 1 e {MAX_CROP_SIDE} pixels");
+            return self.finish("browser_crop", started, Err(why), None).await.map(ToolOutput::Text);
+        }
         self.agent_active.store(true, Ordering::SeqCst);
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
-            Err(e) => {
-                let _ = self.finish("browser_crop", started, Err(e.clone()), None).await;
-                return Err(friendly(e));
-            }
+            Err(e) => return self.finish("browser_crop", started, Err(e), None).await.map(ToolOutput::Text),
         };
         let r = async {
             let s = c
@@ -554,33 +739,59 @@ impl BrowserTools {
 
     pub async fn click_at(&self, x: f64, y: f64, confirm: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
+        if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
+            return self.finish("browser_click_at", started, Err("coordenada inválida".into()), None).await;
+        }
         self.agent_active.store(true, Ordering::SeqCst);
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click_at", started, Err(e), None).await,
         };
         let r = async {
-            let info = Self::info_at_point(&c, x, y).await?;
+            // What is under the point is decided by Chrome's hit test, and described by Chrome.
+            let mut probe = Probe::default();
+            match Self::node_at_point(&c, x, y).await {
+                Some(id) => Self::probe_node(&c, id, &mut probe).await,
+                None => probe.structural = true, // cannot tell what is there: fail closed
+            }
             let url = Self::page_url(&c).await;
-            self.run_guard(&[info.name.as_str()], &info, &url, confirm)?;
+            self.run_guard(&probe, &url, confirm)?;
             Self::mouse_click(&c, x, y).await?;
-            Ok(Outcome { message: format!("Clicou em ({x}, {y})."), target: Some(info.name), ..Default::default() })
+            Ok(Outcome { message: format!("Clicou em ({x}, {y})."), target: probe.names.first().cloned(), ..Default::default() })
         }
         .await;
         self.finish("browser_click_at", started, r, Some(&c)).await
     }
 }
 
-/// Guard context backed by the main database. `site_allowed` is `true` until the accounts cycle
+/// Guard context backed by the main database. site_allowed is true until the accounts cycle
 /// (cycle 2) adds per-site permissions.
+///
+/// The single allowed submit per vaga lives in the DATABASE (table submit_claims), not in memory: an
+/// MCP process that restarts, or two sessions running at once, must not be able to submit the
+/// same vaga twice. Every failure to read or write it is a refusal (fail closed).
 pub struct DbGuardContext {
     pub data_dir: PathBuf,
-    claimed: StdMutex<HashSet<i64>>,
 }
 
 impl DbGuardContext {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir, claimed: StdMutex::new(HashSet::new()) }
+        Self { data_dir }
+    }
+
+    fn conn(&self) -> Option<rusqlite::Connection> {
+        let c = super::open_db(&self.data_dir).ok()?;
+        c.busy_timeout(Duration::from_secs(5)).ok()?;
+        c.execute_batch(
+            "CREATE TABLE IF NOT EXISTS submit_claims (
+                 vaga_id INTEGER NOT NULL,
+                 day TEXT NOT NULL,
+                 claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 PRIMARY KEY (vaga_id, day)
+             );",
+        )
+        .ok()?;
+        Some(c)
     }
 }
 
@@ -590,19 +801,20 @@ impl GuardContext for DbGuardContext {
         c.query_row("SELECT status FROM vagas WHERE id = ?1", [vaga_id], |r| r.get(0)).ok()
     }
 
-    /// Applications recorded today PLUS the ones this session was allowed to send but the model
-    /// never recorded: a model that forgets to record must not get an unlimited budget.
+    /// Applications recorded today PLUS the ones this guard allowed today that the model never
+    /// recorded: a model that forgets to record must not get an unlimited budget.
     fn applications_today(&self) -> i64 {
-        let Ok(conn) = super::open_db(&self.data_dir) else { return 0 };
-        let recorded = crate::db::queries::candidaturas_hoje(&conn).unwrap_or(0);
-        let claimed: Vec<i64> = self.claimed.lock().map(|g| g.iter().copied().collect()).unwrap_or_default();
-        let unrecorded = claimed
-            .iter()
-            .filter(|id| {
-                conn.query_row("SELECT COUNT(*) FROM candidaturas WHERE vaga_id = ?1", [**id], |r| r.get::<_, i64>(0)).unwrap_or(0) == 0
-            })
-            .count() as i64;
-        recorded + unrecorded
+        let Some(conn) = self.conn() else { return i64::MAX / 2 }; // unreadable = budget exhausted
+        let recorded = crate::db::queries::candidaturas_hoje(&conn).unwrap_or(i64::MAX / 2);
+        let unrecorded: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM submit_claims c WHERE c.day = date('now','localtime')
+                   AND NOT EXISTS (SELECT 1 FROM candidaturas k WHERE k.vaga_id = c.vaga_id)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        recorded.saturating_add(unrecorded)
     }
 
     fn daily_limit(&self) -> i64 {
@@ -617,13 +829,24 @@ impl GuardContext for DbGuardContext {
         true
     }
 
+    /// The vaga being applied to: there must be EXACTLY ONE in 'candidatando'. Two means a crashed
+    /// session left one behind and nobody can tell which one the model means, so none is active.
     fn active_vaga(&self) -> Option<i64> {
         let c = super::open_db(&self.data_dir).ok()?;
-        c.query_row("SELECT id FROM vagas WHERE status = 'candidatando' ORDER BY id DESC LIMIT 1", [], |r| r.get(0)).ok()
+        let mut stmt = c.prepare("SELECT id FROM vagas WHERE status = 'candidatando' LIMIT 2").ok()?;
+        let ids: Vec<i64> = stmt.query_map([], |r| r.get(0)).ok()?.filter_map(Result::ok).collect();
+        if ids.len() == 1 { Some(ids[0]) } else { None }
     }
 
     fn claim_submit(&self, vaga_id: i64) -> bool {
-        self.claimed.lock().map(|mut g| g.insert(vaga_id)).unwrap_or(false)
+        let Some(c) = self.conn() else { return false };
+        matches!(
+            c.execute(
+                "INSERT OR IGNORE INTO submit_claims (vaga_id, day) VALUES (?1, date('now','localtime'))",
+                [vaga_id],
+            ),
+            Ok(1)
+        )
     }
 }
 
@@ -669,23 +892,30 @@ mod tests {
     }
 
     #[test]
-    fn the_active_vaga_is_the_one_in_candidatando() {
+    fn the_active_vaga_is_the_one_in_candidatando_only_when_there_is_exactly_one() {
         let dir = temp_dir("guardctx-active");
         seed_db(&dir);
         let ctx = DbGuardContext::new(dir.clone());
         assert_eq!(ctx.active_vaga(), None, "nothing is in candidatando yet");
         db(&dir).execute("UPDATE vagas SET status='candidatando' WHERE id=1", []).unwrap();
         assert_eq!(ctx.active_vaga(), Some(1));
+        // A second one (left by a crashed session): nobody can tell which the model means.
+        db(&dir).execute("INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status) VALUES (2, 'x', 'y', 'linkedin', 'https://x/2', datetime('now'), 'candidatando')", []).unwrap();
+        assert_eq!(ctx.active_vaga(), None, "two vagas in candidatando: no active one");
     }
 
     #[test]
     fn a_vaga_can_be_claimed_only_once_per_session() {
         let dir = temp_dir("guardctx-claim");
         seed_db(&dir);
-        let ctx = DbGuardContext::new(dir);
+        let ctx = DbGuardContext::new(dir.clone());
         assert!(ctx.claim_submit(1));
         assert!(!ctx.claim_submit(1), "the second submit for the same vaga is refused");
         assert!(ctx.claim_submit(2), "another vaga is independent");
+        // A NEW process (a restart, or a second session) sees the same claims: they live in the database.
+        let other = DbGuardContext::new(dir);
+        assert!(!other.claim_submit(1), "a restarted MCP process must not be able to submit vaga 1 again");
+        assert!(!other.claim_submit(2));
     }
 
     #[test]
@@ -732,5 +962,134 @@ mod tests {
             let i = BrowserTools::parse_info(&bad);
             assert!(i.name.is_empty() && !i.is_submit, "garbage must read as an empty, harmless Info");
         }
+    }
+
+    #[test]
+    fn unreadable_info_fails_closed_as_a_submit() {
+        for bad in [json!(null), json!(42), json!("not json"), json!(""), json!("[1,2]")] {
+            let i = BrowserTools::parse_info(&bad);
+            assert!(i.unknown && i.structural_submit(), "garbage must read as an unreadable (hence submit-like) target: {bad}");
+        }
+        let ok = BrowserTools::parse_info(&json!(r#"{"name":"x"}"#));
+        assert!(!ok.unknown && !ok.structural_submit(), "a well-formed ordinary element is not submit-like");
+    }
+
+    #[test]
+    fn host_extraction() {
+        assert_eq!(host_of("https://www.LinkedIn.com/jobs/1?x=1#y").as_deref(), Some("www.linkedin.com"));
+        assert_eq!(host_of("http://user:pw@example.com:8080/a").as_deref(), Some("example.com"));
+        assert_eq!(host_of("http://[::1]:9222/json").as_deref(), Some("::1"));
+        assert_eq!(host_of("http:///nothing"), None);
+        assert_eq!(host_of("not a url"), None);
+    }
+
+    #[test]
+    fn local_and_private_hosts_are_recognised_in_every_disguise() {
+        for h in [
+            "localhost", "foo.localhost", "printer.local", "db.internal", "127.0.0.1", "127.1.2.3", "10.0.0.5",
+            "192.168.1.1", "172.16.0.1", "172.31.255.1", "169.254.169.254", "0.0.0.0", "::1", "::", "fe80::1", "fd12:3456::1",
+            "::ffff:127.0.0.1", "2130706433", "127.1", "0x7f000001", "0177.0.0.1",
+        ] {
+            assert!(is_local_host(h), "{h} must be treated as local");
+        }
+        for h in ["www.linkedin.com", "example.com", "8.8.8.8", "172.32.0.1", "172.15.0.1", "2606:4700::1111", "dk.indeed.com"] {
+            assert!(!is_local_host(h), "{h} is public");
+        }
+    }
+
+    #[test]
+    fn the_url_policy() {
+        assert_eq!(url_refusal("https://www.linkedin.com/jobs/view/1", false, false), None);
+        assert!(url_refusal("http://127.0.0.1:9222/json/list", false, false).is_some(), "the browser's own debug endpoint");
+        assert!(url_refusal("http://localhost:1420/", false, false).is_some());
+        assert!(url_refusal("http://127.0.0.1:9222/", false, true).is_none(), "a debug build may opt in to local hosts");
+        for bad in ["file:///c:/windows/win.ini", "javascript:alert(1)", "chrome://settings", "data:text/html,x", "ftp://x/", "about:blank"] {
+            assert!(url_refusal(bad, false, false).is_some(), "{bad}");
+        }
+        assert!(url_refusal("file:///c:/x.html", true, false).is_none(), "file URLs only when explicitly allowed (tests)");
+        let long = format!("https://example.com/{}", "a".repeat(MAX_URL_BYTES));
+        assert!(url_refusal(&long, false, false).unwrap().contains("grande"));
+        assert!(url_refusal("http://", false, false).is_some());
+    }
+
+    #[test]
+    fn a_release_build_can_never_allow_local_hosts() {
+        // The opt-in is gated by cfg!(debug_assertions); this test documents the expectation.
+        let dir = temp_dir("local-gate");
+        let t = BrowserTools::new(dir.join("s.json"), Arc::new(DbGuardContext::new(dir)), Arc::new(NoSink));
+        if !cfg!(debug_assertions) {
+            assert!(!t.allow_local_hosts);
+        }
+    }
+
+    fn probe_of(names: &[&str], structural: bool) -> Probe {
+        Probe { names: names.iter().map(|s| s.to_string()).collect(), structural }
+    }
+
+    fn tools_with(dir: &std::path::Path) -> BrowserTools {
+        BrowserTools::new(dir.join("s.json"), Arc::new(DbGuardContext::new(dir.to_path_buf())), Arc::new(NoSink))
+    }
+
+    fn seed_candidatando(dir: &std::path::Path) {
+        seed_db(dir);
+        db(dir).execute("UPDATE vagas SET status='candidatando' WHERE id=1", []).unwrap();
+    }
+
+    #[test]
+    fn an_ordinary_target_is_never_stopped() {
+        let dir = temp_dir("rg-ordinary");
+        seed_candidatando(&dir);
+        let t = tools_with(&dir);
+        assert!(t.run_guard(&probe_of(&["Avançar", "Próximo"], false), "https://x", None).is_ok());
+    }
+
+    #[test]
+    fn a_submit_name_anywhere_in_the_probe_needs_a_valid_confirmation_and_spends_it() {
+        let dir = temp_dir("rg-name");
+        seed_candidatando(&dir);
+        let t = tools_with(&dir);
+        // The cached name is harmless, the LIVE name is not.
+        let p = probe_of(&["Revisar", "Enviar candidatura"], false);
+        assert!(t.run_guard(&p, "https://x", None).unwrap_err().starts_with("RECUSADO"));
+        assert!(t.run_guard(&p, "https://x", Some(1)).is_ok());
+        let again = t.run_guard(&p, "https://x", Some(1)).unwrap_err();
+        assert!(again.contains("já foi enviada"), "the single submit was spent: {again}");
+    }
+
+    #[test]
+    fn a_structural_submit_needs_a_valid_confirmation_but_does_not_spend_it() {
+        let dir = temp_dir("rg-structural");
+        seed_candidatando(&dir);
+        let t = tools_with(&dir);
+        let frame = probe_of(&[], true);
+        assert!(t.run_guard(&frame, "https://x", None).unwrap_err().starts_with("RECUSADO"));
+        assert!(t.run_guard(&frame, "https://x", Some(1)).is_ok());
+        assert!(t.run_guard(&frame, "https://x", Some(1)).is_ok(), "an iframe click again: still not spent");
+        // The real submit can still go through afterwards, exactly once.
+        let submit = probe_of(&["Enviar candidatura"], false);
+        assert!(t.run_guard(&submit, "https://x", Some(1)).is_ok());
+        assert!(t.run_guard(&submit, "https://x", Some(1)).is_err());
+    }
+
+    #[test]
+    fn two_processes_cannot_both_spend_the_same_vagas_submit() {
+        // Same database, two BrowserTools (two MCP sessions): the claim lives in the database.
+        let dir = temp_dir("rg-two");
+        seed_candidatando(&dir);
+        let (a, b) = (tools_with(&dir), tools_with(&dir));
+        let submit = probe_of(&["Enviar candidatura"], false);
+        assert!(a.run_guard(&submit, "https://x", Some(1)).is_ok());
+        assert!(b.run_guard(&submit, "https://x", Some(1)).is_err(), "the second session must be refused");
+    }
+
+    #[test]
+    fn two_vagas_in_candidatando_block_every_submit() {
+        let dir = temp_dir("rg-two-active");
+        seed_candidatando(&dir);
+        db(&dir).execute("INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status) VALUES (2, 'x', 'y', 'linkedin', 'https://x/2', datetime('now'), 'candidatando')", []).unwrap();
+        let t = tools_with(&dir);
+        let submit = probe_of(&["Enviar candidatura"], false);
+        let e = t.run_guard(&submit, "https://x", Some(1)).unwrap_err();
+        assert!(e.starts_with("RECUSADO") && !e.contains('2'), "{e}");
     }
 }
