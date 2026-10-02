@@ -1,6 +1,10 @@
 ---
 name: claudia-teste
-description: Vê e controla o Claudia RH (Tauri) rodando, por CDP no WebView2, para testar frontend e backend e observar o que os agentes fazem dentro dele. Use SEMPRE que o usuário pedir para testar o app rodando, ver uma tela, conferir se a UI bate com o banco, chamar um comando Tauri, reproduzir um bug, ou reclamar do layout ("não gostei do X", "o bug tá acontecendo", "tá estranho aqui"). Use também antes de dar por concluída qualquer mudança em UI ou em comandos Tauri, e quando um bug for citado no código — reproduzir antes de propor correção. NÃO use para cargo test puro, automação de sites de vagas, nem registrar no Linear.
+description: >-
+  Olha o Claudia RH (app Tauri) RODANDO, por CDP no WebView2, para ver a tela, clicar, chamar comandos do backend e ler o que os agentes fazem dentro dele.
+  Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico, Notificações), comparar o que a UI mostra com o banco, qualquer BUG ou problema no app (tem um bug no X, o bug tá acontecendo de novo, corrige este bug — reproduzir antes de corrigir), qualquer queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS e quero conferir), perguntar se o agente ou a sessão se comportou como devia (o agente parou onde devia?), comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
+  Use também antes de dar por concluída qualquer mudança em UI ou em comandos Tauri.
+  NÃO use para cargo test puro, automação de sites de vagas, nem registrar no Linear.
 ---
 
 # claudia-teste
