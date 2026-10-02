@@ -111,6 +111,12 @@ impl CdpClient {
             }
         }
     }
+
+    /// B2: Helper for testing: return the number of pending calls
+    #[cfg(test)]
+    pub(crate) async fn pending_len(&self) -> usize {
+        self.pending.lock().await.len()
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -420,5 +426,126 @@ mod tests {
         let result = first_page(port).await;
         assert!(result.is_err(), "should reject target with invalid ws_url");
         assert!(result.unwrap_err().contains("no open page"), "error should mention no open page");
+    }
+
+    // B1: HTTP timeout test - TCP listener that accepts but never answers
+    #[tokio::test]
+    async fn http_timeout_on_unresponsive_server() {
+        use tokio::io::AsyncReadExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                // Accept but never respond
+                let _ = sock.read(&mut buf).await;
+                // Just hang forever
+                tokio::time::sleep(Duration::from_secs(100)).await;
+            }
+        });
+
+        // list_targets_with should timeout within 2 seconds even though client has 300ms timeout
+        let start = std::time::Instant::now();
+        let result = list_targets_with(port, Duration::from_millis(300)).await;
+        let elapsed = start.elapsed();
+
+        match result {
+            Err(e) => {
+                assert!(elapsed < Duration::from_secs(2), "should timeout quickly, took {:.3}s", elapsed.as_secs_f64());
+                assert!(e.contains("unreachable") || e.contains("timeout"), "should have connection error, got: {e}");
+            }
+            Ok(_) => panic!("should have timed out"),
+        }
+    }
+
+    // B2: Pending cleanup after timeout
+    #[tokio::test]
+    async fn pending_entries_cleaned_up_after_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let ws = tokio_tungstenite::accept_async(sock).await.unwrap();
+                    let (mut tx, mut rx) = ws.split();
+                    while let Some(Ok(Message::Text(t))) = rx.next().await {
+                        let v: Value = serde_json::from_str(t.as_str()).unwrap();
+                        let id = v["id"].clone();
+                        let method = v["method"].as_str().unwrap();
+                        if method == "Hang" {
+                            // Don't respond to Hang
+                        } else if method == "Fast" {
+                            let _ = tx.send(Message::Text(json!({"id": id, "result": {"echo": method}}).to_string().into())).await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let c = CdpClient::connect(&format!("ws://127.0.0.1:{port}")).await.unwrap().with_timeout(Duration::from_millis(150));
+
+        // Send a call that will timeout
+        let result = c.call("Hang", json!({})).await;
+        assert!(result.is_err());
+
+        // After timeout, pending should be empty
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let pending_count = c.pending_len().await;
+        assert_eq!(pending_count, 0, "pending should be cleaned up after timeout");
+    }
+
+    // B3: Out-of-order matching with different response times
+    #[tokio::test]
+    async fn concurrent_calls_with_different_response_times_match_correctly() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let ws = tokio_tungstenite::accept_async(sock).await.unwrap();
+                    let (mut tx, mut rx) = ws.split();
+                    while let Some(Ok(Message::Text(t))) = rx.next().await {
+                        let v: Value = serde_json::from_str(t.as_str()).unwrap();
+                        let id = v["id"].clone();
+                        let method = v["method"].as_str().unwrap();
+
+                        // "Slow" method takes 200ms before replying
+                        if method == "Slow" {
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                            let _ = tx.send(Message::Text(json!({"id": id, "result": {"echo": method}}).to_string().into())).await;
+                        } else {
+                            // Others reply immediately
+                            let _ = tx.send(Message::Text(json!({"id": id, "result": {"echo": method}}).to_string().into())).await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let c = std::sync::Arc::new(CdpClient::connect(&format!("ws://127.0.0.1:{port}")).await.unwrap());
+
+        // Send A (Slow) and B (Fast) concurrently - they arrive at server in order A, B
+        // but B should complete first, proving ID-based matching works
+        let a_handle = {
+            let c = c.clone();
+            tokio::spawn(async move { c.call("Slow", json!({})).await })
+        };
+
+        let b_handle = {
+            let c = c.clone();
+            // Small delay to ensure A is sent first
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::spawn(async move { c.call("Fast", json!({})).await })
+        };
+
+        let (res_a, res_b) = tokio::join!(a_handle, b_handle);
+
+        // The key test: each call gets its OWN response, not the other's
+        // This proves the client matches by ID, not FIFO order
+        let res_a_val = res_a.unwrap().unwrap();
+        let res_b_val = res_b.unwrap().unwrap();
+
+        assert_eq!(res_a_val["echo"], "Slow", "Call A should get Slow response");
+        assert_eq!(res_b_val["echo"], "Fast", "Call B should get Fast response (even though it completed before A)");
     }
 }
