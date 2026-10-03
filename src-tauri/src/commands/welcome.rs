@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 #[derive(Serialize)]
 pub struct SetupStatus {
     pub claude_instalado: bool,
-    pub nativehost_chrome: bool,
+    pub browser_pronto: bool,
     pub perfil_preenchido: bool,
 }
 
@@ -16,25 +16,11 @@ pub fn verificar_setup(app: AppHandle) -> SetupStatus {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    let nativehost_chrome = {
-        #[cfg(windows)]
-        {
-            use winreg::enums::HKEY_CURRENT_USER;
-            use winreg::RegKey;
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            hkcu.open_subkey(
-                r"Software\Google\Chrome\NativeMessagingHosts\com.anthropic.claude_code_browser_extension",
-            )
-            .is_ok()
-        }
-        #[cfg(not(windows))]
-        {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::Path::new(&home)
-                .join(".claude/chrome/chrome-native-host")
-                .exists()
-        }
-    };
+    // The browser is ours now: ready once the background preparation reached the "ready" stage.
+    let browser_pronto = app
+        .try_state::<crate::browser::service::StatusState>()
+        .and_then(|st| st.0.lock().ok().map(|g| g.stage == "ready"))
+        .unwrap_or(false);
 
     let perfil_preenchido = app
         .path()
@@ -44,7 +30,7 @@ pub fn verificar_setup(app: AppHandle) -> SetupStatus {
         .map(|c| c.trim().len() > 50)
         .unwrap_or(false);
 
-    SetupStatus { claude_instalado, nativehost_chrome, perfil_preenchido }
+    SetupStatus { claude_instalado, browser_pronto, perfil_preenchido }
 }
 
 #[tauri::command]

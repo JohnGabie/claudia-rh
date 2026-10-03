@@ -650,10 +650,10 @@ pub fn remover_ultima_troca_perfil() -> Result<(), String> {
     Ok(())
 }
 
-// ── Profile Chrome session (--print --chrome) ─────────────────────────────
-// Uses the same --print streaming approach as the regular chat but adds
-// --chrome so Claude has access to the authenticated browser session.
-// This lets it navigate LinkedIn (even with login) and private GitHub repos.
+// ── Profile browser session (--print --no-chrome) ─────────────────────────
+// Uses the same --print streaming approach as the regular chat, with the
+// Claudia browser (the app's own MCP tools) so it can read the user's
+// LinkedIn and GitHub through the sessions the user logged into there.
 
 fn build_chrome_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> String {
     let data_dir = app.path().app_data_dir().unwrap_or_default();
@@ -673,7 +673,7 @@ fn build_chrome_system_prompt(app: &AppHandle, conv: &[(String, String)]) -> Str
     }
 
     format!(
-        r#"You are Claudia, a professional profile-building assistant. You have access to the Chrome browser with the user's authenticated session.
+        r#"You are Claudia, a professional profile-building assistant. You control the Claudia browser (a visible window the user can see) through the browser_open, browser_read, browser_click, browser_type, browser_key, browser_crop and browser_click_at tools. It keeps the sessions the user logged into there.
 
 Target files:
 - `{dir}/candidate_base.yaml` — personal data, experience, projects, education, skills, languages, gaps, model answers
@@ -694,14 +694,16 @@ Target files:
 ## Process
 The user has already indicated which platforms to import (see first message). Do not ask for URLs — navigate directly:
 
-1. **LinkedIn** (if requested): open `https://www.linkedin.com/in/` and the authenticated session redirects to the user's profile; or click the avatar → "View my profile". Extract: name, location, headline, experience, education, skills, languages, links.
-2. **GitHub** (if requested): open `https://github.com` and click the avatar → "Your profile". Extract: name, bio, location, visible public and private repositories (name, description, primary languages).
+1. **LinkedIn** (if requested): `browser_open` `https://www.linkedin.com/in/` and `browser_read`; a logged-in session redirects to the user's own profile. Extract: name, location, headline, experience, education, skills, languages, links.
+2. **GitHub** (if requested): `browser_open` `https://github.com`, then `browser_read` and open the avatar menu → "Your profile". Extract: name, bio, location, visible public and private repositories (name, description, primary languages).
+
+If a platform asks for a login, you never type a password: tell the user to log in in the Claudia browser window and ask them to say when they are done, then `browser_read` again.
 3. Combine everything in YAML and show the user for confirmation.
 4. After explicit confirmation, save with the `update_profile` tool (send the COMPLETE candidate_base.yaml). Never write the file directly. If validation returns an error, fix the YAML and call again.
-5. Immediately after saving, close the LinkedIn and/or GitHub tabs you opened. Do not open new tabs after that.
+5. After saving, do not navigate anywhere else.
 
 ## Rules
-- Do not ask for URLs — go directly to the platforms with the authenticated session
+- Do not ask for URLs — go directly to the platforms using the sessions already logged in the Claudia browser
 - Never invent information — only include what is explicitly visible
 - Communicate in Brazilian Portuguese (pt-BR), concisely and directly
 
@@ -723,7 +725,7 @@ fn spawn_chrome_session(app: AppHandle, message: String) {
         cmd.args([
             "--dangerously-skip-permissions",
             "--print",
-            "--chrome",
+            "--no-chrome",
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
@@ -818,8 +820,8 @@ fn empty_response_hint(app: &AppHandle, chrome: bool) -> String {
         .unwrap_or_else(|_| "claude-perfil-stderr.log".to_string());
     if chrome {
         format!(
-            "A sessão do Chrome terminou sem resposta. Verifique se o Chrome está aberto \
-             com a extensão do Claude conectada. Detalhes técnicos em: {log_path}"
+            "A sessão do browser terminou sem resposta. Verifique se o browser da Claudia está \
+             pronto (aviso no topo do app). Detalhes técnicos em: {log_path}"
         )
     } else {
         format!("A sessão terminou sem resposta. Detalhes técnicos em: {log_path}")

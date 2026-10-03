@@ -4,14 +4,35 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// Whether a session may start given the stage of the Claudia browser. Starting earlier would send the
+/// agent to a browser that is still downloading: every job would end as a pending item.
+pub(crate) fn browser_gate(stage: &str, message: Option<&str>) -> Result<(), String> {
+    match stage {
+        "ready" => Ok(()),
+        "error" => Err(format!(
+            "O browser da Claudia não está disponível: {}. Use \"Tentar de novo\" no aviso do topo e inicie a sessão de novo.",
+            message.unwrap_or("erro desconhecido")
+        )),
+        _ => Err("O browser da Claudia ainda está sendo preparado (na primeira vez são ~200 MB). A sessão pode começar quando ele estiver pronto.".to_string()),
+    }
+}
+
 /// Inserts a sessoes row, assembles the system prompt, and spawns
-/// `claude --dangerously-skip-permissions --chrome` inside the embedded PTY.
+/// `claude --dangerously-skip-permissions --no-chrome` inside the embedded PTY.
 /// Called by both the Tauri command (manual) and the idle watcher (inatividade).
 pub fn iniciar_sessao(
     db: Arc<Mutex<Connection>>,
     app: &AppHandle,
     motivo: &str,
 ) -> Result<(), String> {
+    if let Some(state) = app.try_state::<crate::browser::service::StatusState>() {
+        let st = state.0.lock().map(|g| g.clone()).map_err(|e| e.to_string())?;
+        if let Err(msg) = browser_gate(&st.stage, st.message.as_deref()) {
+            app.emit("pty-output", format!("\r\n\x1b[1;33m[Claudia RH]\x1b[0m {msg}\r\n")).ok();
+            crate::diagnostics::emit_event("session", "browser_not_ready", None, &st.stage);
+            return Err(msg);
+        }
+    }
     let session_id = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -247,7 +268,9 @@ pub(crate) fn build_claude_cli_args(
     if skip_permissions {
         args.push("--dangerously-skip-permissions".to_string());
     }
-    args.push("--chrome".to_string());
+    // The browser comes from the app's own MCP tools. Off explicitly: a user who enabled the extension by
+    // default in Claude Code would otherwise get its tools next to ours.
+    args.push("--no-chrome".to_string());
     if let Some(mcp) = mcp_config {
         args.push("--mcp-config".to_string());
         args.push(mcp.to_string_lossy().into_owned());
@@ -284,10 +307,32 @@ mod tests {
         assert!(!args.iter().any(|a| a.len() > 4000), "an arg is huge: {}", args.iter().map(|a| a.len()).max().unwrap_or(0));
         assert!(args.contains(&"--strict-mcp-config".to_string()));
         assert!(args.contains(&"--dangerously-skip-permissions".to_string()));
-        assert!(args.contains(&"--chrome".to_string()));
+        // The browser comes from the app's MCP tools; the extension must stay OFF even if the user enabled it by default.
+        assert!(args.contains(&"--no-chrome".to_string()));
+        assert!(!args.iter().any(|a| a == "--chrome"));
         assert_eq!(args.last().unwrap(), "Inicia a sessao de candidaturas.");
         let i = args.iter().position(|a| a == "--system-prompt-file").unwrap();
         assert!(args[i + 1].replace('\\', "/").ends_with("workspace/.claude-system-prompt.txt"));
+    }
+
+    #[test]
+    fn the_extension_is_off_in_supervised_mode_too() {
+        let args = build_claude_cli_args(false, None, Path::new("p.txt"), None, "hi");
+        assert!(args.contains(&"--no-chrome".to_string()));
+        assert!(!args.iter().any(|a| a == "--chrome"));
+    }
+
+    #[test]
+    fn a_session_starts_only_when_the_browser_is_ready() {
+        use super::browser_gate;
+        assert!(browser_gate("ready", None).is_ok());
+        for stage in ["idle", "downloading", "launching"] {
+            let e = browser_gate(stage, None).unwrap_err();
+            assert!(e.contains("sendo preparado"), "{stage}: {e}");
+        }
+        let e = browser_gate("error", Some("sem rede")).unwrap_err();
+        assert!(e.contains("sem rede") && e.contains("Tentar de novo"), "{e}");
+        assert!(browser_gate("something-new", None).is_err(), "an unknown stage never lets a session start");
     }
 
     #[test]

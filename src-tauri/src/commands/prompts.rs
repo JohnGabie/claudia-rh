@@ -384,6 +384,9 @@ fn migrate_stale_prompts(data_dir: &Path) {
     let stale_markers = [
         ("perfil.md", "PERFIL_ATUALIZADO"),
         ("runtime.md", "sqlite3"),
+        // The browser now comes from the app's own MCP tools: a prompt that still sends the agent to the
+        // Claude in Chrome extension would leave it without a browser.
+        ("runtime.md", "Claude in Chrome"),
         ("linkedin-rede.md", "sqlite3"),
     ];
     for (file, marker) in stale_markers {
@@ -421,4 +424,52 @@ pub fn abrir_pasta_dados(app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_path(data_dir.to_string_lossy().as_ref(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    fn temp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "claudia-prompts-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(d.join("prompts")).unwrap();
+        d
+    }
+
+    #[test]
+    fn the_shipped_runtime_prompt_no_longer_sends_the_agent_to_the_extension() {
+        let p = DEFAULT_RUNTIME;
+        assert!(!p.contains("Claude in Chrome"), "the extension is gone from the default prompt");
+        assert!(!p.contains("--chrome"), "and so is the flag");
+        for tool in ["browser_open", "browser_read", "browser_click", "browser_type", "browser_key", "browser_crop", "browser_click_at", "confirm_submit"] {
+            assert!(p.contains(tool), "the prompt must teach {tool}");
+        }
+    }
+
+    #[test]
+    fn an_installed_runtime_prompt_that_still_names_the_extension_is_backed_up_and_replaced() {
+        let dir = temp("ext");
+        let path = dir.join("prompts").join("runtime.md");
+        std::fs::write(&path, "regras antigas: use a extensão Claude in Chrome").unwrap();
+        ensure_all_prompts(&dir);
+        let now = std::fs::read_to_string(&path).unwrap();
+        assert!(!now.contains("Claude in Chrome"), "the stale text must be replaced by the current default");
+        assert!(now.contains("browser_open"));
+        let bak = std::fs::read_to_string(dir.join("prompts").join("runtime.md.bak")).unwrap();
+        assert!(bak.contains("Claude in Chrome"), "the user's old file is kept as .bak, never destroyed");
+    }
+
+    #[test]
+    fn a_current_runtime_prompt_is_left_alone() {
+        let dir = temp("current");
+        let path = dir.join("prompts").join("runtime.md");
+        std::fs::write(&path, "meu texto customizado, sem a extensão e sem sqlite").unwrap();
+        ensure_all_prompts(&dir);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "meu texto customizado, sem a extensão e sem sqlite");
+        assert!(!dir.join("prompts").join("runtime.md.bak").exists());
+    }
 }
