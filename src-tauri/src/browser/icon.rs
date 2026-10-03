@@ -6,8 +6,8 @@
 // brings the original icon back. A window the app does not own is never touched.
 
 /// Embedded PNGs: 256 px for the taskbar / Alt+Tab, 32 px for the small slot.
-const BIG: &[u8] = include_bytes!("../../assets/browser-icon-256.png");
-const SMALL: &[u8] = include_bytes!("../../assets/browser-icon-32.png");
+const BIG: &[u8] = include_bytes!("../../assets/browser-icon/browser-icon-256.png");
+const SMALL: &[u8] = include_bytes!("../../assets/browser-icon/browser-icon-32.png");
 
 /// (width, height) of a PNG, read from its header. None if the bytes are not a PNG.
 pub(crate) fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
