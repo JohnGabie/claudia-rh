@@ -199,7 +199,7 @@ The agent controls its **own browser**, which the app downloads, starts and watc
 
 Everything the browser stores lives in `%LOCALAPPDATA%\io.github.johngabie.claudia-rh\browser`. Uninstalling with "Delete the application data" removes it.
 
-**Activity log** always records what the AI does in the browser (clicks, typing, pages, errors, with screenshots) on your computer only, never passwords. See it in Settings → View records. Old records are deleted automatically (30 days / 1 GB).
+**Activity log** always records what the AI does in the browser (clicks, typing, pages, errors, with screenshots) on your computer only, never passwords. Open Settings → View records for a read-only screen of them (with a Back button). Old records are deleted automatically (30 days / 1 GB).
 
 ---
 

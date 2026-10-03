@@ -63,12 +63,14 @@ pub struct Filter {
     pub session_id: Option<i64>,
     pub vaga_id: Option<i64>,
     pub kind: Option<String>,
+    /// Only rows older than this id: "load more" asks for the page after the last row it already has.
+    pub before_id: Option<i64>,
     pub limit: i64,
 }
 
 impl Default for Filter {
     fn default() -> Self {
-        Self { session_id: None, vaga_id: None, kind: None, limit: 200 }
+        Self { session_id: None, vaga_id: None, kind: None, before_id: None, limit: 200 }
     }
 }
 
@@ -147,10 +149,11 @@ impl ActivityLog {
             .prepare(&format!(
                 "SELECT {COLS} FROM events
                  WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR vaga_id = ?2) AND (?3 IS NULL OR kind = ?3)
-                 ORDER BY id DESC LIMIT ?4"
+                   AND (?4 IS NULL OR id < ?4)
+                 ORDER BY id DESC LIMIT ?5"
             ))
             .map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![f.session_id, f.vaga_id, f.kind, f.limit], row).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![f.session_id, f.vaga_id, f.kind, f.before_id, f.limit], row).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
@@ -159,12 +162,6 @@ impl ActivityLog {
         let mut stmt = c.prepare(&format!("SELECT {COLS} FROM events WHERE id = ?1")).map_err(|e| e.to_string())?;
         let mut rows = stmt.query_map([id], row).map_err(|e| e.to_string())?;
         rows.next().transpose().map_err(|e| e.to_string())
-    }
-
-    pub fn clear(&self) -> Result<(), String> {
-        self.conn.lock().map_err(|e| e.to_string())?.execute("DELETE FROM events", []).map_err(|e| e.to_string())?;
-        shots::remove_all(&self.dir);
-        Ok(())
     }
 
     fn rows_with_shots(&self, sql: &str, args: &[&dyn rusqlite::ToSql]) -> Result<RowIds, String> {
@@ -298,15 +295,22 @@ mod tests {
     }
 
     #[test]
-    fn clear_empties_the_table_and_the_capture_files() {
-        let d = temp("clear");
-        let log = ActivityLog::open(&d).unwrap();
-        log.record(&ev("action", "t"), Some(b"x"), None).unwrap();
-        assert!(d.join("capturas").exists());
-        log.clear().unwrap();
-        assert!(log.list(&Filter::default()).unwrap().is_empty());
-        let left = std::fs::read_dir(d.join("capturas")).map(|r| r.count()).unwrap_or(0);
-        assert_eq!(left, 0, "no capture file may outlive its rows");
+    fn pages_walk_back_through_the_log_without_gaps_or_repeats() {
+        let log = ActivityLog::open(&temp("pages")).unwrap();
+        let ids: Vec<i64> = (0..7).map(|i| log.record(&ev("action", &format!("t{i}")), None, None).unwrap()).collect();
+        let first = log.list(&Filter { limit: 3, ..Default::default() }).unwrap();
+        assert_eq!(first.iter().map(|r| r.id).collect::<Vec<_>>(), vec![ids[6], ids[5], ids[4]]);
+        let second = log.list(&Filter { limit: 3, before_id: Some(first[2].id), ..Default::default() }).unwrap();
+        assert_eq!(second.iter().map(|r| r.id).collect::<Vec<_>>(), vec![ids[3], ids[2], ids[1]]);
+        let last = log.list(&Filter { limit: 3, before_id: Some(second[2].id), ..Default::default() }).unwrap();
+        assert_eq!(last.iter().map(|r| r.id).collect::<Vec<_>>(), vec![ids[0]], "the last page is short: nothing more to load");
+        // The page cursor combines with the other filters.
+        let mut e = ev("failure", "t");
+        e.session_id = Some(5);
+        let f1 = log.record(&e, None, None).unwrap();
+        let f2 = log.record(&e, None, None).unwrap();
+        let only = log.list(&Filter { kind: Some("failure".into()), before_id: Some(f2), ..Default::default() }).unwrap();
+        assert_eq!(only.iter().map(|r| r.id).collect::<Vec<_>>(), vec![f1]);
     }
 
     #[test]

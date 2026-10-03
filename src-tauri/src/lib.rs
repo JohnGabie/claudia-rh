@@ -374,7 +374,6 @@ pub fn run() {
             commands::activity::activity_log_list,
             commands::activity::activity_log_get,
             commands::activity::activity_log_image,
-            commands::activity::activity_log_clear,
             browser::service::browser_status,
             browser::service::browser_retry,
             browser::service::browser_abrir,

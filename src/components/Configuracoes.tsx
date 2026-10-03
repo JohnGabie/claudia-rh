@@ -5,7 +5,6 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
 import { useT, useLocale } from "../i18n";
 import { ToggleSwitch } from "./ui/ToggleSwitch";
-import { ActivityLogView } from "./ActivityLogView";
 import { OpenBrowserButton } from "./BrowserBanner";
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -23,7 +22,7 @@ const Section: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShowWelcome }) => {
+export const Configuracoes: React.FC<{ onShowWelcome?: () => void; onOpenActivityLog?: () => void }> = ({ onShowWelcome, onOpenActivityLog }) => {
   const t = useT();
   const { locale, setLocale } = useLocale();
   const prompts = [
@@ -41,7 +40,6 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
 
   const [modoAutonomo, setModoAutonomo] = useState(false);
   const [iniciarComSistema, setIniciarComSistema] = useState(false);
-  const [showActivityLog, setShowActivityLog] = useState(false);
 
   const [appVersion, setAppVersion] = useState("");
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "found" | "latest">("idle");
@@ -195,18 +193,14 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
           {t.settings.activityLog.desc}
         </p>
         <button
-          onClick={() => setShowActivityLog((v) => !v)}
-          aria-expanded={showActivityLog}
+          onClick={onOpenActivityLog}
           style={{
             padding: "7px 20px", borderRadius: 6, fontSize: 13, fontWeight: 500, fontFamily: "inherit", cursor: "pointer",
-            border: showActivityLog ? "1px solid var(--border)" : "none",
-            background: showActivityLog ? "var(--bg-base)" : "var(--accent)",
-            color: showActivityLog ? "var(--text-secondary)" : "#fff",
+            border: "none", background: "var(--accent)", color: "#fff",
           }}
         >
-          {showActivityLog ? t.settings.activityLog.hide : t.settings.activityLog.view}
+          {t.settings.activityLog.view}
         </button>
-        {showActivityLog && <ActivityLogView />}
       </Section>
 
       {/* 2. Modo autónomo */}

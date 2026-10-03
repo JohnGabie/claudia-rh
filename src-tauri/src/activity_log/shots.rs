@@ -33,10 +33,6 @@ pub fn remove(dir: &Path, rel: &str) {
     }
 }
 
-pub fn remove_all(dir: &Path) {
-    let _ = std::fs::remove_dir_all(dir.join(FOLDER));
-}
-
 pub fn size(dir: &Path, rel: &str) -> u64 {
     resolve(dir, rel).ok().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).unwrap_or(0)
 }

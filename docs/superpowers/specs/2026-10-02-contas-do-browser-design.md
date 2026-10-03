@@ -68,7 +68,7 @@ Isso também alimenta a condição 3 da guarda de envio do ciclo 1 (site logado 
 
 Uma lista de contas dentro do app. **Onde ela mora na navegação** é decidido no plano, depois de ler `docs/padrao-design-claudia-rh.md` seção de navegação, porque o design vence e não vou propor aqui uma aba que contradiga o documento. Segue os tokens existentes (`--accent` `#D97757` como destaque; verde, âmbar e vermelho só como estado semântico, nunca como decoração).
 
-Também entra neste ciclo a **linha do tempo por vaga** no Activity log, em cima do activity log e da lista simples que o ciclo 1 já entrega (ver seção 5.6 do motor): agrupa as ações, os eventos e os prints de uma candidatura, do início ao envio.
+Também entra neste ciclo a **linha do tempo por vaga** no Activity log, em cima do activity log e da tela de registros (própria, somente leitura) que o ciclo 1 já entrega (ver seção 5.6 do motor): agrupa as ações, os eventos e os prints de uma candidatura, do início ao envio.
 
 ## 8. Testes
 

@@ -145,13 +145,13 @@ Ação só de leitura (`browser_read`, `browser_crop`) não gera print, pois a r
 
 **Privacidade e limites:**
 - O texto digitado é gravado; **campos de senha nunca**, e o recorte "antes" de um campo de senha **não é gravado**.
-- Os prints podem mostrar dados pessoais (CV, telefone, mensagens). Ficam só nesta máquina, só com o modo ligado, e saem no "Limpar tudo" e no desinstalador (seção 5.7).
+- Os prints podem mostrar dados pessoais (CV, telefone, mensagens). Ficam só nesta máquina, só com o modo ligado, e saem na retenção automática (30 dias / 1 GB) e no desinstalador (seção 5.7). Não há "Limpar tudo" na tela: ela é somente leitura.
 - Retenção de 30 dias **e** teto de espaço (1 GB): ao passar, apaga o mais antigo primeiro. Rodar com o modo ligado por semanas não pode encher o disco.
 - Uma falha ao gravar o activity log (disco cheio, banco travado) **nunca derruba nem atrasa** a ação do agente: o erro é só registrado no `diagnostics` já existente e a ação segue.
 
 **Quem escreve.** O processo MCP grava as ações (é onde elas acontecem); o app grava os eventos do browser. Os dois escrevem no mesmo `activity-log.db`, com SQLite em modo WAL para os dois processos não se bloquearem.
 
-**A tela (entra neste ciclo, versão simples).** Nas Configurações, atrás do botão "Ver registros", uma lista cronológica com filtro por sessão e por vaga. Cada linha mostra hora, tool, alvo, resultado e a miniatura do print "depois"; clicar abre o antes e o depois lado a lado, em tamanho cheio, e o JSON cru do registro. Linhas de falha em destaque. A linha do tempo mais rica por vaga fica para o ciclo 2.
+**A tela (decisão de 2026-10-03: tela própria, somente leitura).** Nas Configurações a seção "Activity log" tem a descrição e o botão "Ver registros", que abre uma **tela própria** (não é aba da sidebar) com o botão "← Voltar" no topo, que volta às Configurações. A tela só lê: não existe "Limpar tudo" nem nenhuma outra escrita; quem apaga é a retenção automática. Lista cronológica (mais novo primeiro, 100 por página com "Carregar mais") com filtro por tipo (ação, falha, navegação, browser), por sessão e por vaga. Cada linha mostra hora local, passo, alvo, resultado e duração, com as falhas em destaque (cor de perigo, só como estado). Clicar numa linha abre, ao lado, o print antes e o depois, os campos nomeados (hora, tipo, passo, alvo, papel, texto, endereço, resultado, erro, duração, sessão, vaga) e os dados técnicos recolhidos num bloco secundário; os prints só carregam do registro aberto. A linha do tempo mais rica por vaga fica para o ciclo 2.
 
 **Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. Estar fora da pasta de trabalho, não ser citado em prompt ou tool e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo. Aqui isso é aceitável porque o conteúdo é o do próprio usuário, na máquina dele.
 

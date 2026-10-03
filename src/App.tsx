@@ -13,6 +13,7 @@ import { Perfil } from "./components/perfil";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
+import { ActivityLogScreen } from "./components/ActivityLogScreen";
 import { Pendencias } from "./components/Pendencias";
 import { Welcome } from "./components/Welcome";
 
@@ -28,6 +29,8 @@ function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  // The Activity log viewer is a screen of its own, opened from Settings and closed with its Back button.
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
 
   const refreshFeedbackSugestao = () =>
     invoke<{ sugerir: boolean }>("sugerir_feedback").then(s => setSugerirFeedback(s.sugerir)).catch(() => {});
@@ -142,7 +145,7 @@ function App() {
           <Welcome onComplete={(v) => { setShowWelcome(false); setView(v); }} />
         ) : (
           <>
-            <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
+            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
             <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
               {/* Dashboard */}
@@ -176,9 +179,16 @@ function App() {
               </div>
 
               {/* Configurações */}
-              <div style={{ display: view === "configuracoes" ? "block" : "none", height: "100%", overflow: "auto" }}>
-                <Configuracoes onShowWelcome={() => setShowWelcome(true)} />
+              <div style={{ display: view === "configuracoes" && !activityLogOpen ? "block" : "none", height: "100%", overflow: "auto" }}>
+                <Configuracoes onShowWelcome={() => setShowWelcome(true)} onOpenActivityLog={() => setActivityLogOpen(true)} />
               </div>
+
+              {/* Activity log (somente leitura), aberto a partir das Configurações */}
+              {view === "configuracoes" && activityLogOpen && (
+                <div style={{ height: "100%" }}>
+                  <ActivityLogScreen onBack={() => setActivityLogOpen(false)} />
+                </div>
+              )}
 
             </main>
           </>
