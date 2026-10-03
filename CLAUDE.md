@@ -1,6 +1,6 @@
 # Claudia RH
 
-App desktop Windows (Tauri v2: Rust + React/TypeScript) que automatiza candidaturas com Claude Code + Chrome.
+App desktop Windows (Tauri v2: Rust + React/TypeScript) que automatiza candidaturas com um agente de IA e um browser próprio.
 
 Este arquivo é o ponto de entrada de qualquer sessão de coding **neste repositório**.
 
@@ -39,7 +39,7 @@ Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de 
 
 ### Por que a regra dos passos existe
 
-O setup atual já tem uns 12 passos: instalar o Claude Code, acertar o PATH, instalar a extensão Claude in Chrome, registrar o native messaging host (`welcome.rs:19` checa a chave no registro), abrir o app, criar o perfil. Cada passo é uma chance do usuário desistir antes de ver o produto funcionando.
+O setup chegou a ter uns 12 passos: instalar o Claude Code, acertar o PATH, instalar a extensão Claude in Chrome, registrar o native messaging host, abrir o app, criar o perfil. A extensão e o native host saíram: o browser agora é baixado pelo app. Cada passo é uma chance do usuário desistir antes de ver o produto funcionando.
 
 Toda solução que "resolve" um problema adicionando um passo está trocando uma dor por outra — e a dor do setup é paga por **todo** usuário, enquanto a dor técnica é paga uma vez por quem constrói.
 
@@ -90,4 +90,4 @@ A `claudia-teste-sandbox` usa um laboratório Windows Sandbox mantido fora do re
 
 ## O que este repo já é
 
-v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Sessão de execução = `claude --chrome` no PTY; sessão de Perfil = sem `--chrome`.
+v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Browser próprio em `src-tauri/src/browser/` (Chrome for Testing, CDP, ferramentas `browser_*` no MCP); Activity log do modo desenvolvedor em `src-tauri/src/activity_log/`. Sessão de execução = `claude --no-chrome` no PTY, só com o browser pronto.

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 pub enum SessionKind {
     /// Profile / LinkedIn sessions: turn-based, user reads every reply.
     Interactive,
-    /// The `claude --chrome` run: nobody is necessarily looking.
+    /// The autonomous execution run: nobody is necessarily looking.
     Autonomous,
 }
 
