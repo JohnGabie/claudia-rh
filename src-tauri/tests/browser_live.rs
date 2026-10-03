@@ -758,3 +758,130 @@ async fn the_browsers_own_debug_endpoint_cannot_be_opened() {
         assert!(e.contains("locais"), "{url}: {e}");
     }
 }
+
+// ───────────── Task 3.3 / 3.4: what the Activity log receives from the real tools ─────────────
+use claudia_rh_lib::browser::nav::NavRecord;
+use claudia_rh_lib::mcp::tools::browser::{ActionRecord, ActionSink};
+
+struct Mem {
+    actions: Mutex<Vec<ActionRecord>>,
+    navs: Mutex<Vec<NavRecord>>,
+}
+
+impl Mem {
+    fn new() -> Arc<Mem> {
+        Arc::new(Mem { actions: Mutex::new(vec![]), navs: Mutex::new(vec![]) })
+    }
+}
+
+impl ActionSink for Mem {
+    fn enabled(&self) -> bool {
+        true
+    }
+    fn action(&self, r: ActionRecord) {
+        self.actions.lock().unwrap().push(r);
+    }
+    fn navigation(&self, r: NavRecord) {
+        self.navs.lock().unwrap().push(r);
+    }
+}
+
+fn tools_with_sink(l: &Live, sink: Arc<Mem>) -> BrowserTools {
+    BrowserTools::new(l.profile.join("state.json"), Ctx::candidatando(7), sink).allow_file_urls()
+}
+
+#[tokio::test]
+#[ignore]
+async fn recorded_actions_carry_the_target_a_before_and_an_after_screenshot() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone());
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.type_text(&ref_of(&list, "textbox", "Nome"), "Ana").await.unwrap();
+    t.click(&ref_of(&list, "button", "Avançar"), None).await.unwrap();
+    let recs = mem.actions.lock().unwrap();
+    let typed = recs.iter().find(|r| r.tool == "browser_type").unwrap();
+    assert_eq!(typed.target.as_deref(), Some("Nome"));
+    assert_eq!(typed.text.as_deref(), Some("Ana"));
+    assert!(typed.shot_before.as_ref().is_some_and(|b| b.len() > 100), "a mutating action keeps a 'before' crop");
+    assert!(typed.shot_after.as_ref().is_some_and(|b| b.len() > 100), "and an 'after' image");
+    let click = recs.iter().find(|r| r.tool == "browser_click").unwrap();
+    assert_eq!(click.result, "ok");
+    assert!(click.shot_before.as_ref().is_some_and(|b| b.len() > 100), "a click keeps a crop of its target");
+    assert!(click.url.as_deref().is_some_and(|u| u.contains("apply-form")));
+    let read = recs.iter().find(|r| r.tool == "browser_read").unwrap();
+    assert!(read.shot_before.is_none(), "a read-only action takes no 'before' crop");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_password_field_is_never_recorded_neither_text_nor_before_crop() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone());
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.type_text(&ref_of(&list, "textbox", "Senha"), "segredo-123").await.unwrap();
+    let recs = mem.actions.lock().unwrap();
+    let pw = recs.iter().find(|r| r.tool == "browser_type").unwrap();
+    assert_eq!(pw.target.as_deref(), Some("Senha"));
+    assert!(pw.text.is_none(), "the password text must never be recorded");
+    assert!(pw.shot_before.is_none(), "the crop 'before' of a password field must never be recorded");
+    // The secret must not appear anywhere else in the record either.
+    assert!(!format!("{:?} {:?}", pw.error, pw.target).contains("segredo-123"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_refusal_is_recorded_as_refused_with_a_full_screenshot() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone());
+    t.open(&fixture_url()).await.unwrap();
+    for _ in 0..2 {
+        let list = t.read(None).await.unwrap();
+        let name = if list.contains("\"Avaliar\"") { "Avaliar" } else { "Avançar" };
+        t.click(&ref_of(&list, "button", name), None).await.unwrap();
+    }
+    let list = t.read(None).await.unwrap();
+    let submit = ref_of(&list, "button", "Enviar candidatura");
+    let _ = t.click(&submit, None).await.unwrap_err();
+    let recs = mem.actions.lock().unwrap();
+    let refused = recs.iter().rev().find(|r| r.result == "refused").expect("the refusal was recorded");
+    assert!(refused.error.as_deref().is_some_and(|e| e.starts_with("RECUSADO")));
+    assert!(refused.shot_after.as_ref().is_some_and(|b| b.len() > 100), "a failure keeps a screenshot");
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_error_is_recorded_as_error_not_refused() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone());
+    t.open(&fixture_url()).await.unwrap();
+    let _ = t.click("e99", None).await.unwrap_err();
+    let recs = mem.actions.lock().unwrap();
+    let r = recs.iter().rev().find(|r| r.tool == "browser_click").unwrap();
+    assert_eq!(r.result, "error");
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_agents_navigation_is_recorded_with_its_initiator() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone());
+    t.open(&fixture_url()).await.unwrap();
+    // The tracker runs in its own task: give it a moment.
+    for _ in 0..30 {
+        if !mem.navs.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let navs = mem.navs.lock().unwrap();
+    assert!(!navs.is_empty(), "the navigation must be recorded");
+    let n = navs.iter().find(|n| n.url.contains("apply-form")).expect("the fixture page was recorded");
+    assert_eq!(n.initiator, "agent", "it happened while a browser_open was running");
+}

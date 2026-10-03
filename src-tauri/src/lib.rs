@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod db_watcher;
 mod idle_watcher;
+pub mod activity_log;
 pub mod mcp;
 pub mod browser;
 mod migration;

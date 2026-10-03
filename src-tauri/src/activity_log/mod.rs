@@ -1,0 +1,413 @@
+// Dev-mode Activity log: what the AI did in the browser, with screenshots. A database SEPARATE from
+// the vagas DB, in a folder no MCP tool can read; only the app's own UI reads it, and only with the
+// developer mode switched on.
+use rusqlite::{params, Connection};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+pub mod shots;
+pub mod sink;
+
+const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    kind TEXT NOT NULL,
+    session_id INTEGER, vaga_id INTEGER,
+    tool TEXT, target TEXT, role TEXT, text TEXT, url TEXT,
+    result TEXT, error TEXT, duration_ms INTEGER,
+    shot_before TEXT, shot_after TEXT, extra TEXT
+);
+CREATE INDEX IF NOT EXISTS events_ts ON events(ts);
+";
+
+#[derive(Default, Clone, Debug)]
+pub struct NewEvent {
+    /// action | browser | failure | navigation
+    pub kind: String,
+    pub session_id: Option<i64>,
+    pub vaga_id: Option<i64>,
+    pub tool: Option<String>,
+    pub target: Option<String>,
+    pub role: Option<String>,
+    pub text: Option<String>,
+    pub url: Option<String>,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub extra: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct EventRow {
+    pub id: i64,
+    pub ts: String,
+    pub kind: String,
+    pub session_id: Option<i64>,
+    pub vaga_id: Option<i64>,
+    pub tool: Option<String>,
+    pub target: Option<String>,
+    pub role: Option<String>,
+    pub text: Option<String>,
+    pub url: Option<String>,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub shot_before: Option<String>,
+    pub shot_after: Option<String>,
+    pub extra: Option<String>,
+}
+
+pub struct Filter {
+    pub session_id: Option<i64>,
+    pub vaga_id: Option<i64>,
+    pub kind: Option<String>,
+    pub limit: i64,
+}
+
+impl Default for Filter {
+    fn default() -> Self {
+        Self { session_id: None, vaga_id: None, kind: None, limit: 200 }
+    }
+}
+
+pub struct ActivityLog {
+    conn: Mutex<Connection>,
+    dir: PathBuf,
+}
+
+const COLS: &str = "id, ts, kind, session_id, vaga_id, tool, target, role, text, url, result, error, duration_ms, shot_before, shot_after, extra";
+
+fn row(r: &rusqlite::Row) -> rusqlite::Result<EventRow> {
+    Ok(EventRow {
+        id: r.get(0)?,
+        ts: r.get(1)?,
+        kind: r.get(2)?,
+        session_id: r.get(3)?,
+        vaga_id: r.get(4)?,
+        tool: r.get(5)?,
+        target: r.get(6)?,
+        role: r.get(7)?,
+        text: r.get(8)?,
+        url: r.get(9)?,
+        result: r.get(10)?,
+        error: r.get(11)?,
+        duration_ms: r.get(12)?,
+        shot_before: r.get(13)?,
+        shot_after: r.get(14)?,
+        extra: r.get(15)?,
+    })
+}
+
+type RowIds = Vec<(i64, Option<String>, Option<String>)>;
+
+impl ActivityLog {
+    pub fn open(dir: &Path) -> Result<Self, String> {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let conn = Connection::open(dir.join("activity-log.db")).map_err(|e| e.to_string())?;
+        // WAL + a busy timeout: the MCP process and the app write to the same file.
+        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
+        conn.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(())).map_err(|e| e.to_string())?;
+        conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+        Ok(Self { conn: Mutex::new(conn), dir: dir.to_path_buf() })
+    }
+
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    pub fn record(&self, e: &NewEvent, shot_before: Option<&[u8]>, shot_after: Option<&[u8]>) -> Result<i64, String> {
+        let id = {
+            let c = self.conn.lock().map_err(|e| e.to_string())?;
+            c.execute(
+                "INSERT INTO events (kind, session_id, vaga_id, tool, target, role, text, url, result, error, duration_ms, extra)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![e.kind, e.session_id, e.vaga_id, e.tool, e.target, e.role, e.text, e.url, e.result, e.error, e.duration_ms, e.extra],
+            )
+            .map_err(|e| e.to_string())?;
+            c.last_insert_rowid()
+        };
+        for (which, bytes) in [("before", shot_before), ("after", shot_after)] {
+            if let Some(b) = bytes {
+                // A failed image must never lose the event itself.
+                if let Ok(rel) = shots::save(&self.dir, id, which, b) {
+                    let col = if which == "before" { "shot_before" } else { "shot_after" };
+                    let c = self.conn.lock().map_err(|e| e.to_string())?;
+                    let _ = c.execute(&format!("UPDATE events SET {col} = ?1 WHERE id = ?2"), params![rel, id]);
+                }
+            }
+        }
+        Ok(id)
+    }
+
+    pub fn list(&self, f: &Filter) -> Result<Vec<EventRow>, String> {
+        let c = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = c
+            .prepare(&format!(
+                "SELECT {COLS} FROM events
+                 WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR vaga_id = ?2) AND (?3 IS NULL OR kind = ?3)
+                 ORDER BY id DESC LIMIT ?4"
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![f.session_id, f.vaga_id, f.kind, f.limit], row).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    pub fn get(&self, id: i64) -> Result<Option<EventRow>, String> {
+        let c = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = c.prepare(&format!("SELECT {COLS} FROM events WHERE id = ?1")).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query_map([id], row).map_err(|e| e.to_string())?;
+        rows.next().transpose().map_err(|e| e.to_string())
+    }
+
+    pub fn clear(&self) -> Result<(), String> {
+        self.conn.lock().map_err(|e| e.to_string())?.execute("DELETE FROM events", []).map_err(|e| e.to_string())?;
+        shots::remove_all(&self.dir);
+        Ok(())
+    }
+
+    fn rows_with_shots(&self, sql: &str, args: &[&dyn rusqlite::ToSql]) -> Result<RowIds, String> {
+        let c = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = c.prepare(sql).map_err(|e| e.to_string())?;
+        let r = stmt.query_map(args, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(|e| e.to_string())?;
+        r.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    }
+
+    fn drop_row(&self, id: i64, before: Option<&str>, after: Option<&str>) -> Result<(), String> {
+        for p in [before, after].into_iter().flatten() {
+            shots::remove(&self.dir, p);
+        }
+        self.conn.lock().map_err(|e| e.to_string())?.execute("DELETE FROM events WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Drops rows older than `max_age_days`, then the oldest rows until the captures fit in
+    /// `max_bytes`. Returns how many rows were removed.
+    pub fn purge(&self, max_age_days: i64, max_bytes: u64) -> Result<usize, String> {
+        let mut removed = 0;
+        let cutoff = format!("-{max_age_days} days");
+        let old = self.rows_with_shots("SELECT id, shot_before, shot_after FROM events WHERE ts < strftime('%Y-%m-%dT%H:%M:%SZ','now', ?1)", &[&cutoff])?;
+        for (id, b, a) in old {
+            self.drop_row(id, b.as_deref(), a.as_deref())?;
+            removed += 1;
+        }
+        let all = self.rows_with_shots("SELECT id, shot_before, shot_after FROM events ORDER BY id ASC", &[])?;
+        let sizes: Vec<u64> = all
+            .iter()
+            .map(|(_, b, a)| b.as_deref().map_or(0, |p| shots::size(&self.dir, p)) + a.as_deref().map_or(0, |p| shots::size(&self.dir, p)))
+            .collect();
+        let mut total: u64 = sizes.iter().sum();
+        for ((id, b, a), size) in all.into_iter().zip(sizes) {
+            if total <= max_bytes {
+                break;
+            }
+            self.drop_row(id, b.as_deref(), a.as_deref())?;
+            total -= size;
+            removed += 1;
+        }
+        Ok(removed)
+    }
+}
+
+// ── dev-mode switch (lives in the normal data dir, not in the log folder) ──
+pub fn is_enabled(data_dir: &Path) -> bool {
+    std::fs::read_to_string(data_dir.join("dev-mode.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["enabled"].as_bool())
+        .unwrap_or(false)
+}
+
+pub fn set_enabled(data_dir: &Path, on: bool) -> Result<(), String> {
+    std::fs::write(data_dir.join("dev-mode.json"), serde_json::json!({ "enabled": on }).to_string()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "claudia-al-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn ev(kind: &str, tool: &str) -> NewEvent {
+        NewEvent { kind: kind.into(), tool: Some(tool.into()), ..Default::default() }
+    }
+
+    #[test]
+    fn dev_mode_is_off_by_default_and_toggles() {
+        let d = temp("flag");
+        assert!(!is_enabled(&d));
+        set_enabled(&d, true).unwrap();
+        assert!(is_enabled(&d));
+        set_enabled(&d, false).unwrap();
+        assert!(!is_enabled(&d));
+    }
+
+    #[test]
+    fn a_garbage_flag_file_means_off() {
+        let d = temp("flag-bad");
+        std::fs::write(d.join("dev-mode.json"), "{ nope").unwrap();
+        assert!(!is_enabled(&d));
+    }
+
+    #[test]
+    fn records_and_lists_newest_first() {
+        let log = ActivityLog::open(&temp("list")).unwrap();
+        let a = log.record(&ev("action", "browser_open"), None, None).unwrap();
+        let b = log.record(&ev("action", "browser_click"), None, None).unwrap();
+        let rows = log.list(&Filter::default()).unwrap();
+        assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![b, a]);
+        assert_eq!(rows[0].tool.as_deref(), Some("browser_click"));
+        assert!(!rows[0].ts.is_empty());
+    }
+
+    #[test]
+    fn filters_by_kind_session_vaga_and_limit() {
+        let log = ActivityLog::open(&temp("filter")).unwrap();
+        let mut e1 = ev("action", "t");
+        e1.session_id = Some(1);
+        e1.vaga_id = Some(10);
+        let mut e2 = ev("failure", "t");
+        e2.session_id = Some(2);
+        e2.vaga_id = Some(10);
+        log.record(&e1, None, None).unwrap();
+        log.record(&e2, None, None).unwrap();
+        assert_eq!(log.list(&Filter { kind: Some("failure".into()), ..Default::default() }).unwrap().len(), 1);
+        assert_eq!(log.list(&Filter { session_id: Some(1), ..Default::default() }).unwrap().len(), 1);
+        assert_eq!(log.list(&Filter { vaga_id: Some(10), ..Default::default() }).unwrap().len(), 2);
+        assert_eq!(log.list(&Filter { limit: 1, ..Default::default() }).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn get_returns_the_row_or_none() {
+        let log = ActivityLog::open(&temp("get")).unwrap();
+        let id = log.record(&ev("action", "t"), None, None).unwrap();
+        assert!(log.get(id).unwrap().is_some());
+        assert!(log.get(9999).unwrap().is_none());
+    }
+
+    #[test]
+    fn many_connections_writing_and_reading_at_once_never_hit_a_lock_error() {
+        // The MCP processes and the app all use the same file, some reading while others write.
+        let d = temp("conc");
+        ActivityLog::open(&d).unwrap(); // create the schema once
+        let handles: Vec<_> = (0..6)
+            .map(|n| {
+                let d = d.clone();
+                std::thread::spawn(move || {
+                    let log = ActivityLog::open(&d).unwrap();
+                    for i in 0..60 {
+                        log.record(&ev("action", &format!("w{n}")), None, None).expect("a write must wait, not fail");
+                        if i % 5 == 0 {
+                            log.list(&Filter { limit: 10, ..Default::default() }).expect("a read must not fail");
+                        }
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let log = ActivityLog::open(&d).unwrap();
+        assert_eq!(log.list(&Filter { limit: 1000, ..Default::default() }).unwrap().len(), 360);
+    }
+
+    #[test]
+    fn the_database_uses_write_ahead_logging() {
+        let log = ActivityLog::open(&temp("wal")).unwrap();
+        let mode: String = log.conn.lock().unwrap().query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    #[test]
+    fn clear_empties_the_table_and_the_capture_files() {
+        let d = temp("clear");
+        let log = ActivityLog::open(&d).unwrap();
+        log.record(&ev("action", "t"), Some(b"x"), None).unwrap();
+        assert!(d.join("capturas").exists());
+        log.clear().unwrap();
+        assert!(log.list(&Filter::default()).unwrap().is_empty());
+        let left = std::fs::read_dir(d.join("capturas")).map(|r| r.count()).unwrap_or(0);
+        assert_eq!(left, 0, "no capture file may outlive its rows");
+    }
+
+    #[test]
+    fn screenshots_are_saved_and_referenced_by_relative_path() {
+        let d = temp("shots");
+        let log = ActivityLog::open(&d).unwrap();
+        let id = log.record(&ev("action", "browser_click"), Some(b"BEFORE"), Some(b"AFTER")).unwrap();
+        let row = log.get(id).unwrap().unwrap();
+        let (b, a) = (row.shot_before.unwrap(), row.shot_after.unwrap());
+        assert!(b.starts_with("capturas/") && b.ends_with("-before.jpg"), "{b}");
+        assert_eq!(std::fs::read(d.join(&b)).unwrap(), b"BEFORE");
+        assert_eq!(std::fs::read(d.join(&a)).unwrap(), b"AFTER");
+    }
+
+    #[test]
+    fn an_event_without_screenshots_has_none() {
+        let log = ActivityLog::open(&temp("noshots")).unwrap();
+        let id = log.record(&ev("action", "t"), None, None).unwrap();
+        let row = log.get(id).unwrap().unwrap();
+        assert!(row.shot_before.is_none() && row.shot_after.is_none());
+    }
+
+    #[test]
+    fn purge_by_age_removes_old_rows_and_their_files_but_keeps_fresh_ones() {
+        let d = temp("purge-age");
+        let log = ActivityLog::open(&d).unwrap();
+        let old = log.record(&ev("action", "old"), Some(b"x"), None).unwrap();
+        let fresh = log.record(&ev("action", "fresh"), Some(b"y"), None).unwrap();
+        let old_file = d.join(log.get(old).unwrap().unwrap().shot_before.unwrap());
+        let fresh_file = d.join(log.get(fresh).unwrap().unwrap().shot_before.unwrap());
+        log.conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE events SET ts = strftime('%Y-%m-%dT%H:%M:%SZ','now','-40 days') WHERE id = ?1", [old])
+            .unwrap();
+        assert_eq!(log.purge(30, u64::MAX).unwrap(), 1);
+        assert!(log.get(old).unwrap().is_none());
+        assert!(!old_file.exists(), "the old row's capture is deleted too");
+        assert!(log.get(fresh).unwrap().is_some() && fresh_file.exists());
+    }
+
+    #[test]
+    fn purge_by_size_drops_the_oldest_first_and_stops_when_it_fits() {
+        let d = temp("purge-size");
+        let log = ActivityLog::open(&d).unwrap();
+        let blob = vec![0u8; 10_000];
+        let ids: Vec<i64> = (0..4).map(|_| log.record(&ev("action", "t"), Some(&blob), None).unwrap()).collect();
+        assert_eq!(log.purge(30, 25_000).unwrap(), 2, "four images of 10 kB into a 25 kB budget: the two oldest go");
+        assert!(log.get(ids[0]).unwrap().is_none() && log.get(ids[1]).unwrap().is_none());
+        assert!(log.get(ids[2]).unwrap().is_some() && log.get(ids[3]).unwrap().is_some());
+        assert_eq!(log.purge(30, 25_000).unwrap(), 0, "already within the budget: nothing more is removed");
+    }
+
+    #[test]
+    fn resolve_rejects_traversal_and_foreign_paths() {
+        let d = temp("resolve");
+        let log = ActivityLog::open(&d).unwrap();
+        let id = log.record(&ev("action", "t"), Some(b"x"), None).unwrap();
+        let ok = log.get(id).unwrap().unwrap().shot_before.unwrap();
+        assert!(shots::resolve(&d, &ok).is_ok());
+        for bad in [
+            "../secret.txt",
+            "capturas/../../x",
+            "C:/Windows/win.ini",
+            "/etc/passwd",
+            "capturas/../activity-log.db",
+            "capturas\\..\\x",
+            "activity-log.db",
+            "",
+        ] {
+            assert!(shots::resolve(&d, bad).is_err(), "{bad}");
+        }
+    }
+}

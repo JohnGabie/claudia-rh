@@ -9,6 +9,9 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+/// With Network.enable one page load emits far more than the default few hundred events.
+pub const EVENT_CAPACITY: usize = 2048;
+
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
 
 pub struct CdpClient {
@@ -26,7 +29,7 @@ impl CdpClient {
         let (mut sink, mut stream) = ws.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
-        let (events, _) = broadcast::channel(512);
+        let (events, _) = broadcast::channel(EVENT_CAPACITY);
         let closed = Arc::new(AtomicBool::new(false));
 
         // Give the writer task copies of closed and pending so it can mark them on error.

@@ -413,7 +413,12 @@ pub fn run(cfg: McpConfig) -> Result<(), String> {
         // Without --browser-state the tools still exist and answer "ainda não está pronto".
         let state_file = cfg.browser_state.clone().unwrap_or_else(|| cfg.data_dir.join("browser-state-not-configured.json"));
         let guard = Arc::new(DbGuardContext::new(cfg.data_dir.clone()));
-        let browser = Arc::new(BrowserTools::new(state_file, guard, Arc::new(NoSink)));
+        // With --local-data-dir the dev-mode Activity log is wired in; it records only if the switch is on.
+        let sink: Arc<dyn super::tools::browser::ActionSink> = match &cfg.local_data_dir {
+            Some(local) => Arc::new(crate::activity_log::sink::LogSink::new(cfg.data_dir.clone(), local.clone())),
+            None => Arc::new(NoSink),
+        };
+        let browser = Arc::new(BrowserTools::new(state_file, guard, sink));
         let service = ClaudiaMcp { cfg: Arc::new(cfg), browser }
             .serve(rmcp::transport::stdio())
             .await
