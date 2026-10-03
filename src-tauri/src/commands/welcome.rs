@@ -16,10 +16,10 @@ pub fn verificar_setup(app: AppHandle) -> SetupStatus {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    // The browser is ours now: ready once the background preparation reached the "ready" stage.
+    // The browser is ours now: installed (launches when the AI is called) or already running.
     let browser_pronto = app
         .try_state::<crate::browser::service::StatusState>()
-        .and_then(|st| st.0.lock().ok().map(|g| g.stage == "ready"))
+        .and_then(|st| st.0.lock().ok().map(|g| g.stage == "ready" || g.stage == "installed"))
         .unwrap_or(false);
 
     let perfil_preenchido = app

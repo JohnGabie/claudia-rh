@@ -314,7 +314,7 @@ const StepInstall: React.FC<{
       .catch(() => {});
     return () => { un.then((f) => f()); };
   }, []);
-  const browserOk = browserStage === "ready" || !!status?.browser_pronto;
+  const browserOk = browserStage === "ready" || browserStage === "installed" || !!status?.browser_pronto;
   const chromeOk = browserOk;
 
   return (

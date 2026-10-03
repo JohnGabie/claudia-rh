@@ -126,9 +126,9 @@ pub fn start(
                 continue;
             }
 
-            // Not firing is not the same as having fired: while the browser is not ready the trigger stays
-            // armed and tries again on the next tick, instead of losing the whole idle period.
-            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) && crate::commands::sessao::browser_is_ready(&app) {
+            // Starting a session launches the browser if it is not up. Only a failed browser holds the trigger
+            // back, armed, so it tries again on the next tick instead of losing the whole idle period.
+            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) && !crate::commands::sessao::browser_failed(&app) {
                 fired_this_idle = iniciar_sessao(Arc::clone(&db), &app, "inatividade").is_ok();
             }
         }

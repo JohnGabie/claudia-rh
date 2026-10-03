@@ -12,7 +12,7 @@ O browser da Claudia guarda as sessões do usuário (cookies), mas o app não sa
 
 ## 2. Objetivo
 
-Um lugar simples para as contas que o usuário tem, onde ele vê se cada uma está logada e decide se a IA pode usá-la. A procura de vagas **pula** o que não está logado e permitido, sem travar a rodada.
+Um lugar simples para as contas que o usuário tem, onde ele vê se cada uma está logada e decide se a IA pode usá-la. A procura de vagas **pula** o que não está logado e permitido, sem travar a rodada. O browser abre quando a IA é chamada; fora disso o usuário o abre pelo botão.
 
 Princípio: **só sessão**. O usuário faz login uma vez na janela do browser da Claudia, como num browser normal. Nenhuma senha passa pelo app. Quando a sessão expira, o site volta a "precisa de login" e o usuário loga de novo.
 
@@ -42,15 +42,16 @@ A regra é um **dado** da conta, não código espalhado:
 - **Conta adicionada pelo usuário:** começa em `manual`: o usuário clica "já estou logado". O estado vale até a próxima checagem, que é a heurística "apareceu cookie novo de sessão depois do login" ou, na falta dela, continua manual.
 - A lista inicial de contas embutidas e a regra de cada uma só entram **depois de testada** na primeira tarefa do plano. Só entra o que foi verificado de verdade, começando pelo LinkedIn.
 
-**O verde não pode mentir.** A sessão expira. O app reconfere ao abrir, antes de cada rodada de procura, e quando uma navegação cai numa página de login. Se a checagem falha por qualquer motivo, o estado vira `desconhecido` (amarelo), nunca `logada`.
+**O verde não pode mentir.** A sessão expira. O app reconfere antes de cada rodada de procura (o browser já foi aberto pela chamada da IA), e quando uma navegação cai numa página de login. Com o browser fechado não há como ler os cookies pelo CDP: o estado fica como estava, marcado com a hora da última checagem, e a tela mostra `desconhecido` se essa checagem for antiga demais; nunca `logada` sem checagem recente. Se a checagem falha por qualquer motivo, o estado vira `desconhecido` (amarelo), nunca `logada`.
 
 ## 5. Comportamento
 
-1. **Abrir:** botão por conta. Foca o browser da Claudia e abre `url_login`. O usuário loga na janela.
-2. **Estado visível:** verde (`logada`), vermelho ou cinza (`precisa_login`), amarelo (`desconhecido`).
-3. **Adicionar site:** o usuário informa nome e URL. A conta nasce com regra `manual` e `ia_pode_usar` desligado.
-4. **Remover:** só contas adicionadas pelo usuário. As embutidas podem ser desligadas, não apagadas. Remover **não** limpa os cookies do perfil; isso é uma ação separada e explícita.
-5. **Permissão:** o interruptor "a IA pode usar" é a autorização explícita. Mudar para ligado exige um clique, sem automação.
+1. **Abrir o browser:** o browser da Claudia **só roda quando a IA é chamada** (decisão de 2026-10-03; ver "Ciclo de vida" na seção 3.6 da arquitetura). Por isso a tela de contas tem um botão **"Abrir o browser"**, sempre visível no topo, que lança o browser quando ele não está aberto e o traz para a frente quando já está. Sem ele o usuário não teria como logar fora de uma sessão. O botão já existe nas Configurações (comando `browser_abrir`, entregue no ciclo 1); este ciclo o leva para a tela de contas e acrescenta o foco da janela.
+2. **Abrir uma conta:** botão por conta. Abre o browser se preciso (mesmo comando), foca a janela e abre `url_login`. O usuário loga na janela.
+3. **Estado visível:** verde (`logada`), vermelho ou cinza (`precisa_login`), amarelo (`desconhecido`).
+4. **Adicionar site:** o usuário informa nome e URL. A conta nasce com regra `manual` e `ia_pode_usar` desligado.
+5. **Remover:** só contas adicionadas pelo usuário. As embutidas podem ser desligadas, não apagadas. Remover **não** limpa os cookies do perfil; isso é uma ação separada e explícita.
+6. **Permissão:** o interruptor "a IA pode usar" é a autorização explícita. Mudar para ligado exige um clique, sem automação.
 
 ## 6. Integração com a procura de vagas
 
@@ -74,6 +75,7 @@ Também entra neste ciclo a **linha do tempo por vaga** no modo desenvolvedor, e
 - **Unidade:** cada regra de login contra cookies simulados; transição de estados (`logada` → `desconhecido` quando a checagem falha); o verde nunca aparece sem checagem bem-sucedida; resolução de domínio para conta; permissão desligada bloqueia.
 - **Integração:** Chrome real (headless) com cookies plantados no perfil de teste: `li_at` presente dá `logada`, ausente dá `precisa_login`; `browser_open` recusa e permite conforme o estado.
 - **Persistência:** as contas e permissões sobrevivem a reiniciar o app.
+- **Botão e ciclo de vida:** com o app aberto, o browser está fechado (estado `installed`); o botão o abre e fica desabilitado enquanto ele roda; iniciar uma sessão o abre sozinho; fechar a janela à mão sem sessão ativa não a reabre.
 - **Manual curto:** logar de verdade numa conta no browser da Claudia, ver o verde, deixar a sessão expirar e ver voltar.
 
 ## 9. Fora do escopo

@@ -1,6 +1,7 @@
-// Prepares the browser in the background right after the app opens (install, theme, launch), keeps
-// it alive, and stops it when the app exits. The UI follows along through the "browser-progress"
-// event; the MCP processes only ever read state.json.
+// Installs the browser in the background when the app opens, launches it only when the AI is called
+// (a session starts) or the user presses the open button, keeps it alive while a session needs it,
+// and stops it when the app exits. The UI follows along through the "browser-progress" event; the
+// MCP processes only ever read state.json.
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -76,14 +77,9 @@ fn forward_progress(throttle: &Mutex<Throttle>, p: Progress, now: Instant, publi
     }
 }
 
-/// One full preparation: install if needed, then launch (or reuse) and verify. Publishes the stages
-/// `downloading`, `launching`, `ready` or `error`. The spawn function is injectable for tests.
-pub(crate) async fn prepare(
-    local: &Path,
-    pin: &Pin,
-    publish: &(dyn Fn(Status) + Send + Sync),
-    spawn: impl Fn(&LaunchOptions, u16) -> Result<u32, String>,
-) -> Result<BrowserState, String> {
+/// Install the pinned Chrome if it is not there yet (download, checksum, extract), without launching it.
+/// Publishes `downloading`, or `error`. Returns the path of chrome.exe.
+pub(crate) async fn install(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)) -> Result<std::path::PathBuf, String> {
     let root = super::browser_root(local);
     if let Err(e) = std::fs::create_dir_all(&root) {
         let msg = format!("não foi possível criar a pasta do browser: {e}");
@@ -94,13 +90,24 @@ pub(crate) async fn prepare(
     publish(Status::at("downloading"));
     let throttle = Mutex::new(Throttle::new(Duration::from_millis(200)));
     let on_progress = |p: Progress| forward_progress(&throttle, p, Instant::now(), publish);
-    let exe = match super::install::ensure_installed(&root, &pin.version, &pin.zip_url(), &pin.sha256, &on_progress).await {
-        Ok(p) => p,
+    match super::install::ensure_installed(&root, &pin.version, &pin.zip_url(), &pin.sha256, &on_progress).await {
+        Ok(p) => Ok(p),
         Err(e) => {
             publish(Status::error(e.to_string()));
-            return Err(e.to_string());
+            Err(e.to_string())
         }
-    };
+    }
+}
+
+/// One full preparation: install if needed, then launch (or reuse) and verify. Publishes the stages
+/// `downloading`, `launching`, `ready` or `error`. The spawn function is injectable for tests.
+pub(crate) async fn prepare(
+    local: &Path,
+    pin: &Pin,
+    publish: &(dyn Fn(Status) + Send + Sync),
+    spawn: impl Fn(&LaunchOptions, u16) -> Result<u32, String>,
+) -> Result<BrowserState, String> {
+    let exe = install(local, pin, publish).await?;
 
     publish(Status::at("launching"));
     let opts = LaunchOptions::visible(exe, super::profile_dir(local));
@@ -153,12 +160,67 @@ pub(crate) async fn until_window(attempts: u32, every: Duration, mut apply: impl
     false
 }
 
+/// Someone asked for the browser while a preparation was still going (a session start, the open
+/// button). The preparation that is running checks it when it ends and launches the browser then.
+static LAUNCH_WANTED: AtomicBool = AtomicBool::new(false);
+
+/// Launches the browser if it is not up (installing it first if needed). Safe to call any number of
+/// times: only one preparation/watch task ever runs.
+pub fn request_start(app: &AppHandle) {
+    LAUNCH_WANTED.store(true, Ordering::SeqCst);
+    let busy = app.try_state::<Running>().is_some_and(|r| r.0.load(Ordering::SeqCst));
+    if !busy {
+        tauri::async_runtime::spawn(start(app.clone()));
+    }
+}
+
+/// Runs when the app opens. The browser is NOT launched here: it only runs when the AI is called (a
+/// session starts) or the user presses the open button. This only makes sure the pinned Chrome is on
+/// disk, so the first session does not wait for a 200 MB download, and ends in the `installed` stage.
+/// A Chrome left running by an earlier run that did not exit cleanly is adopted and watched as before.
+pub async fn install_in_background(app: AppHandle) {
+    let publish = publisher(&app);
+    let local = match app.path().app_local_data_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            publish(Status::error(e.to_string()));
+            return;
+        }
+    };
+    let pin = super::pin::pin();
+    if is_alive(&super::state_file(&local), &pin.version).await {
+        return start(app).await;
+    }
+    if let Some(r) = app.try_state::<Running>() {
+        if r.0.swap(true, Ordering::SeqCst) {
+            return;
+        }
+    }
+    if install(&local, &pin, &publish).await.is_ok() {
+        publish(Status::at("installed"));
+    }
+    finish_running(&app);
+    if LAUNCH_WANTED.load(Ordering::SeqCst) {
+        start(app).await;
+    }
+}
+
+/// True while an agent session is running: only then is a browser that vanished worth relaunching.
+fn agent_session_active(app: &AppHandle) -> bool {
+    let Some(db) = app.try_state::<crate::DbState>() else { return false };
+    let Ok(conn) = db.0.lock() else { return false };
+    conn.query_row("SELECT COUNT(*) FROM sessoes WHERE terminada_em IS NULL", [], |r| r.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .unwrap_or(false)
+}
+
 pub async fn start(app: AppHandle) {
     if let Some(r) = app.try_state::<Running>() {
         if r.0.swap(true, Ordering::SeqCst) {
             return; // already running
         }
     }
+    LAUNCH_WANTED.store(false, Ordering::SeqCst);
     let publish = publisher(&app);
     let local = match app.path().app_local_data_dir() {
         Ok(d) => d,
@@ -171,7 +233,8 @@ pub async fn start(app: AppHandle) {
     if let Ok(state) = prepare(&local, &pin, &publish, manager::spawn_chrome).await {
         // The orange logo on the window (taskbar, Alt+Tab): the window opens a moment after the launch.
         until_window(60, Duration::from_millis(250), || super::icon::apply_to_process(state.pid)).await;
-        watch(&local, &pin, &publish).await;
+        let active = || agent_session_active(&app);
+        watch(&local, &pin, &publish, &active).await;
     }
     finish_running(&app);
 }
@@ -192,8 +255,13 @@ pub(crate) async fn is_alive(state_file: &Path, version: &str) -> bool {
     }
 }
 
+/// A browser that is gone is relaunched only while an agent session needs it.
+pub(crate) fn relaunch_wanted(agent_active: bool) -> bool {
+    agent_active
+}
+
 /// Health check every few seconds; relaunch a Chrome that died, give up if it keeps dying.
-async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)) {
+async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync), agent_active: &(dyn Fn() -> bool + Send + Sync)) {
     let state_file = super::state_file(local);
     let mut watcher = Watcher::default();
     loop {
@@ -209,6 +277,11 @@ async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)
         match watcher.observe(alive, Instant::now()) {
             WatchAction::Nothing => {}
             WatchAction::Relaunch => {
+                if !relaunch_wanted(agent_active()) {
+                    // Nobody is using it: a window the user closed stays closed until the next session or the open button.
+                    publish(Status::at("installed"));
+                    return;
+                }
                 log::warn!("browser is gone, relaunching");
                 if prepare(local, pin, publish, manager::spawn_chrome).await.is_err() {
                     return;
@@ -238,7 +311,14 @@ pub fn browser_status(state: tauri::State<'_, StatusState>) -> Status {
 /// "Try again" after an error (no network, antivirus, ...).
 #[tauri::command]
 pub fn browser_retry(app: AppHandle) {
-    tauri::async_runtime::spawn(start(app));
+    request_start(&app);
+}
+
+/// The "open the browser" button: launches the Claudia browser (so the user can log into sites) and
+/// does nothing if it is already up.
+#[tauri::command]
+pub fn browser_abrir(app: AppHandle) {
+    request_start(&app);
 }
 
 #[cfg(test)]
@@ -306,6 +386,12 @@ mod tests {
         assert!(sent <= 101, "1000 chunks over 100 percent steps must send at most ~100 updates, sent {sent}");
         assert!(sent >= 50, "but the UI still follows the download, sent {sent}");
         assert!(log.lock().unwrap().iter().all(|x| x.stage == "downloading"));
+    }
+
+    #[test]
+    fn a_vanished_browser_is_relaunched_only_while_an_agent_session_needs_it() {
+        assert!(relaunch_wanted(true), "a session is running: bring the browser back");
+        assert!(!relaunch_wanted(false), "nobody is using it: a window the user closed stays closed");
     }
 
     #[tokio::test]

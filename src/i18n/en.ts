@@ -91,6 +91,12 @@ export const en = {
     openFiles: "Open files folder",
   },
   settings: {
+    browser: {
+      title: "Claudia browser",
+      desc: "The browser only opens when the AI is called. Open it here to log into the sites you want it to work on: the login is kept in it, like in any browser.",
+      open: "Open the browser",
+      opening: "Opening…",
+    },
     devMode: {
       title: "Developer mode",
       desc: "Records what the AI does in the browser (clicks, typing, pages, errors), with screenshots, on this computer only. Off by default.",

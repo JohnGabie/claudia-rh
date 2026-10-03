@@ -193,8 +193,8 @@
 
 The agent controls its **own browser**, which the app downloads, starts and watches by itself. You do not install a browser extension and you do not need Chrome.
 
-1. On the first launch the app downloads a pinned Chrome build (about 200 MB, once) and opens it as an orange window. A banner at the top shows the progress.
-2. **Log into the job sites you want to use in that window** (LinkedIn, ...). The logins stay in that browser, like in any other. Claudia never sees your passwords, and sites you are not logged into are skipped.
+1. On the first launch the app downloads a pinned Chrome build (about 200 MB, once). A banner at the top shows the progress. The browser itself only opens when the AI is called, or when you press **Open the browser** in Settings; it opens as an orange window.
+2. **Press Open the browser and log into the job sites you want to use in that window** (LinkedIn, ...). The logins stay in that browser, like in any other. Claudia never sees your passwords, and sites you are not logged into are skipped.
 3. The agent can only submit an application through a guard in the app: it must confirm the exact job being applied to, within your daily budget, once per job.
 
 Everything the browser stores lives in `%LOCALAPPDATA%\io.github.johngabie.claudia-rh\browser`. Uninstalling with "Delete the application data" removes it.

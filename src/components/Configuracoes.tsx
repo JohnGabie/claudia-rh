@@ -6,6 +6,7 @@ import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
 import { useT, useLocale } from "../i18n";
 import { ToggleSwitch } from "./ui/ToggleSwitch";
 import { ActivityLogView } from "./ActivityLogView";
+import { OpenBrowserButton } from "./BrowserBanner";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -177,6 +178,15 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
             {t.settings.startOnBoot}
           </span>
         </label>
+      </Section>
+
+      {/* The Claudia browser opens only when the AI is called; this opens it so the user can log into sites */}
+      <Section>
+        <SectionTitle>{t.settings.browser.title}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.browser.desc}
+        </p>
+        <OpenBrowserButton />
       </Section>
 
       {/* Developer mode: Activity log of what the AI did in the browser */}

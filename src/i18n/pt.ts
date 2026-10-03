@@ -93,6 +93,12 @@ export const pt: Strings = {
     openFiles: "Abrir pasta de arquivos",
   },
   settings: {
+    browser: {
+      title: "Browser da Claudia",
+      desc: "O browser só abre quando a IA é chamada. Abra por aqui para fazer login nos sites onde você quer que ela atue: o login fica salvo nele, como em qualquer browser.",
+      open: "Abrir o browser",
+      opening: "Abrindo…",
+    },
     devMode: {
       title: "Modo desenvolvedor",
       desc: "Registra o que a IA faz no browser (cliques, digitação, páginas, erros), com prints, só neste computador. Desligado por padrão.",

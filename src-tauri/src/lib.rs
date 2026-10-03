@@ -279,7 +279,7 @@ pub fn run() {
             // The app-owned browser: installed, launched and watched in the background.
             app.manage(browser::service::StatusState(Arc::new(Mutex::new(browser::service::Status::idle()))));
             app.manage(browser::service::Running(std::sync::atomic::AtomicBool::new(false)));
-            tauri::async_runtime::spawn(browser::service::start(app.handle().clone()));
+            tauri::async_runtime::spawn(browser::service::install_in_background(app.handle().clone()));
 
             // Ensure all prompt files exist on disk
             commands::prompts::ensure_all_prompts(&data_dir);
@@ -379,6 +379,7 @@ pub fn run() {
             commands::activity::activity_log_clear,
             browser::service::browser_status,
             browser::service::browser_retry,
+            browser::service::browser_abrir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

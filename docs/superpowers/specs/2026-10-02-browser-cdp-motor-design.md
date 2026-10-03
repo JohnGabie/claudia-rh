@@ -215,6 +215,6 @@ Registrados em `docs/superpowers/plans/2026-10-02-browser-cdp-motor.md`. Onde di
 
 1. Nomes das tools em **inglês**, pela convenção do repo: `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_key`, `browser_crop`, `browser_click_at`; parâmetro `confirm_submit`. As descrições seguem em pt-BR.
 2. O processo MCP recebe `--browser-state <arquivo>` e `--local-data-dir`, não uma porta fixa.
-3. O browser é preparado **em segundo plano na abertura do app** (baixar, tema, lançar). Na primeira abertura, é a "primeira vez que o app precisa". A primeira sessão de IA não espera o download.
+3. Na abertura do app só o **download** do Chrome fixado acontece, em segundo plano (estado `installed`), para a primeira sessão de IA não esperar. O browser **só é lançado quando a IA é chamada** (início de sessão) ou pelo botão "Abrir o browser" (decisão de 2026-10-03, substitui "lançar na abertura").
 4. O histórico de navegação **só é gravado durante sessões de IA**: o rastreador roda no processo MCP, onde está a conexão CDP. Navegação do usuário fora de uma sessão não é registrada. A tela avisa isso.
 5. Sessão e vaga de cada registro vêm do banco principal (`sessoes` sem `terminada_em`; vaga em `candidatando`).
