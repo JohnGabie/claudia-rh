@@ -90,8 +90,8 @@ pub trait GuardContext: Send + Sync {
     /// Returns the vaga currently in 'candidatando' that the session is working on.
     /// None when there is no active vaga.
     fn active_vaga(&self) -> Option<i64>;
-    /// Records that a submit was ALLOWED for this vaga in this session.
-    /// Returns false if one was already allowed: at most ONE submit per vaga per session.
+    /// Records that a submit was ALLOWED for this vaga today.
+    /// Returns false if one was already allowed: at most ONE submit per vaga per day.
     fn claim_submit(&self, vaga_id: i64) -> bool;
 }
 
@@ -155,7 +155,7 @@ pub fn check_submit(name: &str, page_url: &str, confirm: Option<i64>, ctx: &dyn 
     let vaga_id = confirm.expect("confirmed above");
     // Spend the vaga's single allowed submit only now that everything else passed.
     if !ctx.claim_submit(vaga_id) {
-        return Verdict::Refuse(format!("RECUSADO: já foi enviada nesta sessão a vaga {vaga_id}."));
+        return Verdict::Refuse(format!("RECUSADO: a vaga {vaga_id} já teve um envio autorizado hoje (uma vez por vaga por dia)."));
     }
     Verdict::Allow
 }
