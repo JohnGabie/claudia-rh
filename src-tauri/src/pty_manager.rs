@@ -96,7 +96,6 @@ pub fn iniciar(
 
 /// Spawn the `claude` process for an execution session, with:
 /// - SESSION_CHECKPOINT_REQUESTED detection → clean restart via frontend event
-/// - Chrome extension disconnection detection → automatic /chrome reconnect attempt
 /// - Session end → updates `sessoes.terminada_em` in the database
 // TODO(refactor): group these args into a session config struct
 #[allow(clippy::too_many_arguments)]

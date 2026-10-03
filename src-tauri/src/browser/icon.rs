@@ -26,8 +26,8 @@ mod win {
     use std::sync::OnceLock;
     use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateIconFromResourceEx, EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible, SendMessageW,
-        ICON_BIG, ICON_SMALL, WM_GETICON, WM_SETICON,
+        CreateIconFromResourceEx, EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible, SendMessageTimeoutW,
+        ICON_BIG, ICON_SMALL, SMTO_ABORTIFHUNG, WM_GETICON, WM_SETICON,
     };
 
     /// The handles are created once and live as long as the process (a few KB): Windows keeps a window's
@@ -67,12 +67,22 @@ mod win {
             return 1;
         }
         ctx.windows += 1;
-        if SendMessageW(hwnd, WM_GETICON, ICON_BIG as usize, 0) != ctx.big {
-            SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, ctx.big);
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, ctx.small);
+        // Either slot: Chrome can reset just one of them.
+        if send(hwnd, WM_GETICON, ICON_BIG as usize, 0) != Some(ctx.big) || send(hwnd, WM_GETICON, ICON_SMALL as usize, 0) != Some(ctx.small) {
+            send(hwnd, WM_SETICON, ICON_BIG as usize, ctx.big);
+            send(hwnd, WM_SETICON, ICON_SMALL as usize, ctx.small);
             ctx.changed += 1;
         }
         1
+    }
+
+    /// A cross-process `SendMessage` that gives up after 200 ms and never waits on a hung window (the
+    /// watcher calls this every few seconds: a frozen Chrome UI must not freeze the watcher with it).
+    /// None when the window did not answer.
+    unsafe fn send(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> Option<isize> {
+        let mut out: usize = 0;
+        let ok = SendMessageTimeoutW(hwnd, msg, wparam, lparam, SMTO_ABORTIFHUNG, 200, &mut out);
+        if ok == 0 { None } else { Some(out as isize) }
     }
 
     /// Returns (windows of the process, windows whose icon was changed by this call).
@@ -99,7 +109,7 @@ mod win {
                 let n = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32) as usize;
                 if String::from_utf16_lossy(&class[..n]).starts_with("Chrome_WidgetWin") {
                     let slot = if p.small { ICON_SMALL } else { ICON_BIG };
-                    p.found.push(SendMessageW(hwnd, WM_GETICON, slot as usize, 0));
+                    p.found.push(send(hwnd, WM_GETICON, slot as usize, 0).unwrap_or(0));
                 }
             }
             1

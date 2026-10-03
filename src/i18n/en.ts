@@ -369,7 +369,7 @@ export const en = {
     langPtDesc: "Interface em Português",
 
     subscriptionTitle: "Claude account & subscription",
-    subscriptionOk: "Account configured — native host is registered",
+    subscriptionOk: "Account configured — the Claudia browser is ready",
     subscriptionS1: "Create an Anthropic account",
     subscriptionS1Desc: "Go to claude.ai and sign up for free.",
     subscriptionS1Btn: "Open claude.ai",

@@ -183,7 +183,7 @@ Organizada em seções dentro de uma única tela com scroll, cada seção com um
 1. **Credenciais** — uma linha por plataforma configurada (LinkedIn, e espaço para adicionar outras), com campos de usuário/password geridos via keyring — a password nunca é mostrada em texto simples depois de guardada, apenas um botão "Substituir".
 2. **Disparo automático** — toggle "Ativar disparo por inatividade", e, quando ativo, um input numérico para o limiar em minutos (default 15).
 3. **Pasta de aplicações** — caminho onde os arquivos gerados são guardados, com botão para escolher pasta via diálogo nativo do Windows.
-4. **Pré-requisitos do sistema** — bloco de estado (não editável), mostrando se a extensão Claude in Chrome está instalada e ativa, a versão do Claude Code detectada, e se a conta tem o plano necessário. Cada item com um indicador verde/vermelho e, se vermelho, uma frase curta de como resolver.
+4. **Pré-requisitos do sistema** — bloco de estado (não editável), mostrando se o browser da Claudia está pronto (baixado e aberto pelo app, sem extensão), a versão do Claude Code detectada, e se a conta tem o plano necessário. Cada item com um indicador verde/vermelho e, se vermelho, uma frase curta de como resolver.
 
 ## 11. Configurações rápidas (engrenagem)
 

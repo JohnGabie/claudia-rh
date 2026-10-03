@@ -202,7 +202,8 @@ async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)
         if alive {
             // Chrome may reset its window icon (a new window, a theme change): put the orange one back.
             if let Some(state) = manager::read_state(&state_file) {
-                super::icon::apply_to_process(state.pid);
+                // Win32 window calls block: keep them off the async worker.
+                let _ = tokio::task::spawn_blocking(move || super::icon::apply_to_process(state.pid)).await;
             }
         }
         match watcher.observe(alive, Instant::now()) {

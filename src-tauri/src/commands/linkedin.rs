@@ -32,6 +32,7 @@ pub fn iniciar_busca_linkedin_rede(
     app: AppHandle,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
+    crate::commands::sessao::ensure_browser_ready(&app)?;
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = data_dir.join("claudia_rh.db");
     let db_path_str = db_path.to_string_lossy().to_string();

@@ -830,6 +830,7 @@ fn empty_response_hint(app: &AppHandle, chrome: bool) -> String {
 
 #[tauri::command]
 pub fn iniciar_sessao_perfil_chrome(app: AppHandle, primeira_mensagem: String) -> Result<(), String> {
+    crate::commands::sessao::ensure_browser_ready(&app)?;
     *perfil_conv().lock().map_err(|e| e.to_string())? = vec![];
     spawn_chrome_session(app, primeira_mensagem);
     Ok(())
@@ -837,6 +838,7 @@ pub fn iniciar_sessao_perfil_chrome(app: AppHandle, primeira_mensagem: String) -
 
 #[tauri::command]
 pub fn escrever_para_perfil_chrome(app: AppHandle, input: String) -> Result<(), String> {
+    crate::commands::sessao::ensure_browser_ready(&app)?;
     spawn_chrome_session(app, input);
     Ok(())
 }

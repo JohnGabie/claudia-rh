@@ -306,8 +306,12 @@ const StepInstall: React.FC<{
   // The browser is prepared by the app in the background: follow it live instead of waiting for a recheck.
   const [browserStage, setBrowserStage] = useState<string>("idle");
   useEffect(() => {
-    invoke<{ stage: string }>("browser_status").then((b) => setBrowserStage(b.stage)).catch(() => {});
-    const un = listen<{ stage: string }>("browser-progress", (e) => setBrowserStage(e.payload.stage));
+    // Listen first and let a live event win over the one-off read, which may answer after it.
+    let sawEvent = false;
+    const un = listen<{ stage: string }>("browser-progress", (e) => { sawEvent = true; setBrowserStage(e.payload.stage); });
+    un.then(() => invoke<{ stage: string }>("browser_status"))
+      .then((b) => { if (!sawEvent) setBrowserStage(b.stage); })
+      .catch(() => {});
     return () => { un.then((f) => f()); };
   }, []);
   const browserOk = browserStage === "ready" || !!status?.browser_pronto;

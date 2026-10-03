@@ -372,7 +372,7 @@ export const pt: Strings = {
     langPtDesc: "Interface em Português",
 
     subscriptionTitle: "Conta e assinatura Claude",
-    subscriptionOk: "Conta configurada — native host registrado",
+    subscriptionOk: "Conta configurada — browser da Claudia pronto",
     subscriptionS1: "Crie uma conta Anthropic",
     subscriptionS1Desc: "Acesse claude.ai e crie sua conta gratuitamente.",
     subscriptionS1Btn: "Abrir claude.ai",

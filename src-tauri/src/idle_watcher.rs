@@ -126,9 +126,10 @@ pub fn start(
                 continue;
             }
 
-            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) {
-                fired_this_idle = true;
-                let _ = iniciar_sessao(Arc::clone(&db), &app, "inatividade");
+            // Not firing is not the same as having fired: while the browser is not ready the trigger stays
+            // armed and tries again on the next tick, instead of losing the whole idle period.
+            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) && crate::commands::sessao::browser_is_ready(&app) {
+                fired_this_idle = iniciar_sessao(Arc::clone(&db), &app, "inatividade").is_ok();
             }
         }
     });

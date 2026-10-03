@@ -260,9 +260,10 @@ const DEFAULT_LINKEDIN_REDE: &str = r#"You are a job prospecting assistant. Your
 
 PRIORITY ORDER (follow this order — notifications carry the strongest signal):
 
+BROWSER: you control the Claudia browser only through the `claudia` MCP tools `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_key`, `browser_crop` and `browser_click_at`. There is no scroll tool: `browser_read` returns the page elements with refs (`e1`, `e2`, ...), refs are valid only until the page changes, and a truncated list can be narrowed with `scope`. Never log in: if LinkedIn asks for a login, write BUSCA_LINKEDIN_REDE_CONCLUIDA and stop — the user logs in by hand in the Claudia browser window. Never send, apply, message or connect.
+
 1. NOTIFICATIONS (start here)
-   Navigate to https://www.linkedin.com/notifications/
-   Scroll through all recent notifications (last 48h).
+   `browser_open` https://www.linkedin.com/notifications/ then `browser_read` it (last 48h).
    Focus on notifications of the type:
    - "X shared a post" → open to check if it's a job
    - "X commented on" → may be on a job post
@@ -271,8 +272,7 @@ PRIORITY ORDER (follow this order — notifications carry the strongest signal):
    Notifications are the richest signal because the algorithm already filtered what is relevant to the user.
 
 2. FEED (after notifications)
-   Navigate to https://www.linkedin.com/feed/
-   Scroll through recent posts (last 48h) from connections.
+   `browser_open` https://www.linkedin.com/feed/ then `browser_read` it; look at the recent posts (last 48h) from connections that the list shows.
 
 HOW TO IDENTIFY A JOB:
 Consider any post a job if it contains:
@@ -388,12 +388,21 @@ fn migrate_stale_prompts(data_dir: &Path) {
         // Claude in Chrome extension would leave it without a browser.
         ("runtime.md", "Claude in Chrome"),
         ("linkedin-rede.md", "sqlite3"),
+        // The old scan prompt told the agent to "navigate" and "scroll" with no browser tools at all.
+        ("linkedin-rede.md", "Scroll through all recent notifications"),
     ];
     for (file, marker) in stale_markers {
         let path = data_dir.join("prompts").join(file);
         let Ok(content) = std::fs::read_to_string(&path) else { continue };
         if content.contains(marker) {
-            let _ = std::fs::rename(&path, data_dir.join("prompts").join(format!("{file}.bak")));
+            // Never overwrite an earlier backup: the user's customised text may be in it.
+            let mut bak = data_dir.join("prompts").join(format!("{file}.bak"));
+            let mut n = 1;
+            while bak.exists() {
+                bak = data_dir.join("prompts").join(format!("{file}.bak{n}"));
+                n += 1;
+            }
+            let _ = std::fs::rename(&path, bak);
         }
     }
 }
@@ -461,6 +470,27 @@ mod migration_tests {
         assert!(now.contains("browser_open"));
         let bak = std::fs::read_to_string(dir.join("prompts").join("runtime.md.bak")).unwrap();
         assert!(bak.contains("Claude in Chrome"), "the user's old file is kept as .bak, never destroyed");
+    }
+
+    #[test]
+    fn the_linkedin_scan_prompt_uses_the_browser_tools_and_has_no_scroll_or_login() {
+        let p = DEFAULT_LINKEDIN_REDE;
+        assert!(p.contains("browser_open") && p.contains("browser_read"));
+        assert!(!p.contains("Scroll through all recent notifications"), "it must not tell the agent to use a tool that does not exist");
+        assert!(p.contains("Never log in"));
+    }
+
+    #[test]
+    fn an_old_linkedin_scan_prompt_is_backed_up_and_a_previous_backup_is_never_overwritten() {
+        let dir = temp("lkd");
+        let path = dir.join("prompts").join("linkedin-rede.md");
+        let bak = dir.join("prompts").join("linkedin-rede.md.bak");
+        std::fs::write(&bak, "minha cópia antiga").unwrap();
+        std::fs::write(&path, "Scroll through all recent notifications (last 48h).").unwrap();
+        ensure_all_prompts(&dir);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("browser_read"), "replaced by the current default");
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), "minha cópia antiga", "the earlier backup survives");
+        assert!(std::fs::read_to_string(dir.join("prompts").join("linkedin-rede.md.bak1")).unwrap().contains("Scroll through"));
     }
 
     #[test]

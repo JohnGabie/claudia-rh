@@ -17,6 +17,27 @@ pub(crate) fn browser_gate(stage: &str, message: Option<&str>) -> Result<(), Str
     }
 }
 
+/// The gate applied to the app's current browser status. No status registered (unit tests) lets it pass.
+/// Every path that spawns an agent in the PTY goes through here.
+pub(crate) fn ensure_browser_ready(app: &AppHandle) -> Result<(), String> {
+    let Some(state) = app.try_state::<crate::browser::service::StatusState>() else { return Ok(()) };
+    let st = state.0.lock().map(|g| g.clone()).map_err(|e| e.to_string())?;
+    if let Err(msg) = browser_gate(&st.stage, st.message.as_deref()) {
+        app.emit("pty-output", format!("\r\n\x1b[1;33m[Claudia RH]\x1b[0m {msg}\r\n")).ok();
+        crate::diagnostics::emit_event("session", "browser_not_ready", None, &st.stage);
+        return Err(msg);
+    }
+    Ok(())
+}
+
+/// Whether the browser is ready, without telling the user anything (for background triggers that retry).
+pub(crate) fn browser_is_ready(app: &AppHandle) -> bool {
+    match app.try_state::<crate::browser::service::StatusState>() {
+        None => true,
+        Some(state) => state.0.lock().map(|g| browser_gate(&g.stage, g.message.as_deref()).is_ok()).unwrap_or(false),
+    }
+}
+
 /// Inserts a sessoes row, assembles the system prompt, and spawns
 /// `claude --dangerously-skip-permissions --no-chrome` inside the embedded PTY.
 /// Called by both the Tauri command (manual) and the idle watcher (inatividade).
@@ -25,14 +46,7 @@ pub fn iniciar_sessao(
     app: &AppHandle,
     motivo: &str,
 ) -> Result<(), String> {
-    if let Some(state) = app.try_state::<crate::browser::service::StatusState>() {
-        let st = state.0.lock().map(|g| g.clone()).map_err(|e| e.to_string())?;
-        if let Err(msg) = browser_gate(&st.stage, st.message.as_deref()) {
-            app.emit("pty-output", format!("\r\n\x1b[1;33m[Claudia RH]\x1b[0m {msg}\r\n")).ok();
-            crate::diagnostics::emit_event("session", "browser_not_ready", None, &st.stage);
-            return Err(msg);
-        }
-    }
+    ensure_browser_ready(app)?;
     let session_id = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         conn.execute(

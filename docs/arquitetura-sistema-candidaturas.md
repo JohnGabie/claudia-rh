@@ -35,7 +35,7 @@ O sistema divide-se em cinco componentes com responsabilidades estritamente sepa
 Aplicação nativa Windows, construída em Tauri (Rust no backend, webview HTML/CSS/JS no frontend). Responsabilidades:
 
 - Renderizar o dashboard: histórico de vagas, estado atual, pendências de revisão.
-- Gerir configurações: credenciais de plataformas (LinkedIn e outras) e caminho da pasta de aplicações. Os dados do candidato não se editam aqui — vivem na aba Perfil.
+- Gerir configurações: modo desenvolvedor (Activity log), estado do browser da Claudia e caminho da pasta de aplicações. Senhas de plataformas não são guardadas: o login é feito à mão no browser da Claudia. Os dados do candidato não se editam aqui — vivem na aba Perfil.
 - Expor os dois mecanismos de disparo da sessão de execução: botão manual ("procurar vagas agora") e detecção de inatividade do sistema.
 - Spawnar e gerir o processo `claude` como child process, através de um pseudo-terminal (PTY), e renderizar o seu output num terminal embutido.
 - Gerir o segundo modo de sessão Claude Code: a conversa da aba Perfil, com interface de chat (não PTY/terminal). Essa sessão lê e escreve `candidate_base.yaml` e `search_variants.yaml`; nunca submete candidaturas.
@@ -249,7 +249,7 @@ Estas condições interrompem o processamento da vaga atual e disparam notifica�
 
 - **Qualquer campo de pretensão salarial fora da faixa definida em `preferencias_globais.faixa_salarial`**, ou qualquer campo salarial quando a faixa não está definida.
 - **Qualquer campo listado em `red_lines`** no perfil do candidato, sem exceção.
-- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — a única diferença no LinkedIn é que o login em si é automatizado (credenciais geridas via keyring, seção 3.3 do prompt de construção), nunca causando pausa por si só; um captcha que apareça depois do login segue a regra geral. Nota técnica: esta é também a política nativa da extensão Claude in Chrome — ao encontrar uma página de login ou captcha, ela já pausa e espera intervenção manual, o que está alinhado com esta regra e não exige lógica adicional para a detectar.
+- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — o login nunca é feito pela sessão: o usuário entra à mão na janela do browser da Claudia (seção 3.6) e a sessão fica por cookies. Uma plataforma em que a conta não está logada é pulada, sem pausa; um captcha segue a regra geral.
 - **Diálogo JavaScript bloqueante** (`alert`, `confirm`, `prompt`) na página. Estes diálogos bloqueiam todos os eventos do browser e a sessão não os consegue dispensar programaticamente — exigem fecho manual pelo usuário antes de a sessão poder continuar. O efeito prático é o de uma pausa total: a sessão fica bloqueada até intervenção humana.
 - **Pergunta aberta de formulário sem correspondência em `respostas_modelo`** e sem informação suficiente no perfil ou no CV da variante correspondente para responder com honestidade. Exemplo: "por que você quer trabalhar aqui especificamente" quando não há nenhuma resposta-modelo equivalente.
 - **Pedido de dados pessoais sensíveis** não cobertos pelo perfil (dados de saúde, informação familiar, número de identificação nacional, e equivalentes).
