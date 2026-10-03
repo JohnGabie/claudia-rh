@@ -1,6 +1,6 @@
-// Dev-mode Activity log: what the AI did in the browser, with screenshots. A database SEPARATE from
-// the vagas DB, in a folder no MCP tool can read; only the app's own UI reads it, and only with the
-// developer mode switched on.
+// Activity log: what the AI did in the browser, with screenshots. ALWAYS ON (no switch, no setting): a
+// database SEPARATE from the vagas DB, in a folder no MCP tool can read; only the app's own UI reads it
+// (Settings, "View records"). Passwords are never recorded; rows and captures are purged by age and size.
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -210,19 +210,6 @@ impl ActivityLog {
     }
 }
 
-// ── dev-mode switch (lives in the normal data dir, not in the log folder) ──
-pub fn is_enabled(data_dir: &Path) -> bool {
-    std::fs::read_to_string(data_dir.join("dev-mode.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v["enabled"].as_bool())
-        .unwrap_or(false)
-}
-
-pub fn set_enabled(data_dir: &Path, on: bool) -> Result<(), String> {
-    std::fs::write(data_dir.join("dev-mode.json"), serde_json::json!({ "enabled": on }).to_string()).map_err(|e| e.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,23 +226,6 @@ mod tests {
 
     fn ev(kind: &str, tool: &str) -> NewEvent {
         NewEvent { kind: kind.into(), tool: Some(tool.into()), ..Default::default() }
-    }
-
-    #[test]
-    fn dev_mode_is_off_by_default_and_toggles() {
-        let d = temp("flag");
-        assert!(!is_enabled(&d));
-        set_enabled(&d, true).unwrap();
-        assert!(is_enabled(&d));
-        set_enabled(&d, false).unwrap();
-        assert!(!is_enabled(&d));
-    }
-
-    #[test]
-    fn a_garbage_flag_file_means_off() {
-        let d = temp("flag-bad");
-        std::fs::write(d.join("dev-mode.json"), "{ nope").unwrap();
-        assert!(!is_enabled(&d));
     }
 
     #[test]

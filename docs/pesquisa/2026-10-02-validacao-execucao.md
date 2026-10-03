@@ -36,7 +36,7 @@
 - toda falha com página tem print e erro classificado como `error` ou `refused` (as duas recusas de envio aparecem como `refused`); falhas sem página (browser ainda não pronto, URL recusada antes de abrir) não têm print, como esperado;
 - navegação registrada com lista de redirecionamentos e iniciador;
 - todos os caminhos ficam dentro de `capturas/`; **0 arquivos órfãos**; 0,3 MB (teto 1024 MB); registro mais antigo dentro de 30 dias;
-- **com o modo desenvolvedor desligado**, uma nova rodada completa não gravou nada: 22 linhas e 20 arquivos antes e depois.
+- *(histórico: o modo desenvolvedor foi removido em 2026-10-03, o log agora grava sempre)* **com o modo desenvolvedor desligado**, uma nova rodada completa não gravou nada: 22 linhas e 20 arquivos antes e depois.
 
 A pasta de teste foi apagada ao final.
 

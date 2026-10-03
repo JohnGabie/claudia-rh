@@ -90,4 +90,4 @@ A `claudia-teste-sandbox` usa um laboratório Windows Sandbox mantido fora do re
 
 ## O que este repo já é
 
-v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Browser próprio em `src-tauri/src/browser/` (Chrome for Testing, CDP, ferramentas `browser_*` no MCP); Activity log do modo desenvolvedor em `src-tauri/src/activity_log/`. Sessão de execução = `claude --no-chrome` no PTY, só com o browser pronto.
+v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Browser próprio em `src-tauri/src/browser/` (Chrome for Testing, CDP, ferramentas `browser_*` no MCP); Activity log (sempre ligado) em `src-tauri/src/activity_log/`. Sessão de execução = `claude --no-chrome` no PTY, só com o browser pronto.

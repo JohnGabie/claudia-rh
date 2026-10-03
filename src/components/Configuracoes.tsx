@@ -41,7 +41,7 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
 
   const [modoAutonomo, setModoAutonomo] = useState(false);
   const [iniciarComSistema, setIniciarComSistema] = useState(false);
-  const [devMode, setDevMode] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
 
   const [appVersion, setAppVersion] = useState("");
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "found" | "latest">("idle");
@@ -56,7 +56,6 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
       .finally(() => setLoading(false));
 
     invoke<boolean>("obter_modo_autonomo").then((v) => setModoAutonomo(!!v)).catch(() => {});
-    invoke<boolean>("activity_dev_mode_get").then((v) => setDevMode(!!v)).catch(() => {});
     invoke<boolean>("obter_iniciar_com_sistema").then((v) => setIniciarComSistema(!!v)).catch(() => {});
     getVersion().then(setAppVersion).catch(() => {});
   }, []);
@@ -189,24 +188,25 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
         <OpenBrowserButton />
       </Section>
 
-      {/* Developer mode: Activity log of what the AI did in the browser */}
+      {/* Activity log: always on; this only lets the user look at what was recorded */}
       <Section>
-        <SectionTitle>{t.settings.devMode.title}</SectionTitle>
+        <SectionTitle>{t.settings.activityLog.title}</SectionTitle>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          {t.settings.devMode.desc}
+          {t.settings.activityLog.desc}
         </p>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-          <ToggleSwitch
-            checked={devMode}
-            onChange={() => {
-              const v = !devMode;
-              setDevMode(v);
-              invoke("activity_dev_mode_set", { on: v }).catch(() => setDevMode(!v));
-            }}
-          />
-          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{t.settings.devMode.toggle}</span>
-        </label>
-        {devMode && <ActivityLogView />}
+        <button
+          onClick={() => setShowActivityLog((v) => !v)}
+          aria-expanded={showActivityLog}
+          style={{
+            padding: "7px 20px", borderRadius: 6, fontSize: 13, fontWeight: 500, fontFamily: "inherit", cursor: "pointer",
+            border: showActivityLog ? "1px solid var(--border)" : "none",
+            background: showActivityLog ? "var(--bg-base)" : "var(--accent)",
+            color: showActivityLog ? "var(--text-secondary)" : "#fff",
+          }}
+        >
+          {showActivityLog ? t.settings.activityLog.hide : t.settings.activityLog.view}
+        </button>
+        {showActivityLog && <ActivityLogView />}
       </Section>
 
       {/* 2. Modo autónomo */}

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 
 const exe = process.argv[2] ?? "target/debug/claudia-rh.exe";
 // With CLAUDIA_APP_LOCAL (the real <dados-locais>) the test drives the Chrome the running APP started
-// (its state.json), visible, instead of launching a headless one. CLAUDIA_DEV_MODE=1 turns the Activity log on.
+// (its state.json), visible, instead of launching a headless one. The Activity log is always on.
 const appLocal = process.env.CLAUDIA_APP_LOCAL;
 const chrome = process.env.CLAUDIA_TEST_CHROME;
 if (!chrome && !appLocal) { console.error("set CLAUDIA_TEST_CHROME to chrome.exe, or CLAUDIA_APP_LOCAL to the app local data dir"); process.exit(2); }
@@ -28,7 +28,6 @@ const localDir = appLocal ?? join(base, "local");
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(join(localDir, "browser"), { recursive: true });
 const statePath = join(localDir, "browser", "state.json");
-if (process.env.CLAUDIA_DEV_MODE) writeFileSync(join(dataDir, "dev-mode.json"), JSON.stringify({ enabled: true }));
 
 // ── the fixture page over HTTP (file:// URLs are not allowed in production) ──
 const page = readFileSync(new URL("./fixtures/apply-form.html", import.meta.url));

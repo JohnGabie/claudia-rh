@@ -1,22 +1,39 @@
 // The ActionSink that feeds the Activity log. Best effort by design: a logging problem must never
 // slow down or break what the agent is doing.
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-use super::{is_enabled, ActivityLog, NewEvent};
+use super::{ActivityLog, NewEvent};
 use crate::browser::nav::NavRecord;
 use crate::mcp::tools::browser::{ActionRecord, ActionSink};
 
 pub const MAX_AGE_DAYS: i64 = 30;
 pub const MAX_CAPTURE_BYTES: u64 = 1_073_741_824; // 1 GB
+/// The log is always on, so the purge (it scans every row and every capture file) must not run on every
+/// action: once per process start, then at most this often.
+const PURGE_EVERY: Duration = Duration::from_secs(10 * 60);
 
 pub struct LogSink {
     data_dir: PathBuf,
     local_dir: PathBuf,
+    last_purge: Mutex<Option<Instant>>,
 }
 
 impl LogSink {
     pub fn new(data_dir: PathBuf, local_dir: PathBuf) -> Self {
-        Self { data_dir, local_dir }
+        Self { data_dir, local_dir, last_purge: Mutex::new(None) }
+    }
+
+    /// True when a purge should run now (never ran, or the last one was long enough ago); marks it as run.
+    fn purge_due(&self, now: Instant) -> bool {
+        let Ok(mut last) = self.last_purge.lock() else { return false };
+        if last.is_none_or(|t| now.duration_since(t) >= PURGE_EVERY) {
+            *last = Some(now);
+            true
+        } else {
+            false
+        }
     }
 
     fn open(&self) -> Option<ActivityLog> {
@@ -42,19 +59,19 @@ impl LogSink {
         if let Err(e) = log.record(&ev, before, after) {
             crate::diagnostics::emit_event("activity_log", "write_failed", None, &e);
         }
-        let _ = log.purge(MAX_AGE_DAYS, MAX_CAPTURE_BYTES);
+        if self.purge_due(Instant::now()) {
+            let _ = log.purge(MAX_AGE_DAYS, MAX_CAPTURE_BYTES);
+        }
     }
 }
 
 impl ActionSink for LogSink {
+    /// Always on: there is no setting. (A `dev-mode.json` left by an older version is ignored.)
     fn enabled(&self) -> bool {
-        is_enabled(&self.data_dir)
+        true
     }
 
     fn action(&self, rec: ActionRecord) {
-        if !self.enabled() {
-            return;
-        }
         let (session_id, vaga_id) = self.context();
         let ev = NewEvent {
             kind: if rec.result == "ok" { "action".into() } else { "failure".into() },
@@ -74,9 +91,6 @@ impl ActionSink for LogSink {
     }
 
     fn navigation(&self, n: NavRecord) {
-        if !self.enabled() {
-            return;
-        }
         let (session_id, vaga_id) = self.context();
         let extra = serde_json::json!({ "status": n.status, "redirects": n.redirects, "initiator": n.initiator }).to_string();
         let ev = NewEvent {
@@ -96,7 +110,7 @@ impl ActionSink for LogSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::activity_log::{set_enabled, Filter};
+    use crate::activity_log::Filter;
     use crate::mcp::tools::test_support::{seed_db, temp_dir};
 
     fn rec(tool: &str, result: &str) -> ActionRecord {
@@ -119,21 +133,37 @@ mod tests {
     }
 
     #[test]
-    fn off_by_default_writes_nothing_and_creates_no_files() {
-        let (data, local) = (temp_dir("sink-off-d"), temp_dir("sink-off-l"));
-        let s = LogSink::new(data, local.clone());
-        assert!(!s.enabled());
-        s.action(rec("browser_click", "ok")); // even if called, it must not create the dev folder
+    fn it_records_with_no_configuration_at_all_and_ignores_an_old_dev_mode_file() {
+        // A fresh data dir: no setting exists anywhere. The log must still record.
+        let (data, local) = (temp_dir("sink-always-d"), temp_dir("sink-always-l"));
+        let s = LogSink::new(data.clone(), local.clone());
+        assert!(s.enabled(), "there is no switch");
+        s.action(rec("browser_click", "ok"));
         s.navigation(nav("https://x/"));
-        assert!(!local.join("dev").exists());
+        let rows = ActivityLog::open(&local.join("dev")).unwrap().list(&Filter::default()).unwrap();
+        assert_eq!(rows.len(), 2, "an action and a navigation were recorded without any setting");
+
+        // A file from the old developer mode that says "off" must not turn anything off.
+        std::fs::write(data.join("dev-mode.json"), r#"{"enabled":false}"#).unwrap();
+        s.action(rec("browser_click", "ok"));
+        let rows = ActivityLog::open(&local.join("dev")).unwrap().list(&Filter::default()).unwrap();
+        assert_eq!(rows.len(), 3, "the stale dev-mode.json is ignored");
     }
 
     #[test]
-    fn when_on_it_records_actions_and_failures_with_screenshots() {
+    fn the_purge_runs_at_first_and_then_at_most_every_ten_minutes() {
+        let s = LogSink::new(temp_dir("sink-due-d"), temp_dir("sink-due-l"));
+        let t0 = Instant::now();
+        assert!(s.purge_due(t0), "first write of the process purges");
+        assert!(!s.purge_due(t0 + Duration::from_secs(5)), "not on every action");
+        assert!(!s.purge_due(t0 + Duration::from_secs(599)));
+        assert!(s.purge_due(t0 + Duration::from_secs(600)), "and again after the interval");
+    }
+
+    #[test]
+    fn it_records_actions_and_failures_with_screenshots() {
         let (data, local) = (temp_dir("sink-on-d"), temp_dir("sink-on-l"));
-        set_enabled(&data, true).unwrap();
         let s = LogSink::new(data, local.clone());
-        assert!(s.enabled());
         s.action(rec("browser_click", "ok"));
         s.action(rec("browser_click", "error"));
         s.action(rec("browser_click", "refused"));
@@ -149,7 +179,6 @@ mod tests {
     #[test]
     fn navigation_is_recorded_with_its_redirects_and_initiator() {
         let (data, local) = (temp_dir("sink-nav-d"), temp_dir("sink-nav-l"));
-        set_enabled(&data, true).unwrap();
         LogSink::new(data, local.clone()).navigation(nav("https://b/"));
         let row = ActivityLog::open(&local.join("dev")).unwrap().list(&Filter::default()).unwrap().remove(0);
         assert_eq!(row.kind, "navigation");
@@ -167,7 +196,6 @@ mod tests {
         let conn = rusqlite::Connection::open(data.join("claudia_rh.db")).unwrap();
         conn.execute("INSERT INTO sessoes (iniciada_em, motivo_disparo) VALUES (datetime('now'), 'manual')", []).unwrap();
         conn.execute("UPDATE vagas SET status='candidatando' WHERE id=1", []).unwrap();
-        set_enabled(&data, true).unwrap();
         LogSink::new(data, local.clone()).action(rec("browser_open", "ok"));
         let row = ActivityLog::open(&local.join("dev")).unwrap().list(&Filter::default()).unwrap().remove(0);
         assert_eq!(row.vaga_id, Some(1));
@@ -177,7 +205,6 @@ mod tests {
     #[test]
     fn a_write_failure_never_panics_and_never_propagates() {
         let data = temp_dir("sink-fail-d");
-        set_enabled(&data, true).unwrap();
         // The local dir is a FILE: opening the log folder must fail.
         let local = temp_dir("sink-fail-l").join("im-a-file");
         std::fs::write(&local, b"x").unwrap();
@@ -189,15 +216,17 @@ mod tests {
     #[test]
     fn writing_purges_old_rows_so_the_log_never_grows_forever() {
         let (data, local) = (temp_dir("sink-purge-d"), temp_dir("sink-purge-l"));
-        set_enabled(&data, true).unwrap();
-        let s = LogSink::new(data, local.clone());
+        let s = LogSink::new(data.clone(), local.clone());
         s.action(rec("browser_click", "ok"));
         let log = ActivityLog::open(&local.join("dev")).unwrap();
         let id = log.list(&Filter::default()).unwrap()[0].id;
         log.conn.lock().unwrap().execute("UPDATE events SET ts = strftime('%Y-%m-%dT%H:%M:%SZ','now','-40 days') WHERE id = ?1", [id]).unwrap();
-        s.action(rec("browser_click", "ok")); // the next write purges
+        // Within the interval the same sink does not purge again; a new process (a new sink) does.
+        s.action(rec("browser_click", "ok"));
+        assert_eq!(log.list(&Filter::default()).unwrap().len(), 2, "no purge on every action");
+        LogSink::new(data, local.clone()).action(rec("browser_click", "ok"));
         let rows = log.list(&Filter::default()).unwrap();
-        assert_eq!(rows.len(), 1, "the 40-day-old row is gone");
-        assert_ne!(rows[0].id, id);
+        assert_eq!(rows.len(), 2, "the 40-day-old row is gone, the two recent ones stay");
+        assert!(rows.iter().all(|r| r.id != id));
     }
 }

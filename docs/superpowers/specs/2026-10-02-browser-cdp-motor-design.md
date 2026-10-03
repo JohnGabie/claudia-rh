@@ -33,7 +33,7 @@ O app passa a **fornecer** o controle do browser, como tools no servidor MCP que
 | Tema | Laranja `#D97757` (`--accent` do design) como padrão | Pedido do usuário | posteriormente modificar o icone do browser para uma versao todo laranja para fazer a diferença
 | Cliente CDP | **Escrito por nós** sobre WebSocket, ~12 comandos. Sem `chromiumoxide` | O protótipo inteiro é um cliente de 40 linhas; uma dependência grande a menos; testável com servidor WebSocket falso |
 | Envio de candidatura | O agente decide sozinho, **dentro da guarda** (seção 5.5) | Princípio do projeto: autonomia com contenção no código, sem confirmação humana por rodada |
-| Activity log | **Só em modo desenvolvedor**, banco separado, sem tool MCP para ler | Debug e desenvolvimento, não auditoria do usuário |
+| Activity log | **Sempre ligado** (decisão de 2026-10-03, substitui "só em modo desenvolvedor"), banco separado, sem tool MCP para ler | Debug e desenvolvimento; o usuário pode ver em Configurações |
 
 ## 4. Arquitetura
 
@@ -110,11 +110,11 @@ As armadilhas 1 (aba congelada), 2 (modal sem `role=dialog` no DOM, só na árvo
 
 Recusa devolve texto claro ao agente, que se corrige. A guarda é código do app, não instrução de prompt. Em clique por coordenada, a guarda lê o elemento sob o ponto antes de clicar.
 
-### 5.6 Activity log (modo desenvolvedor)
+### 5.6 Activity log (sempre ligado)
 
 Serve para **debug e desenvolvimento**: reconstruir, passo a passo e com imagem, o que o agente fez no browser e onde algo quebrou. Não é auditoria para o usuário final.
 
-**Ligar e desligar.** Opção **"Modo desenvolvedor"** nas configurações, **desligada por padrão**. Desligada, nada é gravado. Ligada, tudo abaixo passa a ser gravado, e a aba de desenvolvedor aparece. Há um botão "Limpar tudo".
+**Sempre ligado.** *Decisão de 2026-10-03: não há mais o interruptor "Modo desenvolvedor" nem o arquivo `dev-mode.json`; um `dev-mode.json` deixado por versão anterior é ignorado.* Tudo abaixo é gravado em toda ação do agente. Nas Configurações há a seção "Activity log" com um botão **"Ver registros"** que mostra a lista, e o "Limpar tudo". Como grava sempre, a limpeza por idade e tamanho (30 dias, 1 GB) roda uma vez ao iniciar o processo e depois no máximo a cada 10 minutos, não a cada ação, e uma falha ao gravar nunca atrasa nem derruba a ação do browser.
 
 **Onde fica.** `<dados-locais>/dev/`, **fora** da pasta onde as sessões de IA trabalham e separado do banco principal:
 
@@ -151,7 +151,7 @@ Ação só de leitura (`browser_read`, `browser_crop`) não gera print, pois a r
 
 **Quem escreve.** O processo MCP grava as ações (é onde elas acontecem); o app grava os eventos do browser. Os dois escrevem no mesmo `activity-log.db`, com SQLite em modo WAL para os dois processos não se bloquearem.
 
-**A tela (entra neste ciclo, versão simples).** Dentro do modo desenvolvedor, uma lista cronológica com filtro por sessão e por vaga. Cada linha mostra hora, tool, alvo, resultado e a miniatura do print "depois"; clicar abre o antes e o depois lado a lado, em tamanho cheio, e o JSON cru do registro. Linhas de falha em destaque. A linha do tempo mais rica por vaga fica para o ciclo 2.
+**A tela (entra neste ciclo, versão simples).** Nas Configurações, atrás do botão "Ver registros", uma lista cronológica com filtro por sessão e por vaga. Cada linha mostra hora, tool, alvo, resultado e a miniatura do print "depois"; clicar abre o antes e o depois lado a lado, em tamanho cheio, e o JSON cru do registro. Linhas de falha em destaque. A linha do tempo mais rica por vaga fica para o ciclo 2.
 
 **Limite honesto:** o agente roda com permissões liberadas e pode ler qualquer arquivo que o usuário do Windows leia. Estar fora da pasta de trabalho, não ser citado em prompt ou tool e o confinamento da CLA-30 reduzem o acesso acidental, mas não o impedem por completo. Aqui isso é aceitável porque o conteúdo é o do próprio usuário, na máquina dele.
 
@@ -162,7 +162,7 @@ Ação só de leitura (`browser_read`, `browser_crop`) não gera print, pois a r
 O desinstalador oferece duas opções, **ambas desmarcadas por padrão**, porque apagar é irreversível:
 
 1. **Remover o browser e as sessões:** apaga `<dados-locais>/browser/` (o Chrome e as contas logadas).
-2. **Remover também os meus dados:** apaga o que o app guarda em `%APPDATA%\io.github.johngabie.claudia-rh` (perfil do candidato, banco de vagas e candidaturas, arquivos gerados, diagnósticos) e `<dados-locais>` inteiro, incluindo o activity log do modo desenvolvedor. A opção 2 inclui a 1. O texto da opção diz o que será apagado, em português claro, e que não há como desfazer.
+2. **Remover também os meus dados:** apaga o que o app guarda em `%APPDATA%\io.github.johngabie.claudia-rh` (perfil do candidato, banco de vagas e candidaturas, arquivos gerados, diagnósticos) e `<dados-locais>` inteiro, incluindo o activity log. A opção 2 inclui a 1. O texto da opção diz o que será apagado, em português claro, e que não há como desfazer.
 
 Sem nenhuma marcada, desinstalar não apaga nada do usuário (comportamento de hoje).
 
@@ -201,7 +201,7 @@ Estas hipóteses ainda não foram testadas, e o plano começa por elas, antes de
 
 ## 9. Fora do escopo deste ciclo
 
-- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-02-contas-do-browser-design.md`), e a linha do tempo por vaga no modo desenvolvedor (a lista simples com prints é deste ciclo, seção 5.6).
+- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-02-contas-do-browser-design.md`), e a linha do tempo por vaga no Activity log (a lista simples com prints é deste ciclo, seção 5.6).
 - **Ciclo 3:** a IA entrar num site, puxar o perfil do usuário e configurar o app. Depende dos dois primeiros.
 - Várias contas por site, perfis múltiplos.
 - Senhas guardadas pelo app. Descartado por decisão de segurança; reabrir só com cofre criptografado e confirmação.

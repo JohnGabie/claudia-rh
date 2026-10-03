@@ -38,8 +38,14 @@ const Shot: React.FC<{ path: string | null; label: string }> = ({ path, label })
   );
 };
 
+// Same look as the secondary buttons of the Settings page.
+const smallBtn: React.CSSProperties = {
+  padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-base)",
+  color: "var(--text-secondary)", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
+};
+
 export const ActivityLogView: React.FC = () => {
-  const t = useT().settings.devMode;
+  const t = useT().settings.activityLog;
   const [rows, setRows] = useState<EventRow[]>([]);
   const [kind, setKind] = useState<string>("");
   const [open, setOpen] = useState<EventRow | null>(null);
@@ -77,8 +83,8 @@ export const ActivityLogView: React.FC = () => {
             </option>
           ))}
         </select>
-        <button onClick={load}>{t.refresh}</button>
-        <button onClick={clear}>{t.clear}</button>
+        <button onClick={load} style={smallBtn}>{t.refresh}</button>
+        <button onClick={clear} style={smallBtn}>{t.clear}</button>
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>{t.limitNote}</div>
       {rows.length === 0 ? (

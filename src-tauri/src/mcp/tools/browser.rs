@@ -52,7 +52,7 @@ pub struct ActionRecord {
 }
 
 pub trait ActionSink: Send + Sync {
-    /// When false, the tools skip screenshots entirely (dev mode off = zero cost).
+    /// When false, the tools skip screenshots entirely (no sink = zero cost; the app's LogSink is always on).
     fn enabled(&self) -> bool;
     fn action(&self, rec: ActionRecord);
     fn navigation(&self, rec: NavRecord);

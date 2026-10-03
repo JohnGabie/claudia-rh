@@ -99,11 +99,12 @@ export const pt: Strings = {
       open: "Abrir o browser",
       opening: "Abrindo…",
     },
-    devMode: {
-      title: "Modo desenvolvedor",
-      desc: "Registra o que a IA faz no browser (cliques, digitação, páginas, erros), com prints, só neste computador. Desligado por padrão.",
-      toggle: "Gravar o Activity log",
-      logTitle: "Activity log",
+    activityLog: {
+      title: "Activity log",
+      desc: "O app sempre registra o que a IA faz no browser (cliques, digitação, páginas, erros), com prints antes e depois, só neste computador. Senhas nunca são gravadas. Os registros mais antigos que 30 dias, ou além de 1 GB de prints, são apagados sozinhos.",
+      view: "Ver registros",
+      hide: "Ocultar registros",
+      logTitle: "Registros",
       refresh: "Atualizar",
       clear: "Limpar tudo",
       clearConfirm: "Apagar todo o Activity log e os prints? Não dá para desfazer.",

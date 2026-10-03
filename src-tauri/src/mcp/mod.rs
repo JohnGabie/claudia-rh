@@ -46,7 +46,7 @@ pub struct McpConfig {
     pub session: SessionKind,
     /// state.json written by the app: tells this process which port its browser listens on.
     pub browser_state: Option<PathBuf>,
-    /// <dados-locais>: where the browser and the dev-mode Activity log live.
+    /// <dados-locais>: where the browser and the Activity log live.
     pub local_data_dir: Option<PathBuf>,
 }
 

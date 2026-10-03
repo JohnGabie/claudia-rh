@@ -1,10 +1,10 @@
-// Tauri commands for the dev-mode Activity log. The app's own UI is the only reader: no MCP tool
+// Tauri commands for the Activity log (always on; the app records without any setting). The app's own UI is the only reader: no MCP tool
 // exposes any of this to an AI.
 use base64::Engine;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
 
-use crate::activity_log::{self, shots, ActivityLog, EventRow, Filter};
+use crate::activity_log::{shots, ActivityLog, EventRow, Filter};
 
 fn log_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("dev"))
@@ -16,17 +16,6 @@ pub(crate) fn image_data_url(dir: &Path, rel: &str) -> Result<String, String> {
     let path = shots::resolve(dir, rel)?;
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
-}
-
-#[tauri::command]
-pub fn activity_dev_mode_get(app: AppHandle) -> bool {
-    app.path().app_data_dir().map(|d| activity_log::is_enabled(&d)).unwrap_or(false)
-}
-
-#[tauri::command]
-pub fn activity_dev_mode_set(app: AppHandle, on: bool) -> Result<(), String> {
-    let d = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    activity_log::set_enabled(&d, on)
 }
 
 #[tauri::command]

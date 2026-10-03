@@ -97,11 +97,12 @@ export const en = {
       open: "Open the browser",
       opening: "Opening…",
     },
-    devMode: {
-      title: "Developer mode",
-      desc: "Records what the AI does in the browser (clicks, typing, pages, errors), with screenshots, on this computer only. Off by default.",
-      toggle: "Record the Activity log",
-      logTitle: "Activity log",
+    activityLog: {
+      title: "Activity log",
+      desc: "The app always records what the AI does in the browser (clicks, typing, pages, errors), with before and after screenshots, on this computer only. Passwords are never recorded. Records older than 30 days, or beyond 1 GB of screenshots, are deleted automatically.",
+      view: "View records",
+      hide: "Hide records",
+      logTitle: "Records",
       refresh: "Refresh",
       clear: "Clear everything",
       clearConfirm: "Delete the whole Activity log and its screenshots? This cannot be undone.",
