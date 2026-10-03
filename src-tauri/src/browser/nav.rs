@@ -214,6 +214,6 @@ mod tests {
 
     #[test]
     fn the_cdp_event_channel_is_big_enough_for_a_page_load() {
-        assert!(crate::browser::cdp::EVENT_CAPACITY >= 2048);
+        assert!(std::hint::black_box(crate::browser::cdp::EVENT_CAPACITY) >= 2048);
     }
 }
