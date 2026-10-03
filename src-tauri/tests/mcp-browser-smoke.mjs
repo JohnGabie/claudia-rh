@@ -11,8 +11,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const exe = process.argv[2] ?? "target/debug/claudia-rh.exe";
+// With CLAUDIA_APP_LOCAL (the real <dados-locais>) the test drives the Chrome the running APP started
+// (its state.json), visible, instead of launching a headless one. CLAUDIA_DEV_MODE=1 turns the Activity log on.
+const appLocal = process.env.CLAUDIA_APP_LOCAL;
 const chrome = process.env.CLAUDIA_TEST_CHROME;
-if (!chrome) { console.error("set CLAUDIA_TEST_CHROME to chrome.exe"); process.exit(2); }
+if (!chrome && !appLocal) { console.error("set CLAUDIA_TEST_CHROME to chrome.exe, or CLAUDIA_APP_LOCAL to the app local data dir"); process.exit(2); }
 
 let failed = 0;
 const check = (ok, msg) => { console.log((ok ? "OK    " : "FALHOU") + " " + msg); if (!ok) failed++; };
@@ -21,10 +24,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ── a throwaway app data dir and local data dir ──
 const base = mkdtempSync(join(tmpdir(), "claudia-smoke-"));
 const dataDir = join(base, "data");
-const localDir = join(base, "local");
+const localDir = appLocal ?? join(base, "local");
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(join(localDir, "browser"), { recursive: true });
 const statePath = join(localDir, "browser", "state.json");
+if (process.env.CLAUDIA_DEV_MODE) writeFileSync(join(dataDir, "dev-mode.json"), JSON.stringify({ enabled: true }));
 
 // ── the fixture page over HTTP (file:// URLs are not allowed in production) ──
 const page = readFileSync(new URL("./fixtures/apply-form.html", import.meta.url));
@@ -33,11 +37,14 @@ await new Promise((r) => web.listen(0, "127.0.0.1", r));
 const pageUrl = `http://127.0.0.1:${web.address().port}/`;
 
 // ── a real headless Chrome with its state.json, as the app would leave it ──
-const port = 9840 + Math.floor(Math.random() * 50);
-const chromeProc = spawn(chrome, [`--remote-debugging-port=${port}`, `--user-data-dir=${join(base, "profile")}`,
-  "--no-first-run", "--no-default-browser-check", "--headless=new"], { stdio: "ignore" });
-for (let i = 0; i < 60; i++) { try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { await sleep(500); } }
-writeFileSync(statePath, JSON.stringify({ port, pid: chromeProc.pid, version: "" }));
+let chromeProc = null;
+if (!appLocal) {
+  const port = 9840 + Math.floor(Math.random() * 50);
+  chromeProc = spawn(chrome, [`--remote-debugging-port=${port}`, `--user-data-dir=${join(base, "profile")}`,
+    "--no-first-run", "--no-default-browser-check", "--headless=new"], { stdio: "ignore" });
+  for (let i = 0; i < 60; i++) { try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { await sleep(500); } }
+  writeFileSync(statePath, JSON.stringify({ port, pid: chromeProc.pid, version: "" }));
+}
 
 // ── the MCP server, exactly as the AI CLI would start it ──
 const child = spawn(exe, ["--mcp-serve", "--data-dir", dataDir, "--local-data-dir", localDir,
@@ -109,7 +116,7 @@ try {
   check(false, "unexpected error: " + e.message);
 } finally {
   child.kill();
-  try { execSync(`taskkill /PID ${chromeProc.pid} /T /F`, { stdio: "ignore" }); } catch {}
+  if (chromeProc) { try { execSync(`taskkill /PID ${chromeProc.pid} /T /F`, { stdio: "ignore" }); } catch {} }
   web.close();
   await sleep(1000);
   try { rmSync(base, { recursive: true, force: true }); } catch {}
