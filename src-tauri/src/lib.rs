@@ -362,6 +362,12 @@ pub fn run() {
             marcar_welcome_concluido,
             diagnostics::watchdog::diag_heartbeat,
             exportar_diagnostico,
+            commands::activity::activity_dev_mode_get,
+            commands::activity::activity_dev_mode_set,
+            commands::activity::activity_log_list,
+            commands::activity::activity_log_get,
+            commands::activity::activity_log_image,
+            commands::activity::activity_log_clear,
             browser::service::browser_status,
             browser::service::browser_retry,
         ])
