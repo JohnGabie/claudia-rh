@@ -55,3 +55,20 @@ Também vale uma seção nova: **browser próprio** (Chrome for Testing, perfil 
 1. Posso editar o `prompt_sistema_runtime.md` conforme a seção 2? (Sem isso o `--chrome` não pode sair.)
 2. Posso atualizar `docs/arquitetura-sistema-candidaturas.md` conforme a seção 3?
 3. Quando um Chrome de outra versão (de uma atualização) segura o perfil, o app o fecha pedindo `Browser.close`; ao sair do app o Chrome da Claudia é encerrado. Aceita esses dois comportamentos?
+
+## 5. Itens que a revisão final do Opus acrescentou (necessários antes de aplicar a Fase 5)
+
+a. **Prompt, linha 56** (login "com as credenciais já configuradas"): contradiz a decisão "só sessão, nenhuma senha passa pelo app" e a regra "site deslogado é pulado". Trocar por: "Se a conta do site não está logada no browser da Claudia, registre o motivo e passe à próxima fonte; o usuário faz o login na janela do browser."
+b. **`commands/perfil.rs:676-701`** (sessão de perfil): o prompt diz "Chrome com a sessão autenticada" e manda "fechar as abas", mas não existe tool para fechar abas. Reescrever para o browser da Claudia e remover o "fechar as abas" (ou acrescentar `browser_close_tab` como ferramenta nova).
+c. **Passar `--no-chrome`**, não só remover `--chrome`: se o usuário ligou o Chrome por padrão no Claude Code, as tools da extensão continuariam carregando junto com as `browser_*`.
+d. **Só iniciar sessão com o browser `ready`.** `sessao.rs` e o `idle_watcher` não esperam o browser. Na primeira abertura o download leva minutos, e a regra "3 tentativas e vira pendência" geraria uma pendência para cada vaga. Esperar o estágio `ready` (com limite e mensagem) antes de `claude`.
+e. **Welcome:** além de `browser_pronto`, um passo "entre no LinkedIn na janela da Claudia" (a sessão por cookies é o que dá a "memória das contas"; sem isso o agente só pula tudo).
+
+## 6. Pontos que a mesma revisão deixou como issues (não bloqueiam a Fase 5)
+
+- **Instância única do app** (`tauri-plugin-single-instance`): uma segunda instância que sai roda `stop()` e derruba o Chrome da primeira. O vigia já se recupera (corrigido), mas o ideal é impedir a segunda instância.
+- **A porta de debug não tem autenticação:** qualquer processo local, ou o próprio agente pelo shell, pode ler o `state.json`, conectar por CDP e contornar a guarda. A guarda protege contra erro e manipulação do **modelo**, não é contenção. Documentar na spec §5.5.
+- **Eventos do browser no Activity log** (download, lançamento, queda, relançamento: spec §5.6 "Evento do browser") não são gravados: `service.rs` não toca `activity_log`.
+- Desinstalador: a caixa nativa está em inglês e vem do repositório do Tauri, não da versão travada; confirmar com o instalador real e alinhar a spec §5.7 com o corte da Tarefa 4.2.
+- `guard.rs` diz "nesta sessão", mas a reivindicação é por (vaga, dia); a tabela `submit_claims` é criada fora das migrações.
+- `prototipo-playwright/` versiona caminhos absolutos pessoais (`mcp-config-teste.json`, `cdp/t1-neutra.mjs:125`, `cdp/t5-recorte-scroll.mjs:4`) num repositório público; podar ou mover para `docs/pesquisa`.

@@ -168,14 +168,23 @@ fn finish_running(app: &AppHandle) {
     }
 }
 
+/// Is OUR browser answering right now? A missing or unreadable state.json counts as NOT alive: it
+/// means another app instance stopped the browser and removed the file, and the watcher must relaunch
+/// it instead of waiting forever for a file that will never come back.
+pub(crate) async fn is_alive(state_file: &Path, version: &str) -> bool {
+    match manager::read_state(state_file) {
+        Some(state) => manager::probe(state.port).await.is_some_and(|b| manager::is_pinned(&b, version)),
+        None => false,
+    }
+}
+
 /// Health check every few seconds; relaunch a Chrome that died, give up if it keeps dying.
 async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)) {
     let state_file = super::state_file(local);
     let mut watcher = Watcher::default();
     loop {
         tokio::time::sleep(WATCH_EVERY).await;
-        let Some(state) = manager::read_state(&state_file) else { continue }; // shutting down
-        let alive = manager::probe(state.port).await.is_some_and(|b| manager::is_pinned(&b, &pin.version));
+        let alive = is_alive(&state_file, &pin.version).await;
         match watcher.observe(alive, Instant::now()) {
             WatchAction::Nothing => {}
             WatchAction::Relaunch => {
@@ -276,6 +285,35 @@ mod tests {
         assert!(sent <= 101, "1000 chunks over 100 percent steps must send at most ~100 updates, sent {sent}");
         assert!(sent >= 50, "but the UI still follows the download, sent {sent}");
         assert!(log.lock().unwrap().iter().all(|x| x.stage == "downloading"));
+    }
+
+    #[tokio::test]
+    async fn a_missing_state_file_counts_as_not_alive() {
+        let dir = temp("alive-missing");
+        assert!(!is_alive(&dir.join("state.json"), "154.0.1.2").await, "the watcher must see a vanished state.json as a dead browser");
+    }
+
+    #[tokio::test]
+    async fn a_garbage_state_file_or_dead_port_counts_as_not_alive() {
+        let dir = temp("alive-bad");
+        let st = dir.join("state.json");
+        std::fs::write(&st, "{ nope").unwrap();
+        assert!(!is_alive(&st, "154.0.1.2").await);
+        manager::write_state(&st, &BrowserState { port: 1, pid: 1, version: "154.0.1.2".into() }).unwrap();
+        assert!(!is_alive(&st, "154.0.1.2").await);
+    }
+
+    #[tokio::test]
+    async fn a_live_pinned_browser_is_alive_and_another_version_is_not() {
+        let zip = chrome_zip();
+        let pin = pin_for(serve(zip.clone()).await, &zip);
+        let local = temp("alive-live");
+        let (_l, publish) = recorder();
+        let st = prepare(&local, &pin, &publish, fake_spawn).await.unwrap();
+        let file = super::super::state_file(&local);
+        assert!(is_alive(&file, "154.0.1.2").await);
+        assert!(!is_alive(&file, "999.0.0.1").await, "the port answers, but not as the pinned version");
+        assert_eq!(st.version, "154.0.1.2");
     }
 
     // ── prepare(): the whole pipeline against local servers ───────────────
