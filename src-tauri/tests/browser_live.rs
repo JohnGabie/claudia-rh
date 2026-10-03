@@ -885,3 +885,96 @@ async fn the_agents_navigation_is_recorded_with_its_initiator() {
     let n = navs.iter().find(|n| n.url.contains("apply-form")).expect("the fixture page was recorded");
     assert_eq!(n.initiator, "agent", "it happened while a browser_open was running");
 }
+
+// ───────────── The orange logo on a REAL, visible Chrome window ─────────────
+use claudia_rh_lib::browser::icon;
+
+/// A visible (not headless) Chrome the way the app launches it. A window appears for a few seconds.
+async fn launch_visible() -> Live {
+    let profile = std::env::temp_dir().join(format!(
+        "claudia-icon-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    let state_path = profile.join("state.json");
+    let o = LaunchOptions::visible(chrome(), profile.join("p"));
+    let st = manager::ensure_running(&o, "", &state_path).await.expect("a visible chrome launches");
+    let page = cdp::first_page(st.port).await.unwrap();
+    let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
+    Live { client, tab_id: page.id.clone(), port: st.port, pid: st.pid, profile }
+}
+
+async fn wait_for_window(pid: u32) -> usize {
+    for _ in 0..60 {
+        let n = icon::apply_to_process(pid);
+        if n > 0 {
+            return n;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    0
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_orange_icon_lands_on_the_real_chrome_window_and_chrome_keeps_working() {
+    let l = launch_visible().await;
+    let windows = wait_for_window(l.pid).await;
+    assert!(windows >= 1, "the Chrome window was found");
+    let orange = icon::orange_big_handle().expect("the orange icon exists");
+    let now = icon::current_big_icons(l.pid);
+    assert!(!now.is_empty() && now.iter().all(|h| *h == orange), "every Chrome window of the process wears the orange icon: {now:?} vs {orange}");
+    let orange_small = icon::orange_small_handle().expect("the small orange icon exists");
+    let small_now = icon::current_small_icons(l.pid);
+    assert!(!small_now.is_empty() && small_now.iter().all(|h| *h == orange_small), "the small slot (title bar / tray) wears it too: {small_now:?}");
+    // Chrome is not broken by it: it still answers CDP, still navigates, still reports itself visible.
+    l.client.call("Page.navigate", json!({ "url": fixture_url() })).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(eval(&l.client, "document.title").await, "fixture");
+    // (Window visibility is not asserted here: whether Windows lets a test process raise a window varies.)
+    let again = cdp::list_targets(l.port).await.unwrap();
+    assert!(again.iter().any(|t| t.kind == "page"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn applying_the_icon_twice_changes_nothing_the_second_time() {
+    let l = launch_visible().await;
+    wait_for_window(l.pid).await;
+    assert_eq!(icon::apply_to_process_counting_changes(l.pid), 0, "already orange: nothing to change");
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_icon_is_put_back_if_chrome_resets_it() {
+    // Chrome may reset its window icon (new window, theme change). The watcher calls apply again.
+    let l = launch_visible().await;
+    wait_for_window(l.pid).await;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SendMessageW, ICON_BIG, WM_SETICON};
+        struct Reset(u32);
+        unsafe extern "system" fn clear(hwnd: windows_sys::Win32::Foundation::HWND, lp: windows_sys::Win32::Foundation::LPARAM) -> windows_sys::Win32::Foundation::BOOL {
+            let r = &*(lp as *const Reset);
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == r.0 && IsWindowVisible(hwnd) != 0 {
+                SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, 0);
+            }
+            1
+        }
+        let r = Reset(l.pid);
+        unsafe { EnumWindows(Some(clear), &r as *const Reset as isize) };
+    }
+    let orange = icon::orange_big_handle().unwrap();
+    assert!(icon::current_big_icons(l.pid).iter().any(|h| *h != orange), "the reset worked (precondition)");
+    assert!(icon::apply_to_process_counting_changes(l.pid) >= 1, "apply puts it back");
+    assert!(icon::current_big_icons(l.pid).iter().all(|h| *h == orange));
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_process_that_is_not_ours_is_never_touched() {
+    // The test process itself has no Chrome window: nothing to change, and nothing is claimed.
+    assert_eq!(icon::apply_to_process(std::process::id()), 0);
+}

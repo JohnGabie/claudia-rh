@@ -141,6 +141,18 @@ fn publisher(app: &AppHandle) -> impl Fn(Status) + Send + Sync + 'static {
 
 const WATCH_EVERY: Duration = Duration::from_secs(3);
 
+/// Calls `apply` until it reports a window (the window appears a moment after the process starts),
+/// at most `attempts` times. Returns whether a window was found.
+pub(crate) async fn until_window(attempts: u32, every: Duration, mut apply: impl FnMut() -> usize) -> bool {
+    for _ in 0..attempts {
+        if apply() > 0 {
+            return true;
+        }
+        tokio::time::sleep(every).await;
+    }
+    false
+}
+
 pub async fn start(app: AppHandle) {
     if let Some(r) = app.try_state::<Running>() {
         if r.0.swap(true, Ordering::SeqCst) {
@@ -156,7 +168,9 @@ pub async fn start(app: AppHandle) {
         }
     };
     let pin = super::pin::pin();
-    if prepare(&local, &pin, &publish, manager::spawn_chrome).await.is_ok() {
+    if let Ok(state) = prepare(&local, &pin, &publish, manager::spawn_chrome).await {
+        // The orange logo on the window (taskbar, Alt+Tab): the window opens a moment after the launch.
+        until_window(60, Duration::from_millis(250), || super::icon::apply_to_process(state.pid)).await;
         watch(&local, &pin, &publish).await;
     }
     finish_running(&app);
@@ -185,6 +199,12 @@ async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)
     loop {
         tokio::time::sleep(WATCH_EVERY).await;
         let alive = is_alive(&state_file, &pin.version).await;
+        if alive {
+            // Chrome may reset its window icon (a new window, a theme change): put the orange one back.
+            if let Some(state) = manager::read_state(&state_file) {
+                super::icon::apply_to_process(state.pid);
+            }
+        }
         match watcher.observe(alive, Instant::now()) {
             WatchAction::Nothing => {}
             WatchAction::Relaunch => {
@@ -285,6 +305,27 @@ mod tests {
         assert!(sent <= 101, "1000 chunks over 100 percent steps must send at most ~100 updates, sent {sent}");
         assert!(sent >= 50, "but the UI still follows the download, sent {sent}");
         assert!(log.lock().unwrap().iter().all(|x| x.stage == "downloading"));
+    }
+
+    #[tokio::test]
+    async fn until_window_stops_at_the_first_window_and_gives_up_after_the_attempts() {
+        let mut calls = 0;
+        let found = until_window(10, Duration::from_millis(1), || {
+            calls += 1;
+            if calls == 3 { 1 } else { 0 }
+        })
+        .await;
+        assert!(found);
+        assert_eq!(calls, 3, "it must stop as soon as the window is there");
+
+        let mut tries = 0;
+        let found = until_window(4, Duration::from_millis(1), || {
+            tries += 1;
+            0
+        })
+        .await;
+        assert!(!found);
+        assert_eq!(tries, 4, "and give up after exactly the allowed attempts, not wait forever");
     }
 
     #[tokio::test]

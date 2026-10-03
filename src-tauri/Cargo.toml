@@ -46,4 +46,7 @@ unicode-normalization = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
+[dev-dependencies]
+png = "0.17"
