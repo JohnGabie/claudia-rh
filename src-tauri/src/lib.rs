@@ -266,6 +266,11 @@ pub fn run() {
                 std::mem::forget(tray);
             }
 
+            // The app-owned browser: installed, launched and watched in the background.
+            app.manage(browser::service::StatusState(Arc::new(Mutex::new(browser::service::Status::idle()))));
+            app.manage(browser::service::Running(std::sync::atomic::AtomicBool::new(false)));
+            tauri::async_runtime::spawn(browser::service::start(app.handle().clone()));
+
             // Ensure all prompt files exist on disk
             commands::prompts::ensure_all_prompts(&data_dir);
 
@@ -356,11 +361,14 @@ pub fn run() {
             marcar_welcome_concluido,
             diagnostics::watchdog::diag_heartbeat,
             exportar_diagnostico,
+            browser::service::browser_status,
+            browser::service::browser_retry,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                browser::service::stop(app);
                 crate::diagnostics::emit_event("app", "exit", None, "");
                 crate::diagnostics::pty_flush();
             }

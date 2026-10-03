@@ -6,6 +6,7 @@ pub mod manager;
 pub mod nav;
 pub mod pin;
 pub mod refs;
+pub mod service;
 pub mod theme;
 
 use std::path::{Path, PathBuf};

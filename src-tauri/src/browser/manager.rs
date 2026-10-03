@@ -126,7 +126,7 @@ async fn reusable(o: &LaunchOptions, version: &str, state_path: &Path) -> Option
 }
 
 /// Starts Chrome for real and returns its pid.
-fn spawn_chrome(o: &LaunchOptions, port: u16) -> Result<u32, String> {
+pub(crate) fn spawn_chrome(o: &LaunchOptions, port: u16) -> Result<u32, String> {
     let mut cmd = std::process::Command::new(&o.exe);
     cmd.args(build_args(o, port))
         .stdin(std::process::Stdio::null())
@@ -150,7 +150,7 @@ fn no_console(cmd: &mut std::process::Command) {
 }
 
 /// Best effort: a Chrome that never became ready must not be left running.
-fn kill_tree(pid: u32) {
+pub(crate) fn kill_tree(pid: u32) {
     let mut cmd = std::process::Command::new("taskkill");
     cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
     no_console(&mut cmd);
