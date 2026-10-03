@@ -1053,7 +1053,7 @@ mod tests {
         assert!(t.run_guard(&p, "https://x", None).unwrap_err().starts_with("RECUSADO"));
         assert!(t.run_guard(&p, "https://x", Some(1)).is_ok());
         let again = t.run_guard(&p, "https://x", Some(1)).unwrap_err();
-        assert!(again.contains("já foi enviada"), "the single submit was spent: {again}");
+        assert!(again.contains("já teve um envio autorizado hoje"), "the single submit was spent: {again}");
     }
 
     #[test]

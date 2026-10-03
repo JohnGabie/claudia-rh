@@ -485,7 +485,7 @@ mod tests {
 
         // Second submit for same vaga is refused
         let result = check_submit("Enviar candidatura", "https://example.com", Some(7), &ctx);
-        assert!(matches!(result, Verdict::Refuse(m) if m.contains("já foi enviada")));
+        assert!(matches!(result, Verdict::Refuse(m) if m.contains("já teve um envio autorizado hoje")));
     }
 
     /// A context that COUNTS how many times the single allowed submit of a vaga was claimed.
