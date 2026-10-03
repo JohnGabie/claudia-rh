@@ -346,6 +346,7 @@ export const pt: Strings = {
       bloqueada: "Bloqueada",
     },
   },
+  browserSetup: { downloading: "Preparando o browser da Claudia", launching: "Iniciando o browser da Claudia", ready: "Browser da Claudia pronto", error: "Não foi possível preparar o browser", retry: "Tentar de novo" },
   welcome: {
     step0Title: "Escolha seu idioma",
     step1Title: "Instalar as ferramentas Claude",

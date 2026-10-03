@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
 import "./styles/tokens.css";
 import { TitleBar } from "./components/TitleBar";
+import { BrowserBanner } from "./components/BrowserBanner";
 import { Sidebar, type View } from "./components/Sidebar";
 import { useT } from "./i18n";
 import { Dashboard } from "./components/dashboard";
@@ -95,6 +96,7 @@ function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <TitleBar />
+      <BrowserBanner />
       {updateInfo && !updateDismissed && (
         <div style={{
           display: "flex", alignItems: "center", gap: 12,

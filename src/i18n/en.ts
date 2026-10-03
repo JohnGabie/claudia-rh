@@ -343,6 +343,7 @@ export const en = {
       bloqueada: "Blocked",
     },
   },
+  browserSetup: { downloading: "Preparing the Claudia browser", launching: "Starting the Claudia browser", ready: "Claudia browser ready", error: "Could not prepare the browser", retry: "Try again" },
   welcome: {
     step0Title: "Choose your language",
     step1Title: "Install Claude tools",
