@@ -83,6 +83,11 @@ struct Outcome {
     loop_key: Option<String>,
 }
 
+/// A crop's loop key is its rectangle: moving the crop around the page is exploring, not looping.
+fn crop_loop_key(x: f64, y: f64, w: f64, h: f64) -> String {
+    format!("{x:.0},{y:.0},{w:.0},{h:.0}")
+}
+
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -602,6 +607,13 @@ impl BrowserTools {
         s
     }
 
+    /// What the page showed the model on its last read: part of the "did the page change" signature.
+    fn remember_content(&self, shown: &str) {
+        if let Ok(mut g) = self.last_content.lock() {
+            *g = hash_str(shown);
+        }
+    }
+
     /// The `estado:` line for the page the tab shows now.
     async fn state_line(c: &CdpClient, ax: &Value) -> String {
         let url = Self::page_url(c).await;
@@ -667,7 +679,7 @@ impl BrowserTools {
             }
             return out;
         }
-        out.map(|m| m + &extra).map_err(|e| e + &extra)
+        out.map(|m| attach_extra(&m, &extra)).map_err(|e| e + &extra)
     }
 
     // ── tools ─────────────────────────────────────────────────────────────
@@ -723,9 +735,7 @@ impl BrowserTools {
             if total > MAX_READ_REFS {
                 text.push_str(&format!("\n(mostrando {MAX_READ_REFS} de {total} elementos; use o parâmetro scope para ver o resto)"));
             }
-            if let Ok(mut g) = self.last_content.lock() {
-                *g = hash_str(&text);
-            }
+            self.remember_content(&text);
             text.push('\n');
             text.push_str(&Self::state_line(&c, &ax).await);
             Ok(Outcome { message: text, loop_key: Some(scope.unwrap_or("").to_string()), ..Default::default() })
@@ -752,9 +762,7 @@ impl BrowserTools {
                 text::ScopeArg::Ref(r) => text::Scope::Backend(self.resolve_ref(&c, &r).await?.backend_node_id),
             };
             let full = text::extract(&ax, &sc)?;
-            if let Ok(mut g) = self.last_content.lock() {
-                *g = hash_str(&full);
-            }
+            self.remember_content(&full);
             let offset = offset.unwrap_or(0);
             let page = text::paginate(&full, offset, max_chars.unwrap_or(0));
             let mut message = text::render(&page);
@@ -1032,7 +1040,7 @@ impl BrowserTools {
         .await;
         match r {
             Ok(data) => {
-                let key = format!("{x:.0},{y:.0},{w:.0},{h:.0}");
+                let key = crop_loop_key(x, y, w, h);
                 let _ = self.finish("browser_crop", started, Ok(Outcome { message: "recorte".into(), loop_key: Some(key), ..Default::default() }), Some(&c)).await;
                 Ok(ToolOutput::Image { data_base64: data, mime: "image/png".into() })
             }
@@ -1064,6 +1072,16 @@ impl BrowserTools {
         }
         .await;
         self.finish("browser_click_at", started, r, Some(&c)).await
+    }
+}
+
+/// Appends the viewport note / repeated-call hint (`extra`, each line starting with "\n") to a result
+/// BEFORE its closing `estado:` line, so `estado:` is always the last line. Page text can never put a
+/// line like it there: `text::neutralize` prefixes those, and the real one is the last line of `msg`.
+pub(crate) fn attach_extra(msg: &str, extra: &str) -> String {
+    match msg.rfind('\n') {
+        Some(i) if msg[i + 1..].starts_with("estado:") => format!("{}{}\n{}", &msg[..i], extra, &msg[i + 1..]),
+        _ => format!("{msg}{extra}"),
     }
 }
 
@@ -1393,6 +1411,14 @@ mod tests {
         Ok(Outcome { message: message.into(), target: Some(target.into()), ..Default::default() })
     }
 
+    #[test]
+    fn the_estado_line_stays_last_and_notes_go_before_it() {
+        assert_eq!(attach_extra("lista\nestado: ok", "\nviewport ajustado: 1x1 -> 2x2"), "lista\nviewport ajustado: 1x1 -> 2x2\nestado: ok");
+        assert_eq!(attach_extra("lista", "\nnota"), "lista\nnota", "no estado line: appended as before");
+        let two = attach_extra("a\nestado: ok", "\nn1\nn2");
+        assert_eq!(two.lines().last(), Some("estado: ok"), "{two}");
+    }
+
     #[tokio::test]
     async fn a_pending_viewport_note_rides_on_the_next_result_once() {
         let dir = temp_dir("note-once");
@@ -1436,7 +1462,7 @@ mod tests {
         for _ in 0..3 {
             t.finish("browser_key", Instant::now(), ok_target("x", "Tab"), None).await.unwrap();
         }
-        *t.last_content.lock().unwrap() = hash_str("a different page content"); // a read saw something new
+        t.remember_content("a different page content"); // what browser_read / browser_text do after reading
         let m = t.finish("browser_key", Instant::now(), ok_target("x", "Tab"), None).await.unwrap();
         assert_eq!(m, "x", "the page changed: the count starts again");
     }
@@ -1457,8 +1483,12 @@ mod tests {
         // The crop's loop key is its rectangle: moving the crop around the page is exploring, not looping.
         let mut g = LoopGuard::default();
         for i in 0..6 {
-            assert_eq!(g.observe("browser_crop", &format!("0,{},300,200", i * 100), "s"), None);
+            assert_eq!(g.observe("browser_crop", &crop_loop_key(0.0, i as f64 * 100.0, 300.0, 200.0), "s"), None);
         }
+        let mut g = LoopGuard::default();
+        let same = crop_loop_key(0.0, 100.0, 300.0, 200.0);
+        let hints = (0..4).filter(|_| g.observe("browser_crop", &same, "s").is_some()).count();
+        assert_eq!(hints, 1, "the same rectangle four times is a repeat");
     }
 
     #[tokio::test]
