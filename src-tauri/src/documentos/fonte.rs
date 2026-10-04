@@ -1,6 +1,27 @@
 //! What browser_upload asks: "which file for this vaga?". Answered from the library only.
 use crate::mcp::tools::browser::{Attachment, DocumentSource};
+use sha2::Digest;
 use std::path::PathBuf;
+
+/// A file name a recruiter can read, safe on any OS: letters and digits kept (accents too), anything
+/// else becomes a single dash, at most 60 characters.
+fn friendly_name(nome: &str, tipo: &str) -> String {
+    let mut out = String::new();
+    for ch in nome.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    let out: String = out.trim_matches('-').chars().take(60).collect();
+    let out = out.trim_end_matches('-').to_string();
+    if out.is_empty() {
+        if tipo == "carta" { "Carta".into() } else { "Curriculo".into() }
+    } else {
+        out
+    }
+}
 
 pub struct DbDocumentSource {
     pub data_dir: PathBuf,
@@ -29,7 +50,17 @@ impl DocumentSource for DbDocumentSource {
             }
         };
         let a = super::seguranca::resolve_attachable(&conn, &self.data_dir, id)?;
-        Ok(Attachment { id: a.id, nome: a.nome, formato: a.formato, tamanho: a.tamanho, sha256: a.sha256, path: a.path, regra })
+        // The site (and the recruiter) sees the file's own name: hand Chrome a copy named after the
+        // document, made from bytes checked against the registered hash right now.
+        let bytes = std::fs::read(&a.path).map_err(|e| e.to_string())?;
+        if format!("{:x}", sha2::Sha256::digest(&bytes)) != a.sha256 {
+            return Err(format!("o arquivo de \"{}\" mudou durante o envio: tente de novo", a.nome));
+        }
+        let dir = super::docs_dir(&self.data_dir).join("envio").join(a.id.to_string());
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(format!("{}.{}", friendly_name(&a.nome, tipo), a.formato));
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+        Ok(Attachment { id: a.id, nome: a.nome, formato: a.formato, tamanho: a.tamanho, sha256: a.sha256, path, regra })
     }
 }
 
@@ -74,6 +105,21 @@ mod tests {
         let carta = crate::documentos::importar::importar(&c, &dir, "carta", &src, None).unwrap();
         let e = DbDocumentSource { data_dir: dir }.for_upload(7, "curriculo", Some(carta.id)).unwrap_err();
         assert!(e.contains("não é um curriculo"), "{e}");
+    }
+
+    #[test]
+    fn the_site_receives_the_documents_name_with_the_same_bytes() {
+        let dir = setup("name");
+        let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let src = dir.join("qualquer.pdf");
+        std::fs::write(&src, b"%PDF-1.7 bytes do cv").unwrap();
+        let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, Some("Meu CV / João: Final")).unwrap();
+        crate::documentos::definir_preferido(&c, d.id, None).unwrap();
+        let a = DbDocumentSource { data_dir: dir.clone() }.for_upload(7, "curriculo", None).unwrap();
+        assert_eq!(a.path.file_name().unwrap().to_string_lossy(), "Meu-CV-João-Final.pdf", "a name a recruiter can read");
+        assert_eq!(std::fs::read(&a.path).unwrap(), b"%PDF-1.7 bytes do cv", "exactly the verified bytes");
+        let base = std::fs::canonicalize(crate::documentos::docs_dir(&dir)).unwrap();
+        assert!(std::fs::canonicalize(&a.path).unwrap().starts_with(&base), "still inside the documents folder");
     }
 
     #[test]

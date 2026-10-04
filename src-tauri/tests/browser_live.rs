@@ -1336,6 +1336,8 @@ async fn upload_into_a_visible_file_input_and_the_page_sees_it() {
     let list = t.read(None).await.unwrap();
     let out = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap();
     assert!(out.contains("CV Teste") && out.contains("preferido geral"), "{out}");
+    // The agent is told the file name the page will show, so it can check it.
+    assert!(out.contains("claudia-upload-"), "the result names the file as the page sees it: {out}");
     assert!(text_of(&l, "nome-cv").await.ends_with(".pdf"));
 }
 
@@ -1383,7 +1385,7 @@ async fn upload_reports_when_the_page_did_not_take_the_file() {
     t.open(&fixture_file("upload-form.html")).await.unwrap();
     let list = t.read(None).await.unwrap();
     let out = t.upload(&ref_of(&list, "button", "Só PDF"), None, None).await.unwrap();
-    assert!(out.contains("a página não mostrou o nome do arquivo"), "{out}");
+    assert!(out.contains("o campo aceita só .pdf"), "{out}");
 }
 
 #[tokio::test]
@@ -1434,4 +1436,26 @@ async fn after_an_upload_the_file_chooser_is_no_longer_intercepted() {
         tokio::time::sleep(Duration::from_millis(150)).await;
     }
     assert_eq!(seen, "cancelado", "the chooser must reach the browser again after an upload");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_plain_file_input_without_an_echo_is_not_reported_as_rejected() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Sem eco"), None, None).await.unwrap();
+    assert!(!out.contains("não mostrou"), "the field holds the file even if the page prints nothing: {out}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_html_id_instead_of_a_ref_gets_a_message_that_explains_refs() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    t.read(None).await.unwrap();
+    let e = t.upload("cv", None, None).await.unwrap_err();
+    assert!(e.contains("eN") && e.contains("browser_read"), "{e}");
 }

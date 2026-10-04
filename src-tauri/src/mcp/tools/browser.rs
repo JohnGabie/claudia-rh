@@ -97,6 +97,19 @@ impl DocumentSource for NoDocuments {
 /// Each step of an upload gives up after this: a page that never answers must not hold the tab.
 const UPLOAD_STEP: Duration = Duration::from_secs(5);
 
+/// Whether a file field's `accept` attribute takes a document of this format, read the way the
+/// browser's chooser reads it (extensions and MIME types, case-insensitive). Empty accept = anything.
+pub(crate) fn accept_allows(accept: &str, formato: &str) -> bool {
+    let mime = match formato {
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        _ => "",
+    };
+    let tokens: Vec<String> = accept.split(',').map(|t| t.trim().to_ascii_lowercase()).filter(|t| !t.is_empty()).collect();
+    tokens.is_empty()
+        || tokens.iter().any(|t| t == "*/*" || *t == format!(".{formato}") || t == mime || (t == "application/*" && !mime.is_empty()))
+}
+
 #[derive(Default)]
 struct Outcome {
     message: String,
@@ -494,7 +507,9 @@ impl BrowserTools {
         if !book.is_current(&doc) {
             return Err(STALE.into());
         }
-        book.find(&doc, reference).cloned().ok_or_else(|| format!("ref {reference} não existe. Chame browser_read."))
+        book.find(&doc, reference).cloned().ok_or_else(|| {
+            format!("ref \"{reference}\" não existe. Use a ref eN que browser_read mostra (ex.: e1), não id nem name do HTML; campos de arquivo aparecem como button com o nome do rótulo. Chame browser_read se a página mudou.")
+        })
     }
 
     // ── what the page says about an element: browser-computed, never page-trusted ──
@@ -1010,10 +1025,11 @@ impl BrowserTools {
             let n = self.resolve_ref(&c, reference).await?;
             let file = att.path.to_string_lossy().to_string();
             let (shot, x, y) = self.locate(&c, &n, true).await?;
-            if Self::is_file_input(&c, n.backend_node_id).await {
+            let field = if Self::is_file_input(&c, n.backend_node_id).await {
                 tokio::time::timeout(UPLOAD_STEP, c.call("DOM.setFileInputFiles", json!({ "files": [file], "backendNodeId": n.backend_node_id })))
                     .await
                     .map_err(|_| "o campo de arquivo não respondeu a tempo".to_string())??;
+                n.backend_node_id
             } else {
                 // A button that opens the chooser: it must not be a submit (an upload never submits).
                 let mut probe = Probe::default();
@@ -1028,16 +1044,20 @@ impl BrowserTools {
                 if self.run_guard(&probe, &url, None).is_err() {
                     return Err("RECUSADO: esse elemento envia a candidatura; browser_upload só anexa arquivos.".into());
                 }
-                Self::upload_via_chooser(&c, x, y, &file).await?;
-            }
+                Self::upload_via_chooser(&c, x, y, &file).await?
+            };
             tokio::time::sleep(Duration::from_millis(300)).await;
             let file_name = att.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+            // The native control keeps the chosen file to itself (it never reaches innerText): ask the field.
+            let (held, accept) = Self::file_field_state(&c, field).await;
             let probe_js = format!("document.body ? document.body.innerText.includes({}) : false", serde_json::to_string(&file_name).unwrap_or_default());
-            let shown = Self::eval(&c, &probe_js).await.ok().and_then(|v| v.as_bool()).unwrap_or(false);
+            let on_page = Self::eval(&c, &probe_js).await.ok().and_then(|v| v.as_bool()).unwrap_or(false);
             let kb = att.tamanho.div_ceil(1024);
-            let mut message = format!("Anexou \"{}\" ({}, {} KB) pela regra: {}.", att.nome, att.formato, kb, att.regra);
-            if !shown {
-                message.push_str(" Atenção: a página não mostrou o nome do arquivo; confira com browser_read ou browser_text antes de seguir (o site pode ter recusado o formato).");
+            let mut message = format!("Anexou \"{}\" (arquivo {}, {}, {} KB) pela regra: {}.", att.nome, file_name, att.formato, kb, att.regra);
+            if !accept_allows(&accept, &att.formato) {
+                message.push_str(&format!(" Atenção: o campo aceita só {accept} e o arquivo é {}; o site provavelmente vai recusá-lo. Confira com browser_text e, se recusado, registre uma pendência.", att.formato));
+            } else if held != file_name && !on_page {
+                message.push_str(" Atenção: o campo não ficou com o arquivo e a página não mostrou o nome dele; confira com browser_read ou browser_text antes de seguir.");
             }
             Ok(Outcome {
                 message,
@@ -1051,6 +1071,25 @@ impl BrowserTools {
         }
         .await;
         self.finish("browser_upload", started, r, Some(&c)).await
+    }
+
+    /// (name of the file the field holds, its accept attribute), read in the isolated world. Empty when unreadable.
+    async fn file_field_state(c: &CdpClient, backend: i64) -> (String, String) {
+        let r = async {
+            let world = Self::guard_world(c).await?;
+            let o = c.call("DOM.resolveNode", json!({ "backendNodeId": backend, "executionContextId": world })).await?;
+            let oid = o["object"]["objectId"].as_str().ok_or("sem objeto")?.to_string();
+            let v = c
+                .call(
+                    "Runtime.callFunctionOn",
+                    json!({ "objectId": oid, "returnByValue": true, "functionDeclaration": "function(){return {name: (this.files && this.files[0]) ? this.files[0].name : '', accept: this.accept || ''}}" }),
+                )
+                .await?;
+            let val = &v["result"]["value"];
+            Ok::<_, String>((val["name"].as_str().unwrap_or("").to_string(), val["accept"].as_str().unwrap_or("").to_string()))
+        }
+        .await;
+        r.unwrap_or_default()
     }
 
     async fn is_file_input(c: &CdpClient, backend: i64) -> bool {
@@ -1067,7 +1106,7 @@ impl BrowserTools {
 
     /// Clicks a button that opens the file chooser, intercepting the chooser so no native dialog ever
     /// appears. The interception is ALWAYS turned off again, success or not: the tab must stay usable.
-    async fn upload_via_chooser(c: &CdpClient, x: f64, y: f64, file: &str) -> Result<(), String> {
+    async fn upload_via_chooser(c: &CdpClient, x: f64, y: f64, file: &str) -> Result<i64, String> {
         let mut events = c.subscribe();
         let _ = c.call("Page.enable", json!({})).await;
         c.call("Page.setInterceptFileChooserDialog", json!({ "enabled": true })).await?;
@@ -1088,7 +1127,7 @@ impl BrowserTools {
             tokio::time::timeout(UPLOAD_STEP, c.call("DOM.setFileInputFiles", json!({ "files": [file], "backendNodeId": backend })))
                 .await
                 .map_err(|_| "o campo de arquivo não respondeu a tempo".to_string())??;
-            Ok(())
+            Ok(backend)
         }
         .await;
         let _ = c.call("Page.setInterceptFileChooserDialog", json!({ "enabled": false })).await;
@@ -1394,6 +1433,20 @@ impl GuardContext for DbGuardContext {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_file_field_accept_rule_is_read_like_the_browser_does() {
+        use super::accept_allows;
+        assert!(accept_allows("", "pdf"), "no accept: anything");
+        assert!(accept_allows(".pdf", "pdf"));
+        assert!(accept_allows(".PDF, .doc", "pdf"), "case and spaces");
+        assert!(accept_allows("application/pdf", "pdf"));
+        assert!(accept_allows("*/*", "docx"));
+        assert!(accept_allows(".docx", "docx"));
+        assert!(accept_allows("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"));
+        assert!(!accept_allows(".pdf", "docx"));
+        assert!(!accept_allows("image/*", "pdf"));
+    }
+
     use super::*;
     use crate::mcp::tools::test_support::{seed_db, temp_dir};
 
