@@ -41,14 +41,16 @@ pub struct Patterns {
     /// URL path pieces of a login wall. A match needs a boundary after it ("/login?x" yes, "/login-tips" no),
     /// unless the pattern itself ends in "/".
     pub login_urls: &'static [&'static str],
-    /// Words that, on a button, link or heading INSIDE a dialog, make the dialog a login prompt. Folded.
+    /// Words (whole words or word sequences, never a piece of a longer word) that, on a button or link INSIDE
+    /// a dialog, or in the dialog's own name, make the dialog a login prompt. Folded. "Sign up" alone is not
+    /// here: a job-alert dialog says it too.
     pub login_words: &'static [&'static str],
     /// URL pieces of a captcha page.
     pub captcha_urls: &'static [&'static str],
     /// Phrases that mean a captcha wherever they appear. Folded.
     pub captcha_strict: &'static [&'static str],
-    /// Looser words, only looked for in the NAMES of controls, frames and headings (not in page prose:
-    /// a job description may legitimately mention "captcha"). Folded.
+    /// Looser words, only looked for in the NAMES of frames, checkboxes and buttons (not in page prose, and
+    /// not in headings or the document title: a job "Engineer - Turnstile" is not a captcha). Folded.
     pub captcha_loose: &'static [&'static str],
 }
 
@@ -56,7 +58,7 @@ pub const PATTERNS: Patterns = Patterns {
     login_urls: &["/login", "/signin", "/sign-in", "/authwall", "/checkpoint", "/uas/"],
     login_words: &[
         "entrar", "sign in", "log in", "login", "continuar com o google", "continue with google", "cadastre se",
-        "sign up", "join now", "inscreva se", "entre para",
+        "join now", "entre para",
     ],
     captcha_urls: &["/captcha"],
     captcha_strict: &[
@@ -67,8 +69,7 @@ pub const PATTERNS: Patterns = Patterns {
 };
 
 /// Roles whose NAME is looked at for the loose captcha words.
-const CONTROL_ROLES: &[&str] =
-    &["Iframe", "iframe", "checkbox", "button", "heading", "dialog", "alertdialog", "RootWebArea", "region", "group", "main"];
+const CONTROL_ROLES: &[&str] = &["Iframe", "iframe", "checkbox", "button"];
 
 /// Roles that carry text the user can read, for the "empty page" count.
 const TEXT_ROLES: &[&str] = &["StaticText", "button", "link", "heading", "textbox", "image", "img", "checkbox", "radio"];
@@ -86,6 +87,21 @@ fn name(n: &Value) -> &str {
 
 fn ignored(n: &Value) -> bool {
     n["ignored"] == true
+}
+
+/// The part of a URL that says WHERE the page is: the path, plus a hash route ("/app/#/signin") but never
+/// the query string ("?next=/login" is where the user wants to go AFTER, not what this page is).
+fn url_path(url: &str) -> String {
+    let (before_hash, frag) = match url.split_once('#') {
+        Some((b, f)) => (b, f),
+        None => (url, ""),
+    };
+    let mut out = before_hash.split('?').next().unwrap_or("").to_string();
+    if frag.starts_with('/') {
+        out.push('#');
+        out.push_str(frag.split('?').next().unwrap_or(""));
+    }
+    out
 }
 
 /// True when `url` (lowercase) holds `pat` with a boundary after it.
@@ -106,11 +122,14 @@ fn url_has_segment(url: &str, pat: &str) -> bool {
     false
 }
 
+/// True when any of `words` appears in `folded` as a whole word or word sequence ("sign in" is in
+/// "please sign in now" but not in "design intern"). Both sides are folded: single spaces between words.
 fn contains_any(folded: &str, words: &[&str]) -> bool {
-    words.iter().any(|w| folded.contains(w))
+    let hay = format!(" {folded} ");
+    words.iter().any(|w| hay.contains(&format!(" {w} ")))
 }
 
-/// Names (folded) of the dialog itself and of the buttons, links and headings below it.
+/// Names (folded) of the dialog itself and of the buttons and links below it.
 fn dialog_names(dialog: &Value, by_id: &HashMap<&str, &Value>) -> Vec<String> {
     let mut out = vec![fold(name(dialog))];
     let mut stack: Vec<&Value> = vec![dialog];
@@ -120,7 +139,7 @@ fn dialog_names(dialog: &Value, by_id: &HashMap<&str, &Value>) -> Vec<String> {
         if !seen.insert(id.to_string()) {
             continue;
         }
-        if !ignored(n) && matches!(role(n), "button" | "link" | "heading") {
+        if !ignored(n) && matches!(role(n), "button" | "link") {
             out.push(fold(name(n)));
         }
         for c in n["childIds"].as_array().into_iter().flatten().filter_map(Value::as_str) {
@@ -148,7 +167,7 @@ pub fn detect(url: &str, ready_state: &str, ax: &Value) -> PageState {
 /// "it is still loading" (a challenge page is the answer even if the document never settles).
 pub fn detect_with(p: &Patterns, url: &str, ready_state: &str, ax: &Value) -> PageState {
     let nodes: &[Value] = ax["nodes"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-    let url_lower = url.to_lowercase();
+    let url_lower = url_path(&url.to_lowercase());
 
     let captcha = p.captcha_urls.iter().any(|u| url_lower.contains(u))
         || nodes.iter().filter(|n| !ignored(n)).any(|n| {
@@ -221,7 +240,7 @@ mod tests {
             "https://www.linkedin.com/uas/login?session_redirect=y",
             "https://www.linkedin.com/checkpoint/challenge/abc",
             "https://example.com/Login?next=/jobs",
-            "https://example.com/app/#/signin",
+            "https://example.com/app/#/signin?x=1",
             "file:///C:/fixtures/authwall.html",
         ] {
             assert_eq!(detect(url, "complete", &prose_page()), PageState::LoginWall, "{url}");
@@ -268,6 +287,61 @@ mod tests {
             ("5", "StaticText", "Lista pública de vagas com texto suficiente para não ser vazia.", false, &[]),
         ]);
         assert_eq!(detect("https://x.com/", "complete", &cookies), PageState::Ok);
+    }
+
+    #[test]
+    fn a_login_word_inside_another_word_is_not_a_login_dialog() {
+        for (btn, why) in [("Design Intern", "sign in inside design intern"), ("Concentrar esforços", "entrar inside concentrar"), ("Blogin", "login inside blogin")] {
+            let ax = tree(&[
+                ("1", "RootWebArea", "Vagas", false, &["2", "4"]),
+                ("2", "dialog", "Detalhes", false, &["3"]),
+                ("3", "button", btn, false, &[]),
+                ("4", "StaticText", "Lista pública de vagas com texto suficiente para não ser vazia.", false, &[]),
+            ]);
+            assert_eq!(detect("https://x.com/", "complete", &ax), PageState::Ok, "{why}");
+        }
+    }
+
+    #[test]
+    fn a_login_word_only_in_a_dialog_heading_without_a_login_button_is_not_a_wall() {
+        // A login wall asks for something to click or type; a heading that merely contains the word does not.
+        let ax = tree(&[
+            ("1", "RootWebArea", "Vagas", false, &["2", "5"]),
+            ("2", "dialog", "Aviso", false, &["3", "4"]),
+            ("3", "heading", "Why log in is optional for this list", false, &[]),
+            ("4", "button", "Fechar", false, &[]),
+            ("5", "StaticText", "Lista pública de vagas com texto suficiente para não ser vazia.", false, &[]),
+        ]);
+        assert_eq!(detect("https://x.com/", "complete", &ax), PageState::Ok);
+    }
+
+    #[test]
+    fn a_job_alert_dialog_that_says_sign_up_is_not_a_login_wall() {
+        let ax = tree(&[
+            ("1", "RootWebArea", "Vagas", false, &["2", "5"]),
+            ("2", "dialog", "Alertas", false, &["3", "4"]),
+            ("3", "heading", "Sign up for job alerts", false, &[]),
+            ("4", "button", "Create alert", false, &[]),
+            ("5", "StaticText", "Lista pública de vagas com texto suficiente para não ser vazia.", false, &[]),
+        ]);
+        assert_eq!(detect("https://x.com/", "complete", &ax), PageState::Ok);
+    }
+
+    #[test]
+    fn a_job_title_or_heading_that_names_a_captcha_vendor_is_not_a_captcha() {
+        let ax = tree(&[
+            ("1", "RootWebArea", "Engineer - Turnstile", false, &["2", "3"]),
+            ("2", "heading", "Security engineer, reCAPTCHA team", false, &[]),
+            ("3", "StaticText", "Texto suficiente da vaga para a página não ser considerada vazia.", false, &[]),
+        ]);
+        assert_eq!(detect("https://example.com/jobs/1", "complete", &ax), PageState::Ok);
+    }
+
+    #[test]
+    fn a_login_path_in_the_query_string_is_not_a_login_page() {
+        assert_eq!(detect("https://example.com/jobs/1?next=/login", "complete", &prose_page()), PageState::Ok);
+        assert_eq!(detect("https://example.com/jobs/1?redirect=%2Fuas%2Flogin&from=/checkpoint/x", "complete", &prose_page()), PageState::Ok);
+        assert_eq!(detect("https://example.com/jobs/1?x=/captcha/", "complete", &prose_page()), PageState::Ok);
     }
 
     #[test]
