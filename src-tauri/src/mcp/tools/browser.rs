@@ -350,9 +350,9 @@ impl BrowserTools {
 
     /// The viewport guarantee (spec 3.1): the agent's tab is at least 1200x800 before any tool acts, and the
     /// result says so when it had to be changed. Never fails a tool: None means "nothing to report".
-    // WIRE: call crate::browser::viewport::ensure_min_viewport here once frente A is merged
-    async fn ensure_viewport(_c: &CdpClient) -> Option<String> {
-        None
+    async fn ensure_viewport(c: &CdpClient) -> Option<String> {
+        // An error here (window not adjustable, no layout yet) never fails the tool: just no note.
+        crate::browser::viewport::ensure_min_viewport(c).await.ok().and_then(|r| r.note())
     }
 
     async fn tab_inner(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
