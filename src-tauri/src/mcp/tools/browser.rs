@@ -95,6 +95,20 @@ fn scroll_loop_key(direction: &str, reference: Option<&str>, pos: &ScrollPos, el
     format!("{direction}|{}|{:.0}|{:.0}|{:.0}", reference.unwrap_or(""), pos.y, pos.content_h, element_top.unwrap_or(0.0))
 }
 
+/// The clip for an Activity log screenshot. `clip` is in viewport coordinates (a box from
+/// DOM.getBoxModel) and None means the whole visible viewport. Page.captureScreenshot takes its clip
+/// in DOCUMENT coordinates, so the scroll offset is added: without it a scrolled page came out as the
+/// top of the document, blank where it is off screen.
+fn shot_clip(metrics: &Value, clip: Option<Value>, scale: f64) -> Value {
+    let v = &metrics["cssVisualViewport"];
+    let mut cl = clip.unwrap_or_else(|| json!({ "x": 0.0, "y": 0.0, "width": v["clientWidth"], "height": v["clientHeight"] }));
+    let (page_x, page_y) = (v["pageX"].as_f64().unwrap_or(0.0), v["pageY"].as_f64().unwrap_or(0.0));
+    cl["x"] = json!(cl["x"].as_f64().unwrap_or(0.0) + page_x);
+    cl["y"] = json!(cl["y"].as_f64().unwrap_or(0.0) + page_y);
+    cl["scale"] = json!(scale);
+    cl
+}
+
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -540,18 +554,8 @@ impl BrowserTools {
 
     // ── screenshots (only when the Activity log is on) ───────────────────
     async fn capture(c: &CdpClient, clip: Option<Value>, scale: f64, quality: u32) -> Option<Vec<u8>> {
-        let mut p = json!({ "format": "jpeg", "quality": quality });
-        match clip {
-            Some(mut cl) => {
-                cl["scale"] = json!(scale);
-                p["clip"] = cl;
-            }
-            None => {
-                let m = c.call("Page.getLayoutMetrics", json!({})).await.ok()?;
-                let v = &m["cssVisualViewport"];
-                p["clip"] = json!({ "x": 0, "y": 0, "width": v["clientWidth"], "height": v["clientHeight"], "scale": scale });
-            }
-        }
+        let m = c.call("Page.getLayoutMetrics", json!({})).await.ok()?;
+        let p = json!({ "format": "jpeg", "quality": quality, "clip": shot_clip(&m, clip, scale) });
         let r = c.call("Page.captureScreenshot", p).await.ok()?;
         base64::engine::general_purpose::STANDARD.decode(r["data"].as_str()?).ok()
     }
@@ -1595,6 +1599,22 @@ mod tests {
         let same = crop_loop_key(0.0, 100.0, 300.0, 200.0);
         let hints = (0..4).filter(|_| g.observe("browser_crop", &same, "s").is_some()).count();
         assert_eq!(hints, 1, "the same rectangle four times is a repeat");
+    }
+
+    #[test]
+    fn a_log_screenshot_of_a_scrolled_page_shows_what_is_on_screen_not_the_top_of_the_document() {
+        // Page.captureScreenshot's clip is in DOCUMENT coordinates. The Haiku round's shot after a scroll
+        // (y=420) came out with its top 420 px blank: it clipped the top of the document, not the screen.
+        let m = json!({ "cssVisualViewport": { "pageX": 0.0, "pageY": 420.0, "clientWidth": 1185.0, "clientHeight": 800.0 } });
+        let whole = shot_clip(&m, None, 0.5);
+        assert_eq!((whole["x"].as_f64(), whole["y"].as_f64()), (Some(0.0), Some(420.0)), "{whole}");
+        assert_eq!((whole["width"].as_f64(), whole["height"].as_f64(), whole["scale"].as_f64()), (Some(1185.0), Some(800.0), Some(0.5)));
+        // A "before" crop comes from DOM.getBoxModel, which is in VIEWPORT coordinates.
+        let boxed = shot_clip(&m, Some(json!({ "x": 0.0, "y": 89.0, "width": 1249.0, "height": 140.0 })), 1.0);
+        assert_eq!((boxed["x"].as_f64(), boxed["y"].as_f64()), (Some(0.0), Some(509.0)), "{boxed}");
+        assert_eq!((boxed["width"].as_f64(), boxed["height"].as_f64()), (Some(1249.0), Some(140.0)));
+        let unscrolled = json!({ "cssVisualViewport": { "pageX": 0.0, "pageY": 0.0, "clientWidth": 1200.0, "clientHeight": 800.0 } });
+        assert_eq!(shot_clip(&unscrolled, None, 1.0)["y"].as_f64(), Some(0.0));
     }
 
     #[test]
