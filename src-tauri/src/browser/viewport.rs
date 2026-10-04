@@ -175,7 +175,27 @@ async fn measure_settled(c: &CdpClient, previous: &Measure) -> Result<(Measure, 
 /// returned as Err and the caller ignores it (the agent's action must not fail because of this).
 /// If the screen is too small to reach the minimum it does not fail either: `below_minimum` is set.
 pub async fn ensure_min_viewport(c: &CdpClient) -> Result<ViewportReport, String> {
+    ensure_min_viewport_with(c, None).await
+}
+
+/// True when a previous call already gave up at exactly this viewport: trying again would resize and
+/// maximize the window on every tool call for nothing (a screen smaller than the minimum). If the user
+/// changes the window the size differs and the attempt is made again.
+pub fn should_skip(first_viewport: (u32, u32), gave_up_at: Option<(u32, u32)>) -> bool {
+    gave_up_at == Some(first_viewport)
+}
+
+/// Like `ensure_min_viewport`, told where the last call gave up (`gave_up_at`): at that same size it does
+/// not touch the window again and reports `below_minimum`.
+///
+/// Page zoom: the viewport is in CSS pixels and the window in device pixels, so at a zoom other than 100%
+/// the frame computed for the resize is off. That is not corrected here: the planner converges anyway
+/// (resize once, then maximize, then give up) and never loops.
+pub async fn ensure_min_viewport_with(c: &CdpClient, gave_up_at: Option<(u32, u32)>) -> Result<ViewportReport, String> {
     let (first, window_id) = measure(c).await?;
+    if should_skip(first.viewport, gave_up_at) {
+        return Ok(ViewportReport { before: first.viewport, after: first.viewport, adjusted: false, below_minimum: true });
+    }
     let mut current = first.clone();
     let mut tried = Tried::default();
     let mut below_minimum = false;
@@ -218,6 +238,13 @@ mod tests {
 
     fn m(viewport: (u32, u32), outer: (u32, u32), state: WindowState) -> Measure {
         Measure { viewport, outer, state }
+    }
+
+    #[test]
+    fn a_window_where_a_previous_call_gave_up_is_not_touched_again_until_it_changes() {
+        assert!(should_skip((1100, 700), Some((1100, 700))), "same size as where we gave up: leave it");
+        assert!(!should_skip((1100, 700), None), "never gave up: try");
+        assert!(!should_skip((900, 600), Some((1100, 700))), "the user changed the window: try again");
     }
 
     #[test]

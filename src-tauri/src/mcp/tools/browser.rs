@@ -307,6 +307,13 @@ pub struct BrowserTools {
     /// Extra lines for a tool whose result is an image (browser_crop): the server reads them with
     /// `take_extra` and adds them as text next to the image.
     deferred_extra: StdMutex<Option<String>>,
+    /// `viewport_abaixo_do_minimo` is said once per session, not on every result.
+    below_warned: AtomicBool,
+    /// Where the viewport guarantee last gave up (a screen smaller than the minimum): not retried at that size.
+    gave_up_at: StdMutex<Option<(u32, u32)>>,
+    /// True when the window was resized by the call that just obtained the tab: coordinates measured before
+    /// it (a crop) are no longer valid.
+    viewport_adjusted: AtomicBool,
 }
 
 impl BrowserTools {
@@ -325,6 +332,9 @@ impl BrowserTools {
             last_content: StdMutex::new(0),
             pending_note: StdMutex::new(None),
             deferred_extra: StdMutex::new(None),
+            below_warned: AtomicBool::new(false),
+            gave_up_at: StdMutex::new(None),
+            viewport_adjusted: AtomicBool::new(false),
         }
     }
 
@@ -345,19 +355,23 @@ impl BrowserTools {
     /// enforced before the tool acts. The note it returns (if any) rides on that tool's result.
     async fn tab(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
         let t = self.tab_inner().await?;
-        if let Some(note) = Self::ensure_viewport(&t.0).await {
-            if let Ok(mut g) = self.pending_note.lock() {
+        self.viewport_adjusted.store(false, Ordering::SeqCst);
+        let gave_up_at = self.gave_up_at.lock().ok().and_then(|g| *g);
+        // An error here (window not adjustable, no layout yet) never fails the tool: just no note.
+        if let Ok(report) = crate::browser::viewport::ensure_min_viewport_with(&t.0, gave_up_at).await {
+            let (note, adjusted) = viewport_decision(&report, self.below_warned.load(Ordering::SeqCst));
+            if report.below_minimum {
+                self.below_warned.store(true, Ordering::SeqCst);
+            }
+            if let Ok(mut g) = self.gave_up_at.lock() {
+                *g = if report.below_minimum { Some(report.after) } else { None };
+            }
+            self.viewport_adjusted.store(adjusted, Ordering::SeqCst);
+            if let (Some(note), Ok(mut g)) = (note, self.pending_note.lock()) {
                 *g = Some(note);
             }
         }
         Ok(t)
-    }
-
-    /// The viewport guarantee (spec 3.1): the agent's tab is at least 1200x800 before any tool acts, and the
-    /// result says so when it had to be changed. Never fails a tool: None means "nothing to report".
-    async fn ensure_viewport(c: &CdpClient) -> Option<String> {
-        // An error here (window not adjustable, no layout yet) never fails the tool: just no note.
-        crate::browser::viewport::ensure_min_viewport(c).await.ok().and_then(|r| r.note())
     }
 
     async fn tab_inner(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
@@ -401,8 +415,11 @@ impl BrowserTools {
         Ok((client, state.port, target.id))
     }
 
+    /// Evaluates a fixed, read-only expression in the ISOLATED world (not the page's own): a page cannot
+    /// redefine what it sees (`document.readyState`, `location.href`).
     async fn eval(c: &CdpClient, expr: &str) -> Result<Value, String> {
-        let r = c.call("Runtime.evaluate", json!({ "expression": expr, "returnByValue": true })).await?;
+        let world = Self::guard_world(c).await?;
+        let r = c.call("Runtime.evaluate", json!({ "expression": expr, "returnByValue": true, "contextId": world })).await?;
         Ok(r["result"]["value"].clone())
     }
 
@@ -699,7 +716,7 @@ impl BrowserTools {
                 return Err(format!("a navegação falhou: {err}"));
             }
             for _ in 0..100 {
-                if Self::eval(&c, "document.readyState").await? == "complete" {
+                if Self::eval(&c, "document.readyState").await.map(|v| v == "complete").unwrap_or(false) {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
@@ -786,6 +803,27 @@ impl BrowserTools {
         })
     }
 
+    /// Where the wheel turns when no element was asked for: the middle of the page, unless a form field is
+    /// there. A wheel over a focused number field changes its value ("5 anos" becomes 4), so the first
+    /// candidate point that Chrome says is not a field is used (the middle if none is found).
+    async fn wheel_point(c: &CdpClient, w: f64, h: f64) -> (f64, f64) {
+        for (x, y) in wheel_candidates(w, h) {
+            let on_field = match Self::node_at_point(c, x, y).await {
+                Some(id) => c
+                    .call("DOM.describeNode", json!({ "backendNodeId": id }))
+                    .await
+                    .ok()
+                    .and_then(|d| d["node"]["nodeName"].as_str().map(is_field_node))
+                    .unwrap_or(false),
+                None => false,
+            };
+            if !on_field {
+                return (x, y);
+            }
+        }
+        (w / 2.0, h / 2.0)
+    }
+
     async fn wheel(c: &CdpClient, x: f64, y: f64, delta_y: f64) -> Result<(), String> {
         c.call("Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": x, "y": y })).await?;
         c.call("Input.dispatchMouseEvent", json!({ "type": "mouseWheel", "x": x, "y": y, "deltaX": 0, "deltaY": delta_y })).await?;
@@ -842,7 +880,7 @@ impl BrowserTools {
                 }
                 None => {
                     let p = Self::scroll_pos(&c).await?;
-                    (p.client_w / 2.0, p.client_h / 2.0)
+                    Self::wheel_point(&c, p.client_w, p.client_h).await
                 }
             };
             let start = Self::scroll_pos(&c).await?;
@@ -884,7 +922,8 @@ impl BrowserTools {
                 }
                 _ => {
                     let amount = if to_the_end { String::new() } else { format!(" {pages} tela(s)") };
-                    let fits = if pos.max_y() <= 0.0 { " A página cabe na tela: não há o que rolar." } else { "" };
+                    // The document's position is all that is measured here: a panel inside the page may have scrolled.
+                    let fits = if (pos.y - start.y).abs() < 1.0 { " A posição do documento não mudou; um painel interno pode ter rolado." } else { "" };
                     format!(
                         "Rolou {direction}{amount}. Posição: {}% (y={} de {}). fim_da_pagina: {}.{fits} Chame browser_read para ver o que apareceu.",
                         pos.percent(),
@@ -1058,6 +1097,9 @@ impl BrowserTools {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click_at", started, Err(e), None).await,
         };
+        if let Some(why) = click_at_after_resize_refusal(self.viewport_adjusted.load(Ordering::SeqCst)) {
+            return self.finish("browser_click_at", started, Err(why), Some(&c)).await;
+        }
         let r = async {
             // What is under the point is decided by Chrome's hit test, and described by Chrome.
             let mut probe = Probe::default();
@@ -1073,6 +1115,29 @@ impl BrowserTools {
         .await;
         self.finish("browser_click_at", started, r, Some(&c)).await
     }
+}
+
+/// Points to try for the wheel, middle first, then the sides and the quarters of the page.
+pub(crate) fn wheel_candidates(w: f64, h: f64) -> Vec<(f64, f64)> {
+    vec![(w / 2.0, h / 2.0), (w * 0.25, h / 2.0), (w * 0.75, h / 2.0), (w / 2.0, h * 0.25), (w / 2.0, h * 0.75), (w * 0.1, h * 0.1), (w * 0.9, h * 0.9)]
+}
+
+/// Form fields whose value a wheel can change.
+pub(crate) fn is_field_node(node_name: &str) -> bool {
+    matches!(node_name.to_ascii_uppercase().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
+}
+
+/// What a viewport report means for this call: the note to show (the below-minimum warning only the first
+/// time) and whether the window was resized right now.
+pub(crate) fn viewport_decision(r: &crate::browser::viewport::ViewportReport, already_warned: bool) -> (Option<String>, bool) {
+    let note = if r.below_minimum && already_warned { None } else { r.note() };
+    (note, r.adjusted)
+}
+
+/// A `browser_click_at` right after the window was resized: the coordinates came from a crop of the old
+/// layout, so the click could land on something else. Refused with a way forward.
+pub(crate) fn click_at_after_resize_refusal(adjusted: bool) -> Option<String> {
+    adjusted.then(|| "A janela foi redimensionada agora (veja a nota de viewport): as coordenadas que você mediu eram do layout antigo. Chame browser_crop de novo e use as novas coordenadas.".to_string())
 }
 
 /// Appends the viewport note / repeated-call hint (`extra`, each line starting with "\n") to a result
@@ -1409,6 +1474,39 @@ mod tests {
 
     fn ok_target(message: &str, target: &str) -> Result<Outcome, String> {
         Ok(Outcome { message: message.into(), target: Some(target.into()), ..Default::default() })
+    }
+
+    #[test]
+    fn the_wheel_avoids_form_fields_and_starts_in_the_middle() {
+        let c = wheel_candidates(1200.0, 800.0);
+        assert_eq!(c[0], (600.0, 400.0), "the middle comes first");
+        assert!(c.len() >= 5, "there are other points to fall back to");
+        assert!(c.iter().all(|(x, y)| (0.0..=1200.0).contains(x) && (0.0..=800.0).contains(y)));
+        for n in ["input", "INPUT", "textarea", "Select"] {
+            assert!(is_field_node(n), "{n}");
+        }
+        for n in ["DIV", "BODY", "BUTTON", "A"] {
+            assert!(!is_field_node(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn the_below_minimum_warning_is_said_once_and_a_resize_is_known() {
+        use crate::browser::viewport::ViewportReport;
+        let below = ViewportReport { before: (1100, 700), after: (1100, 700), adjusted: false, below_minimum: true };
+        assert_eq!(viewport_decision(&below, false), (Some("viewport_abaixo_do_minimo: 1100x700".into()), false));
+        assert_eq!(viewport_decision(&below, true), (None, false), "second time: silence");
+        let grown = ViewportReport { before: (929, 861), after: (1200, 861), adjusted: true, below_minimum: false };
+        assert_eq!(viewport_decision(&grown, true), (Some("viewport ajustado: 929x861 -> 1200x861".into()), true), "a resize is always said");
+        let fine = ViewportReport { before: (1900, 900), after: (1900, 900), adjusted: false, below_minimum: false };
+        assert_eq!(viewport_decision(&fine, false), (None, false));
+    }
+
+    #[test]
+    fn a_click_at_right_after_a_resize_is_refused_with_a_way_forward() {
+        let why = click_at_after_resize_refusal(true).expect("refused");
+        assert!(why.contains("browser_crop") && why.contains("coordenadas"), "{why}");
+        assert_eq!(click_at_after_resize_refusal(false), None);
     }
 
     #[test]
