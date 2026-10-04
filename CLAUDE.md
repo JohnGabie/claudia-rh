@@ -114,6 +114,39 @@ Regras que valem para todas:
 - **Review por outro modelo:** mudanças de segurança ou de ferramenta do agente passam por uma revisão independente (Opus) antes do merge, e os achados ou viram correção ou ficam registrados.
 - Falha achada fora do escopo vira task no Linear (skill `linear-claudia`), não fica só na memória.
 
+## Execução por agentes
+
+Quem faz cada etapa. O modelo escolhido depende da complexidade da tarefa, não do hábito.
+
+| Etapa | Modelo | Observação |
+|---|---|---|
+| **Levantamento de requisitos e brainstorm** | **Opus** ou **Sonnet** | Opus quando a decisão é ampla, ambígua ou mexe em segurança/arquitetura; Sonnet quando o escopo é claro. |
+| **Escrever a spec e o plano** | **Opus** ou **Sonnet** | Mesmo critério. A spec precisa da aprovação do usuário (ver acima). |
+| **Execução** | sempre por **agentes em git worktree** | **Haiku** é o recomendado para tarefa mecânica e bem delimitada; **Sonnet** quando há complexidade (lógica nova, vários arquivos, decisões de desenho). |
+| **Revisão de código** | **Opus** | Independente de quem escreveu. Obrigatória para segurança e ferramentas do agente. |
+| **Teste** | **Opus** recomendado | Para observar e depurar a rodada (ler o Activity log, cruzar com o que o agente disse ter visto). |
+
+Regras da execução:
+
+- **Sempre agente, sempre worktree isolada.** Uma preocupação por agente. Frentes paralelas só se mexem em **arquivos diferentes**; o que as une é um **contrato escrito na spec** (nomes de comandos, assinaturas), e quem integra é o orquestrador, depois de os dois terminarem.
+- **A worktree pode nascer num commit antigo.** O agente confere a base e alinha com a branch da feature antes de começar.
+- **Cada agente usa o próprio `CARGO_TARGET_DIR`** (fora do `target/` do repo, que o app em desenvolvimento pode estar usando) e confere o código de saída real.
+- **O agente não herda confiança.** O orquestrador roda de novo os testes depois de integrar e não repassa "passou" sem ter conferido. Testes escritos por Haiku precisam de prova por mutação, porque já apareceram testes que não conseguiam falhar.
+- **O agente não decide fora da spec.** Se achar algo que a spec não cobre, para e relata. Escopo, segurança e edição do prompt (`prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
+- **Limites do agente:** nada de push, nada de tocar nos dados do usuário, no app aberto ou em sites reais, salvo autorização explícita da rodada.
+- Agente que cai (limite de sessão, erro de API) não deixou nada útil por padrão: confira a worktree e relance com o mesmo escopo.
+- Remova a worktree só depois de integrar ou de descartar de propósito; nada com trabalho não commitado some sem olhar antes.
+
+### Uso do Superpowers
+
+O Superpowers é o **esqueleto** do processo (brainstorming, spec/plano, execução em worktree, revisão, verificação antes de concluir), mas **não vale cegamente 100%**. Onde as regras deste arquivo são mais estritas, elas vencem:
+
+- a spec precisa de **aprovação explícita do usuário** como passo próprio, mesmo que a skill sugira seguir adiante;
+- a fase final é o **smoke de uso real**, que não é opcional;
+- a decisão de integrar (merge, push, PR) é **sempre do usuário**, nunca automática ao fim de um ramo.
+
+Skills do Superpowers que ajudam e devem ser usadas: `brainstorming` e `writing-plans` antes de criar, `using-git-worktrees` e `subagent-driven-development` na execução, `requesting-code-review`, `systematic-debugging` para bugs e `verification-before-completion` antes de afirmar que algo funciona.
+
 ## Diagnóstico
 
 Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log` na raiz do repo **antes** de perguntar o que aconteceu. Em produção (Windows): `%APPDATA%\io.github.johngabie.claudia-rh\diagnostics\`.
