@@ -84,6 +84,26 @@ O objetivo de tudo isto é a **maturação do projeto**: cada mudança deixa o p
 | **Regressão** | a suíte inteira roda de novo depois de cada correção. Bug corrigido ganha um teste que falha antes e passa depois, e esse teste fica | sempre que um bug é corrigido |
 | **Automáticos com IA** | `/claudia-teste`: o agente roda o app de verdade (`tauri dev` com CDP), abre a tela, clica, chama os comandos e confere o banco; e rodadas de agentes de verdade contra páginas de teste, com um revisor lendo o Activity log | ao mexer em tela, comando ou ferramenta do agente, e antes de dar qualquer coisa por concluída |
 
+### Fase final de toda feature: smoke test de uso real
+
+Antes de dar uma feature por concluída, a última fase é um **smoke test automatizado de uso real**: usar o produto como o usuário usaria, pelo app de verdade, e não só pelos testes. Ele roda o `/claudia-teste` e entra na descrição do PR com evidência (o que foi aberto, o que foi chamado, o que a tela mostrou, prints).
+
+O que rodar depende da feature:
+
+| Tipo de feature | Smoke de uso real |
+|---|---|
+| **Tela ou frontend** | abrir o app (`tauri dev` com CDP), navegar até a tela, exercitar o fluxo completo (abrir, clicar, voltar, estados vazio, erro e com dados, nos dois idiomas) e tirar prints. |
+| **Comando ou backend sem efeito visível** | chamar o comando por `invoke` no app rodando e conferir o banco. |
+| **Browser, MCP ou ferramenta do agente** | abrir o app e rodar uma rodada de agente de verdade pelas ferramentas, com um revisor lendo o Activity log. |
+| **Qualquer coisa que muda a busca de vagas** | abrir o app e **executar a procura de vagas** (iniciar a sessão pelo botão da UI) e acompanhar até o fim. |
+
+Limites do smoke:
+
+- **Procura de vagas real usa sites reais e contas do usuário.** Só roda quando o usuário autorizar aquela rodada. **Nunca envia candidatura**, salvo se o usuário disser explicitamente "pode enviar".
+- Sem autorização, o smoke de agente roda contra as páginas locais de `src-tauri/tests/fixtures/`.
+- O smoke não substitui as outras rodadas: ele vem **depois** de unitários, integração e regressão estarem verdes.
+- Se o smoke achar um problema, a feature **não está concluída**: corrige, roda a regressão de novo e repete o smoke.
+
 Regras que valem para todas:
 
 - **Mutação:** teste de regra nova só vale se, ao quebrar o código de propósito, o teste **nomeado** falhar. Cole a linha `FAILED` como prova. Teste que não consegue falhar não protege nada.
