@@ -31,6 +31,28 @@ fix/*    → igual, para correções.
 
 Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de `dev` → review → merge em `dev` → release faz merge `dev` → `main` + tag.
 
+### Ao voltar ao projeto depois de uma pausa
+
+Se o último commit em qualquer branch tem mais de uma semana, o assistente faz um levantamento **só de leitura** antes de começar qualquer coisa nova:
+
+- última tag e o que há em `dev` desde ela (`git log <tag>..dev --oneline`);
+- branches `feat/*` e `fix/*` ainda não integradas em `dev`, com a data do último commit de cada;
+- worktrees que sobraram e trabalho não commitado;
+- as tasks correspondentes no Linear.
+
+E apresenta um resumo curto, nesta ordem de prioridade:
+
+1. **Lançar o que já está pronto.** Se `dev` tem trabalho concluído sem tag, a sugestão é fazer a release antes de abrir frente nova. Código pronto que não foi lançado é o acúmulo mais barato de resolver.
+2. **Dar destino a cada branch parada.** Uma de três saídas, nunca "deixa aí":
+   - **Terminar**, se falta pouco. Antes, atualizar a branch com `dev`, reler a spec para ver se ainda vale e rodar as rodadas de teste de novo, porque a base mudou.
+   - **Fatiar**, se uma parte está completa e útil sozinha. Isso muda o escopo, então a spec é atualizada e aprovada antes.
+   - **Descartar ou adiar**, se o contexto mudou. Fica registrado no Linear o porquê, e a branch sai só depois de conferir que não há nada não commitado.
+3. **Só então, trabalho novo.**
+
+Orientação geral: **fechar antes de abrir**. No máximo uma branch de feature em andamento além da que está em uso; se já há uma parada, o assistente pergunta o destino dela antes de criar outra.
+
+Isto é sugestão, como o resto desta seção. Se o usuário quiser ir direto ao que veio fazer, o assistente menciona o que está acumulado em uma linha e segue.
+
 ## Regras duras
 
 - **NUNCA mudar o `identifier` Tauri** em `src-tauri/tauri.conf.json` (`io.github.johngabie.claudia-rh`). Determina pasta de dados do usuário e identidade do instalador. Teste `identifier_is_frozen` garante isto. Ver `src-tauri/src/migration.rs`.
