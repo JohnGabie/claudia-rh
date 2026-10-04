@@ -57,7 +57,7 @@ Isto é sugestão, como o resto desta seção. Se o usuário quiser ir direto ao
 
 - **NUNCA mudar o `identifier` Tauri** em `src-tauri/tauri.conf.json` (`io.github.johngabie.claudia-rh`). Determina pasta de dados do usuário e identidade do instalador. Teste `identifier_is_frozen` garante isto. Ver `src-tauri/src/migration.rs`.
 - **Nenhum passo de instalação novo para o usuário.** O que o app não conseguir empacotar, baixar ou configurar sozinho, não entra. Isso vale para extensões de browser, runtimes (Node, Python), binários externos e servidores que precisam ser instalados à parte.
-- **Neste projeto seguimos estritamente spec driven development.** Sem spec aprovada pelo usuário, não se escreve código. Ver "Spec driven e rodadas de teste" abaixo.
+- **Spec driven development, estritamente.** Sem spec aprovada pelo usuário, não se escreve código. Ver "Processo de desenvolvimento" abaixo.
 - Se uma decisão não está na arquitectura nem no design, pare e pergunte.
 
 ### Por que a regra dos passos existe
@@ -70,113 +70,105 @@ Na prática, isso descarta de saída: extensões de browser de terceiros (mesmo 
 
 Exceção única: algo que venha **dentro do instalador do Claudia RH**, com a nossa cara e a nossa responsabilidade. Aí não é um passo novo, é parte do produto.
 
-## Superpowers
+## Processo de desenvolvimento
 
-Specs: `docs/superpowers/specs/`
-Planos: `docs/superpowers/plans/`
+Objetivo: **maturar o projeto**. Cada mudança deixa o produto mais previsível, mais testado e mais fácil de confiar. As regras abaixo valem para qualquer mudança, em qualquer sessão, independente do assunto.
 
-Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → **teste no app rodando (`claudia-teste-e2e`)** → review → merge em `dev`.
+Onde ficam os artefatos: specs em `docs/superpowers/specs/` (`AAAA-MM-DD-<tema>-design.md`), planos em `docs/superpowers/plans/`. Tasks, bugs e o que entra em cada versão vivem no Linear (time `CLA`), não em listas neste ficheiro; para registrar e fechar, use a skill `linear-claudia`.
 
-O passo de teste é obrigatório:
+### 1. Spec primeiro (spec driven development, sem exceção de conveniência)
 
-- Roda o app de verdade (`tauri dev` com CDP) e exercita o que mudou. `cargo test` e `tsc` não bastam.
-- O resultado entra no ledger ou na descrição do PR, com evidência: o que foi aberto, o que foi chamado, o que a tela mostrou.
-- Mudança só de backend, sem efeito visível: chama o comando por `invoke` e confere o banco.
-- Bug corrigido só fecha depois de reproduzido antes e confirmado depois.
+**Quando exige spec:** qualquer feature, mudança de comportamento, mudança de ferramenta do agente, mudança de dados ou de segurança, e qualquer correção de bug que envolva decisão de desenho. **Não exige:** erro de digitação, comentário, formatação, doc sem mudança de regra, e correção cuja causa é óbvia e local (essa ainda exige o teste de regressão da seção 3).
 
-Tasks, bugs e o que entra em cada versão vivem no Linear (time `CLA`), não em listas neste ficheiro. Como registar e quando pode fechar: skill `linear-claudia`.
+**O que a spec contém**, nesta ordem:
+1. **Pedido do usuário**, nas palavras dele, sem reinterpretar.
+2. **Leitura do pedido**: o que cada item significa, sem acrescentar nada.
+3. **Propostas do assistente**, separadas e marcadas como **não decididas**, cada uma com recomendação. O que o usuário não pediu só entra se ele aceitar.
+4. Impacto (dados, telas, ferramentas, segurança), critérios de teste, fora do escopo e pontos em aberto. O que não foi verificado vai escrito como **não verificado**.
 
-## Spec driven e rodadas de teste
+**Aprovação:** só vale uma mensagem do usuário que aprova a spec **depois** de ela estar escrita. Não é aprovação: o pedido original, silêncio, uma lista de requisitos colada, ou a recomendação do próprio assistente. **Escrever a spec e já iniciar a implementação é violação desta regra.** Ao terminar a spec, o assistente para, resume o que decidiu por conta própria e pergunta o que muda.
 
-O objetivo de tudo isto é a **maturação do projeto**: cada mudança deixa o produto mais previsível, mais testado e mais fácil de confiar.
+**Depois da aprovação:** plano → implementação → testes → review → smoke. Se a implementação descobrir que a spec está errada ou incompleta, **para, atualiza a spec com a data e pede nova aprovação do trecho alterado**, em vez de seguir por conta própria. A spec é a fonte da verdade do que foi pedido: código e testes respondem a ela.
 
-### Spec primeiro, sempre
+### 2. Quem faz cada etapa
 
-1. **Toda mudança começa numa spec** em `docs/superpowers/specs/` (data no nome). A spec contém o que o usuário pediu, separado do que o assistente propõe.
-2. **O usuário aprova a spec antes de qualquer código.** Escrever a spec e já lançar a implementação não vale: a aprovação é um passo próprio. O que o usuário não pediu fica marcado como proposta e só entra se ele aceitar.
-3. Depois da aprovação: plano em `docs/superpowers/plans/` → implementação → testes → review. Se a implementação descobrir que a spec está errada ou incompleta, **para e atualiza a spec** em vez de seguir por conta própria.
-4. A spec é a fonte da verdade do que foi pedido: o código e os testes respondem a ela, não o contrário. Decisões novas entram na spec com data.
+O modelo depende da complexidade da tarefa, não do hábito.
 
-### Rodadas de teste (todas, a cada mudança relevante)
+| Etapa | Modelo | Critério |
+|---|---|---|
+| Levantamento de requisitos e brainstorm | **Opus** ou **Sonnet** | Opus se a decisão é ampla, ambígua, ou toca segurança, dados ou arquitetura; Sonnet se o escopo é claro. |
+| Spec e plano | **Opus** ou **Sonnet** | Mesmo critério. A spec exige aprovação do usuário (seção 1). |
+| Execução | **agentes em git worktree**, sempre | **Haiku** para tarefa mecânica e bem delimitada (uma regra, poucos arquivos); **Sonnet** quando há lógica nova, vários arquivos ou decisão de desenho. |
+| Revisão de código | **Opus** | Independente de quem escreveu. Obrigatória para segurança, dados e ferramentas do agente. |
+| Teste | **Opus** (recomendado) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
+
+**Regras de execução por agentes:**
+- **Uma preocupação por agente, uma worktree isolada por agente.** Frentes em paralelo só mexem em **arquivos diferentes**; o que as une é um **contrato escrito na spec** (nomes de comandos, assinaturas, formatos). Quem integra é o orquestrador, depois que todas terminarem.
+- **A base da worktree pode estar desatualizada.** Antes de começar, o agente confere o commit de base e o alinha com a branch da feature.
+- **Cada agente usa o próprio `CARGO_TARGET_DIR`**, fora do `target/` do repositório (o app em desenvolvimento pode estar usando esse).
+- **O orquestrador não repassa "passou" sem ter rodado.** Depois de integrar, roda de novo as rodadas da seção 3 e confere o código de saída.
+- **O agente não decide fora da spec.** O que a spec não cobre, ele relata e para. Escopo, segurança e edição do prompt de runtime (`src-tauri/src/prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
+- **Limites do agente:** sem push, sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
+- **Agente que falha** (limite de sessão, erro de API) deve ser tratado como se não tivesse entregado nada: confira a worktree e relance com o mesmo escopo.
+- **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado.
+
+### 3. Rodadas de teste
+
+"Mudança relevante" = qualquer alteração em código de produção. Docs e comentários não precisam das rodadas.
 
 | Rodada | O que é | Quando |
 |---|---|---|
-| **Unitários** | `cargo test --lib`, `npx tsc --noEmit` | sempre, antes de cada commit |
-| **Integração** | os testes live com Chrome real (`src-tauri/tests/browser_live.rs` e afins, `#[ignore]`, com `CLAUDIA_TEST_CHROME`), smoke MCP (`tests/mcp-browser-smoke.mjs`) e validação do Activity log | ao mexer em browser, MCP, banco ou comandos |
-| **Regressão** | a suíte inteira roda de novo depois de cada correção. Bug corrigido ganha um teste que falha antes e passa depois, e esse teste fica | sempre que um bug é corrigido |
-| **Automáticos com IA** | `/claudia-teste`: o agente roda o app de verdade (`tauri dev` com CDP), abre a tela, clica, chama os comandos e confere o banco; e rodadas de agentes de verdade contra páginas de teste, com um revisor lendo o Activity log | ao mexer em tela, comando ou ferramenta do agente, e antes de dar qualquer coisa por concluída |
+| **Unitários** | `cargo test --lib` e `npx tsc --noEmit` | antes de todo commit relevante |
+| **Integração** | testes `#[ignore]` com Chrome real (`src-tauri/tests/*_live.rs`, com `CLAUDIA_TEST_CHROME` apontando para o Chrome de teste), smoke do MCP (`tests/mcp-browser-smoke.mjs`) e validação do Activity log | ao mexer em browser, MCP, banco ou comandos |
+| **Regressão** | a suíte inteira roda de novo depois de cada correção ou integração. Todo bug corrigido ganha um teste que **falha antes e passa depois**, e esse teste permanece | sempre |
+| **Automáticos com IA** | `/claudia-teste-e2e`: um agente roda o app de verdade (`tauri dev` com CDP), abre a tela, clica, chama comandos e confere o banco; e rodadas de agente contra páginas de teste, com um revisor lendo o Activity log | ao mexer em tela, comando ou ferramenta do agente |
 
-### Fase final de toda feature: smoke test de uso real
+**Regras comuns a todas as rodadas:**
+- **Mutação:** todo teste de regra nova precisa de prova de que protege: quebre o código de propósito, confirme que o teste **nomeado** falha, cole a linha `FAILED` e restaure. Vale para qualquer autor, humano ou agente.
+- **Código de saída real:** confira o `exit code` do comando. Nunca filtre a saída com `grep` ou `tail` de um jeito que esconda falha.
+- **Evidência, não afirmação:** diga o que foi executado e o que foi visto, com comandos, números e caminhos de prints. O que não foi verificado é escrito como "não verificado".
+- **Páginas locais por padrão:** testes automáticos usam `src-tauri/tests/fixtures/`, Chrome de teste e pastas temporárias. Site real, login real e envio real só com pedido explícito do usuário para aquela rodada.
+- **Dados do usuário são intocáveis:** testes não escrevem no banco real, no perfil do browser do app nem em `%LOCALAPPDATA%\io.github.johngabie.claudia-rh`. Antes de qualquer operação destrutiva, faça backup.
+- **Falha fora do escopo** vira task no Linear, não fica só na conversa.
 
-Antes de dar uma feature por concluída, a última fase é um **smoke test automatizado de uso real**: usar o produto como o usuário usaria, pelo app de verdade, e não só pelos testes. Ele roda o `/claudia-teste` e entra na descrição do PR com evidência (o que foi aberto, o que foi chamado, o que a tela mostrou, prints).
+### 4. Fase final de toda feature: smoke test de uso real
 
-O que rodar depende da feature:
+Antes de dar a feature por concluída, rode um **smoke automatizado de uso real**: use o produto como o usuário usaria, pelo app de verdade (`/claudia-teste-e2e`). Ele vem **depois** de unitários, integração e regressão estarem verdes e entra na descrição do PR com evidência (o que foi aberto, o que foi chamado, o que a tela mostrou, prints).
 
-| Tipo de feature | Smoke de uso real |
+| Tipo de feature | Smoke |
 |---|---|
-| **Tela ou frontend** | abrir o app (`tauri dev` com CDP), navegar até a tela, exercitar o fluxo completo (abrir, clicar, voltar, estados vazio, erro e com dados, nos dois idiomas) e tirar prints. |
-| **Comando ou backend sem efeito visível** | chamar o comando por `invoke` no app rodando e conferir o banco. |
-| **Browser, MCP ou ferramenta do agente** | abrir o app e rodar uma rodada de agente de verdade pelas ferramentas, com um revisor lendo o Activity log. |
-| **Qualquer coisa que muda a busca de vagas** | abrir o app e **executar a procura de vagas** (iniciar a sessão pelo botão da UI) e acompanhar até o fim. |
+| Tela ou frontend | abrir o app, navegar até a tela, exercitar o fluxo completo (abrir, clicar, voltar; estados vazio, erro e com dados; nos dois idiomas) e tirar prints |
+| Comando ou backend sem efeito visível | chamar o comando por `invoke` no app rodando e conferir o banco |
+| Browser, MCP ou ferramenta do agente | abrir o app e rodar uma rodada de agente pelas ferramentas, com um revisor lendo o Activity log |
+| Qualquer mudança que afete a procura de vagas | abrir o app, iniciar a procura pelo botão da UI e acompanhar até o fim |
 
-Limites do smoke:
+- A procura de vagas real usa sites reais e as contas do usuário: só roda com autorização do usuário para aquela rodada. **Nunca envia candidatura**, salvo se o usuário disser explicitamente "pode enviar". Sem autorização, o smoke do agente roda contra as páginas locais.
+- Se o smoke achar problema, a feature **não está concluída**: corrija, rode a regressão e repita o smoke.
 
-- **Procura de vagas real usa sites reais e contas do usuário.** Só roda quando o usuário autorizar aquela rodada. **Nunca envia candidatura**, salvo se o usuário disser explicitamente "pode enviar".
-- Sem autorização, o smoke de agente roda contra as páginas locais de `src-tauri/tests/fixtures/`.
-- O smoke não substitui as outras rodadas: ele vem **depois** de unitários, integração e regressão estarem verdes.
-- Se o smoke achar um problema, a feature **não está concluída**: corrige, roda a regressão de novo e repete o smoke.
+### 5. Quem testa: observar o app e o browser do app
 
-Regras que valem para todas:
+Toda rodada de teste feita por agente usa as skills do `/claudia-teste-e2e` e observa **o que realmente aconteceu**, não só o que foi relatado. Três fontes, sempre:
+- **O app:** a tela (print e árvore), o banco, o log de diagnóstico (`debug-logs/`) e o que a UI mostra depois de cada ação. Compare a UI com o banco.
+- **O browser do app** (o Chrome gerido pelo próprio app): a janela e a aba reais, por CDP e por print. Observe a página carregada, o tamanho da janela, o estado do login, o que o agente leu e o que ficou na tela. Não confie só no que a ferramenta devolveu.
+- **O Activity log:** cada chamada de ferramenta tem linha, prints, duração e resultado. Divergência entre o relato, o log e a tela é um **achado**, não ruído.
 
-- **Mutação:** teste de regra nova só vale se, ao quebrar o código de propósito, o teste **nomeado** falhar. Cole a linha `FAILED` como prova. Teste que não consegue falhar não protege nada.
-- **Exit code real:** confira o código de saída do comando, sem `grep`/`tail` escondendo falha.
-- **Evidência, não afirmação:** diga o que foi executado e o que foi visto. O que não foi verificado vai escrito como "não verificado".
-- **Nunca em site real sem pedido:** os testes automáticos usam páginas locais (`src-tauri/tests/fixtures/`), Chrome de teste e pastas temporárias. Login, candidatura e envio reais só quando o usuário pedir.
-- **Dados do usuário são intocáveis:** testes não escrevem no banco real, no perfil do browser do app nem em `%LOCALAPPDATA%\io.github.johngabie.claudia-rh`. Antes de qualquer coisa destrutiva, backup.
-- **Review por outro modelo:** mudanças de segurança ou de ferramenta do agente passam por uma revisão independente (Opus) antes do merge, e os achados ou viram correção ou ficam registrados.
-- Falha achada fora do escopo vira task no Linear (skill `linear-claudia`), não fica só na memória.
+Observar é **só leitura**: não clique em envio, não escreva no banco real, não mexa no perfil do browser e não feche o app nem o browser do usuário sem pedir. Para ver o browser sem interferir, abra uma janela de teste própria em vez de usar a aba do agente.
 
-## Execução por agentes
+### 6. Definição de pronto
 
-Quem faz cada etapa. O modelo escolhido depende da complexidade da tarefa, não do hábito.
+Uma mudança só está pronta quando **todos** os itens são verdadeiros, com evidência:
+1. Existe spec aprovada e o código a cumpre (ou a spec foi atualizada e reaprovada).
+2. Unitários, integração e regressão verdes, com código de saída conferido.
+3. Cada regra nova tem teste com prova de mutação.
+4. Smoke de uso real feito e anexado, ou "não verificado" declarado com o motivo.
+5. Revisão de código por Opus feita, com os achados corrigidos ou registrados.
+6. Nada em "não verificado" que contradiga o que foi afirmado.
 
-| Etapa | Modelo | Observação |
-|---|---|---|
-| **Levantamento de requisitos e brainstorm** | **Opus** ou **Sonnet** | Opus quando a decisão é ampla, ambígua ou mexe em segurança/arquitetura; Sonnet quando o escopo é claro. |
-| **Escrever a spec e o plano** | **Opus** ou **Sonnet** | Mesmo critério. A spec precisa da aprovação do usuário (ver acima). |
-| **Execução** | sempre por **agentes em git worktree** | **Haiku** é o recomendado para tarefa mecânica e bem delimitada; **Sonnet** quando há complexidade (lógica nova, vários arquivos, decisões de desenho). |
-| **Revisão de código** | **Opus** | Independente de quem escreveu. Obrigatória para segurança e ferramentas do agente. |
-| **Teste** | **Opus** recomendado | Usa as skills do `/claudia-teste` e **observa sempre o app e o browser do app** (ver abaixo). Lê o Activity log e cruza com o que o agente disse ter visto. |
+**Integrar (merge, push, PR, release) é sempre decisão do usuário**, nunca automática ao fim de um ramo.
 
-Regras da execução:
+### 7. Superpowers
 
-- **Sempre agente, sempre worktree isolada.** Uma preocupação por agente. Frentes paralelas só se mexem em **arquivos diferentes**; o que as une é um **contrato escrito na spec** (nomes de comandos, assinaturas), e quem integra é o orquestrador, depois de os dois terminarem.
-- **A worktree pode nascer num commit antigo.** O agente confere a base e alinha com a branch da feature antes de começar.
-- **Cada agente usa o próprio `CARGO_TARGET_DIR`** (fora do `target/` do repo, que o app em desenvolvimento pode estar usando) e confere o código de saída real.
-- **O agente não herda confiança.** O orquestrador roda de novo os testes depois de integrar e não repassa "passou" sem ter conferido. Testes escritos por Haiku precisam de prova por mutação, porque já apareceram testes que não conseguiam falhar.
-- **O agente não decide fora da spec.** Se achar algo que a spec não cobre, para e relata. Escopo, segurança e edição do prompt (`prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
-- **Limites do agente:** nada de push, nada de tocar nos dados do usuário, no app aberto ou em sites reais, salvo autorização explícita da rodada.
-- Agente que cai (limite de sessão, erro de API) não deixou nada útil por padrão: confira a worktree e relance com o mesmo escopo.
-- Remova a worktree só depois de integrar ou de descartar de propósito; nada com trabalho não commitado some sem olhar antes.
-
-### Quem testa: observar o app e o browser do app
-
-Toda rodada de teste feita por agente usa as skills do `/claudia-teste` e **observa o que realmente aconteceu**, não só o que o agente relatou:
-
-- **O app:** a tela (print e árvore), o estado do banco, o log de diagnóstico (`debug-logs/`) e o que a UI mostra depois de cada ação. Compare a UI com o banco.
-- **O browser do app (Claudia browser):** a janela e a aba reais, observadas por CDP e por print: a página carregada, o tamanho da janela, o estado do login, o que o agente leu e o que ficou na tela. Nunca confie só no resultado devolvido pela ferramenta.
-- **O Activity log** como terceira fonte: cada chamada tem linha, prints antes e depois, duração e resultado. Divergência entre o relato do agente, o log e a tela é um achado, não ruído.
-- **Observar é só leitura:** não clicar em envio, não escrever no banco real, não mexer no perfil do browser nem fechar o app ou o browser do usuário sem pedir. Para ver o browser sem interferir, abra uma janela de teste própria em vez de usar a aba do agente.
-
-### Uso do Superpowers
-
-O Superpowers é o **esqueleto** do processo (brainstorming, spec/plano, execução em worktree, revisão, verificação antes de concluir), mas **não vale cegamente 100%**. Onde as regras deste arquivo são mais estritas, elas vencem:
-
-- a spec precisa de **aprovação explícita do usuário** como passo próprio, mesmo que a skill sugira seguir adiante;
-- a fase final é o **smoke de uso real**, que não é opcional;
-- a decisão de integrar (merge, push, PR) é **sempre do usuário**, nunca automática ao fim de um ramo.
-
-Skills do Superpowers que ajudam e devem ser usadas: `brainstorming` e `writing-plans` antes de criar, `using-git-worktrees` e `subagent-driven-development` na execução, `requesting-code-review`, `systematic-debugging` para bugs e `verification-before-completion` antes de afirmar que algo funciona.
+O Superpowers é o esqueleto do processo, **mas as regras deste arquivo vencem** onde forem mais estritas: aprovação explícita da spec como passo próprio, smoke de uso real obrigatório e integração decidida pelo usuário. Skills a usar: `brainstorming` e `writing-plans` antes de criar; `using-git-worktrees` e `subagent-driven-development` na execução; `requesting-code-review` na revisão; `systematic-debugging` em bugs; `verification-before-completion` antes de afirmar que algo funciona.
 
 ## Diagnóstico
 
