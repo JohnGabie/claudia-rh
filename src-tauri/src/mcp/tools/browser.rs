@@ -88,6 +88,13 @@ fn crop_loop_key(x: f64, y: f64, w: f64, h: f64) -> String {
     format!("{x:.0},{y:.0},{w:.0},{h:.0}")
 }
 
+/// A scroll's loop key includes where it left the page (position and height): scrolling that keeps
+/// moving the page, or makes a list load more, is exploring. Only a scroll that leaves the page exactly
+/// where it was (the end of the page, a container whose element did not move) adds up to the hint.
+fn scroll_loop_key(direction: &str, reference: Option<&str>, pos: &ScrollPos, element_top: Option<f64>) -> String {
+    format!("{direction}|{}|{:.0}|{:.0}|{:.0}", reference.unwrap_or(""), pos.y, pos.content_h, element_top.unwrap_or(0.0))
+}
+
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -934,7 +941,7 @@ impl BrowserTools {
                     )
                 }
             };
-            Ok(Outcome { message, target: Some(direction.to_string()), loop_key: Some(format!("{direction}|{}", reference.unwrap_or(""))), ..Default::default() })
+            Ok(Outcome { message, target: Some(direction.to_string()), loop_key: Some(scroll_loop_key(direction, reference, &pos, top)), ..Default::default() })
         }
         .await;
         self.finish("browser_scroll", started, r, Some(&c)).await
@@ -1588,6 +1595,21 @@ mod tests {
         let same = crop_loop_key(0.0, 100.0, 300.0, 200.0);
         let hints = (0..4).filter(|_| g.observe("browser_crop", &same, "s").is_some()).count();
         assert_eq!(hints, 1, "the same rectangle four times is a repeat");
+    }
+
+    #[test]
+    fn scrolls_that_move_the_page_are_not_a_loop_and_scrolls_stuck_in_place_are() {
+        let at = |y: f64, content_h: f64| ScrollPos { y, client_w: 1200.0, client_h: 800.0, content_h };
+        let mut g = LoopGuard::default();
+        for (y, h) in [(420.0, 1640.0), (1060.0, 1640.0), (1640.0, 2860.0), (2280.0, 2860.0), (2860.0, 4080.0)] {
+            assert_eq!(g.observe("browser_scroll", &scroll_loop_key("down", None, &at(y, h), None), "s"), None, "y={y}");
+        }
+        let mut g = LoopGuard::default();
+        let stuck = scroll_loop_key("down", None, &at(3280.0, 4080.0), None);
+        for _ in 0..3 {
+            assert_eq!(g.observe("browser_scroll", &stuck, "s"), None);
+        }
+        assert!(g.observe("browser_scroll", &stuck, "s").is_some(), "four scrolls that did not move the page");
     }
 
     #[tokio::test]

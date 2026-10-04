@@ -1179,6 +1179,28 @@ async fn scroll_loads_more_of_an_infinite_list_and_reports_where_the_page_is() {
 
 #[tokio::test]
 #[ignore]
+async fn scrolling_down_a_list_that_keeps_moving_is_not_called_a_loop_but_scrolling_at_the_end_is() {
+    // Haiku round: four scrolls down an infinite list, each one moving the page and loading more, got
+    // "Dica: você repetiu browser_scroll 4 vezes sem a página mudar". The page did change.
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("infinite-list.html")).await.unwrap();
+    for i in 1..=5 {
+        let r = t.scroll("down", None, None).await.unwrap();
+        assert!(!r.contains("Dica:"), "scroll {i} moved the page, it is not a loop: {r}");
+        tokio::time::sleep(Duration::from_millis(400)).await; // the page loads 20 more near the end
+    }
+    // A page that cannot move any more: the same scroll over and over IS a loop.
+    t.open(&fixture_file("empty.html")).await.unwrap();
+    let mut last = String::new();
+    for _ in 0..4 {
+        last = t.scroll("down", None, None).await.unwrap();
+    }
+    assert!(last.contains("repetiu browser_scroll 4 vezes"), "{last}");
+}
+
+#[tokio::test]
+#[ignore]
 async fn scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is_at_the_limit() {
     let l = launch().await;
     let t = tools(&l, Ctx::candidatando(7));
