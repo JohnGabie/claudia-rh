@@ -121,6 +121,16 @@ struct BrowserTextArgs {
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserUploadArgs {
+    /// Ref de browser_read do campo de arquivo ou do botão que abre o seletor de arquivo
+    reference: String,
+    /// "curriculo" (padrão) ou "carta"
+    tipo: Option<String>,
+    /// Opcional: id de um documento da biblioteca. Sem ele, a Claudia escolhe (preferido da variante da vaga, depois o preferido geral, depois o gerado da variante). Nunca um caminho de arquivo.
+    documento: Option<i64>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 struct BrowserScrollArgs {
     /// down, up, top ou bottom
     direction: String,
@@ -381,6 +391,13 @@ impl ClaudiaMcp {
     }
 
     #[tool(
+        description = "Anexa o currículo (ou a carta) da biblioteca da Claudia ao campo de arquivo indicado pela ref de browser_read, ou ao botão que abre o seletor de arquivo. A Claudia escolhe o arquivo; você nunca passa um caminho. Só funciona com a vaga ativa em 'candidatando'. Nunca envia a candidatura."
+    )]
+    async fn browser_upload(&self, Parameters(a): Parameters<BrowserUploadArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.browser_reply("browser_upload", self.browser.upload(&a.reference, a.tipo.as_deref(), a.documento).await)
+    }
+
+    #[tool(
         description = "Clica no elemento pela ref de browser_read. Botões que enviam a candidatura são RECUSADOS a menos que confirm_submit traga o ID da vaga ativa (em 'candidatando'), dentro do orçamento diário e uma só vez por vaga."
     )]
     async fn browser_click(&self, Parameters(a): Parameters<BrowserClickArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -459,7 +476,8 @@ pub fn run(cfg: McpConfig) -> Result<(), String> {
             Some(local) => Arc::new(crate::activity_log::sink::LogSink::new(cfg.data_dir.clone(), local.clone())),
             None => Arc::new(NoSink),
         };
-        let browser = Arc::new(BrowserTools::new(state_file, guard, sink));
+        let docs = Arc::new(crate::documentos::fonte::DbDocumentSource { data_dir: cfg.data_dir.clone() });
+        let browser = Arc::new(BrowserTools::new(state_file, guard, sink).with_documents(docs));
         let service = ClaudiaMcp { cfg: Arc::new(cfg), browser }
             .serve(rmcp::transport::stdio())
             .await

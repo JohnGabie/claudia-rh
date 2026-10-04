@@ -533,6 +533,16 @@ export const en = {
     greetingNoProfile:
       "Hello! You don't have a profile built yet. How would you prefer to start?",
     resumesTitle: "Resumes",
+    attach: {
+      title: "To attach",
+      desc: "The resume the AI attaches to applications. Import yours (PDF or DOCX) and mark one as preferred.",
+      importMine: "Add mine",
+      makePreferred: "Use as preferred",
+      preferred: "Preferred",
+      empty: "No resume to attach yet. Add yours.",
+      imported: "imported",
+      generated: "generated",
+    },
     resumeLanguage: "Language",
     accentColor: "Accent color",
     customColor: "Custom color",

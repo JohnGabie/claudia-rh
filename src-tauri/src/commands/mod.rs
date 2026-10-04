@@ -5,6 +5,7 @@ pub mod updater;
 pub mod startup;
 pub mod credenciais;
 pub mod curriculos;
+pub mod documentos;
 pub mod estado;
 pub mod feedback;
 pub mod linkedin;

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useT } from "../../i18n";
 import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { CurriculoInfo, DocLang, PALETTE } from "./types";
+import { ParaAnexar } from "./ParaAnexar";
 
 export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const t = useT();
@@ -92,6 +93,8 @@ export const CurriculosView: React.FC<{ onBack: () => void }> = ({ onBack }) => 
           {erro}
         </div>
       )}
+
+      <ParaAnexar />
 
       {/* Language + Color row */}
       <div style={{

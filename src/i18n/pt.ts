@@ -536,6 +536,16 @@ export const pt: Strings = {
     greetingNoProfile:
       "Olá! Ainda não tens perfil construído. Como preferes começar?",
     resumesTitle: "Currículos",
+    attach: {
+      title: "Para anexar",
+      desc: "O currículo que a IA anexa nas candidaturas. Importe o seu (PDF ou DOCX) e marque um como preferido.",
+      importMine: "Adicionar o meu",
+      makePreferred: "Usar como preferido",
+      preferred: "Preferido",
+      empty: "Nenhum currículo para anexar ainda. Adicione o seu.",
+      imported: "importado",
+      generated: "gerado",
+    },
     resumeLanguage: "Idioma",
     accentColor: "Cor do acento",
     customColor: "Cor personalizada",
