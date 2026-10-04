@@ -1,157 +1,123 @@
-# Spec: biblioteca de documentos (currículos e cover letters) e anexo pelo agente
+# Spec: aba Currículos (currículos e cover letters), MCP de variantes e documentos, e anexo pelo agente
 
-> Spec de design. Não é o plano de implementação. Complementa `2026-10-02-browser-cdp-motor-design.md` e `2026-10-03-mcp-leitura-robusta-design.md`. Versão 2 (2026-10-04), com as decisões do usuário.
+> Spec de design. Não é plano de implementação. **Rascunho para aprovação do usuário: nenhum código é escrito até ele aprovar.** Versão 3 (2026-10-04): contém o que o usuário pediu, e separa na seção 4 o que foi proposta do assistente e ainda não foi decidida.
 
 **Branch:** `feat/browser-cdp-mcp` (continuação)
 
-## 1. Problema (verificado no código em 2026-10-04)
+## 1. Por que (verificado no código em 2026-10-04)
 
-1. **O agente não tem como anexar arquivo.** Nenhuma das 9 tools `browser_*` envia arquivo; não há `setFileInputFiles` nem tratamento de seletor de arquivo. Todo formulário com "Anexar currículo" trava.
-2. **O currículo gerado é HTML**, em `<dados>/curriculos/cv_<template>_<data>.html` (`commands/curriculos.rs`); sites pedem PDF ou DOCX.
-3. **Não há como importar um currículo próprio nem escolher qual vale para qual vaga.** `search_variants.yaml` tem `cv_gerado_path` por variante, sem uso.
-4. **Currículos e cover letters vivem escondidos dentro do Perfil**, em listas, sem pré-visualização.
-5. **O MCP não tem nada de documentos nem de escrita de variantes** (só `get_search_variants`/`get_candidate_profile` de leitura e `update_profile`).
-6. **Segurança:** se uma tool recebesse um caminho, texto malicioso numa página poderia induzir o agente a subir qualquer arquivo do usuário. `apagar_curriculo(path)` e `apagar_cover_letter(path)` apagam **qualquer** caminho recebido.
+- O agente **não consegue anexar o currículo** em formulários: nenhuma das 9 tools `browser_*` envia arquivo.
+- O currículo que a Claudia gera hoje é **HTML**, guardado em `<dados>/curriculos/` (`commands/curriculos.rs`). As cover letters ficam em `commands/cover_letter.rs`. Os dois vivem como listas dentro da aba Perfil.
+- Não existe no MCP nada de currículos, cover letters nem de escrita de variantes. Só existem `get_candidate_profile`, `get_search_variants` (leitura) e `update_profile`.
+- Não há como o usuário trazer o seu próprio currículo nem escolher qual usar.
 
-## 2. Decisões do usuário (2026-10-04)
+## 2. O que o usuário pediu (2026-10-04, literal agrupado)
 
-- Currículos e cover letters passam a ser **uma aba própria na sidebar**, com duas sub-abas: **Currículos** e **Cover letters**.
-- Cada sub-aba é uma **grade**; ao clicar num item abre-se **uma página nova** com a visualização e um botão **Voltar**.
-- A visualização é **HTML com borda imitando folha A4** (leve), não PDF.
-- **Currículos personalizados:** o usuário pode adicionar o seu (importar).
-- **Preferencial:** o usuário marca um documento como preferido; pode depender da **variante**.
-- **Tags:** variante, tipo de template (ATS etc.), cor usada (mais idioma e livres).
-- **MCP** novo para variantes, cover letters e documentos, e `browser_upload` para anexar.
+### 2.1 Navegação e telas
+1. **Currículos vira uma aba na sidebar.** Dentro dela ficam duas abas: **Currículos** e **Cover letters**.
+2. **Visualização em grade**, tanto para currículos quanto para cover letters.
+3. **Ao clicar num item, abre uma página nova** onde o documento é visualizado, **com um botão de voltar**.
+4. **A visualização não precisa ser PDF: pode ser HTML**, só com **bordas imitando uma página A4** (é mais leve).
 
-## 3. Modelo de dados (migration, não `CREATE TABLE` solto)
+### 2.2 Documentos
+5. **Adicionar currículos personalizados** (o usuário traz o seu).
+6. **Marca de preferencial:** o usuário marca um documento como preferido, e isso **pode depender da variante**.
+7. **Tags:** variantes, tipo (por exemplo ATS) e cor usada.
 
-Tabela `documentos`:
+### 2.3 MCP
+8. **MCP das variantes de perfil.**
+9. **MCP da cover letter.**
 
-| Campo | Significado |
-|---|---|
-| `id` | inteiro estável; é o que o agente cita |
-| `tipo` | `curriculo` ou `carta` |
-| `nome` | rótulo editável |
-| `origem` | `gerado` (pela Claudia) ou `importado` (do usuário) |
-| `arquivo` | caminho do PDF/DOCX anexável, **sempre dentro de** `<dados>/documentos/` |
-| `arquivo_html` | HTML de pré-visualização (só `gerado`; vazio no importado) |
-| `formato` | `pdf` ou `docx` |
-| `idioma` | `pt`, `en` ou vazio |
-| `tags` | JSON `[{"tipo":"variante"\|"template"\|"cor"\|"idioma"\|"livre","valor":"..."}]` |
-| `sha256`, `tamanho` | integridade, conferidos antes de cada anexo |
-| `vaga_id` | opcional: carta ou currículo feito para uma vaga |
-| `criado_em` | |
+(O pedido listou "mcp das variantes" duas vezes; está tratado como um só.)
 
-Tabela `preferidos` (`tipo`, `variante_id` NULL = global, `documento_id`), chave única `(tipo, variante_id)`. Um preferido por variante e um global, por tipo.
+## 3. O que cada pedido significa (leitura direta, sem acrescentar)
 
-Migração dos arquivos antigos: os `curriculos/*.html` e as cartas existentes viram documentos `gerado` (o PDF é gerado na migração, ou na primeira abertura se o Chrome não estiver pronto). Nada é apagado.
+### 3.1 Aba Currículos
+- Novo item na sidebar, com a view própria. Sub-abas **Currículos** e **Cover letters**.
+- Cada sub-aba é uma **grade de cartões**. Cada cartão mostra o documento em miniatura, o nome, as tags e a marca de preferido.
+- Clicar num cartão abre a **página do documento**: a folha A4 (HTML com moldura de página, somente leitura), os dados do documento, as tags e a ação de marcar preferido. Botão **Voltar** no topo.
+- Os atalhos e as telas de currículos e cover letters que hoje estão dentro do Perfil saem de lá e passam a ser esta aba.
 
-## 4. Regra de escolha (em código, não no prompt)
+### 3.2 Currículos personalizados
+- Botão para o usuário **adicionar o seu currículo**, que passa a ser um item da grade como os gerados, com origem "importado".
 
-Para uma vaga e um `tipo`, nesta ordem:
-1. o **preferido da variante** da vaga;
-2. o **preferido global**;
-3. o documento **gerado mais recente com a tag dessa variante**;
-4. nenhum: a tool recusa e o prompt manda abrir a pendência "sem currículo/carta para anexar".
+### 3.3 Preferido, possivelmente por variante
+- O usuário marca um documento como **preferido**. A marca pode ser **geral** ou **de uma variante** (por exemplo, "para a variante Backend, usar este").
+- Vale para currículos e para cover letters.
 
-A marca do usuário sempre vence a geração automática. (Não há política "fixo/adaptado": o preferido é essa escolha.)
+### 3.4 Tags
+- Cada documento tem tags dos tipos: **variante**, **tipo de template** (ATS e os outros) e **cor usada**. O usuário vê as tags no cartão e na página.
 
-## 5. PDF e visualização
+### 3.5 MCP
+- **Variantes:** o agente consegue listar e ler as variantes de perfil (e, na sessão de Perfil, alterá-las).
+- **Cover letter:** o agente consegue listar e ler cover letters e salvar uma que ele escreveu.
+- Por consequência do que foi pedido (preferido, personalizados, tags), o MCP também expõe os **documentos** (listar, ler, marcar preferido).
 
-- A visualização é o **HTML** com moldura A4 (210×297 mm proporcional, sombra e margens), dentro de um contêiner sem scripts (`<iframe sandbox>` com `srcdoc`). Miniaturas da grade: o mesmo HTML escalado, carregado só quando o card aparece.
-- O **PDF** existe só para anexar e para o usuário abrir fora: gerado do HTML pelo Chrome do app (`Page.printToPDF`, aba própria invisível ao agente, A4). Sem biblioteca nova, sem instalação.
-- Documento **importado**: sem HTML. A página mostra um cartão (nome, formato, tamanho, data, tags) e "Abrir" no visualizador do sistema; se o WebView exibir PDF em `<iframe>` de forma segura, mostrar o PDF, senão cartão. (A verificar na implementação.)
-- Importar: o usuário escolhe `.pdf` ou `.docx` pelo seletor do sistema; o app **copia** para `<dados>/documentos/`, confere extensão **e** tipo real (`%PDF-` ou ZIP de docx), limita a 10 MB e grava o `sha256`.
+## 4. Propostas do assistente, AINDA NÃO DECIDIDAS (aprovar, mudar ou cortar)
 
-## 6. Contrato backend ↔ frontend (comandos Tauri)
+Nada abaixo foi pedido pelo usuário. Cada item tem uma recomendação.
 
-`Documento` (JSON): `{ id, tipo, nome, origem, formato, idioma, tags:[{tipo,valor}], tamanho, criado_em, vaga_id, preferido_global:boolean, preferido_variantes:string[], tem_preview:boolean }`
+| # | Proposta | Recomendação |
+|---|---|---|
+| P1 | **`browser_upload`**: tool para o agente anexar o currículo no formulário (este é o problema que originou tudo) | Fazer. Sem ela o resto não resolve a candidatura. |
+| P2 | O agente **nunca recebe nem passa caminho de arquivo**; só `id` de documento da biblioteca, e o app confere que o arquivo está dentro de `<dados>/documentos/` e não foi alterado (`sha256`) | Fazer. Evita que texto malicioso numa página mande subir qualquer arquivo do usuário. |
+| P3 | **Regra de escolha** do que anexar: preferido da variante, depois preferido geral, depois o gerado mais recente da variante, senão pendência "sem currículo para anexar" | Fazer. É o que dá sentido à marca de preferido. |
+| P4 | **PDF** gerado do HTML pelo Chrome do próprio app (`Page.printToPDF`), usado só para anexar e para abrir fora; sem biblioteca nova | Fazer: site de vagas não aceita HTML. |
+| P5 | Importar só `.pdf` e `.docx`, até 10 MB, conferindo o tipo real do arquivo; o app **copia** o arquivo para a sua pasta | Fazer. |
+| P6 | Documento importado não tem HTML: a página mostra um cartão com os dados e "Abrir" | Aceitar, ou mostrar o PDF no WebView se for seguro (a verificar). |
+| P7 | **Escrita só na sessão de Perfil** (`update_variante`, `set_documento_preferido`); a sessão de execução só lê | Fazer. Segue a arquitetura: a execução não edita o perfil. |
+| P8 | Importar um currículo **não** o torna preferido sozinho; o usuário marca | Fazer. |
+| P9 | Migração: os currículos e cartas existentes viram documentos, sem apagar nada | Fazer. |
+| P10 | Corrigir `apagar_curriculo`/`apagar_cover_letter`, que apagam **qualquer caminho** recebido: passam a apagar por id, só dentro da pasta | Fazer. É um bug de segurança que já existe. |
+| P11 | Mostrar o documento usado em cada candidatura (Dashboard e Histórico) e uma categoria de Pendência "sem currículo para anexar" | Fazer depois da aba. |
+| P12 | **Edição do `prompt_sistema_runtime.md`** para ensinar as tools novas ao agente | Precisa de aprovação explícita antes. |
+| P13 | Anexar também a **cover letter** no formulário (a mesma tool com `tipo=carta`) | Fazer junto com P1: custo baixo. |
 
-| Comando | Faz |
-|---|---|
-| `listar_documentos(tipo)` | lista do tipo (`"curriculo"`/`"carta"`) |
-| `obter_documento(id)` | `Documento` + `preview_html: string \| null` |
-| `gerar_curriculo(template_id, cor_primaria, idioma, variante_id?)` | gera HTML + PDF, tags automáticas (variante, template, cor, idioma), devolve `Documento` |
-| `gerar_cover_letter(...)` (assinatura atual + `variante_id?`) | idem para carta |
-| `importar_documento(tipo, caminho_origem, nome?)` | copia e valida, devolve `Documento` |
-| `renomear_documento(id, nome)` | |
-| `atualizar_tags_documento(id, tags)` | edita as tags (variante/livres; as automáticas também) |
-| `definir_preferido(id, variante_id?)` / `remover_preferido(tipo, variante_id?)` | marca/desmarca |
-| `abrir_documento(id)` | abre o arquivo no sistema |
-| `apagar_documento(id)` | só dentro de `documentos/`, por id; avisa se for preferido |
-| `listar_variantes()` | `{id, nome_exibicao, ativa}[]` para os seletores |
-
-Os comandos antigos `listar_curriculos`, `apagar_curriculo`, `abrir_curriculo`, `listar_cover_letters`, `abrir_cover_letter`, `apagar_cover_letter` são **removidos** (e `gerar_*` substituídos pelos novos).
-
-## 7. MCP (`claudia`)
-
-Leitura vale para os dois tipos de sessão; **escrita só na sessão de Perfil** (a arquitetura manda que a sessão de execução não edite o perfil).
+## 5. Como ficaria o MCP (se P1 a P3 e P7 forem aprovadas)
 
 | Tool | Sessão | Faz |
 |---|---|---|
-| `list_variantes` | ambas | variantes (id, nome, peso, ativa, foco) |
-| `get_variante(id)` | ambas | uma variante completa |
-| `update_variante(id, campos)` | Perfil | valida e grava, com backup como `update_profile`; nunca afirma fato fora de `candidate_base.yaml` |
-| `list_documentos(tipo)` | ambas | metadados e tags, sem caminho |
-| `get_documento(id)` | ambas | metadados + texto (extraído do HTML se `gerado`) para o agente responder formulários |
-| `save_cover_letter(texto, vaga_id?, idioma, variante_id?)` | ambas | o agente escreve a carta de uma vaga; o app a renderiza (HTML A4 + PDF), guarda e etiqueta |
-| `set_documento_preferido(id, variante_id?)` | Perfil | marca o preferido |
-| `browser_upload(ref, tipo?, documento?)` | execução | anexa (seção 8) |
+| `list_variantes` / `get_variante(id)` | ambas | lê as variantes |
+| `update_variante(id, campos)` | só Perfil | valida e grava, com backup como `update_profile` |
+| `list_documentos(tipo)` / `get_documento(id)` | ambas | metadados e tags; `get_documento` devolve também o texto (para responder formulários) |
+| `save_cover_letter(texto, vaga_id?, idioma, variante_id?)` | ambas | guarda a carta escrita pelo agente como documento |
+| `set_documento_preferido(id, variante_id?)` | só Perfil | marca o preferido |
+| `browser_upload(ref, tipo?, documento?)` | execução | anexa o documento; sem `documento`, o app escolhe pela regra P3 |
 
 Nenhuma tool devolve ou aceita caminho de arquivo.
 
-## 8. Tool `browser_upload`
+## 6. Dados (resumo, para aprovar o desenho; detalhe fica no plano)
 
-- Parâmetros: `ref` (campo de arquivo ou botão que o abre, de `browser_read`), `tipo` (`curriculo` padrão ou `carta`), `documento` opcional (`id`). **Nunca um caminho.**
-- Sem `documento`, o app escolhe pela regra da seção 4. Com `documento`, só vale se existir, for do `tipo` certo.
-- Mecânica sem JS na página: `<input type=file>` direto com `DOM.setFileInputFiles`; botão que abre o seletor (LinkedIn): `Page.setInterceptFileChooserDialog`, clica e responde ao seletor com o arquivo. O resultado diz o nome anexado e se a página o mostrou depois.
-- Antes de anexar: `canonicalize` e conferir que está dentro de `<dados>/documentos/`, reconferir `sha256`. Alterado ou sumido: recusa.
-- Só funciona com **uma única vaga em `candidatando`** (a regra da guarda). Não é envio e não passa pela guarda de envio. Passa por viewport, `estado:` e detector de loop.
-- Activity log: nome, formato, tamanho e `sha256`, **nunca o conteúdo**.
-- Falhas explícitas (campo não é de arquivo, site só aceita PDF, arquivo grande demais) viram pendência, não repetição.
+- Tabela `documentos`: `id`, `tipo` (`curriculo`/`carta`), `nome`, `origem` (`gerado`/`importado`), arquivo anexável (PDF ou DOCX), HTML de pré-visualização (só gerado), `idioma`, `tags`, `sha256`, `tamanho`, `vaga_id` opcional, `criado_em`.
+- Tabela `preferidos`: (`tipo`, `variante` ou geral, `documento`), um por par.
+- As tags do tipo variante, template e cor são preenchidas na geração; o usuário pode editar e criar tags livres.
 
-## 9. Prompt
+## 7. Impacto no frontend (lista do que muda)
 
-`prompt_sistema_runtime.md` precisa de uma edição para ensinar `browser_upload`, `list_documentos`/`save_cover_letter` e as variantes. **Pede aprovação explícita do usuário antes de editar** (regra do projeto). O agente nunca escolhe arquivo.
-
-## 10. Impacto no frontend
-
-| Tela | Mudança |
+| Onde | Mudança |
 |---|---|
-| **Sidebar** (`Sidebar.tsx`, `App.tsx`, `View`) | novo item **Currículos** (view `documentos`) entre Perfil e Histórico. |
-| **Aba Currículos** (novo `components/documentos/`) | duas sub-abas **Currículos** e **Cover letters**. Cada uma: grade de cartões (miniatura A4, nome, tags, estrela de preferido, origem), filtro por tag (variante/template/cor/idioma), botões **Gerar** (template, cor, idioma, variante; assistente existente) e **Adicionar o meu** (importar). |
-| **Página do documento** | abre ao clicar num cartão, com **← Voltar** no topo. Folha A4 de pré-visualização (somente leitura), metadados, **tags editáveis**, **marcar como preferido** (global e/ou por variante), renomear, abrir, excluir (confirmação; avisa se for preferido). |
-| **Perfil** (`perfil/index.tsx`, `ResumoView`, `CurriculosView`, `CoverLettersView`) | saem os atalhos e as telas internas de currículos/cartas; no lugar, um link para a nova aba. As **variantes** ganham o seletor "Currículo preferido desta variante" e "Carta preferida". |
-| **Dashboard / vaga atual** | mostra o currículo/carta anexado. |
-| **Histórico** | cada candidatura mostra o documento usado (`documento_id` em `candidaturas`). |
-| **Pendências** | categoria nova "Sem currículo/carta para anexar", com atalho para a aba. |
-| **Activity log** | linhas de `browser_upload` mostram nome e formato do arquivo. |
-| **Welcome** | avisa que é preciso ter ao menos um currículo (gerar ou importar). |
-| **i18n** | todos os textos novos em `pt.ts` e `en.ts`. |
+| Sidebar e navegação (`Sidebar.tsx`, `App.tsx`) | novo item **Currículos** |
+| Nova aba (`components/documentos/`) | sub-abas Currículos e Cover letters; grade; filtro por tag; **Gerar** e **Adicionar o meu** |
+| Página do documento | folha A4, Voltar, tags editáveis, marcar preferido (geral e por variante), renomear, abrir, excluir |
+| Perfil | saem os atalhos e telas de currículos/cartas; as variantes ganham o seletor de preferido |
+| Dashboard, Histórico, Pendências, Activity log, Welcome | itens de P11 (depois da aba) |
+| i18n | tudo em `pt.ts` e `en.ts` |
 
-## 11. Segurança
+## 8. Testes (resumo)
 
-- O agente só cita `id`. O caminho vem do banco e é sempre `canonicalize`d dentro de `<dados>/documentos/` (sem `..`, links simbólicos ou caminho absoluto de fora).
-- Só `pdf`/`docx`, tamanho limitado, tipo real conferido.
-- O currículo tem telefone e endereço: nunca vai para o log nem para o diagnóstico; nome e `sha256` bastam. O pacote de diagnóstico continua sem documentos.
-- A pré-visualização roda em `<iframe sandbox>` sem scripts; HTML de documento é escapado na geração.
-- Texto de página nunca escolhe o arquivo.
+- Unidade para cada regra de escolha e de segurança (caminho fora da pasta, `..`, tipo falso, `sha256`, um preferido por par), com **mutação** para cada uma.
+- Live com Chrome de teste e página local: campo de arquivo visível, campo escondido atrás de botão (padrão do LinkedIn), site que só aceita PDF, recusa sem vaga ativa.
+- Frontend com a skill `claudia-teste`: abrir a aba, a grade, a página, o Voltar, marcar preferido por variante, tags, importar. Sem nenhuma ação em site de vagas.
 
-## 12. Ordem de implementação
+## 9. Ordem proposta (só depois da aprovação desta spec)
 
-1. **A, backend da biblioteca:** migration, comandos da seção 6, importação segura, PDF por `printToPDF`, migração dos arquivos antigos, remoção dos comandos antigos.
-2. **C, frontend:** sidebar, aba, grade, página do documento, tags, preferido, importar, gerar, Perfil limpo, seletores de variante. Em paralelo com A, sobre o contrato da seção 6.
-3. **B, MCP:** tools da seção 7 e `browser_upload` (depende da tabela de A).
-4. Integração, suíte completa, `claudia-teste` no app, revisão Opus. **Edição do prompt só com aprovação.**
+1. Backend da biblioteca (tabelas, comandos, importação, PDF, migração).
+2. Frontend da aba (em paralelo, sobre o contrato de comandos que o plano definir).
+3. MCP e `browser_upload`.
+4. Integração, suíte completa, validação no app e revisão Opus.
 
-## 13. Fora do escopo
+## 10. Em aberto
 
-- Editar o conteúdo do currículo importado; converter DOCX em PDF; vários arquivos por campo; anexar fora de uma vaga em `candidatando`.
-- Gerar currículo adaptado por vaga: **não verificado** onde a skill `tailor-application` grava os arquivos. Se ela gerar fora da biblioteca, o agente precisará registrá-los (tarefa de investigação no plano).
-
-## 14. Testes
-
-- **Unidade:** regra de escolha em cada ordem; caminho fora da pasta, `..`, link simbólico e `id` inexistente recusados; tipo falso (extensão `.pdf` com outro conteúdo) recusado; `sha256` diferente recusa; apagar só dentro da pasta e por id; um preferido por (tipo, variante); tags.
-- **Live (Chrome de teste, fixture local `upload-form.html`):** campo visível; campo escondido atrás de botão (padrão do LinkedIn); site que só aceita PDF; nome aparece depois; recusa sem vaga ativa; arquivo fora da biblioteca nunca anexável.
-- **Mutação obrigatória** para cada regra de segurança e de escolha.
-- **Frontend (`claudia-teste`):** abrir aba, grade, abrir página, Voltar, marcar preferido por variante, tags, importar, gerar, excluir preferido. Prints. Nenhuma ação em site de vagas.
+- Onde a skill `tailor-application` grava os currículos adaptados por vaga: **não verificado**.
+- Mostrar PDF importado no WebView ou só o cartão (P6).
+- Cover letter: o preferido por variante também vale para ela (assumido que sim).
