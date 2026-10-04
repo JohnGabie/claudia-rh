@@ -25,6 +25,14 @@
 - **Tags:** variante, tipo de template (ATS etc.), cor usada (mais idioma e livres).
 - **MCP** novo para variantes, cover letters e documentos, e `browser_upload` para anexar.
 
+## 2.1 Respostas do usuário às pendências da revisão (2026-10-04)
+
+1. **Variante da vaga: o agente decide.** As variantes são perfis com modificações ou exclusões de experiência para áreas diferentes (desenvolvimento, DevOps, IA...), cada uma podendo gerar o seu currículo. Para cada vaga, o agente (pelo MCP) decide qual variante faz sentido e a grava na vaga. Se o usuário marcou uma variante como **principal**, ela é o padrão quando o agente não tiver motivo para outra. Hoje `vagas.variante_id` existe mas ninguém o preenche: passa a ser preenchido pelo agente.
+2. **PDF por biblioteca, sem usar o browser.** O usuário não quer o Chrome envolvido na geração. Ver seção 5 (custo: o template do PDF é separado do HTML da tela).
+3. **Currículo importado: sem extração de texto agora.** Importar e anexar continua no escopo; extrair texto de PDF/DOCX para o agente ler fica para depois (mais código, mais bug). O agente responde formulários pelo `candidate_base.yaml`.
+4. **Vagas que se acumulam em `candidatando`:** bug conhecido, em aberto, resolvido em outra frente (registrar no Linear). Não entra nesta spec.
+5. **Regra dura: o Chrome nunca pode falhar por causa de um upload.** Ver seção 8.
+
 ## 3. Modelo de dados (migration, não `CREATE TABLE` solto)
 
 Tabela `documentos`:
@@ -42,18 +50,23 @@ Tabela `documentos`:
 | `tags` | JSON `[{"tipo":"variante"\|"template"\|"cor"\|"idioma"\|"livre","valor":"..."}]` |
 | `sha256`, `tamanho` | integridade, conferidos antes de cada anexo |
 | `vaga_id` | opcional: carta ou currículo feito para uma vaga |
+| `variante_id` | variante para a qual o documento foi gerado (campo, não tag: a escolha não depende de tag editável) |
 | `criado_em` | |
 
 Tabela `preferidos` (`tipo`, `variante_id` NULL = global, `documento_id`), chave única `(tipo, variante_id)`. Um preferido por variante e um global, por tipo.
 
-Migração dos arquivos antigos: os `curriculos/*.html` e as cartas existentes viram documentos `gerado` (o PDF é gerado na migração, ou na primeira abertura se o Chrome não estiver pronto). Nada é apagado.
+`search_variants.yaml` ganha `principal: true` em no máximo uma variante (marcada pelo usuário). `vagas.variante_id` passa a ser gravado pelo agente (`register_vaga` e `update_vaga_status` aceitam `variante_id`, validado contra as variantes existentes).
+
+Migração dos arquivos antigos: os `curriculos/*.html` e as cartas existentes viram documentos `gerado`; o PDF é gerado pela biblioteca na migração. Nada é apagado.
 
 ## 4. Regra de escolha (em código, não no prompt)
+
+A variante da vaga é a que o agente gravou em `vagas.variante_id`; sem ela, a variante **principal**; sem principal, nenhuma (passos 1 e 3 são pulados). O resultado do `browser_upload` sempre diz qual variante e qual regra foram usadas.
 
 Para uma vaga e um `tipo`, nesta ordem:
 1. o **preferido da variante** da vaga;
 2. o **preferido global**;
-3. o documento **gerado mais recente com a tag dessa variante**;
+3. o documento **gerado mais recente com `variante_id` dessa variante**;
 4. nenhum: a tool recusa e o prompt manda abrir a pendência "sem currículo/carta para anexar".
 
 A marca do usuário sempre vence a geração automática. (Não há política "fixo/adaptado": o preferido é essa escolha.)
@@ -61,7 +74,7 @@ A marca do usuário sempre vence a geração automática. (Não há política "f
 ## 5. PDF e visualização
 
 - A visualização é o **HTML** com moldura A4 (210×297 mm proporcional, sombra e margens), dentro de um contêiner sem scripts (`<iframe sandbox>` com `srcdoc`). Miniaturas da grade: o mesmo HTML escalado, carregado só quando o card aparece.
-- O **PDF** existe só para anexar e para o usuário abrir fora: gerado do HTML pelo Chrome do app (`Page.printToPDF`, aba própria invisível ao agente, A4). Sem biblioteca nova, sem instalação.
+- O **PDF** existe só para anexar e para o usuário abrir fora. **Decisão do usuário: gerado por biblioteca, sem o browser.** Não há biblioteca Rust madura que converta HTML+CSS em PDF sem um motor de browser; a proposta é gerar o PDF direto dos dados com **Typst** (crate Rust embutida, sem instalação). Custo assumido: cada template existe em HTML (tela) e em Typst (PDF), e os dois precisam ficar parecidos; um teste compara os textos extraídos dos dois. **A confirmar na aprovação.**
 - Documento **importado**: sem HTML. A página mostra um cartão (nome, formato, tamanho, data, tags) e "Abrir" no visualizador do sistema; se o WebView exibir PDF em `<iframe>` de forma segura, mostrar o PDF, senão cartão. (A verificar na implementação.)
 - Importar: o usuário escolhe `.pdf` ou `.docx` pelo seletor do sistema; o app **copia** para `<dados>/documentos/`, confere extensão **e** tipo real (`%PDF-` ou ZIP de docx), limita a 10 MB e grava o `sha256`.
 
@@ -95,10 +108,11 @@ Leitura vale para os dois tipos de sessão; **escrita só na sessão de Perfil**
 | `get_variante(id)` | ambas | uma variante completa |
 | `update_variante(id, campos)` | Perfil | valida e grava, com backup como `update_profile`; nunca afirma fato fora de `candidate_base.yaml` |
 | `list_documentos(tipo)` | ambas | metadados e tags, sem caminho |
-| `get_documento(id)` | ambas | metadados + texto (extraído do HTML se `gerado`) para o agente responder formulários |
+| `get_documento(id)` | ambas | metadados + texto se `gerado`; para `importado` não há texto (sem extração por enquanto) e o agente responde formulários pelo `candidate_base.yaml` |
 | `save_cover_letter(texto, vaga_id?, idioma, variante_id?)` | ambas | o agente escreve a carta de uma vaga; o app a renderiza (HTML A4 + PDF), guarda e etiqueta |
 | `set_documento_preferido(id, variante_id?)` | Perfil | marca o preferido |
 | `browser_upload(ref, tipo?, documento?)` | execução | anexa (seção 8) |
+| `set_vaga_variante(vaga_id, variante_id)` | execução | grava a variante escolhida para a vaga (ou via `register_vaga`) |
 
 Nenhuma tool devolve ou aceita caminho de arquivo.
 
@@ -111,6 +125,12 @@ Nenhuma tool devolve ou aceita caminho de arquivo.
 - Só funciona com **uma única vaga em `candidatando`** (a regra da guarda). Não é envio e não passa pela guarda de envio. Passa por viewport, `estado:` e detector de loop.
 - Activity log: nome, formato, tamanho e `sha256`, **nunca o conteúdo**.
 - Falhas explícitas (campo não é de arquivo, site só aceita PDF, arquivo grande demais) viram pendência, não repetição.
+- **O Chrome nunca falha por causa de um upload (regra dura do usuário).** Toda falha do upload é um erro da tool, nunca do browser:
+  - timeout em cada passo (no máximo alguns segundos), sem espera infinita;
+  - a interceptação do seletor de arquivo (`Page.setInterceptFileChooserDialog`) é sempre desligada ao final, com sucesso ou erro, para não deixar a aba presa;
+  - um seletor de arquivo nativo que abriu sem ser interceptado é fechado (Escape) e reportado, nunca fica aberto bloqueando a aba;
+  - nada no upload fecha, recarrega ou relança o Chrome; a aba continua usável;
+  - teste live: depois de cada cenário de falha, `browser_read` e `browser_click` na mesma aba ainda funcionam.
 
 ## 9. Prompt
 
@@ -147,6 +167,9 @@ Nenhuma tool devolve ou aceita caminho de arquivo.
 4. Integração, suíte completa, `claudia-teste` no app, revisão Opus. **Edição do prompt só com aprovação.**
 
 ## 13. Fora do escopo
+
+- **Extrair texto de currículo importado** (PDF/DOCX) para o agente ler: depois, por decisão do usuário.
+- **Vagas acumuladas em `candidatando`**: bug em aberto, outra frente. Enquanto não for resolvido, o upload (como o envio) recusa quando houver mais de uma.
 
 - Editar o conteúdo do currículo importado; converter DOCX em PDF; vários arquivos por campo; anexar fora de uma vaga em `candidatando`.
 - Gerar currículo adaptado por vaga: **não verificado** onde a skill `tailor-application` grava os arquivos. Se ela gerar fora da biblioteca, o agente precisará registrá-los (tarefa de investigação no plano).
