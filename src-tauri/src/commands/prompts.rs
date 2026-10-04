@@ -454,7 +454,7 @@ mod migration_tests {
         let p = DEFAULT_RUNTIME;
         assert!(!p.contains("Claude in Chrome"), "the extension is gone from the default prompt");
         assert!(!p.contains("--chrome"), "and so is the flag");
-        for tool in ["browser_open", "browser_read", "browser_text", "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_crop", "browser_click_at", "confirm_submit"] {
+        for tool in ["browser_open", "browser_read", "browser_text", "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_crop", "browser_click_at", "browser_upload", "confirm_submit"] {
             assert!(p.contains(tool), "the prompt must teach {tool}");
         }
     }
