@@ -28,7 +28,7 @@
 ## 2.1 Respostas do usuário às pendências da revisão (2026-10-04)
 
 1. **Variante da vaga: o agente decide.** As variantes são perfis com modificações ou exclusões de experiência para áreas diferentes (desenvolvimento, DevOps, IA...), cada uma podendo gerar o seu currículo. Para cada vaga, o agente (pelo MCP) decide qual variante faz sentido e a grava na vaga. Se o usuário marcou uma variante como **principal**, ela é o padrão quando o agente não tiver motivo para outra. Hoje `vagas.variante_id` existe mas ninguém o preenche: passa a ser preenchido pelo agente.
-2. **PDF por biblioteca, sem usar o browser.** O usuário não quer o Chrome envolvido na geração. Ver seção 5 (custo: o template do PDF é separado do HTML da tela).
+2. **PDF sem o browser da Claudia.** O usuário não quer o Chrome envolvido na geração, nem runtime novo (Python/Node). Decidido: o **WebView2 do próprio app** imprime o HTML para PDF. Ver seção 5.
 3. **Currículo importado: sem extração de texto agora.** Importar e anexar continua no escopo; extrair texto de PDF/DOCX para o agente ler fica para depois (mais código, mais bug). O agente responde formulários pelo `candidate_base.yaml`.
 4. **Vagas que se acumulam em `candidatando`:** bug conhecido, em aberto, resolvido em outra frente (registrar no Linear). Não entra nesta spec.
 5. **Regra dura: o Chrome nunca pode falhar por causa de um upload.** Ver seção 8.
@@ -74,7 +74,7 @@ A marca do usuário sempre vence a geração automática. (Não há política "f
 ## 5. PDF e visualização
 
 - A visualização é o **HTML** com moldura A4 (210×297 mm proporcional, sombra e margens), dentro de um contêiner sem scripts (`<iframe sandbox>` com `srcdoc`). Miniaturas da grade: o mesmo HTML escalado, carregado só quando o card aparece.
-- O **PDF** existe só para anexar e para o usuário abrir fora. **Decisão do usuário: gerado por biblioteca, sem o browser.** Não há biblioteca Rust madura que converta HTML+CSS em PDF sem um motor de browser; a proposta é gerar o PDF direto dos dados com **Typst** (crate Rust embutida, sem instalação). Custo assumido: cada template existe em HTML (tela) e em Typst (PDF), e os dois precisam ficar parecidos; um teste compara os textos extraídos dos dois. **A confirmar na aprovação.**
+- O **PDF** existe só para anexar e para o usuário abrir fora. **Decisão (2026-10-04): gerado pelo WebView2 do próprio app**, a função nativa `PrintToPdf` (`ICoreWebView2_7`), numa janela do app invisível que carrega o HTML do documento e grava o PDF (A4, com fundo). Sem linguagem, biblioteca ou instalação nova (as ligações `webview2-com` já estão no projeto, via `wry`), sem o Chrome da Claudia e sem tocar nos logins. O **mesmo HTML** da pré-visualização vira o PDF: não há template duplicado. Limite: só Windows (o app hoje só roda em Windows). **A primeira tarefa do plano é uma prova:** gerar o PDF de um currículo real por este caminho e conferir a qualidade antes de construir o resto. Descartados: Typst (template duplicado), WeasyPrint/Python e libs Node (runtime novo, proibido pelo `CLAUDE.md`), Chrome da Claudia (abre a janela laranja).
 - Documento **importado**: sem HTML. A página mostra um cartão (nome, formato, tamanho, data, tags) e "Abrir" no visualizador do sistema; se o WebView exibir PDF em `<iframe>` de forma segura, mostrar o PDF, senão cartão. (A verificar na implementação.)
 - Importar: o usuário escolhe `.pdf` ou `.docx` pelo seletor do sistema; o app **copia** para `<dados>/documentos/`, confere extensão **e** tipo real (`%PDF-` ou ZIP de docx), limita a 10 MB e grava o `sha256`.
 
