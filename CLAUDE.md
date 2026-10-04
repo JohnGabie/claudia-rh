@@ -10,7 +10,8 @@ Este arquivo é o ponto de entrada de qualquer sessão de coding **neste reposit
 2. `docs/padrao-design-claudia-rh.md` — identidade visual, tokens, navegação, layout.
 3. `src-tauri/src/prompt_sistema_runtime.md` — texto que a app injeta na sessão de execução. **Não edite sem pedido explícito.**
 4. Este `CLAUDE.md`.
-5. `.claude/QUALIDADE.md` — roadmap de qualidade/refactor (quando existir).
+5. A spec da área em que você vai mexer, em `docs/superpowers/specs/` (browser: `2026-10-02-browser-cdp-motor-design.md` e `2026-10-03-mcp-leitura-robusta-design.md`; contas: `2026-10-02-contas-do-browser-design.md`; documentos: `2026-10-04-anexar-curriculo-design.md`, ainda rascunho).
+6. `.claude/QUALIDADE.md` — roadmap de qualidade/refactor (quando existir).
 
 ## Convenções
 
@@ -172,13 +173,15 @@ O Superpowers é o esqueleto do processo, **mas as regras deste arquivo vencem**
 
 ## Diagnóstico
 
-Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log` na raiz do repo **antes** de perguntar o que aconteceu. Em produção (Windows): `%APPDATA%\io.github.johngabie.claudia-rh\diagnostics\`.
+Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log` na raiz do repo **antes** de perguntar o que aconteceu. Em produção (Windows): `%APPDATA%\io.github.johngabie.claudia-rh\diagnostics\`. O que o agente fez no browser fica no Activity log (`%LOCALAPPDATA%\io.github.johngabie.claudia-rh\dev\activity-log.db`, só leitura; tela em Configurações → Activity log).
 
 ## Build
 
 - Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.
 - Backend: em `src-tauri/`, `cargo check` / `cargo test` / `cargo clippy`.
 - App: `npm run tauri dev`.
+- Testes live (Chrome real, `#[ignore]`): `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`. Os de ícone abrem janela visível e rodam à parte.
+- Se o app estiver aberto, use `CARGO_TARGET_DIR` fora do `target/` do repo: o Windows trava o `.exe` em uso.
 
 ## Teste em máquina limpa
 
@@ -191,10 +194,26 @@ A `claudia-teste-sandbox` usa um laboratório Windows Sandbox mantido fora do re
 
 ## Dívida conhecida
 
+- **Browser, não provado no mundo real:** nada rodou ainda contra o LinkedIn com login e envio reais; os testes são em páginas locais e headless. O login do LinkedIn no browser do app precisa ser refeito pelo usuário (botão "Abrir o browser").
+- **Agente sem como anexar arquivo:** não há `browser_upload`; formulário com "Anexar currículo" trava. O currículo gerado é HTML (site pede PDF). Spec de documentos em rascunho, aguardando aprovação do usuário.
+- **Coordenadas:** `browser_crop` mede a partir do topo do documento e `browser_click_at` a partir da tela visível; depois de rolar, divergem.
+- Página de erro do Chrome (ex.: 404) aparece como `estado: ok`; a descrição dentro de iframe não aparece em `browser_text`.
+- A guarda de envio só libera com **uma** vaga em `candidatando`; com duas, recusa todo envio.
+- Desinstalação real nunca foi testada (só em Sandbox/VM; nunca nesta máquina); não existe a opção "só o browser" nem backup antes de apagar.
+- Licença do binário do Chrome for Testing não estabelecida e sem auto-update (CLA-34, antes de qualquer release público).
 - Toast nativo Windows: `notificacoes.rs` emite eventos Tauri mas não chama o plugin de notificação — o toast do sistema não dispara.
 - Pré-requisitos Chrome / plano da conta: não validados na UI.
 - Pesquisa pontual da aba Feedback: não implementada.
+- `submit_claims` é criada em uso, fora das migrations.
 
 ## O que este repo já é
 
-v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`. Browser próprio em `src-tauri/src/browser/` (Chrome for Testing, CDP, ferramentas `browser_*` no MCP); Activity log (sempre ligado) em `src-tauri/src/activity_log/`. Sessão de execução = `claude --no-chrome` no PTY, só com o browser pronto.
+v0.2.0. Perfil = `candidate_base.yaml` + `search_variants.yaml` (módulo `src/components/perfil/`). Dashboard em `src/components/dashboard/`. MCP embutido em `src-tauri/src/mcp/`.
+
+**Browser próprio** (`src-tauri/src/browser/`): Chrome for Testing fixado em `browser-pin.json`, baixado pelo app na primeira abertura; perfil persistente (só cookies, sem senhas); tema e ícone laranja. **Só roda quando a IA é chamada** (início de sessão) ou pelo botão "Abrir o browser" nas Configurações; na abertura do app só baixa. Fecha com o app, e o app tem instância única. Garante viewport mínimo de 1200×800 a cada ferramenta.
+
+**Ferramentas do agente** (MCP `claudia`, `mcp/tools/browser.rs`): `browser_open`, `browser_read`, `browser_text`, `browser_click`, `browser_type`, `browser_key`, `browser_scroll`, `browser_crop`, `browser_click_at`. Todo resultado de leitura termina na linha `estado:` (ok, login_wall, captcha, vazio, carregando). A **guarda de envio** (`browser/guard.rs`) vive no código: `confirm_submit` = id da única vaga em `candidatando`, orçamento diário, uma vez por vaga por dia.
+
+**Activity log**: sempre ligado, banco separado, retenção de 30 dias ou 1 GB, tela própria somente leitura (Configurações → Activity log), sem senhas.
+
+Sessão de execução = `claude --no-chrome` no PTY; a sessão espera o browser abrir.
