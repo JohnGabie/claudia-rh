@@ -124,7 +124,7 @@ Quem faz cada etapa. O modelo escolhido depende da complexidade da tarefa, não 
 | **Escrever a spec e o plano** | **Opus** ou **Sonnet** | Mesmo critério. A spec precisa da aprovação do usuário (ver acima). |
 | **Execução** | sempre por **agentes em git worktree** | **Haiku** é o recomendado para tarefa mecânica e bem delimitada; **Sonnet** quando há complexidade (lógica nova, vários arquivos, decisões de desenho). |
 | **Revisão de código** | **Opus** | Independente de quem escreveu. Obrigatória para segurança e ferramentas do agente. |
-| **Teste** | **Opus** recomendado | Para observar e depurar a rodada (ler o Activity log, cruzar com o que o agente disse ter visto). |
+| **Teste** | **Opus** recomendado | Usa as skills do `/claudia-teste` e **observa sempre o app e o browser do app** (ver abaixo). Lê o Activity log e cruza com o que o agente disse ter visto. |
 
 Regras da execução:
 
@@ -136,6 +136,15 @@ Regras da execução:
 - **Limites do agente:** nada de push, nada de tocar nos dados do usuário, no app aberto ou em sites reais, salvo autorização explícita da rodada.
 - Agente que cai (limite de sessão, erro de API) não deixou nada útil por padrão: confira a worktree e relance com o mesmo escopo.
 - Remova a worktree só depois de integrar ou de descartar de propósito; nada com trabalho não commitado some sem olhar antes.
+
+### Quem testa: observar o app e o browser do app
+
+Toda rodada de teste feita por agente usa as skills do `/claudia-teste` e **observa o que realmente aconteceu**, não só o que o agente relatou:
+
+- **O app:** a tela (print e árvore), o estado do banco, o log de diagnóstico (`debug-logs/`) e o que a UI mostra depois de cada ação. Compare a UI com o banco.
+- **O browser do app (Claudia browser):** a janela e a aba reais, observadas por CDP e por print: a página carregada, o tamanho da janela, o estado do login, o que o agente leu e o que ficou na tela. Nunca confie só no resultado devolvido pela ferramenta.
+- **O Activity log** como terceira fonte: cada chamada tem linha, prints antes e depois, duração e resultado. Divergência entre o relato do agente, o log e a tela é um achado, não ruído.
+- **Observar é só leitura:** não clicar em envio, não escrever no banco real, não mexer no perfil do browser nem fechar o app ou o browser do usuário sem pedir. Para ver o browser sem interferir, abra uma janela de teste própria em vez de usar a aba do agente.
 
 ### Uso do Superpowers
 
