@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** o agente consegue anexar o currículo (e a cover letter) certo num formulário de candidatura, só de documentos da biblioteca do usuário, sem nunca derrubar o Chrome; depois, a aba Currículos completa e o MCP de documentos e variantes.
+**Goal:** **`browser_upload`**: o agente consegue anexar o currículo (e a cover letter) certo num formulário de candidatura, só de documentos da biblioteca do usuário, sem nunca derrubar o Chrome. Depois: PDF dos currículos gerados, a aba Currículos completa e o MCP de documentos e variantes.
 
-**Architecture:** um módulo Rust novo `documentos` guarda a biblioteca (tabelas `documentos` e `preferidos`, importação segura, regra de escolha, resolução segura do arquivo). O PDF sai do HTML pelo `PrintToPdf` do WebView2 do próprio app, numa janela invisível. A tool `browser_upload` vive em `mcp/tools/browser.rs`, recebe uma `ref` e no máximo um `id` de documento (nunca um caminho), e anexa por CDP (`DOM.setFileInputFiles`, com `Page.setInterceptFileChooserDialog` para o botão que abre o seletor).
+**Architecture:** o foco é a tool `browser_upload`. Um módulo Rust novo `documentos` dá a ela o que anexar (tabelas `documentos` e `preferidos`, importação segura, regra de escolha, resolução segura do arquivo); na Parte 1 o arquivo anexável é o currículo que o usuário importa. O PDF dos currículos gerados (pelo `PrintToPdf` do WebView2 do app) é da Parte 2. A tool `browser_upload` vive em `mcp/tools/browser.rs`, recebe uma `ref` e no máximo um `id` de documento (nunca um caminho), e anexa por CDP (`DOM.setFileInputFiles`, com `Page.setInterceptFileChooserDialog` para o botão que abre o seletor).
 
 **Tech Stack:** Rust (Tauri 2.11, rusqlite, tokio, sha2, CDP próprio em `browser/cdp.rs`), `webview2-com` 0.38 + `windows`/`windows-core` 0.61 (já no grafo via `wry`), React/TS no front.
 
@@ -14,8 +14,8 @@
 
 Duas partes, cada uma com **execução e teste**:
 
-- **Parte 1 — Upload de arquivos** (Tarefas 1 a 9): o mínimo para o agente anexar um currículo de verdade. Termina num **portão**: rodadas de teste completas + aprovação do usuário.
-- **Parte 2 — O resto** (Tarefas 10 a 16): aba Currículos com grade e página A4, tags, preferido por variante, MCP de documentos/variantes/cover letter, migração. **Só começa depois do portão da Parte 1.** Os passos de código da Parte 2 são detalhados numa revisão deste plano depois do portão, porque a Parte 1 (em especial a prova do PDF) pode mudar o desenho; aqui ficam as tarefas, arquivos, interfaces e critérios de aceite.
+- **Parte 1 — `browser_upload`** (Tarefas 1 a 8): o mínimo para o agente anexar um currículo de verdade: a biblioteca, a importação do currículo do usuário, a regra de escolha e a tool. Sem geração de PDF: o anexo da Parte 1 é o PDF/DOCX importado. Termina num **portão**: rodadas de teste completas + aprovação do usuário.
+- **Parte 2 — O resto** (Tarefas 9 a 16): PDF dos currículos gerados (WebView2), aba Currículos com grade e página A4, tags, preferido por variante, MCP de documentos/variantes/cover letter, migração. **Só começa depois do portão da Parte 1.** A Tarefa 9 já está detalhada; os passos de código das Tarefas 10 a 16 são escritos numa revisão deste plano depois do portão, com o que a Parte 1 ensinar; aqui ficam as tarefas, arquivos, interfaces e critérios de aceite.
 
 ## Global Constraints
 
@@ -26,28 +26,27 @@ Duas partes, cada uma com **execução e teste**:
 - Arquivos anexáveis só dentro de `<dados>/documentos/` (`<dados>` = `app_data_dir`, onde fica `claudia_rh.db`).
 - Upload só com **exatamente uma** vaga em `candidatando` (mesma regra da guarda; o acúmulo de vagas é o bug CLA-35, fora deste plano).
 - Currículo nunca vai para log ou diagnóstico: só nome, formato, tamanho e `sha256`.
-- `prompt_sistema_runtime.md` só é editado com **autorização explícita** do usuário (Tarefa 8 fica bloqueada até ela).
+- `prompt_sistema_runtime.md` só é editado com **autorização explícita** do usuário (Tarefa 7 fica bloqueada até ela).
 - Comentários e commits em inglês; UI e docs em pt-BR; i18n pt e en.
 - Testes: `CARGO_TARGET_DIR` fora do `target/` do repo; exit code real; **mutação** para cada regra nova (colar a linha `FAILED`).
 - Nunca testar em site real sem pedido; nunca enviar candidatura.
 
 ## Review Focus
 
-1. **Arquivo do documento apagado ou editado fora do app** depois de registrado → o upload recusa com mensagem clara ("o arquivo mudou/sumiu, gere ou importe de novo"), nunca anexa um arquivo diferente. (Tarefa 3, testes `missing_file_is_refused`, `edited_file_is_refused`.)
-2. **Usuário importa o mesmo PDF duas vezes ou um arquivo com nome estranho** (`..\x.pdf`, acentos, espaços, 200 caracteres) → vira um nome seguro dentro da pasta, sem sobrescrever outro. (Tarefa 4, `import_sanitizes_names_and_never_overwrites`.)
-3. **Site que aceita só PDF e o preferido é DOCX** → a página recusa ou o input ignora; a tool tem de dizer que a página não mostrou o arquivo, não "anexou". (Tarefa 6, `upload_reports_when_the_page_did_not_take_the_file`.)
-4. **Botão de anexo que não abre seletor** (é outro botão, ou a página trava) → timeout curto, interceptação desligada, aba usável. (Tarefa 6, `a_chooser_that_never_opens_times_out_and_the_tab_still_works`.)
-5. **Nenhum documento disponível** (biblioteca vazia, ou sem preferido e sem variante) → recusa explicando o que falta ("marque um currículo como preferido"), sem anexar nada. (Tarefa 5, `nothing_to_pick_returns_none`; Tarefa 6, `upload_with_an_empty_library_is_refused_with_a_hint`.)
+1. **Arquivo do documento apagado ou editado fora do app** depois de registrado → o upload recusa com mensagem clara ("o arquivo mudou/sumiu, gere ou importe de novo"), nunca anexa um arquivo diferente. (Tarefa 2, testes `missing_file_is_refused`, `edited_file_is_refused`.)
+2. **Usuário importa o mesmo PDF duas vezes ou um arquivo com nome estranho** (`..\x.pdf`, acentos, espaços, 200 caracteres) → vira um nome seguro dentro da pasta, sem sobrescrever outro. (Tarefa 3, `import_sanitizes_names_and_never_overwrites`.)
+3. **Site que aceita só PDF e o preferido é DOCX** → a página recusa ou o input ignora; a tool tem de dizer que a página não mostrou o arquivo, não "anexou". (Tarefa 5, `upload_reports_when_the_page_did_not_take_the_file`.)
+4. **Botão de anexo que não abre seletor** (é outro botão, ou a página trava) → timeout curto, interceptação desligada, aba usável. (Tarefa 5, `a_chooser_that_never_opens_times_out_and_the_tab_still_works`.)
+5. **Nenhum documento disponível** (biblioteca vazia, ou sem preferido e sem variante) → recusa explicando o que falta ("marque um currículo como preferido"), sem anexar nada. (Tarefa 4, `nothing_to_pick_returns_none`; Tarefa 5, `upload_with_an_empty_library_is_refused_with_a_hint`.)
 
 ---
 
-# PARTE 1 — Upload de arquivos
+# PARTE 1 — `browser_upload`
 
 ## Estrutura de arquivos da Parte 1
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `src-tauri/src/pdf.rs` (novo) | HTML → PDF pelo WebView2 do app, janela invisível |
 | `src-tauri/src/documentos/mod.rs` (novo) | modelo `Documento`, pasta, CRUD no banco |
 | `src-tauri/src/documentos/seguranca.rs` (novo) | `resolve_attachable`: caminho dentro da pasta, existe, `sha256` confere |
 | `src-tauri/src/documentos/importar.rs` (novo) | importar arquivo do usuário com validação |
@@ -55,7 +54,6 @@ Duas partes, cada uma com **execução e teste**:
 | `src-tauri/src/documentos/fonte.rs` (novo) | `DbDocumentSource`: o que `browser_upload` consulta |
 | `src-tauri/src/db/schema.sql` | tabelas `documentos` e `preferidos` |
 | `src-tauri/src/commands/documentos.rs` (novo) | comandos Tauri da Parte 1 |
-| `src-tauri/src/commands/curriculos.rs` | `gerar_curriculo` passa a gerar o PDF e registrar o documento |
 | `src-tauri/src/mcp/tools/browser.rs` | `browser_upload` + trait `DocumentSource` |
 | `src-tauri/src/mcp/server.rs` | registra `browser_upload` |
 | `src/components/perfil/CurriculosView.tsx` | bloco mínimo "Para anexar": importar e marcar preferido |
@@ -64,170 +62,7 @@ Duas partes, cada uma com **execução e teste**:
 
 ---
 
-### Tarefa 1: Prova do PDF pelo WebView2 (portão técnico)
-
-A spec manda provar este caminho antes de construir o resto. **Se o PDF sair ruim (texto cortado, cores erradas, página errada), parar e voltar ao usuário.**
-
-**Files:**
-- Create: `src-tauri/src/pdf.rs`
-- Modify: `src-tauri/Cargo.toml` (dependências Windows), `src-tauri/src/lib.rs` (`mod pdf;` e comando de prova), `src-tauri/capabilities/` não muda (a janela invisível não ganha capability: sem IPC)
-
-**Interfaces:**
-- Produces: `pub async fn html_to_pdf(app: &tauri::AppHandle, html: &std::path::Path, pdf: &std::path::Path) -> Result<(), String>`
-
-- [ ] **Step 1: Dependências.** Em `src-tauri/Cargo.toml`, sob `[target.'cfg(windows)'.dependencies]` (criar a seção se não existir; não mexer em `windows-sys`):
-
-```toml
-webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_Foundation"] }
-windows-core = "0.61"
-```
-
-Rodar `cargo tree -i webview2-com` e confirmar **uma só versão** (a do `wry`). Se aparecerem duas, alinhar a versão à do `wry`.
-
-- [ ] **Step 2: Escrever `src-tauri/src/pdf.rs`.**
-
-```rust
-//! HTML -> PDF with the app's OWN WebView2 (the Edge engine Tauri already runs on), in a hidden window.
-//! No browser of ours, no new runtime: the same HTML the user previews becomes the PDF.
-use std::path::Path;
-use std::time::Duration;
-
-const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
-const PRINT_TIMEOUT: Duration = Duration::from_secs(30);
-
-pub async fn html_to_pdf(app: &tauri::AppHandle, html: &Path, pdf: &Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        win::print(app, html, pdf).await
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (app, html, pdf);
-        Err("gerar PDF só está disponível no Windows".into())
-    }
-}
-
-#[cfg(windows)]
-mod win {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-    use tauri::{webview::PageLoadEvent, WebviewUrl, WebviewWindowBuilder};
-    use tokio::sync::oneshot;
-    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Environment6, ICoreWebView2_7};
-    use webview2_com::PrintToPdfCompletedHandler;
-    use windows::Win32::Foundation::BOOL;
-    use windows_core::{Interface, HSTRING};
-
-    type Slot<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
-
-    fn send<T>(slot: &Slot<T>, v: T) {
-        if let Some(tx) = slot.lock().ok().and_then(|mut g| g.take()) {
-            let _ = tx.send(v);
-        }
-    }
-
-    pub async fn print(app: &tauri::AppHandle, html: &Path, pdf: &Path) -> Result<(), String> {
-        let url = tauri::Url::from_file_path(html).map_err(|_| "caminho do HTML inválido".to_string())?;
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-        let label = format!("pdf-{nanos}");
-        let (loaded_tx, loaded_rx) = oneshot::channel::<()>();
-        let loaded: Slot<()> = Arc::new(Mutex::new(Some(loaded_tx)));
-        let loaded_cb = loaded.clone();
-        // Hidden, A4-ish size, no capability for this label: the page has no IPC to the app.
-        let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-            .visible(false)
-            .inner_size(794.0, 1123.0)
-            .on_page_load(move |_w, p| {
-                if p.event() == PageLoadEvent::Finished {
-                    send(&loaded_cb, ());
-                }
-            })
-            .build()
-            .map_err(|e| format!("não foi possível abrir a janela de impressão: {e}"))?;
-
-        let result = async {
-            tokio::time::timeout(LOAD_TIMEOUT, loaded_rx)
-                .await
-                .map_err(|_| "o HTML não carregou a tempo".to_string())?
-                .map_err(|_| "a janela de impressão fechou".to_string())?;
-            let (tx, rx) = oneshot::channel::<Result<(), String>>();
-            let slot: Slot<Result<(), String>> = Arc::new(Mutex::new(Some(tx)));
-            let out = HSTRING::from(pdf.as_os_str());
-            let slot_wv = slot.clone();
-            win.with_webview(move |wv| {
-                let slot_cb = slot_wv.clone();
-                let started: windows_core::Result<()> = unsafe {
-                    (|| {
-                        let core = wv.controller().CoreWebView2()?;
-                        let core7: ICoreWebView2_7 = core.cast()?;
-                        let env6: ICoreWebView2Environment6 = wv.environment().cast()?;
-                        let s = env6.CreatePrintSettings()?;
-                        s.SetShouldPrintBackgrounds(true)?;
-                        s.SetShouldPrintHeaderAndFooter(false)?;
-                        s.SetPageWidth(8.27)?; // A4, inches
-                        s.SetPageHeight(11.69)?;
-                        s.SetMarginTop(0.0)?;
-                        s.SetMarginBottom(0.0)?;
-                        s.SetMarginLeft(0.0)?;
-                        s.SetMarginRight(0.0)?;
-                        let handler = PrintToPdfCompletedHandler::create(Box::new(move |hr: windows_core::Result<()>, ok: BOOL| {
-                            send(&slot_cb, match (hr, ok.as_bool()) {
-                                (Ok(()), true) => Ok(()),
-                                (Ok(()), false) => Err("o WebView2 não gerou o PDF".to_string()),
-                                (Err(e), _) => Err(format!("erro do WebView2 ao gerar o PDF: {e}")),
-                            });
-                            Ok(())
-                        }));
-                        core7.PrintToPdf(&out, &s, &handler)
-                    })()
-                };
-                if let Err(e) = started {
-                    send(&slot_wv, Err(format!("não foi possível iniciar a impressão: {e}")));
-                }
-            })
-            .map_err(|e| e.to_string())?;
-            tokio::time::timeout(PRINT_TIMEOUT, rx)
-                .await
-                .map_err(|_| "a geração do PDF demorou demais".to_string())?
-                .map_err(|_| "a impressão foi interrompida".to_string())?
-        }
-        .await;
-        let _ = win.destroy();
-        result
-    }
-}
-```
-
-Os tipos exatos do callback (`windows_core::Result<()>`, `BOOL`) vêm de `webview2-com-macros` 0.8.1 (`completed_callback`). Se o compilador discordar, siga a mensagem dele; **não mude a lógica**.
-
-- [ ] **Step 3: Comando de prova (temporário, removido na Tarefa 7).** Em `src-tauri/src/lib.rs`: `mod pdf;` e
-
-```rust
-#[tauri::command]
-async fn debug_pdf_prova(app: tauri::AppHandle, html: String, pdf: String) -> Result<(), String> {
-    crate::pdf::html_to_pdf(&app, std::path::Path::new(&html), std::path::Path::new(&pdf)).await
-}
-```
-
-registrado no `invoke_handler` **só com `#[cfg(debug_assertions)]`**.
-
-- [ ] **Step 4: Compilar.** `cargo build` (com `CARGO_TARGET_DIR` do scratchpad). Esperado: compila.
-
-- [ ] **Step 5: Prova no app rodando** (skill `claudia-teste`): gerar um currículo pela tela (Perfil → Currículos, um template em pt) para ter um HTML real; depois `node .claude/skills/claudia-teste/scripts/invocar.mjs debug_pdf_prova '{"html":"<caminho do cv_*.html>","pdf":"<scratchpad>\\prova.pdf"}' --escrever`. Conferir: o arquivo começa com `%PDF-`; abrir o PDF e tirar print da página 1 (e da 2, se houver); comparar com a folha do HTML. **Nenhuma janela pode aparecer na tela.**
-
-- [ ] **Step 6: Portão técnico.** Mostrar ao usuário os prints do PDF lado a lado com o HTML. Se a qualidade não servir (margens, cores, quebras), **parar** e decidir com o usuário antes da Tarefa 2.
-
-- [ ] **Step 7: Commit.**
-
-```bash
-git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/pdf.rs src-tauri/src/lib.rs
-git commit -m "feat(pdf): print HTML to PDF with the app's own WebView2 in a hidden window"
-```
-
----
-
-### Tarefa 2: Biblioteca no banco (`documentos`, `preferidos`)
+### Tarefa 1: Biblioteca no banco (`documentos`, `preferidos`)
 
 **Files:**
 - Modify: `src-tauri/src/db/schema.sql`
@@ -449,7 +284,7 @@ Criar `escolha.rs`, `fonte.rs`, `importar.rs`, `seguranca.rs` vazios (só um com
 
 ---
 
-### Tarefa 3: Resolver o arquivo com segurança
+### Tarefa 2: Resolver o arquivo com segurança
 
 **Files:**
 - Modify: `src-tauri/src/documentos/seguranca.rs`
@@ -596,7 +431,7 @@ pub fn resolve_attachable(conn: &Connection, data_dir: &Path, id: i64) -> Result
 
 ---
 
-### Tarefa 4: Importar o currículo do usuário
+### Tarefa 3: Importar o currículo do usuário
 
 **Files:**
 - Modify: `src-tauri/src/documentos/importar.rs`
@@ -756,7 +591,7 @@ O `nome` exibido pode ter qualquer texto; o **arquivo** sempre é `importado-<na
 
 ---
 
-### Tarefa 5: Regra de escolha
+### Tarefa 4: Regra de escolha
 
 **Files:**
 - Modify: `src-tauri/src/documentos/escolha.rs`
@@ -871,7 +706,7 @@ pub fn escolher(conn: &Connection, tipo: &str, variante_id: Option<&str>) -> Opt
 
 ---
 
-### Tarefa 6: Tool `browser_upload` (com a regra "o Chrome nunca falha")
+### Tarefa 5: Tool `browser_upload` (com a regra "o Chrome nunca falha")
 
 **Files:**
 - Modify: `src-tauri/src/mcp/tools/browser.rs`
@@ -1199,18 +1034,17 @@ Confirmar no código os nomes/assinaturas reais de `Probe`, `probe_node`, `node_
 
 ---
 
-### Tarefa 7: Ligar a biblioteca ao app e ao MCP
+### Tarefa 6: Ligar a biblioteca ao app e ao MCP
 
 **Files:**
 - Modify: `src-tauri/src/documentos/fonte.rs`
 - Create: `src-tauri/src/commands/documentos.rs`
 - Modify: `src-tauri/src/commands/mod.rs`, `src-tauri/src/lib.rs` (registrar comandos; remover `debug_pdf_prova`)
-- Modify: `src-tauri/src/commands/curriculos.rs` (`gerar_curriculo` gera PDF e registra)
 - Modify: `src-tauri/src/mcp/server.rs` (`browser_upload` + `with_documents`)
 - Modify: `src/components/perfil/CurriculosView.tsx`, `src/i18n/pt.ts`, `src/i18n/en.ts`
 
 **Interfaces:**
-- Consumes: `escolha::escolher`, `seguranca::resolve_attachable`, `importar::importar`, `pdf::html_to_pdf`, `DocumentSource`
+- Consumes: `escolha::escolher`, `seguranca::resolve_attachable`, `importar::importar`, `DocumentSource`
 - Produces:
   - `pub struct DbDocumentSource { pub data_dir: PathBuf }` implementando `DocumentSource`
   - comandos Tauri: `listar_documentos(tipo: String) -> Vec<Documento>`, `importar_documento(tipo: String, caminho_origem: String, nome: Option<String>) -> Documento`, `definir_preferido(id: i64, variante_id: Option<String>)`
@@ -1340,9 +1174,232 @@ pub fn definir_preferido(app: AppHandle, id: i64, variante_id: Option<String>) -
 }
 ```
 
-Registrar os três no `invoke_handler` de `lib.rs`; remover `debug_pdf_prova`.
+Registrar os três no `invoke_handler` de `lib.rs`.
 
-- [ ] **Step 5: `gerar_curriculo` gera o PDF e registra.** Tornar o comando `async` e, depois de gravar o HTML (código atual), acrescentar:
+- [ ] **Step 5: MCP.** Em `mcp/server.rs`:
+
+```rust
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct BrowserUploadArgs {
+    /// Ref de browser_read do campo de arquivo ou do botão que abre o seletor de arquivo
+    reference: String,
+    /// "curriculo" (padrão) ou "carta"
+    tipo: Option<String>,
+    /// Opcional: id de um documento da biblioteca. Sem ele, a Claudia escolhe (preferido da variante da vaga, depois o preferido geral, depois o gerado da variante). Nunca um caminho de arquivo.
+    documento: Option<i64>,
+}
+```
+
+e a tool:
+
+```rust
+#[tool(
+    description = "Anexa o currículo (ou a carta) da biblioteca da Claudia ao campo de arquivo indicado pela ref de browser_read, ou ao botão que abre o seletor de arquivo. A Claudia escolhe o arquivo; você nunca passa um caminho. Só funciona com a vaga ativa em 'candidatando'. Nunca envia a candidatura."
+)]
+async fn browser_upload(&self, Parameters(a): Parameters<BrowserUploadArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+    self.browser_reply("browser_upload", self.browser.upload(&a.reference, a.tipo.as_deref(), a.documento).await)
+}
+```
+
+Onde o `BrowserTools` é criado (≈ linha 462): `BrowserTools::new(state_file, guard, sink).with_documents(Arc::new(crate::documentos::fonte::DbDocumentSource { data_dir: cfg.data_dir.clone() }))`. A tool só fica disponível para a sessão de execução: seguir o mesmo filtro por `SessionKind` que as outras `browser_*` já usam (conferir em `server.rs`).
+
+- [ ] **Step 6: Bloco mínimo no front** (`CurriculosView.tsx`), abaixo da lista atual: título "Para anexar", lista de `listar_documentos("curriculo")` com nome, origem, formato e botão estrela "Usar como preferido" (`definir_preferido({ id })`), e botão "Adicionar o meu" que usa `open` de `@tauri-apps/plugin-dialog` com filtros `pdf`/`docx` e chama `importar_documento({ tipo: "curriculo", caminhoOrigem, nome: null })`. Mostrar o erro do backend quando houver. Textos em `pt.ts`/`en.ts` (`profile.attach.title`, `profile.attach.importMine`, `profile.attach.makePreferred`, `profile.attach.preferred`, `profile.attach.empty`). Este bloco é provisório: a Parte 2 o substitui pela aba Currículos.
+
+- [ ] **Step 7: Verificar.** `cargo test --lib` (exit 0), `npx tsc --noEmit` (exit 0), suíte live inteira (`--skip icon`, exit 0), smoke MCP (`tests/mcp-browser-smoke.mjs`) TUDO OK.
+
+- [ ] **Step 8: Commit.** `git commit -m "feat: wire the document library to the app and the MCP (browser_upload, import, preferred)"`
+
+---
+
+### Tarefa 7: Ensinar o agente (BLOQUEADA até autorização explícita do usuário)
+
+**Files:** `src-tauri/src/prompt_sistema_runtime.md`, `src-tauri/src/commands/prompts.rs` (teste do prompt)
+
+- [ ] **Step 1: Pedir autorização ao usuário**, mostrando o texto exato a acrescentar. Sem um "pode editar o prompt", **pular esta tarefa** e registrar que o agente ainda não conhece a tool.
+- [ ] **Step 2: Texto proposto** (na seção das ferramentas do browser, depois do bullet de `browser_scroll`):
+
+```markdown
+- `browser_upload` anexa o currículo (ou, com `tipo: "carta"`, a carta) ao campo de arquivo ou ao botão que abre o seletor, pela ref de `browser_read`. **Não escolha arquivo nem passe caminho:** a Claudia escolhe pela variante da vaga e pelas marcas do usuário, e diz qual usou. Depois, confira com `browser_read` ou `browser_text` que o nome do arquivo apareceu. Se a tool disser que não há currículo para anexar, registre uma pendência e não siga com a candidatura.
+```
+
+- [ ] **Step 3: Teste do prompt** em `commands/prompts.rs`: acrescentar `"browser_upload"` à lista do teste `the_shipped_runtime_prompt_no_longer_sends_the_agent_to_the_extension` (que exige cada tool no prompt). Rodar → PASS. Mutação: tirar a linha do prompt → o teste falha.
+- [ ] **Step 4: Commit.** `git commit -m "docs(prompt): teach browser_upload (approved by the user)"`
+
+---
+
+### Tarefa 8: Rodada de testes da Parte 1 e portão
+
+Seguir o `CLAUDE.md` (Processo de desenvolvimento, seções 3 a 6).
+
+- [ ] **Step 1: Unitários e regressão:** `cargo test --lib`, `npx tsc --noEmit`, `npm run build` — exit 0.
+- [ ] **Step 2: Integração:** suíte live inteira (`--skip icon`) e smoke MCP — exit 0 / TUDO OK.
+- [ ] **Step 3: Rodada de agente** (Haiku faz, Opus observa): o agente, pelo MCP do binário, abre `upload-form.html` (Chrome de teste, pasta temporária, `CLAUDIA_ALLOW_LOCAL_URLS`), lê, anexa nos três campos, tenta anexar no "Enviar candidatura" e no "Botão que não abre nada". O Opus cruza transcript, Activity log (linhas `browser_upload` com nome/formato/tamanho, **sem conteúdo**) e prints.
+- [ ] **Step 4: Smoke de uso real no app** (`/claudia-teste`): Perfil → Currículos → bloco "Para anexar": importar um PDF próprio, marcar preferido; conferir no banco (`banco.mjs "SELECT id, nome, origem, formato FROM documentos"`) e na pasta `documentos/`. Prints.
+- [ ] **Step 5: Upload num site real — só se o usuário autorizar a rodada** (ex.: LinkedIn Easy Apply até o passo do currículo, **sem enviar**). Sem autorização, registrar como "não testado em site real".
+- [ ] **Step 6: Review Opus** do diff da Parte 1 (segurança do caminho, robustez do upload, guarda). Corrigir ou registrar os achados.
+- [ ] **Step 7: Portão.** Relatório ao usuário: o que foi feito, evidências (exit codes, FAILED das mutações, prints), o que não foi verificado. **A Parte 2 só começa com a aprovação dele.**
+
+---
+
+# PARTE 2 — O resto (depois do portão da Parte 1)
+
+A Tarefa 9 (PDF) vem detalhada abaixo. Os passos de código das Tarefas 10 a 16 são escritos numa revisão deste plano **depois** do portão, com o que a Parte 1 ensinar (papel AX do input de arquivo, nomes reais dos helpers). Aqui ficam o escopo, os arquivos, as interfaces e os critérios de aceite, todos da spec.
+
+### Tarefa 9: PDF dos currículos gerados pelo WebView2 do app
+
+Começa por uma prova do caminho. **Se o PDF sair ruim (texto cortado, cores erradas, página errada), parar e voltar ao usuário** antes do Step 7.
+
+**Files:**
+- Create: `src-tauri/src/pdf.rs`
+- Modify: `src-tauri/Cargo.toml` (dependências Windows), `src-tauri/src/lib.rs` (`mod pdf;`, comando de prova), `src-tauri/src/commands/curriculos.rs` (`gerar_curriculo` gera o PDF e registra); `src-tauri/capabilities/` não muda (a janela invisível não ganha capability: sem IPC)
+
+**Interfaces:**
+- Produces: `pub async fn html_to_pdf(app: &tauri::AppHandle, html: &std::path::Path, pdf: &std::path::Path) -> Result<(), String>`
+
+- [ ] **Step 1: Dependências.** Em `src-tauri/Cargo.toml`, sob `[target.'cfg(windows)'.dependencies]` (criar a seção se não existir; não mexer em `windows-sys`):
+
+```toml
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation"] }
+windows-core = "0.61"
+```
+
+Rodar `cargo tree -i webview2-com` e confirmar **uma só versão** (a do `wry`). Se aparecerem duas, alinhar a versão à do `wry`.
+
+- [ ] **Step 2: Escrever `src-tauri/src/pdf.rs`.**
+
+```rust
+//! HTML -> PDF with the app's OWN WebView2 (the Edge engine Tauri already runs on), in a hidden window.
+//! No browser of ours, no new runtime: the same HTML the user previews becomes the PDF.
+use std::path::Path;
+use std::time::Duration;
+
+const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
+const PRINT_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub async fn html_to_pdf(app: &tauri::AppHandle, html: &Path, pdf: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        win::print(app, html, pdf).await
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, html, pdf);
+        Err("gerar PDF só está disponível no Windows".into())
+    }
+}
+
+#[cfg(windows)]
+mod win {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tauri::{webview::PageLoadEvent, WebviewUrl, WebviewWindowBuilder};
+    use tokio::sync::oneshot;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Environment6, ICoreWebView2_7};
+    use webview2_com::PrintToPdfCompletedHandler;
+    use windows::Win32::Foundation::BOOL;
+    use windows_core::{Interface, HSTRING};
+
+    type Slot<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
+
+    fn send<T>(slot: &Slot<T>, v: T) {
+        if let Some(tx) = slot.lock().ok().and_then(|mut g| g.take()) {
+            let _ = tx.send(v);
+        }
+    }
+
+    pub async fn print(app: &tauri::AppHandle, html: &Path, pdf: &Path) -> Result<(), String> {
+        let url = tauri::Url::from_file_path(html).map_err(|_| "caminho do HTML inválido".to_string())?;
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let label = format!("pdf-{nanos}");
+        let (loaded_tx, loaded_rx) = oneshot::channel::<()>();
+        let loaded: Slot<()> = Arc::new(Mutex::new(Some(loaded_tx)));
+        let loaded_cb = loaded.clone();
+        // Hidden, A4-ish size, no capability for this label: the page has no IPC to the app.
+        let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+            .visible(false)
+            .inner_size(794.0, 1123.0)
+            .on_page_load(move |_w, p| {
+                if p.event() == PageLoadEvent::Finished {
+                    send(&loaded_cb, ());
+                }
+            })
+            .build()
+            .map_err(|e| format!("não foi possível abrir a janela de impressão: {e}"))?;
+
+        let result = async {
+            tokio::time::timeout(LOAD_TIMEOUT, loaded_rx)
+                .await
+                .map_err(|_| "o HTML não carregou a tempo".to_string())?
+                .map_err(|_| "a janela de impressão fechou".to_string())?;
+            let (tx, rx) = oneshot::channel::<Result<(), String>>();
+            let slot: Slot<Result<(), String>> = Arc::new(Mutex::new(Some(tx)));
+            let out = HSTRING::from(pdf.as_os_str());
+            let slot_wv = slot.clone();
+            win.with_webview(move |wv| {
+                let slot_cb = slot_wv.clone();
+                let started: windows_core::Result<()> = unsafe {
+                    (|| {
+                        let core = wv.controller().CoreWebView2()?;
+                        let core7: ICoreWebView2_7 = core.cast()?;
+                        let env6: ICoreWebView2Environment6 = wv.environment().cast()?;
+                        let s = env6.CreatePrintSettings()?;
+                        s.SetShouldPrintBackgrounds(true)?;
+                        s.SetShouldPrintHeaderAndFooter(false)?;
+                        s.SetPageWidth(8.27)?; // A4, inches
+                        s.SetPageHeight(11.69)?;
+                        s.SetMarginTop(0.0)?;
+                        s.SetMarginBottom(0.0)?;
+                        s.SetMarginLeft(0.0)?;
+                        s.SetMarginRight(0.0)?;
+                        let handler = PrintToPdfCompletedHandler::create(Box::new(move |hr: windows_core::Result<()>, ok: BOOL| {
+                            send(&slot_cb, match (hr, ok.as_bool()) {
+                                (Ok(()), true) => Ok(()),
+                                (Ok(()), false) => Err("o WebView2 não gerou o PDF".to_string()),
+                                (Err(e), _) => Err(format!("erro do WebView2 ao gerar o PDF: {e}")),
+                            });
+                            Ok(())
+                        }));
+                        core7.PrintToPdf(&out, &s, &handler)
+                    })()
+                };
+                if let Err(e) = started {
+                    send(&slot_wv, Err(format!("não foi possível iniciar a impressão: {e}")));
+                }
+            })
+            .map_err(|e| e.to_string())?;
+            tokio::time::timeout(PRINT_TIMEOUT, rx)
+                .await
+                .map_err(|_| "a geração do PDF demorou demais".to_string())?
+                .map_err(|_| "a impressão foi interrompida".to_string())?
+        }
+        .await;
+        let _ = win.destroy();
+        result
+    }
+}
+```
+
+Os tipos exatos do callback (`windows_core::Result<()>`, `BOOL`) vêm de `webview2-com-macros` 0.8.1 (`completed_callback`). Se o compilador discordar, siga a mensagem dele; **não mude a lógica**.
+
+- [ ] **Step 3: Comando de prova (temporário, removido no Step 7).** Em `src-tauri/src/lib.rs`: `mod pdf;` e
+
+```rust
+#[tauri::command]
+async fn debug_pdf_prova(app: tauri::AppHandle, html: String, pdf: String) -> Result<(), String> {
+    crate::pdf::html_to_pdf(&app, std::path::Path::new(&html), std::path::Path::new(&pdf)).await
+}
+```
+
+registrado no `invoke_handler` **só com `#[cfg(debug_assertions)]`**.
+
+- [ ] **Step 4: Compilar.** `cargo build` (com `CARGO_TARGET_DIR` do scratchpad). Esperado: compila.
+
+- [ ] **Step 5: Prova no app rodando** (skill `claudia-teste`): gerar um currículo pela tela (Perfil → Currículos, um template em pt) para ter um HTML real; depois `node .claude/skills/claudia-teste/scripts/invocar.mjs debug_pdf_prova '{"html":"<caminho do cv_*.html>","pdf":"<scratchpad>\\prova.pdf"}' --escrever`. Conferir: o arquivo começa com `%PDF-`; abrir o PDF e tirar print da página 1 (e da 2, se houver); comparar com a folha do HTML. **Nenhuma janela pode aparecer na tela.**
+
+- [ ] **Step 6: Portão técnico.** Mostrar ao usuário os prints do PDF lado a lado com o HTML. Se a qualidade não servir (margens, cores, quebras), **parar** e decidir com o usuário antes do Step 7.
+
+- [ ] **Step 7: `gerar_curriculo` gera o PDF e registra** (depois do portão técnico). Remover `debug_pdf_prova`. Tornar o comando `async` e, depois de gravar o HTML (código atual), acrescentar:
 
 ```rust
 let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -1373,74 +1430,14 @@ crate::documentos::inserir(&conn, &crate::documentos::NovoDocumento {
 
 (`template_nome` e `idioma_str` já existem no comando; mover o cálculo de `template_nome` para antes deste bloco.) A variante do currículo gerado entra na Parte 2 (o assistente de geração ganha o seletor de variante).
 
-- [ ] **Step 6: MCP.** Em `mcp/server.rs`:
+- [ ] **Step 8: Commit.**
 
-```rust
-#[derive(serde::Deserialize, schemars::JsonSchema)]
-struct BrowserUploadArgs {
-    /// Ref de browser_read do campo de arquivo ou do botão que abre o seletor de arquivo
-    reference: String,
-    /// "curriculo" (padrão) ou "carta"
-    tipo: Option<String>,
-    /// Opcional: id de um documento da biblioteca. Sem ele, a Claudia escolhe (preferido da variante da vaga, depois o preferido geral, depois o gerado da variante). Nunca um caminho de arquivo.
-    documento: Option<i64>,
-}
+```bash
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/pdf.rs src-tauri/src/lib.rs src-tauri/src/commands/curriculos.rs
+git commit -m "feat(pdf): generated CVs become PDFs via the app's own WebView2 and join the library"
 ```
 
-e a tool:
-
-```rust
-#[tool(
-    description = "Anexa o currículo (ou a carta) da biblioteca da Claudia ao campo de arquivo indicado pela ref de browser_read, ou ao botão que abre o seletor de arquivo. A Claudia escolhe o arquivo; você nunca passa um caminho. Só funciona com a vaga ativa em 'candidatando'. Nunca envia a candidatura."
-)]
-async fn browser_upload(&self, Parameters(a): Parameters<BrowserUploadArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
-    self.browser_reply("browser_upload", self.browser.upload(&a.reference, a.tipo.as_deref(), a.documento).await)
-}
-```
-
-Onde o `BrowserTools` é criado (≈ linha 462): `BrowserTools::new(state_file, guard, sink).with_documents(Arc::new(crate::documentos::fonte::DbDocumentSource { data_dir: cfg.data_dir.clone() }))`. A tool só fica disponível para a sessão de execução: seguir o mesmo filtro por `SessionKind` que as outras `browser_*` já usam (conferir em `server.rs`).
-
-- [ ] **Step 7: Bloco mínimo no front** (`CurriculosView.tsx`), abaixo da lista atual: título "Para anexar", lista de `listar_documentos("curriculo")` com nome, origem, formato e botão estrela "Usar como preferido" (`definir_preferido({ id })`), e botão "Adicionar o meu" que usa `open` de `@tauri-apps/plugin-dialog` com filtros `pdf`/`docx` e chama `importar_documento({ tipo: "curriculo", caminhoOrigem, nome: null })`. Mostrar o erro do backend quando houver. Textos em `pt.ts`/`en.ts` (`profile.attach.title`, `profile.attach.importMine`, `profile.attach.makePreferred`, `profile.attach.preferred`, `profile.attach.empty`). Este bloco é provisório: a Parte 2 o substitui pela aba Currículos.
-
-- [ ] **Step 8: Verificar.** `cargo test --lib` (exit 0), `npx tsc --noEmit` (exit 0), suíte live inteira (`--skip icon`, exit 0), smoke MCP (`tests/mcp-browser-smoke.mjs`) TUDO OK.
-
-- [ ] **Step 9: Commit.** `git commit -m "feat: wire the document library to the app and the MCP (browser_upload, import, preferred, generated CV becomes a PDF)"`
-
 ---
-
-### Tarefa 8: Ensinar o agente (BLOQUEADA até autorização explícita do usuário)
-
-**Files:** `src-tauri/src/prompt_sistema_runtime.md`, `src-tauri/src/commands/prompts.rs` (teste do prompt)
-
-- [ ] **Step 1: Pedir autorização ao usuário**, mostrando o texto exato a acrescentar. Sem um "pode editar o prompt", **pular esta tarefa** e registrar que o agente ainda não conhece a tool.
-- [ ] **Step 2: Texto proposto** (na seção das ferramentas do browser, depois do bullet de `browser_scroll`):
-
-```markdown
-- `browser_upload` anexa o currículo (ou, com `tipo: "carta"`, a carta) ao campo de arquivo ou ao botão que abre o seletor, pela ref de `browser_read`. **Não escolha arquivo nem passe caminho:** a Claudia escolhe pela variante da vaga e pelas marcas do usuário, e diz qual usou. Depois, confira com `browser_read` ou `browser_text` que o nome do arquivo apareceu. Se a tool disser que não há currículo para anexar, registre uma pendência e não siga com a candidatura.
-```
-
-- [ ] **Step 3: Teste do prompt** em `commands/prompts.rs`: acrescentar `"browser_upload"` à lista do teste `the_shipped_runtime_prompt_no_longer_sends_the_agent_to_the_extension` (que exige cada tool no prompt). Rodar → PASS. Mutação: tirar a linha do prompt → o teste falha.
-- [ ] **Step 4: Commit.** `git commit -m "docs(prompt): teach browser_upload (approved by the user)"`
-
----
-
-### Tarefa 9: Rodada de testes da Parte 1 e portão
-
-Seguir o `CLAUDE.md` (Processo de desenvolvimento, seções 3 a 6).
-
-- [ ] **Step 1: Unitários e regressão:** `cargo test --lib`, `npx tsc --noEmit`, `npm run build` — exit 0.
-- [ ] **Step 2: Integração:** suíte live inteira (`--skip icon`) e smoke MCP — exit 0 / TUDO OK.
-- [ ] **Step 3: Rodada de agente** (Haiku faz, Opus observa): o agente, pelo MCP do binário, abre `upload-form.html` (Chrome de teste, pasta temporária, `CLAUDIA_ALLOW_LOCAL_URLS`), lê, anexa nos três campos, tenta anexar no "Enviar candidatura" e no "Botão que não abre nada". O Opus cruza transcript, Activity log (linhas `browser_upload` com nome/formato/tamanho, **sem conteúdo**) e prints.
-- [ ] **Step 4: Smoke de uso real no app** (`/claudia-teste`): Perfil → Currículos → gerar um currículo (PDF aparece no bloco "Para anexar"), importar um PDF próprio, marcar preferido; conferir no banco (`banco.mjs "SELECT id, nome, origem, formato FROM documentos"`) e na pasta `documentos/`. Prints.
-- [ ] **Step 5: Upload num site real — só se o usuário autorizar a rodada** (ex.: LinkedIn Easy Apply até o passo do currículo, **sem enviar**). Sem autorização, registrar como "não testado em site real".
-- [ ] **Step 6: Review Opus** do diff da Parte 1 (segurança do caminho, robustez do upload, guarda). Corrigir ou registrar os achados.
-- [ ] **Step 7: Portão.** Relatório ao usuário: o que foi feito, evidências (exit codes, FAILED das mutações, prints), o que não foi verificado. **A Parte 2 só começa com a aprovação dele.**
-
----
-
-# PARTE 2 — O resto (depois do portão da Parte 1)
-
-Os passos de código desta parte são escritos numa revisão deste plano **depois** do portão, com o que a Parte 1 ensinar (qualidade do PDF, papel AX do input de arquivo, nomes reais dos helpers). Aqui ficam o escopo, os arquivos, as interfaces e os critérios de aceite de cada tarefa, todos da spec.
 
 ### Tarefa 10: Variante da vaga escolhida pelo agente + variante principal
 - **Files:** `mcp/tools/vagas.rs` (`register_vaga`/`update_vaga_status` aceitam `variante_id`, validado contra `search_variants.yaml`), nova tool `set_vaga_variante`, `commands/perfil.rs` (`principal: true` em no máximo uma variante), `documentos/fonte.rs` (sem variante na vaga → variante principal).
@@ -1455,7 +1452,7 @@ Os passos de código desta parte são escritos numa revisão deste plano **depoi
 - **Aceite:** cada `curriculos/*.html` e carta existente vira documento `gerado` com PDF; idempotente; **nada é apagado** (teste conferindo que os originais continuam lá).
 
 ### Tarefa 13: Aba Currículos (sidebar, sub-abas, grade, página A4, Voltar)
-- **Files:** `Sidebar.tsx`, `App.tsx` (view `documentos`), `src/components/documentos/` (aba, grade, cartão com miniatura em `<iframe sandbox srcdoc>` carregada por IntersectionObserver, página do documento com folha A4 e **← Voltar**, tags editáveis, preferido geral e por variante, renomear, abrir, excluir com confirmação), Perfil sem as telas internas de currículos/cartas (substitui o bloco provisório da Tarefa 7), seletor de preferido nas variantes, i18n.
+- **Files:** `Sidebar.tsx`, `App.tsx` (view `documentos`), `src/components/documentos/` (aba, grade, cartão com miniatura em `<iframe sandbox srcdoc>` carregada por IntersectionObserver, página do documento com folha A4 e **← Voltar**, tags editáveis, preferido geral e por variante, renomear, abrir, excluir com confirmação), Perfil sem as telas internas de currículos/cartas (substitui o bloco provisório da Tarefa 6), seletor de preferido nas variantes, i18n.
 - **Aceite:** smoke `/claudia-teste` nos dois idiomas, estados vazio/erro/com dados, prints.
 
 ### Tarefa 14: MCP de documentos, variantes e cover letter
@@ -1467,4 +1464,4 @@ Os passos de código desta parte são escritos numa revisão deste plano **depoi
 - **Aceite:** smoke no app com prints.
 
 ### Tarefa 16: Rodada de testes da Parte 2 e entrega
-- As mesmas rodadas da Tarefa 9, mais review Opus do branch inteiro. Integração (merge/push) é decisão do usuário.
+- As mesmas rodadas da Tarefa 8, mais review Opus do branch inteiro. Integração (merge/push) é decisão do usuário.
