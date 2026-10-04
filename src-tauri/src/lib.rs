@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod documentos;
 mod db_watcher;
 mod idle_watcher;
 pub mod activity_log;
