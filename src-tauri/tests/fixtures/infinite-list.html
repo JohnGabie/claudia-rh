@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt"><head><meta charset="utf-8"><title>Lista infinita</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  .item { display: block; height: 60px; line-height: 60px; border-bottom: 1px solid #ccc; padding-left: 12px; }
+</style></head>
+<body>
+<main id="list"></main>
+<script>
+  // A list that loads 20 more items when the user gets near its end (a feed, a results page).
+  let n = 0;
+  const list = document.getElementById("list");
+  function more(k) {
+    for (let i = 0; i < k; i++) {
+      n += 1;
+      const a = document.createElement("a");
+      a.href = "#v" + n;
+      a.className = "item";
+      a.textContent = "Vaga " + n;
+      list.appendChild(a);
+    }
+  }
+  more(20);
+  let loading = false;
+  window.addEventListener("scroll", () => {
+    if (!loading && innerHeight + scrollY >= document.documentElement.scrollHeight - 80) {
+      loading = true;
+      setTimeout(() => { more(20); loading = false; }, 150);
+    }
+  });
+</script>
+</body></html>

@@ -978,3 +978,218 @@ async fn a_process_that_is_not_ours_is_never_touched() {
     // The test process itself has no Chrome window: nothing to change, and nothing is claimed.
     assert_eq!(icon::apply_to_process(std::process::id()), 0);
 }
+
+// ───────────── Robust reading (spec 2026-10-03): browser_text, estado:, repeated-call hint, browser_scroll ─────────────
+// Fixtures only: nothing here touches a job site.
+
+fn fixture_file(name: &str) -> String {
+    let p = std::fs::canonicalize(format!("tests/fixtures/{name}")).unwrap();
+    let path_str = p.display().to_string();
+    format!("file:///{}", path_str.trim_start_matches(r"\\?\").replace('\\', "/"))
+}
+
+/// Resizes the (shared) browser window from the harness's own tab: the agent's tab lives in the same window.
+async fn set_window(l: &Live, w: i64, h: i64) {
+    let win = l.client.call("Browser.getWindowForTarget", json!({})).await.unwrap();
+    let id = win["windowId"].as_i64().unwrap();
+    l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "windowState": "normal" } })).await.unwrap();
+    l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "width": w, "height": h } })).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+}
+
+/// (body, next_offset) of a browser_text result.
+fn text_page(out: &str) -> (String, Option<usize>) {
+    assert!(out.starts_with("[conteúdo da página"), "the untrusted-content line comes first: {out}");
+    let rest = out.split_once('\n').unwrap().1;
+    let (body, tail) = rest.split_once("\n\ntotal_chars:").unwrap_or_else(|| panic!("no footer in: {out}"));
+    let next = tail
+        .lines()
+        .find_map(|l| l.strip_prefix("next_offset: "))
+        .and_then(|r| r.split_whitespace().next())
+        .and_then(|n| n.parse().ok());
+    (body.to_string(), next)
+}
+
+async fn read_all_text(t: &BrowserTools, page_chars: usize) -> String {
+    let mut all = String::new();
+    let mut offset = 0usize;
+    for _ in 0..100 {
+        let out = t.text(None, Some(offset), Some(page_chars)).await.unwrap();
+        let (body, next) = text_page(&out);
+        all.push_str(&body);
+        all.push('\n');
+        match next {
+            Some(n) => offset = n,
+            None => return all,
+        }
+    }
+    panic!("browser_text never reached the end of the page");
+}
+
+fn last_line(s: &str) -> &str {
+    s.trim_end().lines().last().unwrap_or("")
+}
+
+#[tokio::test]
+#[ignore]
+async fn browser_text_reads_a_long_narrow_page_completely_and_the_same_at_any_window_size() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    let mut texts = vec![];
+    let mut inner_widths = vec![];
+    for (w, h) in [(700, 400), (1600, 1000)] {
+        set_window(&l, w, h).await;
+        t.open(&fixture_file("long-text.html")).await.unwrap();
+        let a = agent_client(&l).await;
+        inner_widths.push(eval(&a, "innerWidth").await.as_i64().unwrap());
+        // With the defaults the page is longer than one page of text: the result says where to continue.
+        let first = t.text(None, None, None).await.unwrap();
+        assert!(first.contains("next_offset: ") && first.contains("para continuar"), "{first}");
+        texts.push(read_all_text(&t, 3000).await);
+    }
+    assert!(inner_widths[1] > inner_widths[0] + 500, "the window really changed size: {inner_widths:?}");
+    assert_eq!(texts[0], texts[1], "the text does not depend on the window size ({inner_widths:?})");
+    let full = &texts[0];
+    assert!(full.chars().count() > 6000, "the fixture is longer than the default page");
+    for must in ["# Engenheiro de Software", "## Sobre a vaga", "Texto de abertura com um link inline Python no meio da frase", "• Requisito um: Python", "Linha solta em div A", "[botão: Candidatura simplificada]", "Parágrafo 1:", "Parágrafo 40:", "FIM-DO-TEXTO-XYZ"] {
+        assert!(full.contains(must), "missing {must:?}");
+    }
+    // What must never be there: hidden content, and what sits inside a field (a typed value, a password).
+    for never in ["SEGREDO-DISPLAY-NONE", "SEGREDO-ARIA-HIDDEN", "Ana-Digitada", "segredo-123", "texto-dentro-da-textarea"] {
+        assert!(!full.contains(never), "{never:?} must not come out of browser_text");
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn browser_text_never_returns_what_the_agent_typed_and_scopes_to_the_dialog_or_a_ref() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.type_text(&ref_of(&list, "textbox", "Nome"), "Ana-Digitada-XYZ").await.unwrap();
+    t.type_text(&ref_of(&list, "textbox", "Senha"), "segredo-123").await.unwrap();
+    let page = t.text(None, None, None).await.unwrap();
+    assert!(page.contains("[botão: Fora do modal]") && page.contains("[botão: Avançar]"), "{page}");
+    assert!(!page.contains("Ana-Digitada-XYZ") && !page.contains("segredo-123"), "typed values never come back: {page}");
+    let dialog = t.text(Some("dialog"), None, None).await.unwrap();
+    assert!(dialog.contains("[diálogo: Candidatar-se]") && dialog.contains("Avançar"), "{dialog}");
+    assert!(!dialog.contains("Fora do modal"), "the dialog scope excludes what is outside it: {dialog}");
+    // By ref: just that element.
+    let one = t.text(Some(&ref_of(&list, "button", "Avançar")), None, None).await.unwrap();
+    assert!(one.contains("[botão: Avançar]") && !one.contains("Fora do modal"), "{one}");
+    assert!(t.text(Some("tabpanel"), None, None).await.unwrap_err().contains("não encontrado"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_estado_line_tells_an_ordinary_page_a_login_dialog_a_login_url_a_captcha_and_an_empty_page_apart() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    for (file, expected) in [
+        ("long-text.html", "estado: ok"),
+        ("login-wall.html", "estado: login_wall"),
+        ("authwall.html", "estado: login_wall"),
+        ("captcha.html", "estado: captcha"),
+        ("empty.html", "estado: vazio"),
+    ] {
+        let opened = t.open(&fixture_file(file)).await.unwrap();
+        assert_eq!(last_line(&opened), expected, "browser_open on {file}: {opened}");
+        let read = t.read(None).await.unwrap();
+        assert_eq!(last_line(&read), expected, "browser_read on {file}: {read}");
+        let text = t.text(None, None, None).await.unwrap();
+        assert_eq!(last_line(&text), expected, "browser_text on {file}: {text}");
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_fourth_identical_call_on_an_unchanged_page_carries_a_hint_and_still_works() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    for i in 1..=4 {
+        let r = t.key("Tab", None).await.unwrap();
+        if i < 4 {
+            assert!(!r.contains("repetiu"), "press {i}: {r}");
+        } else {
+            assert!(r.starts_with("Pressionou Tab.") && r.contains("repetiu browser_key 4 vezes") && r.contains("browser_text"), "{r}");
+        }
+    }
+    // A new page: the count starts again.
+    t.open(&fixture_file("authwall.html")).await.unwrap();
+    let r = t.key("Tab", None).await.unwrap();
+    assert!(!r.contains("repetiu"), "{r}");
+    // Reading the same unchanged page over and over is a loop too.
+    t.open(&fixture_url()).await.unwrap();
+    let mut last = String::new();
+    for _ in 0..4 {
+        last = t.read(None).await.unwrap();
+    }
+    assert!(last.contains("repetiu browser_read 4 vezes"), "{last}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_page_that_changed_between_reads_is_not_a_loop() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_url()).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.read(None).await.unwrap();
+    t.read(None).await.unwrap();
+    // The page changes under the model's feet (the button renames itself), then it reads again.
+    t.click(&ref_of(&list, "button", "Avançar"), None).await.unwrap();
+    let fourth = t.read(None).await.unwrap();
+    assert!(fourth.contains("button \"Avaliar\""), "the content really changed: {fourth}");
+    assert!(!fourth.contains("repetiu"), "what the page shows changed, so this is not a loop: {fourth}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn scroll_loads_more_of_an_infinite_list_and_reports_where_the_page_is() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("infinite-list.html")).await.unwrap();
+    let before = t.read(None).await.unwrap();
+    let count = |s: &str| s.lines().filter(|x| x.contains("link \"Vaga ")).count();
+    assert_eq!(count(&before), 20, "{before}");
+    assert!(!before.contains("\"Vaga 21\""));
+    let r1 = t.scroll("down", Some(3.0), None).await.unwrap();
+    assert!(r1.contains("Rolou down 3 tela(s)") && r1.contains("Posição:") && r1.contains("fim_da_pagina:"), "{r1}");
+    tokio::time::sleep(Duration::from_millis(500)).await; // the page loads 20 more near the end
+    t.scroll("down", Some(3.0), None).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let after = t.read(None).await.unwrap();
+    assert!(after.contains("link \"Vaga 21\""), "scrolling made the list load more: {after}");
+    assert!(count(&after) > 20);
+    let top = t.scroll("top", None, None).await.unwrap();
+    assert!(top.contains("Posição: 0%"), "{top}");
+    let a = agent_client(&l).await;
+    assert_eq!(eval(&a, "scrollY").await.as_f64().unwrap(), 0.0);
+    assert!(t.scroll("sideways", None, None).await.unwrap_err().contains("direção inválida"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is_at_the_limit() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("scroll-box.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let a = agent_client(&l).await;
+    let scroll_top = || async { eval(&a, "document.getElementById('box').scrollTop").await.as_f64().unwrap() };
+    assert_eq!(scroll_top().await, 0.0);
+    let first = ref_of(&list, "link", "Item 1");
+    let r = t.scroll("down", None, Some(&first)).await.unwrap();
+    assert!(r.contains("moveu: true"), "{r}");
+    assert!(scroll_top().await > 0.0, "the list's own scroll moved, the page did not");
+    assert_eq!(eval(&a, "scrollY").await.as_f64().unwrap(), 0.0);
+    let b = t.scroll("bottom", None, Some(&first)).await.unwrap();
+    assert!(b.contains("moveu: true"), "{b}");
+    let max = eval(&a, "document.getElementById('box').scrollHeight - document.getElementById('box').clientHeight").await.as_f64().unwrap();
+    assert!((scroll_top().await - max).abs() <= 2.0, "bottom reaches the end of the container");
+    let last = ref_of(&list, "link", "Item 40");
+    let again = t.scroll("down", None, Some(&last)).await.unwrap();
+    assert!(again.contains("moveu: false") && again.contains("já está no limite"), "{again}");
+}

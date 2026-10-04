@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt"><head><meta charset="utf-8"><title>Contêiner com rolagem</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  #box { width: 300px; height: 200px; overflow: auto; border: 1px solid #888; margin: 40px; }
+  #box a { display: block; height: 40px; line-height: 40px; padding-left: 8px; }
+</style></head>
+<body>
+<h1>Resultados</h1>
+<div id="box"></div>
+<script>
+  // A list with a scroll of its own (the page itself does not scroll).
+  const box = document.getElementById("box");
+  for (let i = 1; i <= 40; i++) {
+    const a = document.createElement("a");
+    a.href = "#i" + i;
+    a.textContent = "Item " + i;
+    box.appendChild(a);
+  }
+</script>
+</body></html>
