@@ -9,6 +9,7 @@ pub mod pin;
 pub mod refs;
 pub mod service;
 pub mod theme;
+pub mod viewport;
 
 use std::path::{Path, PathBuf};
 

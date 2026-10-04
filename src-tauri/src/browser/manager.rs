@@ -33,6 +33,10 @@ pub fn build_args(o: &LaunchOptions, port: u16) -> Vec<String> {
     ];
     if o.headless {
         a.push("--headless=new".to_string());
+    } else {
+        // The user sees this window and the agent reads pages in it: open it as large as the screen allows.
+        // (viewport::ensure_min_viewport keeps it from being too small later; Chrome keeps the last size otherwise.)
+        a.push("--start-maximized".to_string());
     }
     a
 }
@@ -339,12 +343,15 @@ mod tests {
         assert!(a.iter().any(|x| x == "--user-data-dir=C:/p"));
         assert!(a.contains(&"--no-first-run".to_string()));
         assert!(a.contains(&"--no-default-browser-check".to_string()));
+        assert!(a.contains(&"--start-maximized".to_string()), "the visible browser opens large: {a:?}");
     }
 
     #[test]
     fn test_launch_is_headless() {
         let o = LaunchOptions::headless_for_tests("c".into(), "p".into());
-        assert!(build_args(&o, 1).iter().any(|x| x.starts_with("--headless")));
+        let a = build_args(&o, 1);
+        assert!(a.iter().any(|x| x.starts_with("--headless")));
+        assert!(!a.iter().any(|x| x == "--start-maximized"), "headless has no window to maximize");
     }
 
     #[test]
