@@ -1294,3 +1294,144 @@ async fn the_wheel_does_not_change_a_focused_number_field() {
     assert_eq!(eval(&a, "document.getElementById('anos').value").await, "5", "the value was not changed by the wheel");
     assert!(eval(&a, "scrollY").await.as_f64().unwrap() > 0.0, "and the page did scroll");
 }
+
+// ── browser_upload (attach-CV plan, part 1) ──────────────────────────────────
+
+struct FakeDocs {
+    path: std::path::PathBuf,
+    formato: &'static str,
+}
+
+impl claudia_rh_lib::mcp::tools::browser::DocumentSource for FakeDocs {
+    fn for_upload(&self, _vaga: i64, _tipo: &str, _doc: Option<i64>) -> Result<claudia_rh_lib::mcp::tools::browser::Attachment, String> {
+        Ok(claudia_rh_lib::mcp::tools::browser::Attachment {
+            id: 1,
+            nome: "CV Teste".into(),
+            formato: self.formato.into(),
+            tamanho: std::fs::metadata(&self.path).unwrap().len(),
+            sha256: "abcdef0123456789".into(),
+            path: self.path.clone(),
+            regra: "preferido geral".into(),
+        })
+    }
+}
+
+fn fake_doc(ext: &'static str) -> Arc<FakeDocs> {
+    let p = std::env::temp_dir().join(format!("claudia-upload-{}-{ext}.{ext}", std::process::id()));
+    std::fs::write(&p, if ext == "pdf" { &b"%PDF-1.7 teste"[..] } else { &b"PK\x03\x04 teste"[..] }).unwrap();
+    Arc::new(FakeDocs { path: p, formato: ext })
+}
+
+async fn text_of(l: &Live, id: &str) -> String {
+    let a = agent_client(l).await;
+    eval(&a, &format!("document.getElementById('{id}').textContent")).await.as_str().unwrap_or("").to_string()
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_into_a_visible_file_input_and_the_page_sees_it() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap();
+    assert!(out.contains("CV Teste") && out.contains("preferido geral"), "{out}");
+    assert!(text_of(&l, "nome-cv").await.ends_with(".pdf"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_through_a_button_that_opens_the_chooser() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.upload(&ref_of(&list, "button", "Carregar currículo"), None, None).await.unwrap();
+    assert!(text_of(&l, "nome-esc").await.ends_with(".pdf"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_refuses_a_submit_button_and_never_clicks_it() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.upload(&ref_of(&list, "button", "Enviar candidatura"), None, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    let a = agent_client(&l).await;
+    assert_eq!(eval(&a, "window.__submitted").await, false);
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_without_an_active_vaga_is_refused() {
+    let l = launch().await;
+    let none = Arc::new(Ctx { status: "candidatando", active: None, claimed: Mutex::new(HashSet::new()) });
+    let t = tools(&l, none).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap_err();
+    assert!(e.contains("candidatando"), "{e}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_reports_when_the_page_did_not_take_the_file() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("docx"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Só PDF"), None, None).await.unwrap();
+    assert!(out.contains("a página não mostrou o nome do arquivo"), "{out}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_chooser_that_never_opens_times_out_and_the_tab_still_works() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.upload(&ref_of(&list, "button", "Botão que não abre nada"), None, None).await.unwrap_err();
+    assert!(e.contains("seletor de arquivo"), "{e}");
+    // The tab is still usable, and the chooser is no longer intercepted: a later real chooser works.
+    let list = t.read(None).await.unwrap();
+    t.upload(&ref_of(&list, "button", "Carregar currículo"), None, None).await.unwrap();
+    assert!(text_of(&l, "nome-esc").await.ends_with(".pdf"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn upload_with_an_empty_library_is_refused_with_a_hint() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)); // NoDocuments
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap_err();
+    assert!(e.contains("documentos"), "{e}");
+    t.read(None).await.unwrap(); // tab still fine
+}
+
+#[tokio::test]
+#[ignore]
+async fn after_an_upload_the_file_chooser_is_no_longer_intercepted() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let _ = t.upload(&ref_of(&list, "button", "Botão que não abre nada"), None, None).await.unwrap_err();
+    // A plain click (not an upload) on the chooser button: with the interception released the browser
+    // handles the chooser itself (headless closes it: 'cancel'); still intercepted, nothing ever happens.
+    let list = t.read(None).await.unwrap();
+    t.click(&ref_of(&list, "button", "Carregar currículo"), None).await.unwrap();
+    let mut seen = String::new();
+    for _ in 0..20 {
+        seen = text_of(&l, "nome-esc").await;
+        if !seen.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    assert_eq!(seen, "cancelado", "the chooser must reach the browser again after an upload");
+}

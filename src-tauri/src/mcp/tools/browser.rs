@@ -71,6 +71,32 @@ impl ActionSink for NoSink {
     fn navigation(&self, _rec: NavRecord) {}
 }
 
+/// What browser_upload attaches: always resolved by the app from the library, never a path from the agent.
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    pub id: i64,
+    pub nome: String,
+    pub formato: String,
+    pub tamanho: u64,
+    pub sha256: String,
+    pub path: std::path::PathBuf,
+    pub regra: String,
+}
+
+pub trait DocumentSource: Send + Sync {
+    fn for_upload(&self, vaga_id: i64, tipo: &str, documento: Option<i64>) -> Result<Attachment, String>;
+}
+
+pub struct NoDocuments;
+impl DocumentSource for NoDocuments {
+    fn for_upload(&self, _: i64, _: &str, _: Option<i64>) -> Result<Attachment, String> {
+        Err("a biblioteca de documentos não está disponível: importe um currículo no app e marque-o como preferido".into())
+    }
+}
+
+/// Each step of an upload gives up after this: a page that never answers must not hold the tab.
+const UPLOAD_STEP: Duration = Duration::from_secs(5);
+
 #[derive(Default)]
 struct Outcome {
     message: String,
@@ -336,6 +362,8 @@ pub struct BrowserTools {
     /// True when the window was resized by the call that just obtained the tab: coordinates measured before
     /// it (a crop) are no longer valid.
     viewport_adjusted: AtomicBool,
+    /// Where browser_upload gets its file from (the document library in the app).
+    docs: Arc<dyn DocumentSource>,
 }
 
 impl BrowserTools {
@@ -357,6 +385,7 @@ impl BrowserTools {
             below_warned: AtomicBool::new(false),
             gave_up_at: StdMutex::new(None),
             viewport_adjusted: AtomicBool::new(false),
+            docs: Arc::new(NoDocuments),
         }
     }
 
@@ -364,6 +393,12 @@ impl BrowserTools {
     /// hint). Taken once.
     pub fn take_extra(&self) -> Option<String> {
         self.deferred_extra.lock().ok()?.take()
+    }
+
+    /// The document library browser_upload attaches from.
+    pub fn with_documents(mut self, docs: Arc<dyn DocumentSource>) -> Self {
+        self.docs = docs;
+        self
     }
 
     /// Tests only: lets browser_open load the local fixture page.
@@ -949,6 +984,115 @@ impl BrowserTools {
         }
         .await;
         self.finish("browser_scroll", started, r, Some(&c)).await
+    }
+
+    /// Attaches a library document to a file field (or to the button that opens the file chooser).
+    /// The agent gives a ref and at most a document id; the file is chosen and checked by the app.
+    /// Every failure is a tool error: the chooser interception is always released, nothing reloads or
+    /// relaunches the browser, and a button that would submit the application is never clicked.
+    pub async fn upload(&self, reference: &str, tipo: Option<&str>, documento: Option<i64>) -> Result<String, String> {
+        let started = Instant::now();
+        self.agent_active.store(true, Ordering::SeqCst);
+        let (c, _, _) = match self.tab().await {
+            Ok(t) => t,
+            Err(e) => return self.finish("browser_upload", started, Err(e), None).await,
+        };
+        let r = async {
+            let tipo = tipo.unwrap_or("curriculo");
+            if tipo != "curriculo" && tipo != "carta" {
+                return Err(format!("tipo inválido: {tipo} (use curriculo ou carta)"));
+            }
+            let vaga = self
+                .guard
+                .active_vaga()
+                .ok_or_else(|| "RECUSADO: anexar exige exatamente uma vaga em 'candidatando' (a vaga sendo candidatada).".to_string())?;
+            let att = self.docs.for_upload(vaga, tipo, documento)?;
+            let n = self.resolve_ref(&c, reference).await?;
+            let file = att.path.to_string_lossy().to_string();
+            let (shot, x, y) = self.locate(&c, &n, true).await?;
+            if Self::is_file_input(&c, n.backend_node_id).await {
+                tokio::time::timeout(UPLOAD_STEP, c.call("DOM.setFileInputFiles", json!({ "files": [file], "backendNodeId": n.backend_node_id })))
+                    .await
+                    .map_err(|_| "o campo de arquivo não respondeu a tempo".to_string())??;
+            } else {
+                // A button that opens the chooser: it must not be a submit (an upload never submits).
+                let mut probe = Probe::default();
+                probe.add_name(&n.name);
+                Self::probe_node(&c, n.backend_node_id, &mut probe).await;
+                match Self::node_at_point(&c, x, y).await {
+                    Some(hit) if hit != n.backend_node_id => Self::probe_node(&c, hit, &mut probe).await,
+                    Some(_) => {}
+                    None => probe.structural = true,
+                }
+                let url = Self::page_url(&c).await;
+                if self.run_guard(&probe, &url, None).is_err() {
+                    return Err("RECUSADO: esse elemento envia a candidatura; browser_upload só anexa arquivos.".into());
+                }
+                Self::upload_via_chooser(&c, x, y, &file).await?;
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let file_name = att.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+            let probe_js = format!("document.body ? document.body.innerText.includes({}) : false", serde_json::to_string(&file_name).unwrap_or_default());
+            let shown = Self::eval(&c, &probe_js).await.ok().and_then(|v| v.as_bool()).unwrap_or(false);
+            let kb = att.tamanho.div_ceil(1024);
+            let mut message = format!("Anexou \"{}\" ({}, {} KB) pela regra: {}.", att.nome, att.formato, kb, att.regra);
+            if !shown {
+                message.push_str(" Atenção: a página não mostrou o nome do arquivo; confira com browser_read ou browser_text antes de seguir (o site pode ter recusado o formato).");
+            }
+            Ok(Outcome {
+                message,
+                target: Some(n.name),
+                role: Some(n.role),
+                // Never the content: name, format, size and a short hash only.
+                text: Some(format!("{} | {} | {} B | sha256 {}", att.nome, att.formato, att.tamanho, &att.sha256[..att.sha256.len().min(12)])),
+                shot_before: shot,
+                ..Default::default()
+            })
+        }
+        .await;
+        self.finish("browser_upload", started, r, Some(&c)).await
+    }
+
+    async fn is_file_input(c: &CdpClient, backend: i64) -> bool {
+        let Ok(d) = c.call("DOM.describeNode", json!({ "backendNodeId": backend })).await else { return false };
+        let node = &d["node"];
+        if node["nodeName"].as_str() != Some("INPUT") {
+            return false;
+        }
+        let attrs = node["attributes"].as_array().cloned().unwrap_or_default();
+        attrs.chunks(2).any(|kv| {
+            kv.first().and_then(|k| k.as_str()) == Some("type") && kv.get(1).and_then(|v| v.as_str()).is_some_and(|v| v.eq_ignore_ascii_case("file"))
+        })
+    }
+
+    /// Clicks a button that opens the file chooser, intercepting the chooser so no native dialog ever
+    /// appears. The interception is ALWAYS turned off again, success or not: the tab must stay usable.
+    async fn upload_via_chooser(c: &CdpClient, x: f64, y: f64, file: &str) -> Result<(), String> {
+        let mut events = c.subscribe();
+        let _ = c.call("Page.enable", json!({})).await;
+        c.call("Page.setInterceptFileChooserDialog", json!({ "enabled": true })).await?;
+        let result = async {
+            Self::mouse_click(c, x, y).await?;
+            let backend = tokio::time::timeout(UPLOAD_STEP, async {
+                loop {
+                    match events.recv().await {
+                        Ok(ev) if ev["method"] == "Page.fileChooserOpened" => return ev["params"]["backendNodeId"].as_i64(),
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => return None,
+                    }
+                }
+            })
+            .await
+            .map_err(|_| "o elemento não abriu o seletor de arquivo (tempo esgotado)".to_string())?
+            .ok_or_else(|| "o seletor de arquivo abriu sem um campo de arquivo associado".to_string())?;
+            tokio::time::timeout(UPLOAD_STEP, c.call("DOM.setFileInputFiles", json!({ "files": [file], "backendNodeId": backend })))
+                .await
+                .map_err(|_| "o campo de arquivo não respondeu a tempo".to_string())??;
+            Ok(())
+        }
+        .await;
+        let _ = c.call("Page.setInterceptFileChooserDialog", json!({ "enabled": false })).await;
+        result
     }
 
     pub async fn click(&self, reference: &str, confirm: Option<i64>) -> Result<String, String> {
