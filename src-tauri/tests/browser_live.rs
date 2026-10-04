@@ -359,7 +359,7 @@ async fn a_confirmation_for_another_vaga_than_the_active_one_is_refused() {
     let t = tools(&l, Ctx::candidatando(7));
     t.open(&fixture_url()).await.unwrap();
     let submit = walk_to_submit(&t).await;
-    let e = t.click(&submit, Some(9)).await.unwrap_err();
+    let e = without_viewport_note(&t.click(&submit, Some(9)).await.unwrap_err());
     assert!(e.starts_with("RECUSADO") && e.contains('9'), "{e}");
     assert!(!e.contains('7'), "the refusal must not reveal which vaga is active: {e}");
     let a = agent_client(&l).await;
@@ -1026,8 +1026,15 @@ async fn read_all_text(t: &BrowserTools, page_chars: usize) -> String {
     panic!("browser_text never reached the end of the page");
 }
 
-fn last_line(s: &str) -> &str {
-    s.trim_end().lines().last().unwrap_or("")
+/// The `estado:` line of a tool result (a viewport note may come after it).
+fn estado_line(s: &str) -> &str {
+    s.lines().find(|l| l.starts_with("estado:")).unwrap_or("")
+}
+
+/// The result without the viewport note line (the headless test window is smaller than the minimum, so it shows up).
+fn without_viewport_note(s: &str) -> String {
+    s.lines().filter(|l| !l.starts_with("viewport")).collect::<Vec<_>>().join("
+")
 }
 
 #[tokio::test]
@@ -1037,7 +1044,7 @@ async fn browser_text_reads_a_long_narrow_page_completely_and_the_same_at_any_wi
     let t = tools(&l, Ctx::candidatando(7));
     let mut texts = vec![];
     let mut inner_widths = vec![];
-    for (w, h) in [(700, 400), (1600, 1000)] {
+    for (w, h) in [(1200, 800), (1800, 1000)] {
         set_window(&l, w, h).await;
         t.open(&fixture_file("long-text.html")).await.unwrap();
         let a = agent_client(&l).await;
@@ -1047,7 +1054,7 @@ async fn browser_text_reads_a_long_narrow_page_completely_and_the_same_at_any_wi
         assert!(first.contains("next_offset: ") && first.contains("para continuar"), "{first}");
         texts.push(read_all_text(&t, 3000).await);
     }
-    assert!(inner_widths[1] > inner_widths[0] + 500, "the window really changed size: {inner_widths:?}");
+    assert!(inner_widths[1] > inner_widths[0] + 300, "the window really changed size: {inner_widths:?}");
     assert_eq!(texts[0], texts[1], "the text does not depend on the window size ({inner_widths:?})");
     let full = &texts[0];
     assert!(full.chars().count() > 6000, "the fixture is longer than the default page");
@@ -1094,11 +1101,11 @@ async fn the_estado_line_tells_an_ordinary_page_a_login_dialog_a_login_url_a_cap
         ("empty.html", "estado: vazio"),
     ] {
         let opened = t.open(&fixture_file(file)).await.unwrap();
-        assert_eq!(last_line(&opened), expected, "browser_open on {file}: {opened}");
+        assert_eq!(estado_line(&opened), expected, "browser_open on {file}: {opened}");
         let read = t.read(None).await.unwrap();
-        assert_eq!(last_line(&read), expected, "browser_read on {file}: {read}");
+        assert_eq!(estado_line(&read), expected, "browser_read on {file}: {read}");
         let text = t.text(None, None, None).await.unwrap();
-        assert_eq!(last_line(&text), expected, "browser_text on {file}: {text}");
+        assert_eq!(estado_line(&text), expected, "browser_text on {file}: {text}");
     }
 }
 
