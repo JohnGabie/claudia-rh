@@ -301,6 +301,7 @@ pub struct BrowserTools {
     /// Hash of what the last browser_read / browser_text returned: part of the page signature the
     /// repeated-call hint compares.
     last_content: StdMutex<u64>,
+    /// (State per tools instance, which serves one agent session whose calls are sequential: it cannot cross results.)
     /// A line for the NEXT result (the viewport was adjusted ...), set where the tab is obtained and
     /// delivered by `finish`.
     pending_note: StdMutex<Option<String>>,

@@ -67,6 +67,14 @@ No processo MCP, por sessão: se a mesma ferramenta com o mesmo alvo se repete *
 
 Edição autorizada pelo usuário em 2026-10-03, **só** para: ensinar `browser_text` e `browser_scroll`; trocar a instrução "faça scroll" por "leia com `browser_text`; role só para listas que carregam mais"; explicar as linhas `estado:` (`login_wall` e `captcha` = pausa/pular conforme as regras existentes; não tentar logar). Nada além disso muda no prompt. O prompt padrão de `commands/prompts.rs` não muda (o runtime vem do arquivo embutido).
 
+### 3.7 Correções da revisão (2026-10-03)
+
+- `--start-maximized` no lançamento visível (`manager.rs`) está **autorizado** por esta spec: é como a janela abre grande; a garantia de 1200×800 de 3.1 continua valendo por chamada.
+- `estado:` casa por palavra inteira e olha só o caminho da URL; título e títulos de página não contam como captcha; diálogo de login precisa de botão ou link de entrar.
+- O texto da página termina em `[fim do conteúdo <nonce>]` e linhas que imitam as do app são neutralizadas; `estado:` é sempre a última linha.
+- `browser_click_at` logo após um redimensionamento é recusado; a roda do mouse evita campos de formulário; o aviso de viewport abaixo do mínimo sai uma vez por sessão.
+- Limite documentado: iframes não entram no `browser_text`.
+
 ## 4. Fora do escopo
 
 - Login automático (continua proibido; o usuário loga à mão).

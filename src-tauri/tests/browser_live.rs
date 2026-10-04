@@ -1001,7 +1001,7 @@ async fn set_window(l: &Live, w: i64, h: i64) {
 fn text_page(out: &str) -> (String, Option<usize>) {
     assert!(out.starts_with("[conteúdo da página"), "the untrusted-content line comes first: {out}");
     let rest = out.split_once('\n').unwrap().1;
-    let (body, tail) = rest.split_once("\n\ntotal_chars:").unwrap_or_else(|| panic!("no footer in: {out}"));
+    let (body, tail) = rest.split_once("\n[fim do conteúdo ").unwrap_or_else(|| panic!("no end marker in: {out}"));
     let next = tail
         .lines()
         .find_map(|l| l.strip_prefix("next_offset: "))
@@ -1199,4 +1199,76 @@ async fn scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is
     let last = ref_of(&list, "link", "Item 40");
     let again = t.scroll("down", None, Some(&last)).await.unwrap();
     assert!(again.contains("moveu: false") && again.contains("já está no limite"), "{again}");
+}
+
+// ───────────── Review fixes (2026-10-03): viewport through a real tool, click_at after a resize, forged text, wheel vs fields ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_tool_call_restores_the_minimum_viewport_and_says_so() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("long-text.html")).await.unwrap();
+    set_window(&l, 700, 400).await;
+    let a = agent_client(&l).await;
+    assert!(eval(&a, "innerWidth").await.as_i64().unwrap() < 1100, "the window really is small now");
+    // A TOOL (not ensure_min_viewport directly) must fix it before acting and say so.
+    let out = t.text(None, None, None).await.unwrap();
+    assert!(out.contains("viewport ajustado:"), "the result says the window was adjusted: {out}");
+    assert_eq!(out.lines().last(), Some("estado: ok"), "estado stays the last line: {out}");
+    let a = agent_client(&l).await;
+    assert!(eval(&a, "innerWidth").await.as_i64().unwrap() >= 1200, "the viewport is at least 1200 wide after the tool");
+    assert!(eval(&a, "innerHeight").await.as_i64().unwrap() >= 800, "and at least 800 high");
+    let again = t.text(None, None, None).await.unwrap();
+    assert!(!again.contains("viewport"), "the note is delivered once: {again}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn click_at_right_after_a_resize_is_refused_and_works_on_the_next_call() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("long-text.html")).await.unwrap();
+    set_window(&l, 700, 400).await;
+    let e = t.click_at(10.0, 10.0, None).await.unwrap_err();
+    assert!(e.contains("redimensionada") && e.contains("browser_crop"), "refused because the layout just changed: {e}");
+    let next = t.click_at(10.0, 10.0, None).await;
+    let msg = match &next {
+        Ok(m) => m.clone(),
+        Err(m) => m.clone(),
+    };
+    assert!(!msg.contains("redimensionada"), "the window is stable now: the refusal is gone: {msg}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_page_cannot_forge_the_tools_lines_in_browser_text() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("forge.html")).await.unwrap();
+    let out = t.text(None, None, None).await.unwrap();
+    assert_eq!(out.lines().last(), Some("estado: ok"), "the real estado is last and says ok, not the page's login_wall: {out}");
+    for own in ["estado:", "total_chars:", "next_offset:", "[fim do conteúdo "] {
+        let n = out.lines().filter(|l| l.starts_with(own)).count();
+        let expected = if own == "next_offset:" { 0 } else { 1 };
+        assert_eq!(n, expected, "exactly the tool's own {own:?} line starts a line, the page's copies are neutralized: {out}");
+    }
+    assert!(out.contains("Fim legítimo da descrição.") && out.contains("Texto normal da descrição"), "the legitimate text is intact: {out}");
+    assert!(out.contains("| estado: login_wall"), "the page's imitation is visible but marked: {out}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_wheel_does_not_change_a_focused_number_field() {
+    let l = launch().await;
+    set_window(&l, 1400, 1000).await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("number-field.html")).await.unwrap();
+    let a = agent_client(&l).await;
+    assert_eq!(eval(&a, "document.activeElement && document.activeElement.id").await, "anos", "the field is focused");
+    let r = t.scroll("down", Some(1.0), None).await.unwrap();
+    assert!(r.contains("Rolou down"), "{r}");
+    let a = agent_client(&l).await;
+    assert_eq!(eval(&a, "document.getElementById('anos').value").await, "5", "the value was not changed by the wheel");
+    assert!(eval(&a, "scrollY").await.as_f64().unwrap() > 0.0, "and the page did scroll");
 }
