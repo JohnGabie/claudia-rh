@@ -71,7 +71,7 @@ try {
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }) + "\n");
 
   const tools = (await send("tools/list", {})).result.tools.map((t) => t.name);
-  for (const need of ["browser_open", "browser_read", "browser_click", "browser_type", "browser_key", "browser_crop", "browser_click_at"]) {
+  for (const need of ["browser_open", "browser_read", "browser_text", "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_crop", "browser_click_at"]) {
     check(tools.includes(need), `tool ${need} is listed`);
   }
   check(tools.includes("update_vaga_status"), "the existing tools are still there");
@@ -95,6 +95,15 @@ try {
   const crop = await call("browser_crop", { x: 0, y: 0, width: 200, height: 100 });
   const img = crop?.content?.find((c) => c.type === "image");
   check(!!img && img.mimeType === "image/png" && img.data.length > 100, "browser_crop returns a PNG image content block");
+
+  check(/\nestado: ok$/.test(listing.trimEnd()), "browser_read ends with the estado line");
+  const pageText = text(await call("browser_text"));
+  check(pageText.startsWith("[conteúdo da página") && /total_chars: \d+/.test(pageText) && /estado: ok$/.test(pageText.trimEnd()), "browser_text: untrusted header, total_chars and the estado line");
+  check(!pageText.includes("segredo"), "browser_text never carries what was typed into a field");
+  const scrolled = await call("browser_scroll", { direction: "down" });
+  check(!scrolled.isError && /Rolou down/.test(text(scrolled)), "browser_scroll: " + text(scrolled).slice(0, 70));
+  const badScroll = await call("browser_scroll", { direction: "sideways" });
+  check(badScroll.isError === true && /direção inválida/.test(text(badScroll)), "browser_scroll rejects a bad direction");
 
   // walk the button to its final label and try to submit WITHOUT confirmation: the guard must refuse
   for (let step = 0; step < 2; step++) {

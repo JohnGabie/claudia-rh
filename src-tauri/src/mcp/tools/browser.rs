@@ -21,8 +21,12 @@ use tokio::sync::Mutex;
 use crate::browser::cdp::{self, CdpClient};
 use crate::browser::guard::{self, GuardContext, Verdict};
 use crate::browser::manager::{is_pinned, probe, read_state};
+use crate::browser::loopguard::LoopGuard;
 use crate::browser::nav::NavRecord;
+use crate::browser::pagestate;
 use crate::browser::refs::{self, RefBook, RefNode};
+use crate::browser::text;
+use std::sync::Mutex as StdMutex;
 
 /// Largest crop side, in CSS pixels: a 100000x100000 clip would crash the renderer and push a huge
 /// image into the model's context.
@@ -74,6 +78,40 @@ struct Outcome {
     role: Option<String>,
     text: Option<String>,
     shot_before: Option<Vec<u8>>,
+    /// What makes two calls "the same call" for the repeated-call hint, when `target` is not it
+    /// (a read has no target; a crop is identified by its rectangle).
+    loop_key: Option<String>,
+}
+
+fn hash_str(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// Where the page is scrolled, from Chrome's own layout metrics (no JavaScript in the page).
+#[derive(Debug, Clone, Copy)]
+struct ScrollPos {
+    y: f64,
+    client_w: f64,
+    client_h: f64,
+    content_h: f64,
+}
+
+impl ScrollPos {
+    fn max_y(&self) -> f64 {
+        (self.content_h - self.client_h).max(0.0)
+    }
+
+    fn percent(&self) -> i64 {
+        let m = self.max_y();
+        if m <= 0.0 { 100 } else { ((self.y / m) * 100.0).round().clamp(0.0, 100.0) as i64 }
+    }
+
+    fn at_end(&self) -> bool {
+        self.y >= self.max_y() - 2.0
+    }
 }
 
 /// What the page's element says about itself, read from an ISOLATED world (see `INFO_FN`).
@@ -253,6 +291,17 @@ pub struct BrowserTools {
     /// Stable refs per element within one document (see `RefBook`).
     refs: Mutex<RefBook>,
     agent_active: Arc<AtomicBool>,
+    /// Repeated-call hint (see `loopguard`). A plain mutex: never held across an await.
+    loopguard: StdMutex<LoopGuard>,
+    /// Hash of what the last browser_read / browser_text returned: part of the page signature the
+    /// repeated-call hint compares.
+    last_content: StdMutex<u64>,
+    /// A line for the NEXT result (the viewport was adjusted ...), set where the tab is obtained and
+    /// delivered by `finish`.
+    pending_note: StdMutex<Option<String>>,
+    /// Extra lines for a tool whose result is an image (browser_crop): the server reads them with
+    /// `take_extra` and adds them as text next to the image.
+    deferred_extra: StdMutex<Option<String>>,
 }
 
 impl BrowserTools {
@@ -267,7 +316,17 @@ impl BrowserTools {
             tab: Mutex::new(None),
             refs: Mutex::new(RefBook::default()),
             agent_active: Arc::new(AtomicBool::new(false)),
+            loopguard: StdMutex::new(LoopGuard::default()),
+            last_content: StdMutex::new(0),
+            pending_note: StdMutex::new(None),
+            deferred_extra: StdMutex::new(None),
         }
+    }
+
+    /// Lines the last browser_crop could not carry in its image result (a viewport note, a repeated-call
+    /// hint). Taken once.
+    pub fn take_extra(&self) -> Option<String> {
+        self.deferred_extra.lock().ok()?.take()
     }
 
     /// Tests only: lets browser_open load the local fixture page.
@@ -277,7 +336,26 @@ impl BrowserTools {
     }
 
     // ── connection: the agent's OWN tab ───────────────────────────────────
+    /// Every tool gets its tab here, so this is also the one place where the minimum viewport is
+    /// enforced before the tool acts. The note it returns (if any) rides on that tool's result.
     async fn tab(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
+        let t = self.tab_inner().await?;
+        if let Some(note) = Self::ensure_viewport(&t.0).await {
+            if let Ok(mut g) = self.pending_note.lock() {
+                *g = Some(note);
+            }
+        }
+        Ok(t)
+    }
+
+    /// The viewport guarantee (spec 3.1): the agent's tab is at least 1200x800 before any tool acts, and the
+    /// result says so when it had to be changed. Never fails a tool: None means "nothing to report".
+    // WIRE: call crate::browser::viewport::ensure_min_viewport here once frente A is merged
+    async fn ensure_viewport(_c: &CdpClient) -> Option<String> {
+        None
+    }
+
+    async fn tab_inner(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
         let mut g = self.tab.lock().await;
         if let Some(t) = g.as_ref() {
             if !t.client.is_closed() {
@@ -494,9 +572,51 @@ impl BrowserTools {
         Ok(())
     }
 
+    // ── what ends a result: the viewport note and the repeated-call hint ──
+    /// The state of the page the model last saw: where it is and what it last read. Two calls with the
+    /// same signature are "the page did not change".
+    async fn page_signature(&self, c: Option<&CdpClient>) -> String {
+        let content = self.last_content.lock().map(|g| *g).unwrap_or(0);
+        match c {
+            Some(c) => format!("{}|{}|{content}", Self::page_url(c).await, Self::doc_id(c).await),
+            None => format!("-|-|{content}"),
+        }
+    }
+
+    /// Extra lines for a result: a pending viewport note, then the repeated-call hint. Each starts
+    /// with "\n"; empty when there is nothing to say. A hint never blocks anything.
+    async fn extra_lines(&self, tool: &str, key: &str, c: Option<&CdpClient>) -> String {
+        let mut s = String::new();
+        if let Ok(mut g) = self.pending_note.lock() {
+            if let Some(n) = g.take() {
+                s.push('\n');
+                s.push_str(&n);
+            }
+        }
+        let signature = self.page_signature(c).await;
+        let hint = self.loopguard.lock().ok().and_then(|mut g| g.observe(tool, key, &signature));
+        if let Some(h) = hint {
+            s.push('\n');
+            s.push_str(&h);
+        }
+        s
+    }
+
+    /// The `estado:` line for the page the tab shows now.
+    async fn state_line(c: &CdpClient, ax: &Value) -> String {
+        let url = Self::page_url(c).await;
+        let ready = Self::eval(c, "document.readyState").await.ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+        pagestate::detect(&url, &ready, ax).line()
+    }
+
     // ── recording ─────────────────────────────────────────────────────────
     async fn finish(&self, tool: &str, started: Instant, r: Result<Outcome, String>, c: Option<&CdpClient>) -> Result<String, String> {
         self.agent_active.store(false, Ordering::SeqCst);
+        let loop_key = match &r {
+            Ok(o) => o.loop_key.clone().or_else(|| o.target.clone()),
+            Err(_) => None,
+        }
+        .unwrap_or_default();
         let mut rec = ActionRecord {
             tool: tool.to_string(),
             target: None,
@@ -536,7 +656,18 @@ impl BrowserTools {
             }
             self.sink.action(rec);
         }
-        out
+        let extra = self.extra_lines(tool, &loop_key, c).await;
+        if extra.is_empty() {
+            return out;
+        }
+        if tool == "browser_crop" {
+            // An image result has no text to carry the lines: the server adds them next to the image.
+            if let Ok(mut g) = self.deferred_extra.lock() {
+                *g = Some(extra.trim_start_matches('\n').to_string());
+            }
+            return out;
+        }
+        out.map(|m| m + &extra).map_err(|e| e + &extra)
     }
 
     // ── tools ─────────────────────────────────────────────────────────────
@@ -561,7 +692,14 @@ impl BrowserTools {
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            Ok(Outcome { message: format!("Abriu {url}. Chame browser_read para ver a página."), target: Some(url.to_string()), ..Default::default() })
+            let mut message = format!("Abriu {url}. Chame browser_read para ver a página.");
+            // The state of the page we landed on (a redirect may have taken us to a login wall). If the
+            // tree cannot be read the line is simply left out: opening still worked.
+            if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
+                message.push('\n');
+                message.push_str(&Self::state_line(&c, &ax).await);
+            }
+            Ok(Outcome { message, target: Some(url.to_string()), ..Default::default() })
         }
         .await;
         self.finish("browser_open", started, r, Some(&c)).await
@@ -585,10 +723,173 @@ impl BrowserTools {
             if total > MAX_READ_REFS {
                 text.push_str(&format!("\n(mostrando {MAX_READ_REFS} de {total} elementos; use o parâmetro scope para ver o resto)"));
             }
-            Ok(Outcome { message: text, ..Default::default() })
+            if let Ok(mut g) = self.last_content.lock() {
+                *g = hash_str(&text);
+            }
+            text.push('\n');
+            text.push_str(&Self::state_line(&c, &ax).await);
+            Ok(Outcome { message: text, loop_key: Some(scope.unwrap_or("").to_string()), ..Default::default() })
         }
         .await;
         self.finish("browser_read", started, r, Some(&c)).await
+    }
+
+    /// The text of the page (spec 3.2), from the accessibility tree, paginated by characters. Independent
+    /// of the viewport and of scrolling; runs no JavaScript in the page and never reads what was typed
+    /// into a field.
+    pub async fn text(&self, scope: Option<&str>, offset: Option<usize>, max_chars: Option<usize>) -> Result<String, String> {
+        let started = Instant::now();
+        self.agent_active.store(true, Ordering::SeqCst);
+        let (c, _, _) = match self.tab().await {
+            Ok(t) => t,
+            Err(e) => return self.finish("browser_text", started, Err(e), None).await,
+        };
+        let r = async {
+            let ax = c.call("Accessibility.getFullAXTree", json!({})).await?;
+            let sc = match text::ScopeArg::parse(scope) {
+                text::ScopeArg::Page => text::Scope::Page,
+                text::ScopeArg::Role(s) => text::Scope::Role(s),
+                text::ScopeArg::Ref(r) => text::Scope::Backend(self.resolve_ref(&c, &r).await?.backend_node_id),
+            };
+            let full = text::extract(&ax, &sc)?;
+            if let Ok(mut g) = self.last_content.lock() {
+                *g = hash_str(&full);
+            }
+            let offset = offset.unwrap_or(0);
+            let page = text::paginate(&full, offset, max_chars.unwrap_or(0));
+            let mut message = text::render(&page);
+            message.push('\n');
+            message.push_str(&Self::state_line(&c, &ax).await);
+            Ok(Outcome { message, loop_key: Some(format!("{}|{offset}", scope.unwrap_or(""))), ..Default::default() })
+        }
+        .await;
+        self.finish("browser_text", started, r, Some(&c)).await
+    }
+
+    // ── scrolling (spec 3.5): the mouse wheel, no JavaScript in the page ──
+    async fn scroll_pos(c: &CdpClient) -> Result<ScrollPos, String> {
+        let m = c.call("Page.getLayoutMetrics", json!({})).await?;
+        let v = &m["cssVisualViewport"];
+        Ok(ScrollPos {
+            y: v["pageY"].as_f64().unwrap_or(0.0),
+            client_w: v["clientWidth"].as_f64().unwrap_or(0.0),
+            client_h: v["clientHeight"].as_f64().unwrap_or(0.0),
+            content_h: m["cssContentSize"]["height"].as_f64().unwrap_or(0.0),
+        })
+    }
+
+    async fn wheel(c: &CdpClient, x: f64, y: f64, delta_y: f64) -> Result<(), String> {
+        c.call("Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": x, "y": y })).await?;
+        c.call("Input.dispatchMouseEvent", json!({ "type": "mouseWheel", "x": x, "y": y, "deltaX": 0, "deltaY": delta_y })).await?;
+        Ok(())
+    }
+
+    /// Waits until the scroll position and the page height stop changing (smooth scrolling animates).
+    async fn settle(c: &CdpClient) -> Result<ScrollPos, String> {
+        let mut last = Self::scroll_pos(c).await?;
+        for _ in 0..12 {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            let now = Self::scroll_pos(c).await?;
+            let still = (now.y - last.y).abs() < 0.5 && (now.content_h - last.content_h).abs() < 0.5;
+            last = now;
+            if still {
+                break;
+            }
+        }
+        Ok(last)
+    }
+
+    /// The top edge of an element's content box, in viewport coordinates (None when it cannot be measured).
+    async fn box_top(c: &CdpClient, backend_id: i64) -> Option<f64> {
+        let m = c.call("DOM.getBoxModel", json!({ "backendNodeId": backend_id })).await.ok()?;
+        m["model"]["content"].as_array()?.get(1)?.as_f64()
+    }
+
+    pub async fn scroll(&self, direction: &str, pages: Option<f64>, reference: Option<&str>) -> Result<String, String> {
+        let started = Instant::now();
+        if !matches!(direction, "down" | "up" | "top" | "bottom") {
+            let why = format!("direção inválida \"{direction}\": use down, up, top ou bottom");
+            return self.finish("browser_scroll", started, Err(why), None).await;
+        }
+        let pages = pages.unwrap_or(0.8);
+        if !pages.is_finite() || pages <= 0.0 {
+            return self.finish("browser_scroll", started, Err("pages deve ser um número maior que 0".into()), None).await;
+        }
+        let pages = pages.min(5.0);
+        self.agent_active.store(true, Ordering::SeqCst);
+        let (c, _, _) = match self.tab().await {
+            Ok(t) => t,
+            Err(e) => return self.finish("browser_scroll", started, Err(e), None).await,
+        };
+        let r = async {
+            // Where the wheel turns: over the element (its scrollable container moves) or the middle of the page.
+            let element = match reference {
+                Some(r) => Some(self.resolve_ref(&c, r).await?),
+                None => None,
+            };
+            let (x, y) = match &element {
+                Some(n) => {
+                    let (_, x, y) = self.locate(&c, n, false).await?; // scrolls it into view, then measures
+                    (x, y)
+                }
+                None => {
+                    let p = Self::scroll_pos(&c).await?;
+                    (p.client_w / 2.0, p.client_h / 2.0)
+                }
+            };
+            let start = Self::scroll_pos(&c).await?;
+            let start_top = match &element {
+                Some(n) => Self::box_top(&c, n.backend_node_id).await,
+                None => None,
+            };
+            let sign = if matches!(direction, "down" | "bottom") { 1.0 } else { -1.0 };
+            let one_step = start.client_h.max(200.0) * pages;
+            let to_the_end = matches!(direction, "top" | "bottom");
+            let begun = Instant::now();
+            let mut pos = start;
+            let mut top = start_top;
+            for _ in 0..30 {
+                let (before, before_top) = (pos, top);
+                let delta = if to_the_end { start.client_h.max(200.0) * 3.0 } else { one_step };
+                Self::wheel(&c, x, y, sign * delta).await?;
+                pos = Self::settle(&c).await?;
+                top = match &element {
+                    Some(n) => Self::box_top(&c, n.backend_node_id).await,
+                    None => None,
+                };
+                let page_moved = (pos.y - before.y).abs() >= 1.0 || (pos.content_h - before.content_h).abs() >= 1.0;
+                let element_moved = matches!((before_top, top), (Some(a), Some(b)) if (a - b).abs() >= 1.0);
+                if !to_the_end || !(page_moved || element_moved) || begun.elapsed() > Duration::from_secs(8) {
+                    break;
+                }
+            }
+            let message = match (&element, reference) {
+                (Some(_), Some(r)) => {
+                    let moved = match (start_top, top) {
+                        (Some(a), Some(b)) => (a - b).abs() >= 1.0,
+                        _ => (pos.y - start.y).abs() >= 1.0,
+                    };
+                    format!(
+                        "Rolou o contêiner de {r} {direction}. moveu: {moved}{}. Chame browser_read para ver o que apareceu.",
+                        if moved { "" } else { " (já está no limite nessa direção)" }
+                    )
+                }
+                _ => {
+                    let amount = if to_the_end { String::new() } else { format!(" {pages} tela(s)") };
+                    let fits = if pos.max_y() <= 0.0 { " A página cabe na tela: não há o que rolar." } else { "" };
+                    format!(
+                        "Rolou {direction}{amount}. Posição: {}% (y={} de {}). fim_da_pagina: {}.{fits} Chame browser_read para ver o que apareceu.",
+                        pos.percent(),
+                        pos.y.round(),
+                        pos.max_y().round(),
+                        pos.at_end()
+                    )
+                }
+            };
+            Ok(Outcome { message, target: Some(direction.to_string()), loop_key: Some(format!("{direction}|{}", reference.unwrap_or(""))), ..Default::default() })
+        }
+        .await;
+        self.finish("browser_scroll", started, r, Some(&c)).await
     }
 
     pub async fn click(&self, reference: &str, confirm: Option<i64>) -> Result<String, String> {
@@ -655,6 +956,7 @@ impl BrowserTools {
                 // Passwords: neither the text nor the "before" crop are ever recorded.
                 text: if is_password { None } else { Some(text.to_string()) },
                 shot_before: if is_password { None } else { shot },
+                ..Default::default()
             })
         }
         .await;
@@ -730,7 +1032,8 @@ impl BrowserTools {
         .await;
         match r {
             Ok(data) => {
-                let _ = self.finish("browser_crop", started, Ok(Outcome { message: "recorte".into(), ..Default::default() }), Some(&c)).await;
+                let key = format!("{x:.0},{y:.0},{w:.0},{h:.0}");
+                let _ = self.finish("browser_crop", started, Ok(Outcome { message: "recorte".into(), loop_key: Some(key), ..Default::default() }), Some(&c)).await;
                 Ok(ToolOutput::Image { data_base64: data, mime: "image/png".into() })
             }
             Err(e) => self.finish("browser_crop", started, Err(e), Some(&c)).await.map(ToolOutput::Text),
@@ -1080,6 +1383,106 @@ mod tests {
         let submit = probe_of(&["Enviar candidatura"], false);
         assert!(a.run_guard(&submit, "https://x", Some(1)).is_ok());
         assert!(b.run_guard(&submit, "https://x", Some(1)).is_err(), "the second session must be refused");
+    }
+
+    fn ok(message: &str) -> Result<Outcome, String> {
+        Ok(Outcome { message: message.into(), ..Default::default() })
+    }
+
+    fn ok_target(message: &str, target: &str) -> Result<Outcome, String> {
+        Ok(Outcome { message: message.into(), target: Some(target.into()), ..Default::default() })
+    }
+
+    #[tokio::test]
+    async fn a_pending_viewport_note_rides_on_the_next_result_once() {
+        let dir = temp_dir("note-once");
+        let t = tools_with(&dir);
+        *t.pending_note.lock().unwrap() = Some("viewport ajustado: 929x861 -> 1200x800".into());
+        let first = t.finish("browser_read", Instant::now(), ok("lista"), None).await.unwrap();
+        assert_eq!(first, "lista\nviewport ajustado: 929x861 -> 1200x800");
+        let second = t.finish("browser_read", Instant::now(), ok("lista"), None).await.unwrap();
+        assert_eq!(second, "lista", "the note is delivered once, not on every later result");
+    }
+
+    #[tokio::test]
+    async fn the_fourth_identical_call_carries_the_hint_and_still_succeeds() {
+        let dir = temp_dir("loop-hint");
+        let t = tools_with(&dir);
+        for i in 1..=3 {
+            let m = t.finish("browser_key", Instant::now(), ok_target("Pressionou Tab.", "Tab"), None).await.unwrap();
+            assert_eq!(m, "Pressionou Tab.", "call {i} has no hint");
+        }
+        let m = t.finish("browser_key", Instant::now(), ok_target("Pressionou Tab.", "Tab"), None).await.unwrap();
+        assert!(m.starts_with("Pressionou Tab.") && m.contains("repetiu browser_key 4 vezes") && m.contains("browser_text"), "{m}");
+    }
+
+    #[tokio::test]
+    async fn a_hint_on_a_refusal_keeps_the_refusal_first_and_it_is_still_an_error() {
+        let dir = temp_dir("loop-hint-err");
+        let t = tools_with(&dir);
+        let mut last = Ok(String::new());
+        for _ in 0..4 {
+            last = t.finish("browser_click", Instant::now(), Err("RECUSADO: este botão envia a candidatura.".into()), None).await;
+        }
+        let e = last.unwrap_err();
+        assert!(e.starts_with("RECUSADO"), "the refusal text stays first: {e}");
+        assert!(e.contains("repetiu browser_click 4 vezes"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn the_hint_resets_when_what_the_page_shows_changes() {
+        let dir = temp_dir("loop-reset");
+        let t = tools_with(&dir);
+        for _ in 0..3 {
+            t.finish("browser_key", Instant::now(), ok_target("x", "Tab"), None).await.unwrap();
+        }
+        *t.last_content.lock().unwrap() = hash_str("a different page content"); // a read saw something new
+        let m = t.finish("browser_key", Instant::now(), ok_target("x", "Tab"), None).await.unwrap();
+        assert_eq!(m, "x", "the page changed: the count starts again");
+    }
+
+    #[tokio::test]
+    async fn a_crop_defers_its_extra_lines_to_the_server_because_an_image_cannot_carry_text() {
+        let dir = temp_dir("crop-extra");
+        let t = tools_with(&dir);
+        *t.pending_note.lock().unwrap() = Some("viewport ajustado".into());
+        let m = t.finish("browser_crop", Instant::now(), ok("recorte"), None).await.unwrap();
+        assert_eq!(m, "recorte", "the crop's own result is untouched");
+        assert_eq!(t.take_extra().as_deref(), Some("viewport ajustado"));
+        assert_eq!(t.take_extra(), None, "taken once");
+    }
+
+    #[test]
+    fn an_identical_crop_is_a_repeat_and_a_different_rectangle_is_not() {
+        // The crop's loop key is its rectangle: moving the crop around the page is exploring, not looping.
+        let mut g = LoopGuard::default();
+        for i in 0..6 {
+            assert_eq!(g.observe("browser_crop", &format!("0,{},300,200", i * 100), "s"), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn scroll_rejects_bad_arguments_before_touching_the_browser() {
+        let dir = temp_dir("scroll-args");
+        let t = tools_with(&dir);
+        let e = t.scroll("sideways", None, None).await.unwrap_err();
+        assert!(e.contains("direção inválida") && e.contains("down"), "{e}");
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let e = t.scroll("down", Some(bad), None).await.unwrap_err();
+            assert!(e.contains("maior que 0"), "{bad}: {e}");
+        }
+    }
+
+    #[test]
+    fn scroll_position_math() {
+        let top = ScrollPos { y: 0.0, client_w: 1200.0, client_h: 800.0, content_h: 3000.0 };
+        assert_eq!((top.max_y(), top.percent(), top.at_end()), (2200.0, 0, false));
+        let mid = ScrollPos { y: 1100.0, ..top };
+        assert_eq!((mid.percent(), mid.at_end()), (50, false));
+        let end = ScrollPos { y: 2199.0, ..top };
+        assert!(end.at_end(), "within 2px of the end counts as the end");
+        let fits = ScrollPos { y: 0.0, client_w: 1200.0, client_h: 800.0, content_h: 500.0 };
+        assert_eq!((fits.max_y(), fits.percent(), fits.at_end()), (0.0, 100, true), "a page that fits has nothing to scroll");
     }
 
     #[test]

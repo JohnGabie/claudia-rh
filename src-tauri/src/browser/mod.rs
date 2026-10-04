@@ -3,11 +3,14 @@ pub mod cdp;
 pub mod guard;
 pub mod icon;
 pub mod install;
+pub mod loopguard;
 pub mod manager;
 pub mod nav;
+pub mod pagestate;
 pub mod pin;
 pub mod refs;
 pub mod service;
+pub mod text;
 pub mod theme;
 pub mod viewport;
 

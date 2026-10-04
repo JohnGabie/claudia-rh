@@ -7,7 +7,7 @@ use unicode_normalization::UnicodeNormalization;
 /// Lowercase, strip accents, remove invisible/format characters, and collapse whitespace
 /// so "Enviar\u{200B}candidatura", "Enviar  solicitação", and "enviarcandidatura" all normalize equally.
 /// Uses NFKD normalization, removes combining marks and format characters, handles special letters.
-fn fold(s: &str) -> String {
+pub(crate) fn fold(s: &str) -> String {
     // Step 1: NFKD normalize to decompose fullwidth and other compatibility characters
     let normalized: String = s.nfkd().collect();
 
