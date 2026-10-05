@@ -2,7 +2,7 @@
 // Requires --autorizado: ask the user for permission for this round before running it.
 // Usage: node cenario-copia.mjs --autorizado [--origem <folder>] [--saida <folder>] [--manter-automacao]
 //   --origem            default %APPDATA%\io.github.johngabie.claudia-rh
-//   --saida             default %TEMP%\claudia-sandbox\copia, recreated on every run
+//   --saida             default %TEMP%\claudia-teste-sandbox\copia, recreated on every run
 //   --manter-automacao  keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy)
 import fs from "node:fs";
 import os from "node:os";
@@ -84,7 +84,7 @@ try {
   if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) throw new Error(`Source data not found: ${origem}`);
 
   // Resolve saida the same way novoCenarioDir does.
-  const saidaPath = path.resolve(values.saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-sandbox", "copia"));
+  const saidaPath = path.resolve(values.saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-teste-sandbox", "copia"));
 
   // Check for overlap: --saida must not be inside --origem or vice versa.
   if (dentroDe(origem, saidaPath) || dentroDe(saidaPath, origem)) {

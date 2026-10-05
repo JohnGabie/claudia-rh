@@ -1,5 +1,5 @@
 // Copies a consistent snapshot of the app database from the sandbox guest to the host.
-// Prints {db}: use it as CLAUDIA_DB with the claudia-app scripts. Repeat after each action that changes data.
+// Prints {db}: use it as CLAUDIA_DB with the claudia-teste-e2e scripts. Repeat after each action that changes data.
 // Usage: node banco-guest.mjs [--id <sandbox>] [--work-dir <folder>] [--timeout 30]   (--work-dir default $env:LAB_WORK_DIR)
 import fs from "node:fs";
 import path from "node:path";

@@ -46,7 +46,7 @@ function lerSessoes() {
 
 // A remote target has its own database: never fall back to the host's app folder.
 if (hostRemoto(HOST) && !process.env.CLAUDIA_DB) {
-  console.error(`recusado: remote target (CDP_HOST=${HOST}): set CLAUDIA_DB from node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs`);
+  console.error(`recusado: remote target (CDP_HOST=${HOST}): set CLAUDIA_DB from node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs`);
   process.exit(2);
 }
 

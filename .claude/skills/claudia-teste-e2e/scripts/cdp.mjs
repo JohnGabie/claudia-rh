@@ -13,7 +13,7 @@ export async function alvos(port) {
 export function falhaCdp(port, err) {
   const causa = err?.cause?.code ?? err?.cause?.message ?? err?.message ?? String(err);
   console.error(`CDP not reachable at ${HOST}:${port}: ${causa}`);
-  console.error("For a sandbox target run: node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar");
+  console.error("For a sandbox target run: node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar");
   process.exit(1);
 }
 

@@ -32,7 +32,7 @@ export function labDir() {
 }
 
 export function novoCenarioDir(saida, nome) {
-  const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-sandbox", nome));
+  const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-teste-sandbox", nome));
 
   // Safety checks before deletion
   const parsed = path.parse(dir);

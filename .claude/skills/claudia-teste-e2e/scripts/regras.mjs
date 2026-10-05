@@ -1,4 +1,4 @@
-// Pure rules for the claudia-app skill. No I/O here, so every rule that
+// Pure rules for the claudia-teste-e2e skill. No I/O here, so every rule that
 // protects the user can be pinned by a test that needs no running app.
 
 const PAGINA_APP = /localhost:1420|tauri\.localhost/;

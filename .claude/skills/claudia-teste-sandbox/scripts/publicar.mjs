@@ -1,6 +1,6 @@
 // Publishes the app plus a scenario folder to the Windows Sandbox lab (lab's scripts\app-stage.ps1).
 // Usage: node publicar.mjs --app <exe|installer|folder> --cenario <scenario folder> [--work-dir <folder>]
-//   --work-dir  default $env:LAB_WORK_DIR, else %TEMP%\claudia-sandbox\work
+//   --work-dir  default $env:LAB_WORK_DIR, else %TEMP%\claudia-teste-sandbox\work
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -15,7 +15,7 @@ try {
   const lab = labDir();
   const meta = path.join(values.cenario, "cenario.json");
   if (!fs.existsSync(meta)) throw new Error(`Not a scenario folder (cenario.json missing): ${values.cenario}`);
-  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR || path.join(process.env.TEMP, "claudia-sandbox", "work");
+  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR || path.join(process.env.TEMP, "claudia-teste-sandbox", "work");
   const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(lab, "scripts", "app-stage.ps1"),
     "-App", values.app, "-AppData", path.join(values.cenario, "appdata", APP_ID), "-WorkDir", workDir, "-Clean"],
     { stdio: ["ignore", "inherit", "inherit"] });

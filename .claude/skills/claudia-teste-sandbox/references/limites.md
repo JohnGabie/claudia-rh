@@ -49,7 +49,7 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 ## 7. WebView2 só aceita CDP no `127.0.0.1` do guest
 
 - **Comportamento:** com `--remote-debugging-port`, o DevTools do WebView2 escuta só no loopback do guest; o host não alcança direto pelo IP do guest. `cdp-guest.mjs` cria, como System, `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<porta-host> connectaddress=127.0.0.1 connectport=<porta>` e uma regra de firewall de entrada para `<porta-host>`.
-- **Demonstra:** com o app aberto com CDP no guest, `curl http://<ip do guest>:9333/json/version` (ip de `wsb ip --id <id>`) não responde; depois de `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --id <id>`, `curl http://<ip do guest>:19333/json/version` responde.
+- **Demonstra:** com o app aberto com CDP no guest, `curl http://<ip do guest>:9333/json/version` (ip de `wsb ip --id <id>`) não responde; depois de `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --id <id>`, `curl http://<ip do guest>:19333/json/version` responde.
 - **Fonte:** spec do repositório, seção "CDP do app dentro do Sandbox".
 - **Situação:** portproxy e regra de firewall verificados como funcionais (2026-10-05), mas CDP não respondeu em nenhuma tentativa (release e debug). Não há resposta HTTP em `http://127.0.0.1:9333/json/version` no guest, com ou sem `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` e com ou sem política por app.
 
@@ -62,18 +62,18 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 ## 9. CDP no guest não funciona
 
 - **Comportamento:** a porta de depuração remota do WebView2 não responde, nem com build release nem com build de debug. Com o app rodando no guest (debug ou release), o processo do `msedgewebview2.exe` não exibe `--remote-debugging-port` na linha de comando mesmo com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` no ambiente do processo (`claudia-rh.exe`). Política por app (`HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments`) também é ignorada. O `portproxy` do `cdp-guest.mjs` e a regra de firewall funcionam (confirmado ao vivo), mas não há resposta HTTP. A causa não foi isolada (possível diferença: runtime WebView2 do guest vs. host, usuário `WDAGUtilityAccount`).
-- **Demonstra:** `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` (debug ou release): exit 1 em ~90 s, "CDP did not answer ... within 90s".
-- **Situação:** falha verificada com ambos os builds (2026-10-05). Use degraus 2 e 3 da escada de prints (`claudia-app`) em vez de CDP.
+- **Demonstra:** `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` (debug ou release): exit 1 em ~90 s, "CDP did not answer ... within 90s".
+- **Situação:** falha verificada com ambos os builds (2026-10-05). Use degraus 2 e 3 da escada de prints (`claudia-teste-e2e`) em vez de CDP.
 
 ## Evals de disparo
 
-Medidos com `node .claude/skills/claudia-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.
+Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.
 
 | Rodada (2026-10-05) | Resultado | Inválidas |
 |---|---|---|
 | 1 | 15/15 | 0 |
 | 2 | 15/15 | 0 |
 
-Nas duas rodadas, os 9 casos "deve" chamaram `Skill(claudia-sandbox)`. Nos "não deve": olhar a tela do app aberto, print do Perfil e "olha o app que tá rodando no Sandbox" foram para `Skill(claudia-app)`; o registro no Linear para `Skill(linear-claudia)`; `cargo test` e o ajuste de CSS começaram por ferramenta comum (`PowerShell`, `Grep`), sem skill.
+Nas duas rodadas, os 9 casos "deve" chamaram `Skill(claudia-teste-sandbox)`. Nos "não deve": olhar a tela do app aberto, print do Perfil e "olha o app que tá rodando no Sandbox" foram para `Skill(claudia-teste-e2e)`; o registro no Linear para `Skill(linear-claudia)`; `cargo test` e o ajuste de CSS começaram por ferramenta comum (`PowerShell`, `Grep`), sem skill.
 
-Limites da medição: um modelo só, duas rodadas, prompts curtos. A descrição não precisou de ajuste depois da primeira versão (894 caracteres). Ao mudar a descrição desta skill ou a da `claudia-app`, rode de novo os evals das duas: os casos de fronteira ("olha o app no Sandbox" e "monta um Windows limpo") dependem das duas descrições juntas.
+Limites da medição: um modelo só, duas rodadas, prompts curtos. A descrição não precisou de ajuste depois da primeira versão (894 caracteres). Ao mudar a descrição desta skill ou a da `claudia-teste-e2e`, rode de novo os evals das duas: os casos de fronteira ("olha o app no Sandbox" e "monta um Windows limpo") dependem das duas descrições juntas.

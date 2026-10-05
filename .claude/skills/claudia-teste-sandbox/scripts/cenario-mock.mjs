@@ -1,5 +1,5 @@
 // Clean-machine scenario "mock": fictional profile and a database built from the repo schema plus a seed.
-// Usage: node cenario-mock.mjs [--saida <folder>]   (default %TEMP%\claudia-sandbox\mock, recreated on every run)
+// Usage: node cenario-mock.mjs [--saida <folder>]   (default %TEMP%\claudia-teste-sandbox\mock, recreated on every run)
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";

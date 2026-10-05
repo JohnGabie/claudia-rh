@@ -1,16 +1,16 @@
 ---
-name: claudia-sandbox
+name: claudia-teste-sandbox
 description: >-
   Testa o Claudia RH (app Tauri) num Windows LIMPO e isolado (Windows Sandbox, laboratório em SANDBOX_LAB_DIR): monta o ambiente, escolhe os dados (cenário novo, mock ou cópia dos dados do usuário), publica ou instala o app e liga o CDP do app dentro do guest.
   Use SEMPRE que o pedido envolver máquina limpa ou PC novo ("funciona num PC novo?", "testa do zero", "como se fosse a primeira vez"), Windows Sandbox, testar o instalador (NSIS, setup, pré-requisitos como WebView2), primeira abertura e welcome, desinstalação, build ou instalação do zero, ou testar com os dados reais do usuário sem mexer neles. Use também para preparar o Sandbox antes de olhar o app lá dentro.
-  NÃO use para olhar, clicar ou tirar print do app já rodando (local ou no Sandbox já montado), reproduzir bug no app aberto, mexer em CSS ou UI: isso é a claudia-app. NÃO use para cargo test, tsc, Linear nem sites de vagas.
+  NÃO use para olhar, clicar ou tirar print do app já rodando (local ou no Sandbox já montado), reproduzir bug no app aberto, mexer em CSS ou UI: isso é a claudia-teste-e2e. NÃO use para cargo test, tsc, Linear nem sites de vagas.
 ---
 
-# claudia-sandbox
+# claudia-teste-sandbox
 
 Mapa do laboratório Windows Sandbox para testar o app num Windows limpo. Diz o que existe, quando usar cada peça e quais regras valem; **não é roteiro**: você desenha o teste conforme a pergunta.
 
-Comandos abaixo partem da **raiz do repositório** (`node .claude/skills/claudia-sandbox/scripts/...`). Scripts em Node ≥ 22.13, sem dependências npm. Contrato: exit 0 ok, 1 falha, 2 erro de uso; a **última linha do stdout é JSON**.
+Comandos abaixo partem da **raiz do repositório** (`node .claude/skills/claudia-teste-sandbox/scripts/...`). Scripts em Node ≥ 22.13, sem dependências npm. Contrato: exit 0 ok, 1 falha, 2 erro de uso; a **última linha do stdout é JSON**.
 
 ## 1. Pré-requisitos
 
@@ -40,13 +40,13 @@ Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\l
 
 ## 4. Cenários de dados
 
-Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`; com o disco do `%TEMP%` cheio, passe `--saida` em outro disco) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
+Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; com o disco do `%TEMP%` cheio, passe `--saida` em outro disco) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
 
 | Cenário | Comando | Quando faz sentido |
 |---|---|---|
-| `novo` | `node .claude/skills/claudia-sandbox/scripts/cenario-novo.mjs [--saida <p>]` | primeira abertura, welcome, criação de perfil, instalador num PC novo |
-| `mock` | `node .claude/skills/claudia-sandbox/scripts/cenario-mock.mjs [--saida <p>]` | telas com dados sem expor ninguém: perfil e banco fictícios, automação desligada |
-| `copia` | `node .claude/skills/claudia-sandbox/scripts/cenario-copia.mjs --autorizado [--origem <p>] [--saida <p>] [--manter-automacao]` | bug que só aparece com os dados reais; migração sobre dados reais |
+| `novo` | `node .claude/skills/claudia-teste-sandbox/scripts/cenario-novo.mjs [--saida <p>]` | primeira abertura, welcome, criação de perfil, instalador num PC novo |
+| `mock` | `node .claude/skills/claudia-teste-sandbox/scripts/cenario-mock.mjs [--saida <p>]` | telas com dados sem expor ninguém: perfil e banco fictícios, automação desligada |
+| `copia` | `node .claude/skills/claudia-teste-sandbox/scripts/cenario-copia.mjs --autorizado [--origem <p>] [--saida <p>] [--manter-automacao]` | bug que só aparece com os dados reais; migração sobre dados reais |
 
 **`copia` exige pedir autorização ao usuário naquela rodada**, dizendo o que será copiado; autorização de outra rodada não vale. Sem `--autorizado` sai com exit 2 sem ler nada. Comportamento:
 - copia só `%APPDATA%\io.github.johngabie.claudia-rh` e só lê a origem; **nunca** `%LOCALAPPDATA%` (perfil do browser, cookies);
@@ -56,7 +56,7 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`; com o 
 
 ## 5. O que publicar
 
-`node .claude/skills/claudia-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-sandbox\work`). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
+`node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-teste-sandbox\work`). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
 
 - **exe de `tauri build --no-bundle`**: rápido, mas não instala pré-requisitos; sem WebView2 no guest o app não abre.
 - **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart` (com o instalador publicado, o `guest-run.json` registra o instalador como `exe`: inofensivo).
@@ -65,13 +65,13 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`; com o 
 
 ## 6. Observar o app no guest
 
-1. `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs [--id <id>] [--iniciar] [--exe-path <exe no guest>] [--porta 9333] [--porta-host 19333] [--timeout 90]` → `{host, porta, browser}`. O WebView2 só escuta CDP no `127.0.0.1` do guest; o script cria `netsh portproxy` e regra de firewall no guest. Com `--iniciar`, sobe o app com CDP (`--exe-path` para o app instalado; sem ele, `guest-run.ps1`). Falha do `wsb exec` e código de saída não zero do processo no guest aparecem na hora (lidos da linha localizada "... código: N" do stdout, pois o `wsb exec` sempre sai com 0). Exige perfil com rede.
+1. `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs [--id <id>] [--iniciar] [--exe-path <exe no guest>] [--porta 9333] [--porta-host 19333] [--timeout 90]` → `{host, porta, browser}`. O WebView2 só escuta CDP no `127.0.0.1` do guest; o script cria `netsh portproxy` e regra de firewall no guest. Com `--iniciar`, sobe o app com CDP (`--exe-path` para o app instalado; sem ele, `guest-run.ps1`). Falha do `wsb exec` e código de saída não zero do processo no guest aparecem na hora (lidos da linha localizada "... código: N" do stdout, pois o `wsb exec` sempre sai com 0). Exige perfil com rede.
    - **CDP no guest não funciona hoje.** A porta de depuração remota não abre, nem com build de debug. A variável de ambiente `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` chega ao processo e a política `AdditionalBrowserArguments` por app pode ser aplicada, mas o WebView2 do guest não responde em ambos os casos; a causa está em aberto. Use os degraus 2 e 3 da escada de prints em vez de CDP (experimental: `cdp-guest.mjs` monta portproxy + firewall corretamente, e falha com timeout).
-2. Use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-app`** (tela, árvore, cliques, comandos, agentes).
-3. Banco: `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs [--id <id>] [--work-dir <p>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
-4. Prints: escada de prints da `claudia-app` (inclui degraus sem CDP e sem rede).
+2. Use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-teste-e2e`** (tela, árvore, cliques, comandos, agentes).
+3. Banco: `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs [--id <id>] [--work-dir <p>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
+4. Prints: escada de prints da `claudia-teste-e2e` (inclui degraus sem CDP e sem rede).
 
-Fluxo típico, **exemplo e não obrigação**: cenário → `publicar.mjs` → `test-up.ps1 -Config lab.config.app-winapp.json` → `guest-firewall.ps1` (System) → instalar ou `guest-run.ps1` → `cdp-guest.mjs` → observar com `claudia-app` → prints → copiar evidências de `C:\labwork` → `test-down.ps1`.
+Fluxo típico, **exemplo e não obrigação**: cenário → `publicar.mjs` → `test-up.ps1 -Config lab.config.app-winapp.json` → `guest-firewall.ps1` (System) → instalar ou `guest-run.ps1` → `cdp-guest.mjs` → observar com `claudia-teste-e2e` → prints → copiar evidências de `C:\labwork` → `test-down.ps1`.
 
 ## 7. Regras
 
@@ -90,7 +90,7 @@ Quando notar algo que tornaria o teste mais fácil, rápido ou confiável (no la
 Você desenha os testes a partir da pergunta e decide se vale escrever testes automáticos. Os testes dos scripts desta skill rodam sem Sandbox:
 
 ```
-node --test ".claude/skills/claudia-sandbox/scripts/test/*.test.mjs"
+node --test ".claude/skills/claudia-teste-sandbox/scripts/test/*.test.mjs"
 ```
 
 Use o glob; a forma `node --test <pasta>/` falha no Node 24.

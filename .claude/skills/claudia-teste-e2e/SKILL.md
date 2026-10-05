@@ -1,18 +1,18 @@
 ---
-name: claudia-app
+name: claudia-teste-e2e
 description: >-
   Olha o Claudia RH (app Tauri) RODANDO, local ou no Windows Sandbox (CDP_HOST), por CDP: ver a tela, clicar, chamar comandos do backend e ler o que os agentes fazem.
   Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico), comparar a UI com o banco, queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS), perguntar se o agente ou a sessão se comportou como devia, comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
   QUALQUER bug do app, inclusive pedido curto como "corrige este bug", "o bug tá acontecendo de novo" ou "tem um bug no X": carregue esta skill ANTES de abrir ou editar código, porque o primeiro passo é reproduzir no app rodando.
-  Use também antes de dar por concluída qualquer mudança em UI ou em comandos Tauri.
-  NÃO use para cargo test puro, sites de vagas, Linear, nem para montar Windows limpo, escolher dados ou instalar o app no Sandbox (claudia-sandbox).
+  Use também antes de concluir qualquer mudança em UI ou em comandos Tauri.
+  NÃO use para cargo test puro, sites de vagas, Linear, nem para montar Windows limpo, escolher dados ou instalar o app no Sandbox (claudia-teste-sandbox).
 ---
 
-# claudia-app
+# claudia-teste-e2e
 
 Dá a quem desenvolve o olhar de um dev sobre o app rodando. **Nunca interage com sites de vagas** e nunca clica em algo que submeta candidatura: quem interage com sites são os agentes dentro da Claudia.
 
-Todos os scripts ficam em `.claude/skills/claudia-app/scripts/` e rodam com Node ≥ 22.13, sem instalar nada.
+Todos os scripts ficam em `.claude/skills/claudia-teste-e2e/scripts/` e rodam com Node ≥ 22.13, sem instalar nada.
 
 ## Fluxo
 
@@ -28,9 +28,9 @@ Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOS
 | Alvo | Como |
 |---|---|
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
-| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
+| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
-CDP no guest não funciona hoje: a porta de depuração não abre, nem com build de debug. Use os degraus 2 e 3 da escada de prints (ver `claudia-sandbox`, seção 6).
+CDP no guest não funciona hoje: a porta de depuração não abre, nem com build de debug. Use os degraus 2 e 3 da escada de prints (ver `claudia-teste-sandbox`, seção 6).
 
 Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 
@@ -52,7 +52,7 @@ Primeiro reproduza no app rodando. Só feche depois de reproduzido antes e confi
 
 ## Prints
 
-Comandos relativos à pasta da skill (`.claude/skills/claudia-app/`), como no resto deste arquivo; scripts da `claudia-sandbox` com o caminho a partir da raiz do repositório.
+Comandos relativos à pasta da skill (`.claude/skills/claudia-teste-e2e/`), como no resto deste arquivo; scripts da `claudia-teste-sandbox` com o caminho a partir da raiz do repositório.
 
 Escada, do mais fiel ao mais robusto; usar o primeiro que funcionar e dizer qual foi usado:
 

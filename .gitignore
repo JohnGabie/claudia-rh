@@ -33,10 +33,10 @@ strategy.md
 disparo.json
 notif.json
 modo_autonomo.json
-# Fictional test fixtures (no real data) used by the claudia-sandbox skill
-!.claude/skills/claudia-sandbox/fixtures/candidate_base.yaml
-!.claude/skills/claudia-sandbox/fixtures/search_variants.yaml
-!.claude/skills/claudia-sandbox/fixtures/strategy.md
+# Fictional test fixtures (no real data) used by the claudia-teste-sandbox skill
+!.claude/skills/claudia-teste-sandbox/fixtures/candidate_base.yaml
+!.claude/skills/claudia-teste-sandbox/fixtures/search_variants.yaml
+!.claude/skills/claudia-teste-sandbox/fixtures/strategy.md
 
 # SQLite runtime databases
 *.db
