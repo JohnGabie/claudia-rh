@@ -25,6 +25,48 @@ const candidato = {
   ultima_atualizacao: "2026-10-04T09:00:00Z", fontes_usadas: [],
 };
 
+const flag = (n: string) => new URLSearchParams(location.search).has(n);
+
+const vagaAtual = () => ({
+  id: 12, titulo: "Senior Software Engineer", empresa: "Novo Example A/S", url: "https://example.com/jobs/12", etapa: "formulário",
+  anexos: flag("apagado")
+    ? [{ tipo: "curriculo", documento_id: null, nome: null, formato: null }]
+    : [
+        { tipo: "curriculo", documento_id: 1, nome: "CV Backend (Classic ATS)", formato: "pdf" },
+        { tipo: "carta", documento_id: 4, nome: "Cover letter - Novo Example", formato: "pdf" },
+      ],
+});
+
+const cand = (id: number, titulo: string, empresa: string, documento_id: number | null, documento_nome: string | null) => ({
+  id, vaga_id: id, titulo, empresa, plataforma: "LinkedIn", url: "https://example.com", enviada_em: "2026-10-04T10:00:00Z",
+  pasta_arquivos: "", metodo: "easy_apply", resultado: null, documento_id, documento_nome,
+});
+const CANDIDATURAS = [
+  cand(1, "Senior Software Engineer", "Novo Example A/S", 1, "CV Backend (Classic ATS)"),
+  cand(2, "Platform Engineer", "Sample ApS", 2, "CV DevOps (Dev Compact)"),
+  cand(3, "Backend Developer", "Demo Group", null, null),
+];
+
+const pend = (id: number, categoria: string, descricao: string, titulo_vaga: string, empresa_vaga: string) => ({
+  id, vaga_id: id, titulo_vaga, empresa_vaga, criada_em: new Date(Date.now() - id * 600000).toISOString(),
+  categoria, descricao, resolvida: false, resolvida_em: null, resolucao: null,
+});
+const PENDENCIAS = [
+  pend(1, "sem_curriculo", "A vaga pede currículo e a biblioteca não tem nenhum. Gere ou importe um para continuar.", "Senior Software Engineer", "Novo Example A/S"),
+  pend(2, "sem_carta", "A vaga pede carta de apresentação e não há nenhuma adequada na biblioteca.", "Platform Engineer", "Sample ApS"),
+  pend(3, "captcha", "Captcha no envio do formulário.", "Backend Developer", "Demo Group"),
+];
+
+const ev = (id: number, over: Record<string, unknown>) => ({
+  id, ts: new Date(Date.now() - id * 30000).toISOString(), kind: "action", session_id: 3, vaga_id: 12, tool: null, target: null,
+  role: null, text: null, url: null, result: null, error: null, duration_ms: 120, shot_before: null, shot_after: null, extra: null, ...over,
+});
+const EVENTOS = [
+  ev(3, { tool: "browser_upload", target: "input[type=file]", text: "documento 1 | CV Backend (Classic ATS) | pdf | 84213 bytes | sha256 a1b2c3d4e5f6", url: "https://example.com/apply", result: "ok · variante backend (a da vaga)", duration_ms: 480 }),
+  ev(2, { tool: "browser_click", target: "button: Next", url: "https://example.com/apply", result: "ok" }),
+  ev(1, { tool: "browser_read", url: "https://example.com/apply", result: "estado: ok", duration_ms: 900 }),
+];
+
 async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   switch (cmd) {
     case "ler_candidato_base": return candidato;
@@ -37,9 +79,28 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
     }
     case "guardar_pesos_variantes": return undefined;
     case "listar_propostas": return [];
-    case "contar_pendencias":
+    case "contar_pendencias": return PENDENCIAS.length;
     case "contar_propostas": return 0;
-    case "welcome_necessario": return false;
+    // ── Where the document shows up (Dashboard, History, Pendencias, Activity log, Welcome). Fake data only.
+    // `?welcome` opens the Welcome flow; `?vazio` (documents mock) makes the library empty, `?apagado` deletes the attached CV.
+    case "welcome_necessario": return new URLSearchParams(location.search).has("welcome");
+    case "verificar_setup": return { claude_instalado: true, browser_pronto: true, perfil_preenchido: true };
+    case "obter_modo_autonomo": return true;
+    case "browser_status": return { stage: "ready" };
+    case "marcar_welcome_concluido": return undefined;
+    case "candidaturas_hoje": return 2;
+    case "atividade_recente":
+    case "listar_vagas": return [];
+    case "vaga_atual_sessao": return vagaAtual();
+    case "vagas_analisadas_hoje": return 14;
+    case "vagas_analisadas_total": return 96;
+    case "tempo_sessoes_hoje": return 42;
+    case "obter_config_disparo": return { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, limite_vagas_sessao: 0, janelas: [] };
+    case "obter_status_linkedin_rede": return { ativo: false, ultima_busca: null, vagas_encontradas: 0 };
+    case "listar_candidaturas": return CANDIDATURAS;
+    case "listar_pendencias": return PENDENCIAS;
+    case "activity_log_list": return EVENTOS;
+    case "activity_log_image": return Promise.reject("mock: no screenshot");
     case "sugerir_feedback": return { sugerir: false };
     case "plugin:dialog|open": return "C:\\Users\\example\\Downloads\\curriculo-importado.pdf";
     case "plugin:event|listen": return 1;
