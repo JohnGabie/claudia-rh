@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { APP_ID, sandboxId, noGuest, validarInt, falhaDe } from "./comum.mjs";
+import { APP_ID, sandboxId, noGuest, validarInt, falhaDe, erroBancoAusente } from "./comum.mjs";
 
 try {
   const { values } = parseArgs({ options: { id: { type: "string" }, "work-dir": { type: "string" }, timeout: { type: "string", default: "30" } } });
@@ -16,12 +16,17 @@ try {
   const hostDbTmp = hostDb + ".tmp";
   fs.rmSync(hostDb, { force: true });
   fs.rmSync(hostDbTmp, { force: true });
-  noGuest(id, "ExistingLogin", [
-    "New-Item -ItemType Directory -Force C:\\labwork\\db | Out-Null",
-    "Remove-Item -Force C:\\labwork\\db\\claudia_rh.db.tmp -ErrorAction SilentlyContinue",
-    `& C:\\lab\\tools\\sqlite\\sqlite3.exe (Join-Path $env:APPDATA '${APP_ID}\\claudia_rh.db') '.backup C:/labwork/db/claudia_rh.db.tmp'`,
-    "if ($LASTEXITCODE -eq 0) { Move-Item -Force C:\\labwork\\db\\claudia_rh.db.tmp C:\\labwork\\db\\claudia_rh.db } else { exit $LASTEXITCODE }",
-  ].join("\n"));
+  const guestDb = `%APPDATA%\\${APP_ID}\\claudia_rh.db`;
+  try {
+    noGuest(id, "ExistingLogin", [
+      // Never let sqlite3 create an empty database when the app has not made one yet.
+      `$src = Join-Path $env:APPDATA '${APP_ID}\\claudia_rh.db'; if (-not (Test-Path $src)) { exit 3 }`,
+      "New-Item -ItemType Directory -Force C:\\labwork\\db | Out-Null",
+      "Remove-Item -Force C:\\labwork\\db\\claudia_rh.db.tmp -ErrorAction SilentlyContinue",
+      "& C:\\lab\\tools\\sqlite\\sqlite3.exe $src '.backup C:/labwork/db/claudia_rh.db.tmp'",
+      "if ($LASTEXITCODE -eq 0) { Move-Item -Force C:\\labwork\\db\\claudia_rh.db.tmp C:\\labwork\\db\\claudia_rh.db } else { exit $LASTEXITCODE }",
+    ].join("\n"));
+  } catch (e) { throw erroBancoAusente(e, guestDb); }
   const fim = Date.now() + timeout * 1000;
   while (!fs.existsSync(hostDb) && Date.now() < fim) await new Promise((r) => setTimeout(r, 1000));
   if (!fs.existsSync(hostDb)) throw new Error(`Snapshot not found at ${hostDb} (does the app database exist in the guest yet?).`);

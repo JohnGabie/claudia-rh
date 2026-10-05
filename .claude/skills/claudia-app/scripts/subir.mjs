@@ -20,7 +20,7 @@ if (hostRemoto(HOST)) {
   const ok = v && validarVersaoApp(v, await ler(`http://${HOST}:${porta}/json/list`)).ok;
   const decisao = decidirSubida({ appRodando: ok, appTemCdp: ok, remoto: true });
   if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", host: HOST, porta })); process.exit(0); }
-  console.log(JSON.stringify({ acao: "abortar", motivo: `sem CDP do app em ${HOST}:${porta}; no Sandbox, inicie o app com node claudia-sandbox/scripts/cdp-guest.mjs --iniciar` }));
+  console.log(JSON.stringify({ acao: "abortar", motivo: `sem CDP do app em ${HOST}:${porta}; no Sandbox, inicie o app com node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar` }));
   process.exit(3);
 }
 

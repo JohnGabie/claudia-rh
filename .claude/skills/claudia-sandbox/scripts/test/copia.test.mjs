@@ -93,7 +93,7 @@ test("cenario copia: database corrompido", () => {
   const saida = path.join(base, "saida");
   const r = rodar(SCRIPT, ["--autorizado", "--origem", origem, "--saida", saida]);
   assert.equal(r.code, 1, "db corrompido sai com 1");
-  assert.match(r.err, /integrity|database|claudia_rh\.db/, "erro menciona db ou integrity");
+  assert.match(r.err, /failed integrity_check after 3 attempts/, "erro final apos 3 tentativas de integrity_check");
 });
 
 test("cenario copia: saida folder guard (non-empty without cenario.json)", () => {

@@ -12,7 +12,7 @@ description: >-
 
 Dá a quem desenvolve o olhar de um dev sobre o app rodando. **Nunca interage com sites de vagas** e nunca clica em algo que submeta candidatura: quem interage com sites são os agentes dentro da Claudia.
 
-Todos os scripts ficam em `.claude/skills/claudia-app/scripts/` e rodam com Node ≥ 22, sem instalar nada.
+Todos os scripts ficam em `.claude/skills/claudia-app/scripts/` e rodam com Node ≥ 22.13, sem instalar nada.
 
 ## Fluxo
 
@@ -28,7 +28,7 @@ Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOS
 | Alvo | Como |
 |---|---|
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
-| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node claudia-sandbox/scripts/cdp-guest.mjs`; banco: `CLAUDIA_DB` impresso por `node claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
+| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
 Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 

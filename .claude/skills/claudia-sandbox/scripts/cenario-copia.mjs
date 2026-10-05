@@ -21,6 +21,11 @@ if (!values.autorizado) {
   sair("Scenario 'copia' reads the user's real data: ask the user for permission for this round, then run again with --autorizado.", 2);
 }
 
+// A torn copy (source written mid-copy) surfaces as SQLITE_CORRUPT (11) / SQLITE_NOTADB (26): retry those, throw the rest.
+function dbCorrompido(err) {
+  return err?.errcode === 11 || err?.errcode === 26 || /database disk image is malformed|file is not a database/i.test(err?.message ?? "");
+}
+
 // Helper function: perform one copy cycle (cpSync + fold + integrity check).
 // Returns { ok: true } on success, or { ok: false, db: <path> } if integrity check fails (does not throw).
 // Throws on cpSync errors, database open errors, etc. — those propagate to top-level catch.
@@ -38,6 +43,7 @@ function copiarUmaVez(origem, dados) {
       db.close();
     } catch (err) {
       if (db) try { db.close(); } catch {}
+      if (dbCorrompido(err)) return { ok: false, db: f };
       throw err;
     }
   }
@@ -57,6 +63,7 @@ function copiarUmaVez(origem, dados) {
       }
     } catch (err) {
       if (db) try { db.close(); } catch {}
+      if (dbCorrompido(err)) return { ok: false, db: f };
       throw err;
     }
   }

@@ -132,6 +132,15 @@ export function erroDeExec(r, id, como) {
   const detail = msg ? `: ${msg}` : "";
   const err = new Error(`wsb exec failed (status ${r.status}) in sandbox ${id} as ${como}${detail}`);
   err.code = "ERR_EXEC_FAILED";
+  err.status = r.status;
+  return err;
+}
+
+/** Guest exit status 3 means the app database does not exist yet; map it to an actionable error, pass others through. */
+export function erroBancoAusente(err, guestPath) {
+  if (err?.code === "ERR_EXEC_FAILED" && err.status === 3) {
+    return new Error(`the app database does not exist in the guest yet (${guestPath}): start the app first`);
+  }
   return err;
 }
 

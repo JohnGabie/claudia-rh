@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir, dentroDe } from "../comum.mjs";
+import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir, dentroDe, erroDeExec, erroBancoAusente } from "../comum.mjs";
 import { tempDir, SCRIPTS } from "./util.mjs";
 
 function cleanup(dir) {
@@ -237,4 +237,18 @@ test("novoCenarioDir: sibling path is no longer refused as ancestor", () => {
 
   assert.equal(dentroDe(testDir, REPO_ROOT), false, "sibling is not ancestor of REPO_ROOT");
   assert.equal(dentroDe(REPO_ROOT, testDir), false, "REPO_ROOT is not ancestor of sibling");
+});
+
+test("erroDeExec carries the guest exit status", () => {
+  assert.equal(erroDeExec({ status: 3, stderr: "" }, "id", "ExistingLogin").status, 3);
+});
+
+test("erroBancoAusente: status 3 becomes the 'start the app first' error, others pass through", () => {
+  const e3 = erroDeExec({ status: 3, stderr: "" }, "id", "ExistingLogin");
+  const m = erroBancoAusente(e3, "GUEST/claudia_rh.db");
+  assert.equal(m.message, "the app database does not exist in the guest yet (GUEST/claudia_rh.db): start the app first");
+  const e1 = erroDeExec({ status: 1, stderr: "boom" }, "id", "ExistingLogin");
+  assert.equal(erroBancoAusente(e1, "x"), e1);
+  const outro = new Error("x");
+  assert.equal(erroBancoAusente(outro, "x"), outro);
 });
