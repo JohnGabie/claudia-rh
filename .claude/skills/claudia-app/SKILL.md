@@ -30,6 +30,8 @@ Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOS
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
 | Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
+CDP no guest exige build com DevTools do WebView2 habilitado: o build release do projeto não abre a porta de depuração, então publique um build de debug (ver `claudia-sandbox`, seção 6).
+
 Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 
 ## Modo reconhecimento
@@ -58,10 +60,10 @@ Escada, do mais fiel ao mais robusto; usar o primeiro que funcionar e dizer qual
 |---|---|---|---|
 | 1 | `node scripts/ver.mjs tela <arq>` | idem, com `CDP_HOST`/`CDP_PORT` | só a página do WebView2 |
 | 2 | `pwsh -NoProfile -File scripts/print-janela.ps1 -Processo claudia-rh -Saida <arq>` | `winapp ui screenshot --on sandbox -a claudia-rh -o <arq>` | janela nativa inteira, inclusive diálogos nativos que o CDP não vê |
-| 3 | `pwsh -NoProfile -File scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira |
+| 3 | `pwsh -NoProfile -File scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira; no Sandbox é o desktop do guest e, nos perfis `app*`, o Chrome do laboratório pode ficar na frente e cobrir o app |
 | 4 | — | sem rede: `C:\labsandbox\app\guest-observe.ps1` via `wsb exec` (PNG em `C:\labwork\run`) | tela inteira + árvore UIA |
 
-`scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira; só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File scripts/print-janela.ps1 ...`. Prints vão para `debug-logs/prints/` por padrão (já ignorada pelo git) e podem conter dados pessoais: não anexar a issues públicas sem revisar.
+`scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira (com vários monitores, `-TelaInteira` captura o retângulo de toda a tela virtual, com áreas pretas onde não há monitor); só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File scripts/print-janela.ps1 ...`. Prints vão para `debug-logs/prints/` por padrão (já ignorada pelo git) e podem conter dados pessoais: não anexar a issues públicas sem revisar.
 
 **Regra:** toda afirmação sobre a UI vem com print; se nenhum degrau da escada funcionar, dizer quais falharam e por quê.
 

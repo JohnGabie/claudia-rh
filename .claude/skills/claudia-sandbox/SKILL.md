@@ -29,7 +29,7 @@ Comandos abaixo partem da **raiz do repositório** (`node .claude/skills/claudia
 | `sandbox\app\guest-run.ps1 [-Exe] [-NoStart]` | no guest: copia `appdata`/`localappdata` publicados e inicia o exe (`-NoStart`: só os dados) |
 | `guest-observe.ps1`, `guest-click.ps1`, `guest-chrome-probe.ps1` | tela + árvore UIA, clique e Chrome no guest sem winapp |
 
-Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\labsandbox` (scripts do guest, RO), `C:\appdeploy` (deploy, RO), `C:\labwork` (= `<work-dir>\guest-rw`, gravável). Controle: `wsb exec --id <id> -r ExistingLogin|System -c "<comando>"` (não devolve a saída do processo: grave em `C:\labwork`). Documentação completa: `%SANDBOX_LAB_DIR%\.claude\skills\sandbox-lab\SKILL.md`. Comportamentos que afetam o teste: `references/limites.md`.
+Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\labsandbox` (scripts do guest, RO), `C:\appdeploy` (deploy, RO), `C:\labwork` (= `<work-dir>\guest-rw`, gravável). Controle: `wsb exec --id <id> -r ExistingLogin|System -c "<comando>"` (não devolve a saída do processo: grave em `C:\labwork`; o `wsb exec` sempre sai com 0 no host e o código do guest aparece só como texto localizado no stdout, que os scripts desta skill interpretam: `references/limites.md`). Documentação completa: `%SANDBOX_LAB_DIR%\.claude\skills\sandbox-lab\SKILL.md`. Comportamentos que afetam o teste: `references/limites.md`.
 
 ## 3. Específico do app
 
@@ -40,7 +40,7 @@ Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\l
 
 ## 4. Cenários de dados
 
-Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
+Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`; com o disco do `%TEMP%` cheio, passe `--saida` em outro disco) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
 
 | Cenário | Comando | Quando faz sentido |
 |---|---|---|
@@ -59,12 +59,14 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-sandbox\<cenario>`) e grav
 `node .claude/skills/claudia-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-sandbox\work`). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
 
 - **exe de `tauri build --no-bundle`**: rápido, mas não instala pré-requisitos; sem WebView2 no guest o app não abre.
-- **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart`.
+- **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart` (com o instalador publicado, o `guest-run.json` registra o instalador como `exe`: inofensivo).
+- **`npm ci` falha com EPERM** se qualquer processo (ex.: um servidor vite de outra worktree) segura arquivos em `node_modules` (como `@esbuild\win32-x64\esbuild.exe`), e deixa o `node_modules` pela metade: pare o processo antes, ou use uma worktree separada e `CARGO_TARGET_DIR` próprio. O `tauri build` também pode regravar `src-tauri/Cargo.toml` (só fim de linha), sujando o `git status`.
 - Build dentro do guest: perfil `lab.config.app-build.json`; target do cargo no disco do guest (`references/limites.md`).
 
 ## 6. Observar o app no guest
 
-1. `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs [--id <id>] [--iniciar] [--exe-path <exe no guest>] [--porta 9333] [--porta-host 19333] [--timeout 90]` → `{host, porta, browser}`. O WebView2 só escuta CDP no `127.0.0.1` do guest; o script cria `netsh portproxy` e regra de firewall no guest. Com `--iniciar`, sobe o app com CDP (`--exe-path` para o app instalado; sem ele, `guest-run.ps1`). Falha do `wsb exec` aparece na hora. Exige perfil com rede.
+1. `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs [--id <id>] [--iniciar] [--exe-path <exe no guest>] [--porta 9333] [--porta-host 19333] [--timeout 90]` → `{host, porta, browser}`. O WebView2 só escuta CDP no `127.0.0.1` do guest; o script cria `netsh portproxy` e regra de firewall no guest. Com `--iniciar`, sobe o app com CDP (`--exe-path` para o app instalado; sem ele, `guest-run.ps1`). Falha do `wsb exec` e código de saída não zero do processo no guest aparecem na hora (lidos da linha localizada "... código: N" do stdout, pois o `wsb exec` sempre sai com 0). Exige perfil com rede.
+   - **CDP no guest exige build com DevTools do WebView2 habilitado.** O `src-tauri/Cargo.toml` declara `tauri` só com `features = ["tray-icon"]` (sem `devtools`); por isso o build release do projeto não abre a porta de depuração remota (num smoke, o `--iniciar` com o app release instalado não abriu a porta; a causa pelo código é essa, a confirmação ao vivo com build de debug está pendente). Para CDP no guest publique um build de debug: `npx tauri build --debug --bundles nsis` (instalador, traz o WebView2) ou `npx tauri build --debug --no-bundle` (exe solto, exige WebView2 no guest).
 2. Use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-app`** (tela, árvore, cliques, comandos, agentes).
 3. Banco: `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs [--id <id>] [--work-dir <p>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
 4. Prints: escada de prints da `claudia-app` (inclui degraus sem CDP e sem rede).
