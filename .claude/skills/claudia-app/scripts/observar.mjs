@@ -12,7 +12,7 @@ const i = process.argv.indexOf("--linhas");
 const LINHAS = i > 0 ? Number(process.argv[i + 1]) : 60;
 
 async function lerTerminal() {
-  const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420/.test(t.url));
+  const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420|tauri\.localhost/.test(t.url));
   if (!alvo) return { indisponivel: "sem página do app" };
   const { cdp, fechar } = await ligar(alvo.webSocketDebuggerUrl);
   await cdp("Runtime.enable");
@@ -35,7 +35,7 @@ function lerLog() {
 }
 
 function lerSessoes() {
-  const dados = path.join(process.env.APPDATA, "io.github.johngabie.claudia-rh", "claudia_rh.db");
+  const dados = process.env.CLAUDIA_DB || path.join(process.env.APPDATA, "io.github.johngabie.claudia-rh", "claudia_rh.db");
   const db = new DatabaseSync(dados, { readOnly: true });
   const linhas = db.prepare("SELECT * FROM sessoes ORDER BY id DESC LIMIT 5").all();
   db.close();

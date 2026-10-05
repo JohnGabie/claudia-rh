@@ -1,7 +1,9 @@
-// Pure rules for the claudia-teste skill. No I/O here, so every rule that
+// Pure rules for the claudia-app skill. No I/O here, so every rule that
 // protects the user can be pinned by a test that needs no running app.
 
-/** The app's WebView2 reports an Edge build and serves the page on :1420. */
+const PAGINA_APP = /localhost:1420|tauri\.localhost/;
+
+/** The app's WebView2 reports an Edge build and serves the page on :1420 (tauri dev) or tauri.localhost (release). */
 export function validarVersaoApp(versao, paginas) {
   if (!versao || typeof versao.Browser !== "string") {
     return { ok: false, motivo: "sem campo Browser: a porta não responde como CDP" };
@@ -9,19 +11,24 @@ export function validarVersaoApp(versao, paginas) {
   if (!/^Edg\//.test(versao.Browser)) {
     return { ok: false, motivo: `Browser é ${versao.Browser}, esperado Edg/ (WebView2). A porta é de outro processo` };
   }
-  const temApp = Array.isArray(paginas) && paginas.some((p) => p.type === "page" && /localhost:1420/.test(p.url || ""));
+  const temApp = Array.isArray(paginas) && paginas.some((p) => p.type === "page" && PAGINA_APP.test(p.url || ""));
   if (!temApp) {
-    return { ok: false, motivo: "Edg encontrado, mas sem página em localhost:1420" };
+    return { ok: false, motivo: "Edg encontrado, mas sem página do app (localhost:1420 ou tauri.localhost)" };
   }
   return { ok: true, motivo: "porta do app confirmada" };
 }
 
-/** Never restart the user's app on our own: running without CDP means ask. */
-export function decidirSubida({ appRodando, appTemCdp }) {
+/** A CDP host other than this machine means the app runs elsewhere (e.g. a sandbox guest). */
+export function hostRemoto(host) {
+  return !!host && !/^(127\.0\.0\.1|localhost|::1)$/i.test(host);
+}
+
+/** Never restart the user's app on our own: running without CDP means ask. Remote targets are never started from here. */
+export function decidirSubida({ appRodando, appTemCdp, remoto = false }) {
+  if (remoto) return appTemCdp ? "reutilizar" : "abortar";
   if (!appRodando) return "subir";
   return appTemCdp ? "reutilizar" : "perguntar";
 }
-
 
 /** A button we cannot name, or that deletes/sends, is never clicked blind. */
 export function rotuloPerigoso(rotulo) {

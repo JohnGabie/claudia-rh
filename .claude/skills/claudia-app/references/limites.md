@@ -42,7 +42,7 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 
 ## Evals de disparo (2026-10-01 e 02)
 
-Medidos com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
+Medidos com `node .claude/skills/claudia-app/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-app)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
 
 ### Antigo e novo, lado a lado
 
@@ -61,8 +61,8 @@ Execuções inválidas na medição que valeu: **0** em todas as oito. Antes del
 
 | | Antiga | Nova |
 |---|---|---|
-| Opus r1 | falha: primeira ferramenta `Bash` | dispara `Skill(claudia-teste)` |
-| Opus r2 | falha: primeira ferramenta `ToolSearch` | dispara `Skill(claudia-teste)` |
+| Opus r1 | falha: primeira ferramenta `Bash` | dispara `Skill(claudia-app)` |
+| Opus r2 | falha: primeira ferramenta `ToolSearch` | dispara `Skill(claudia-app)` |
 | Sonnet r1 e r2 | dispara | dispara |
 
 Nenhum dos outros 15 casos piorou em nenhum dos dois modelos: os 11 "deve disparar" disparam e os 5 "não deve disparar" não disparam, nas quatro rodadas com a descrição nova.
@@ -82,3 +82,7 @@ Os números 5/16, 6/16, 7/16 e 11/16 de corridas anteriores deste documento fora
 - Duas repetições por prompt, não dez. Um prompt de fronteira pode oscilar.
 - Mede o disparo, não se o fluxo seguinte presta. A skill disparar e depois seguir o fluxo certo é outra verificação.
 - O conjunto tem 16 prompts escritos por quem escreveu a descrição. Não cobre formas de pedir que ninguém previu.
+
+### Remedição com alvo remoto (Sonnet, 2 rodadas)
+
+Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao Sandbox): 21/21 válidos nas duas rodadas, sem regressão nos 16 antigos (16/16 antes e depois). O conjunto continua escrito por quem escreveu a descrição; vale a mesma ressalva acima.

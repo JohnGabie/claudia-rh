@@ -1,18 +1,18 @@
 ---
-name: claudia-teste
+name: claudia-app
 description: >-
-  Olha o Claudia RH (app Tauri) RODANDO, por CDP no WebView2, para ver a tela, clicar, chamar comandos do backend e ler o que os agentes fazem dentro dele.
-  Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico), comparar a UI com o banco, queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS e quero conferir), perguntar se o agente ou a sessão se comportou como devia, comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
+  Olha o Claudia RH (app Tauri) RODANDO, local ou no Windows Sandbox (CDP_HOST), por CDP: ver a tela, clicar, chamar comandos do backend e ler o que os agentes fazem.
+  Use SEMPRE que o usuário falar de algo que se vê ou se confere no app aberto: testar ou conferir uma tela (Dashboard, Perfil, Histórico), comparar a UI com o banco, queixa de layout ou aparência (não gostei do layout, tá estranho, olha o que tá errado nessa tela, mexi no CSS), perguntar se o agente ou a sessão se comportou como devia, comparar agentes (Claude vs Grok), ou chamar um comando Tauri.
   QUALQUER bug do app, inclusive pedido curto como "corrige este bug", "o bug tá acontecendo de novo" ou "tem um bug no X": carregue esta skill ANTES de abrir ou editar código, porque o primeiro passo é reproduzir no app rodando.
   Use também antes de dar por concluída qualquer mudança em UI ou em comandos Tauri.
-  NÃO use para cargo test puro, automação de sites de vagas, nem registrar no Linear.
+  NÃO use para cargo test puro, sites de vagas, Linear, nem para montar Windows limpo, escolher dados ou instalar o app no Sandbox (claudia-sandbox).
 ---
 
-# claudia-teste
+# claudia-app
 
 Dá a quem desenvolve o olhar de um dev sobre o app rodando. **Nunca interage com sites de vagas** e nunca clica em algo que submeta candidatura: quem interage com sites são os agentes dentro da Claudia.
 
-Todos os scripts ficam em `.claude/skills/claudia-teste/scripts/` e rodam com Node ≥ 22, sem instalar nada.
+Todos os scripts ficam em `.claude/skills/claudia-app/scripts/` e rodam com Node ≥ 22, sem instalar nada.
 
 ## Fluxo
 
@@ -21,7 +21,16 @@ Todos os scripts ficam em `.claude/skills/claudia-teste/scripts/` e rodam com No
 3. **Backend:** `node scripts/invocar.mjs <comando> [json]` e `node scripts/banco.mjs "SELECT …"`. Compare o que a UI mostra com o banco.
 4. **Observar agentes:** `node scripts/observar.mjs`. Iniciar uma sessão é apertar o botão na UI do app, nunca rodar um agente por fora.
 
-Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333).
+Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOST` (padrão `127.0.0.1`) escolhe a máquina; `CLAUDIA_DB` escolhe o banco lido por `banco.mjs` e `observar.mjs`.
+
+## Alvo
+
+| Alvo | Como |
+|---|---|
+| Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
+| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node claudia-sandbox/scripts/cdp-guest.mjs`; banco: `CLAUDIA_DB` impresso por `node claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
+
+Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 
 ## Modo reconhecimento
 

@@ -14,7 +14,7 @@ if (classificarComando(comando) === "escrita" && !podeEscrever) {
   process.exit(2);
 }
 
-const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420/.test(t.url));
+const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420|tauri\.localhost/.test(t.url));
 if (!alvo) { console.error("sem página do app. Rode subir.mjs"); process.exit(1); }
 const { cdp, fechar } = await ligar(alvo.webSocketDebuggerUrl);
 await cdp("Runtime.enable");

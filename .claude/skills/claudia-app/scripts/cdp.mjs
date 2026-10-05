@@ -1,8 +1,9 @@
 // Cliente CDP minimo — WebSocket nativo do Node 24, sem dependencias.
+export const HOST = process.env.CDP_HOST || "127.0.0.1";
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function alvos(port) {
-  const r = await fetch(`http://127.0.0.1:${port}/json/list`);
+  const r = await fetch(`http://${HOST}:${port}/json/list`);
   return r.json();
 }
 
@@ -31,7 +32,7 @@ export async function ligar(url) {
 }
 
 export async function novaAba(port, url) {
-  const r = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
+  const r = await fetch(`http://${HOST}:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
   return r.json();
 }
 
