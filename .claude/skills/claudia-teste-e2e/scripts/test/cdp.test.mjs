@@ -23,7 +23,7 @@ for (const [script, args] of [["ver.mjs", ["arvore"]], ["invocar.mjs", ["listar_
     });
     assert.equal(r.status, 1);
     assert.match(r.stderr, new RegExp(`CDP not reachable at 127\.0\.0\.1:${port}`));
-    assert.match(r.stderr, /cdp-guest\.mjs --iniciar/);
+    assert.match(r.stderr, /claudia-teste-sandbox\/scripts\/cdp-guest\.mjs --iniciar/);
     assert.doesNotMatch(r.stderr, /at .*\.mjs:\d+/);
   });
 }

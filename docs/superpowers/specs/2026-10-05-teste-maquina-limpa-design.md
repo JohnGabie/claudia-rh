@@ -48,25 +48,25 @@ Variáveis exigidas pelos perfis `app*`: `LAB_APP_PROJECT` (pasta do projeto, mo
 ### Componentes
 
 ```
-.claude/skills/claudia-teste-sandbox/          (nova)
+.claude/skills/claudia-teste-sandbox/        (nova)
 ├─ SKILL.md
 ├─ scripts/
-│  ├─ comum.mjs            ← constantes e funções compartilhadas
-│  ├─ cenario-novo.mjs     ← sem dados
-│  ├─ cenario-mock.mjs     ← dados fictícios
-│  ├─ cenario-copia.mjs    ← cópia dos dados do usuário (exige --autorizado)
-│  ├─ publicar.mjs         ← app + cenário → app-stage.ps1 do laboratório
-│  ├─ cdp-guest.mjs        ← inicia o app no guest com CDP e expõe a porta ao host
-│  ├─ banco-guest.mjs      ← snapshot do banco do guest para o host
+│  ├─ comum.mjs                               ← constantes e funções compartilhadas
+│  ├─ cenario-novo.mjs                        ← sem dados
+│  ├─ cenario-mock.mjs                        ← dados fictícios
+│  ├─ cenario-copia.mjs                       ← cópia dos dados do usuário (exige --autorizado)
+│  ├─ publicar.mjs                            ← app + cenário → app-stage.ps1 do laboratório
+│  ├─ cdp-guest.mjs                           ← inicia o app no guest com CDP e expõe a porta ao host
+│  ├─ banco-guest.mjs                         ← snapshot do banco do guest para o host
 │  └─ test/
-├─ fixtures/               ← candidate_base.yaml, search_variants.yaml, strategy.md, seed.sql
-├─ references/             ← limites.md, pastas-de-dados.md
+├─ fixtures/                                  ← candidate_base.yaml, search_variants.yaml, strategy.md, seed.sql
+├─ references/                                ← limites.md, pastas-de-dados.md
 └─ evals/evals.json
 
-.claude/skills/claudia-teste-e2e/              (antes `claudia-app`, originalmente `claudia-teste`)
-├─ SKILL.md                ← alvo local ou Sandbox; seção de prints
-├─ scripts/                ← cdp.mjs, subir.mjs, ver.mjs, banco.mjs, observar.mjs, invocar.mjs, regras.mjs
-│  ├─ print-janela.ps1     ← print da janela nativa ou da tela inteira (sem CDP)
+.claude/skills/claudia-teste-e2e/            (antes `claudia-app`, originalmente `claudia-teste`)
+├─ SKILL.md                                   ← alvo local ou Sandbox; seção de prints
+├─ scripts/                                   ← cdp.mjs, subir.mjs, ver.mjs, banco.mjs, observar.mjs, invocar.mjs, regras.mjs
+│  ├─ print-janela.ps1                        ← print da janela nativa ou da tela inteira (sem CDP)
 │  └─ test/
 ├─ references/, evals/
 ```
@@ -176,7 +176,7 @@ Gatilhos: testar em Windows limpo/isolado, Sandbox, instalador, primeira abertur
 - `claudia-teste-e2e/scripts/test/regras.test.mjs`: página de release aceita; `remoto` sem CDP → `abortar`; `remoto` nunca → `subir`; casos atuais continuam verdes.
 - `print-janela.ps1`: teste que captura a tela inteira para um arquivo temporário e confere PNG válido com dimensões > 0.
 - Prova de mutação: quebrar uma regra faz o teste nomeado falhar.
-- Smoke no Sandbox (`lab.config.app-winapp.json`, internet bloqueada após a instalação): cenários `novo` e `mock`; prints pela escada; observação por UIA com o app instalado pelo instalador (`winapp ui inspect|search|invoke`), a verificar no smoke; diagnóstico do CDP no guest conforme a seção de revisão (`ver.mjs arvore` e `tela` via `CDP_HOST` só se o CDP abrir); `copia` conforme o requisito da seção de revisão (autorizado pelo usuário para a próxima rodada ao vivo).
+- Smoke no Sandbox (`lab.config.app-winapp.json`, internet bloqueada após a instalação): cenários `novo` e `mock`; prints pela escada; observação por UIA com o app instalado pelo instalador (`winapp ui inspect|search|invoke`), a verificar no smoke; diagnóstico do CDP no guest conforme a seção de revisão (`ver.mjs arvore` e `tela` via `CDP_HOST` só se o CDP abrir); `copia` conforme o requisito da seção de revisão (só com autorização do usuário naquela rodada).
 - Smoke local: `claudia-teste-e2e` com `tauri dev` continua funcionando (`subir.mjs`, `ver.mjs arvore`, `print-janela.ps1`).
 - Evals de disparo: `claudia-teste-sandbox` dispara nos casos dela; `claudia-teste-e2e` mantém os resultados da skill original e não dispara nos casos de montar ambiente.
 - Varredura de agnosticismo nos arquivos novos/alterados.
@@ -223,11 +223,13 @@ Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript por UIA;
 
 ### Requisito: cenário `copia` na próxima rodada ao vivo
 
-O usuário autorizou o cenário `copia` para a próxima rodada de testes ao vivo. O smoke do `copia` roda com os dados reais do usuário, com estas condições:
+Smoke do cenário `copia` (só com autorização do usuário na própria rodada):
 
 - origem somente leitura (nada é gravado na pasta de dados original);
 - automação desligada na cópia (`disparo.json.ativo=false`, `modo_autonomo.json.skip_permissions=false`);
-- internet bloqueada no guest (`guest-firewall.ps1`) **antes** de o app iniciar.
+- internet bloqueada no guest (`guest-firewall.ps1`) **antes** de o app iniciar;
+- relatório só com contagens, sem valores pessoais;
+- cópias apagadas ao fim.
 
 Fora dessa rodada, a regra geral continua: `copia` só com autorização do usuário.
 
