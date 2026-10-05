@@ -21,6 +21,7 @@ try {
     $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
     $Saida = Join-Path $root ('debug-logs\prints\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.png')
   }
+  $Saida = [IO.Path]::GetFullPath($Saida, (Get-Location).Path)
   New-Item -ItemType Directory -Force (Split-Path $Saida) | Out-Null
   if ($TelaInteira) {
     $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -33,6 +34,7 @@ try {
     [void][W.U]::GetWindowRect($p.MainWindowHandle, [ref]$r)
     $x = $r.Left; $y = $r.Top; $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
   }
+  if ($w -le 0 -or $h -le 0) { throw "Window of '$Processo' has no visible area: use -TelaInteira." }
   $bmp = New-Object System.Drawing.Bitmap $w, $h
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size)

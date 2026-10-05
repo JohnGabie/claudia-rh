@@ -50,16 +50,18 @@ Primeiro reproduza no app rodando. Só feche depois de reproduzido antes e confi
 
 ## Prints
 
+Comandos relativos à pasta da skill (`.claude/skills/claudia-app/`), como no resto deste arquivo; scripts da `claudia-sandbox` com o caminho a partir da raiz do repositório.
+
 Escada, do mais fiel ao mais robusto; usar o primeiro que funcionar e dizer qual foi usado:
 
 | # | Local (host) | Sandbox | Mostra |
 |---|---|---|---|
 | 1 | `node scripts/ver.mjs tela <arq>` | idem, com `CDP_HOST`/`CDP_PORT` | só a página do WebView2 |
-| 2 | `pwsh scripts/print-janela.ps1 -Processo claudia-rh -Saida <arq>` | `winapp ui screenshot --on sandbox -a claudia-rh -o <arq>` | janela nativa inteira, inclusive diálogos nativos que o CDP não vê |
-| 3 | `pwsh scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira |
+| 2 | `pwsh -NoProfile -File scripts/print-janela.ps1 -Processo claudia-rh -Saida <arq>` | `winapp ui screenshot --on sandbox -a claudia-rh -o <arq>` | janela nativa inteira, inclusive diálogos nativos que o CDP não vê |
+| 3 | `pwsh -NoProfile -File scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira |
 | 4 | — | sem rede: `C:\labsandbox\app\guest-observe.ps1` via `wsb exec` (PNG em `C:\labwork\run`) | tela inteira + árvore UIA |
 
-`.claude/skills/claudia-app/scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira; só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File`. Prints vão para `debug-logs/prints/` por padrão (já ignorada pelo git) e podem conter dados pessoais: não anexar a issues públicas sem revisar.
+`scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira; só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File scripts/print-janela.ps1 ...`. Prints vão para `debug-logs/prints/` por padrão (já ignorada pelo git) e podem conter dados pessoais: não anexar a issues públicas sem revisar.
 
 **Regra:** toda afirmação sobre a UI vem com print; se nenhum degrau da escada funcionar, dizer quais falharam e por quê.
 
