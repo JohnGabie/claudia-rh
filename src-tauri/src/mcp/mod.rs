@@ -128,6 +128,29 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
             )
             .inspect(|_| notify(cfg, "db"))
         }
+        "list_variantes" => tools::list_variantes(&cfg.data_dir),
+        "get_variante" => {
+            let id = args["id"].as_str().ok_or("parâmetro 'id' em falta")?;
+            tools::get_variante(&cfg.data_dir, id)
+        }
+        "update_variante" => {
+            let id = args["id"].as_str().ok_or("parâmetro 'id' em falta")?;
+            tools::update_variante(&cfg.data_dir, id, &args["campos"], cfg.session).inspect(|_| notify(cfg, "perfil"))
+        }
+        "list_documentos" => {
+            let tipo = args["tipo"].as_str().unwrap_or("curriculo");
+            tools::list_documentos(&cfg.data_dir, tipo)
+        }
+        "get_documento" => {
+            let id = args["id"].as_i64().ok_or("parâmetro 'id' em falta")?;
+            tools::get_documento(&cfg.data_dir, id)
+        }
+        "set_documento_preferido" => {
+            let id = args["id"].as_i64().ok_or("parâmetro 'id' em falta")?;
+            tools::set_documento_preferido(&cfg.data_dir, id, args["variante_id"].as_str(), cfg.session)
+                .inspect(|_| notify(cfg, "db"))
+        }
+        "save_cover_letter" => save_cover_letter(cfg, args),
         // Read tools: they replace what the runtime prompt used to carry inline.
         // No notify() — reads change nothing the GUI needs to refresh for.
         "get_candidate_profile" => tools::get_candidate_profile(&cfg.data_dir),
@@ -143,6 +166,18 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
         Err(e) => crate::diagnostics::emit_event("mcp", "tool_err", None, &format!("{tool}: {e}")),
     }
     result
+}
+
+/// Queues the letter, tells the running app ("documentos": it prints the PDF and registers the
+/// document), then waits a little for the document to show up. The wait is long enough for a running
+/// app and short enough not to stall the agent when the app is closed (it is processed at next start).
+fn save_cover_letter(cfg: &McpConfig, args: &serde_json::Value) -> Result<String, String> {
+    let texto = args["texto"].as_str().ok_or("parâmetro 'texto' em falta")?;
+    let idioma = args["idioma"].as_str().unwrap_or("pt");
+    let base = tools::guardar_pendente(&cfg.data_dir, texto, args["vaga_id"].as_i64(), idioma, args["variante_id"].as_str())?;
+    notify(cfg, "documentos");
+    let espera = if cfg.notify_port.is_some() { std::time::Duration::from_secs(20) } else { std::time::Duration::ZERO };
+    Ok(tools::aguardar_documento(&cfg.data_dir, &base, espera))
 }
 
 #[cfg(test)]
@@ -168,6 +203,71 @@ mod dispatch_tests {
         std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n").unwrap();
         let out = dispatch(&cfg_for(&dir), "set_vaga_variante", &serde_json::json!({ "vaga_id": 1, "variante_id": "backend" })).unwrap();
         assert!(out.contains("backend"), "{out}");
+    }
+
+    #[test]
+    fn document_and_variant_tools_are_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-docs");
+        seed_db(&dir);
+        crate::db::apply(&rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap()).unwrap();
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n").unwrap();
+        std::fs::write(dir.join("candidate_base.yaml"), "dados_pessoais:\n  nome_completo: Ana\n").unwrap();
+        let cfg = cfg_for(&dir);
+        assert_eq!(dispatch(&cfg, "list_documentos", &serde_json::json!({ "tipo": "curriculo" })).unwrap().trim(), "[]");
+        assert!(dispatch(&cfg, "list_variantes", &serde_json::json!({})).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "get_variante", &serde_json::json!({ "id": "backend" })).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "get_documento", &serde_json::json!({ "id": 1 })).is_err());
+        assert!(dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 5 } })).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": 1 })).is_err(), "no such document");
+        let r = dispatch(&cfg, "save_cover_letter", &serde_json::json!({ "texto": "Olá.", "variante_id": "backend" })).unwrap();
+        assert!(r.contains("fica pronto"), "{r}");
+    }
+
+    /// The session rule must hold through the real entry point, not only in the tool functions.
+    #[test]
+    fn the_execution_session_cannot_write_variants_or_preferred_documents() {
+        let dir = temp_dir("dispatch-exec");
+        seed_db(&dir);
+        crate::db::apply(&rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap()).unwrap();
+        let sv = "variantes:\n  - id: backend\n    peso: 60\n";
+        std::fs::write(dir.join("search_variants.yaml"), sv).unwrap();
+        let mut cfg = cfg_for(&dir);
+        cfg.session = SessionKind::Autonomous;
+        let e = dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 5 } })).unwrap_err();
+        assert!(e.contains("sessão de Perfil"), "{e}");
+        let e = dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": 1 })).unwrap_err();
+        assert!(e.contains("sessão de Perfil"), "{e}");
+        assert_eq!(std::fs::read_to_string(dir.join("search_variants.yaml")).unwrap(), sv);
+    }
+
+    /// No document or variant tool may accept or return a path, whatever the answer looks like.
+    #[test]
+    fn no_document_or_variant_answer_carries_a_path() {
+        let dir = temp_dir("dispatch-nopath");
+        seed_db(&dir);
+        let c = crate::documentos::biblioteca::open_conn(&dir).unwrap();
+        crate::db::apply(&c).unwrap();
+        let docs = crate::documentos::docs_dir(&dir);
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(docs.join("cv_x.pdf"), b"%PDF-1.7 x").unwrap();
+        std::fs::write(docs.join("cv_x.html"), "<p>Ana</p>").unwrap();
+        let id = crate::documentos::inserir(&c, &crate::documentos::NovoDocumento { tipo: "curriculo", nome: "X", origem: "gerado", arquivo: "cv_x.pdf", arquivo_html: Some("cv_x.html"), formato: "pdf", idioma: Some("pt"), sha256: "0", tamanho: 1, variante_id: Some("backend") }).unwrap();
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n    cv_gerado_path: C:\\\\Users\\\\x\\\\cv.html\n    cv_gerado_em: ontem\n").unwrap();
+        let cfg = cfg_for(&dir);
+        let home = dir.to_string_lossy().to_string();
+        let answers = [
+            dispatch(&cfg, "list_documentos", &serde_json::json!({ "tipo": "curriculo" })).unwrap(),
+            dispatch(&cfg, "get_documento", &serde_json::json!({ "id": id })).unwrap(),
+            dispatch(&cfg, "list_variantes", &serde_json::json!({})).unwrap(),
+            dispatch(&cfg, "get_variante", &serde_json::json!({ "id": "backend" })).unwrap(),
+            dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": id, "variante_id": "backend" })).unwrap(),
+            dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 7 } })).unwrap(),
+        ];
+        for a in &answers {
+            for leak in [home.as_str(), "cv_x", "cv.html", "cv_gerado", "arquivo", "sha256", "C:\\", "documentos/", "documentos\\"] {
+                assert!(!a.contains(leak), "{leak} leaked: {a}");
+            }
+        }
     }
 
     /// Falling open would mean a new call site that forgets the flag gets write

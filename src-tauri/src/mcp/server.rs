@@ -91,6 +91,52 @@ struct SetVagaVarianteArgs {
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+struct VarianteIdArgs {
+    /// id da variante (de list_variantes)
+    id: String,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct UpdateVarianteArgs {
+    /// id da variante (de list_variantes)
+    id: String,
+    /// Objeto só com os campos que mudam, ex.: {"peso": 60}. Editáveis: nome_exibicao, peso, ativa, principal, foco_competencias, foco_experiencia, regioes_aceitas, modelos_trabalho, idiomas_aplicacao
+    campos: serde_json::Value,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct ListDocumentosArgs {
+    /// "curriculo" (padrão) ou "carta"
+    tipo: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct DocumentoIdArgs {
+    /// id do documento (de list_documentos)
+    id: i64,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct SetPreferidoArgs {
+    /// id do documento (de list_documentos)
+    id: i64,
+    /// id da variante (de list_variantes) para a qual este é o preferido; omita para o preferido geral
+    variante_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct SaveCoverLetterArgs {
+    /// O texto da carta, só o corpo (sem cabeçalho, data ou assinatura: a Claudia monta o documento)
+    texto: String,
+    /// ID da vaga a que a carta se destina; a empresa e o cargo vêm dela. Omita para uma carta genérica
+    vaga_id: Option<i64>,
+    /// "pt" (padrão) ou "en"
+    idioma: Option<String>,
+    /// id da variante (de list_variantes) que a carta acompanha
+    variante_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 struct RegisterCandidaturaArgs {
     /// ID da vaga aplicada
     vaga_id: i64,
@@ -350,6 +396,57 @@ impl ClaudiaMcp {
     )]
     async fn set_vaga_variante(&self, Parameters(a): Parameters<SetVagaVarianteArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
         self.call("set_vaga_variante", serde_json::json!({ "vaga_id": a.vaga_id, "variante_id": a.variante_id }))
+    }
+
+    #[tool(
+        description = "Lista as variantes do candidato (id, nome, peso, ativa, principal, foco). A variante principal é a padrão quando nenhuma serve melhor à vaga."
+    )]
+    async fn list_variantes(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("list_variantes", serde_json::json!({}))
+    }
+
+    #[tool(description = "Devolve uma variante completa pelo id.")]
+    async fn get_variante(&self, Parameters(a): Parameters<VarianteIdArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_variante", serde_json::json!({ "id": a.id }))
+    }
+
+    #[tool(
+        description = "Altera campos de uma variante (só na sessão de Perfil). 'campos' é um objeto só com o que muda, ex.: {\"peso\": 60}. Faz backup. Nunca acrescente competência ou experiência que não esteja no perfil."
+    )]
+    async fn update_variante(&self, Parameters(a): Parameters<UpdateVarianteArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("update_variante", serde_json::json!({ "id": a.id, "campos": a.campos }))
+    }
+
+    #[tool(
+        description = "Lista os currículos (tipo 'curriculo') ou cartas ('carta') da biblioteca: id, nome, origem, idioma, tags e marcas de preferido. Não há caminho de arquivo: para anexar, use browser_upload."
+    )]
+    async fn list_documentos(&self, Parameters(a): Parameters<ListDocumentosArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("list_documentos", serde_json::json!({ "tipo": a.tipo }))
+    }
+
+    #[tool(
+        description = "Devolve os metadados de um documento e, se foi gerado pela Claudia, o texto dele. De um documento importado não há texto: use o candidate_base.yaml."
+    )]
+    async fn get_documento(&self, Parameters(a): Parameters<DocumentoIdArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("get_documento", serde_json::json!({ "id": a.id }))
+    }
+
+    #[tool(description = "Marca o documento preferido (geral, ou de uma variante com variante_id). Só na sessão de Perfil.")]
+    async fn set_documento_preferido(&self, Parameters(a): Parameters<SetPreferidoArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("set_documento_preferido", serde_json::json!({ "id": a.id, "variante_id": a.variante_id }))
+    }
+
+    #[tool(
+        description = "Salva a carta de apresentação que você escreveu como documento da biblioteca (a Claudia monta o layout e gera o PDF). Passe só o texto do corpo. Devolve o id do documento quando o PDF fica pronto. Para anexar a carta num formulário, use browser_upload com tipo \"carta\"."
+    )]
+    async fn save_cover_letter(&self, Parameters(a): Parameters<SaveCoverLetterArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        // Blocks up to 20 s waiting for the app's PDF: keep it off the async executor thread.
+        let this = self.clone();
+        let args = serde_json::json!({ "texto": a.texto, "vaga_id": a.vaga_id, "idioma": a.idioma, "variante_id": a.variante_id });
+        match tokio::task::spawn_blocking(move || this.call("save_cover_letter", args)).await {
+            Ok(r) => r,
+            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!("erro interno: {e}"))])),
+        }
     }
 
     #[tool(

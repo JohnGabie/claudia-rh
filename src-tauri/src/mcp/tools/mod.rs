@@ -10,7 +10,7 @@ mod variantes;
 mod vagas;
 pub mod browser;
 
-pub use documentos::{get_documento, list_documentos, set_documento_preferido};
+pub use documentos::{aguardar_documento, get_documento, guardar_pendente, list_documentos, set_documento_preferido};
 pub use variantes::{get_variante, list_variantes, update_variante};
 
 pub use memory::get_memory_summary;
