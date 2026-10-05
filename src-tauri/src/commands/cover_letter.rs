@@ -1,22 +1,8 @@
 use chrono::{Datelike, Local};
-use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 use std::process::Stdio;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_opener::OpenerExt;
 use crate::commands::perfil::{parse_candidato_base_interno, CandidatoBase};
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CoverLetterInfo {
-    pub path: String,
-    pub file_name: String,
-    pub empresa: String,
-    pub cargo: String,
-    pub idioma: String,
-    pub gerado_em: String,
-}
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
 
@@ -294,6 +280,7 @@ fn build_cover_letter_html(
 
 // ── Core generation ───────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_cover_letter_claude(
     app: AppHandle,
     empresa: String,
@@ -302,6 +289,7 @@ fn spawn_cover_letter_claude(
     nota_extra: String,
     idioma: String,
     cor_primaria: String,
+    variante_id: Option<String>,
 ) {
     std::thread::spawn(move || {
         let data_dir = app.path().app_data_dir().unwrap_or_default();
@@ -377,54 +365,61 @@ fn spawn_cover_letter_claude(
 
         let html = build_cover_letter_html(&body_text, &data, &empresa, &cargo, &idioma, &cor_primaria);
 
-        // Save file
-        let dir = match app.path().app_data_dir() {
+        let data_dir = match app.path().app_data_dir() {
             Ok(d) => d,
             Err(e) => {
                 let _ = app.emit("cover-letter-error", format!("Error getting data directory: {e}"));
                 return;
             }
         };
-        let cl_dir = dir.join("cover_letters");
-        if let Err(e) = std::fs::create_dir_all(&cl_dir) {
-            let _ = app.emit("cover-letter-error", format!("Error creating directory: {e}"));
-            return;
-        }
-
-        let timestamp = Local::now().format("%Y-%m-%d_%H-%M").to_string();
-        // Sanitize empresa name for filename
-        let empresa_slug: String = empresa.chars()
+        let empresa_slug: String = empresa
+            .chars()
             .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
             .collect::<String>()
             .trim_matches('-')
-            .to_string();
+            .chars()
+            .take(30)
+            .collect();
         let empresa_slug = if empresa_slug.is_empty() { "empresa".to_string() } else { empresa_slug };
-        let empresa_slug: String = empresa_slug.chars().take(30).collect();
-
-        let file_name = format!("cl_{empresa_slug}_{timestamp}.html");
-        let path = cl_dir.join(&file_name);
-
-        if let Err(e) = std::fs::write(&path, &html) {
-            let _ = app.emit("cover-letter-error", format!("Erro ao salvar arquivo: {e}"));
-            return;
+        let variante_id = variante_id.filter(|v| !v.is_empty());
+        let mut tags = vec![
+            crate::documentos::biblioteca::Tag { tipo: "cor".into(), valor: cor_primaria.clone() },
+            crate::documentos::biblioteca::Tag { tipo: "idioma".into(), valor: idioma.clone() },
+        ];
+        if let Some(v) = variante_id.as_deref() {
+            tags.insert(0, crate::documentos::biblioteca::Tag { tipo: "variante".into(), valor: v.to_string() });
         }
-
-        let info = CoverLetterInfo {
-            path: path.to_string_lossy().to_string(),
-            file_name,
-            empresa,
-            cargo,
-            idioma,
-            gerado_em: timestamp,
+        let novo = crate::documentos::registrar::NovoGerado {
+            tipo: "carta".into(),
+            nome: if cargo.is_empty() { format!("Carta {empresa}") } else { format!("Carta {empresa} – {cargo}") },
+            base: format!("cl_{empresa_slug}_{}", Local::now().format("%Y-%m-%d_%H-%M-%S")),
+            html,
+            idioma: Some(idioma.clone()),
+            variante_id,
+            vaga_id: None,
+            tags,
         };
-
-        let _ = app.emit("cover-letter-done", info);
+        let printer = app.clone();
+        // This is a plain std thread (the CLI stream is blocking): drive the async print to completion here.
+        let registered = tauri::async_runtime::block_on(crate::documentos::registrar::registrar_gerado(&data_dir, novo, move |h, p| async move {
+            crate::documentos::pdf::html_to_pdf(&printer, &h, &p).await
+        }));
+        let view = registered.and_then(|id| crate::documentos::biblioteca::ver(&crate::documentos::biblioteca::open_conn(&data_dir)?, id));
+        match view {
+            Ok(doc) => {
+                let _ = app.emit("cover-letter-done", doc);
+            }
+            Err(e) => {
+                let _ = app.emit("cover-letter-error", format!("Erro ao salvar a carta: {e}"));
+            }
+        }
     });
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn gerar_cover_letter(
     app: AppHandle,
     empresa: String,
@@ -433,6 +428,7 @@ pub fn gerar_cover_letter(
     nota_extra: Option<String>,
     idioma: Option<String>,
     cor_primaria: Option<String>,
+    variante_id: Option<String>,
 ) {
     spawn_cover_letter_claude(
         app,
@@ -442,54 +438,6 @@ pub fn gerar_cover_letter(
         nota_extra.unwrap_or_default(),
         idioma.unwrap_or_else(|| "pt".to_string()),
         cor_primaria.unwrap_or_else(|| "#D97757".to_string()),
+        variante_id,
     );
-}
-
-#[tauri::command]
-pub fn listar_cover_letters(app: AppHandle) -> Result<Vec<CoverLetterInfo>, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let cl_dir = dir.join("cover_letters");
-    if !cl_dir.exists() { return Ok(vec![]); }
-
-    let mut infos: Vec<CoverLetterInfo> = std::fs::read_dir(&cl_dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x == "html").unwrap_or(false))
-        .map(|e| {
-            let path = e.path();
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // filename: cl_{empresa_slug}_{YYYY-MM-DD_HH-MM}.html
-            let stem = file_name
-                .strip_prefix("cl_").unwrap_or(&file_name)
-                .strip_suffix(".html").unwrap_or(&file_name);
-            let (empresa_slug, gerado_em) = if stem.len() > 17 {
-                let date_part = &stem[stem.len()-16..];
-                let slug = &stem[..stem.len()-17];
-                (slug.replace('-', " "), date_part.replace('_', " "))
-            } else {
-                (stem.to_string(), String::new())
-            };
-            CoverLetterInfo {
-                path: path.to_string_lossy().to_string(),
-                file_name,
-                empresa: empresa_slug,
-                cargo: String::new(),
-                idioma: String::new(),
-                gerado_em,
-            }
-        })
-        .collect();
-
-    infos.sort_by(|a, b| b.gerado_em.cmp(&a.gerado_em));
-    Ok(infos)
-}
-
-#[tauri::command]
-pub fn abrir_cover_letter(app: AppHandle, path: String) -> Result<(), String> {
-    app.opener().open_path(&path, None::<&str>).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn apagar_cover_letter(path: String) -> Result<(), String> {
-    std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
