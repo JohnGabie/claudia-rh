@@ -89,14 +89,20 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
                 args["localizacao"].as_str(),
                 args["modelo_trabalho"].as_str(),
                 args["fonte_conexao"].as_str(),
+                args["variante_id"].as_str(),
             )
             .inspect(|_| notify(cfg, "db"))
         }
         "update_vaga_status" => {
             let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
             let status = args["status"].as_str().ok_or("parâmetro 'status' em falta")?;
-            tools::update_vaga_status(&cfg.data_dir, vaga_id, status, args["detalhe"].as_str())
+            tools::update_vaga_status(&cfg.data_dir, vaga_id, status, args["detalhe"].as_str(), args["variante_id"].as_str())
                 .inspect(|_| notify(cfg, "db"))
+        }
+        "set_vaga_variante" => {
+            let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
+            let variante = args["variante_id"].as_str().ok_or("parâmetro 'variante_id' em falta")?;
+            tools::set_vaga_variante(&cfg.data_dir, vaga_id, variante).inspect(|_| notify(cfg, "db"))
         }
         "register_candidatura" => {
             let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
@@ -153,6 +159,15 @@ mod dispatch_tests {
             browser_state: None,
             local_data_dir: None,
         }
+    }
+
+    #[test]
+    fn set_vaga_variante_is_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-var");
+        seed_db(&dir);
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n").unwrap();
+        let out = dispatch(&cfg_for(&dir), "set_vaga_variante", &serde_json::json!({ "vaga_id": 1, "variante_id": "backend" })).unwrap();
+        assert!(out.contains("backend"), "{out}");
     }
 
     /// Falling open would mean a new call site that forgets the flag gets write

@@ -13,7 +13,7 @@ pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga,
 pub(crate) use profile::write_profile_atomically;
 pub use propostas::propose_profile_change;
 pub use profile::{get_candidate_profile, get_search_variants, get_strategy, update_profile};
-pub use vagas::{create_pendencia, register_candidatura, register_vaga, update_vaga_status};
+pub use vagas::{create_pendencia, register_candidatura, register_vaga, set_vaga_variante, update_vaga_status};
 
 use std::path::Path;
 
@@ -45,6 +45,7 @@ pub(crate) mod test_support {
         let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
         conn.execute_batch(include_str!("../../db/schema.sql")).unwrap();
         conn.execute_batch("ALTER TABLE vagas ADD COLUMN fonte_conexao TEXT;").unwrap();
+        conn.execute_batch("ALTER TABLE vagas ADD COLUMN variante_id TEXT;").unwrap();
         conn.execute_batch(
             "INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status)
                VALUES (1, 'Dev Rust', 'ACME', 'linkedin', 'https://x/1', datetime('now'), 'descoberta');

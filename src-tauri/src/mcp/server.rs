@@ -66,6 +66,8 @@ struct RegisterVagaArgs {
     modelo_trabalho: Option<String>,
     /// Nome da conexão que compartilhou a vaga (descoberta via rede)
     fonte_conexao: Option<String>,
+    /// id da variante (de get_search_variants) que melhor serve esta vaga; omita se nenhuma serve
+    variante_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -76,6 +78,16 @@ struct UpdateVagaStatusArgs {
     status: String,
     /// Para 'analisada': resumo do match. Para 'pulada'/'pendente_revisao': motivo
     detalhe: Option<String>,
+    /// id da variante (de get_search_variants) que melhor serve esta vaga; omita se nenhuma serve
+    variante_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct SetVagaVarianteArgs {
+    /// ID da vaga
+    vaga_id: i64,
+    /// id da variante (de get_search_variants) que melhor serve esta vaga
+    variante_id: String,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -315,6 +327,7 @@ impl ClaudiaMcp {
                 "titulo": args.titulo, "empresa": args.empresa, "plataforma": args.plataforma,
                 "url": args.url, "localizacao": args.localizacao,
                 "modelo_trabalho": args.modelo_trabalho, "fonte_conexao": args.fonte_conexao,
+                "variante_id": args.variante_id,
             }),
         )
     }
@@ -328,8 +341,15 @@ impl ClaudiaMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.call(
             "update_vaga_status",
-            serde_json::json!({ "vaga_id": args.vaga_id, "status": args.status, "detalhe": args.detalhe }),
+            serde_json::json!({ "vaga_id": args.vaga_id, "status": args.status, "detalhe": args.detalhe, "variante_id": args.variante_id }),
         )
+    }
+
+    #[tool(
+        description = "Grava qual variante do candidato serve esta vaga (o id de get_search_variants). É ela que decide qual currículo browser_upload anexa. Sem variante gravada, vale a variante principal do usuário."
+    )]
+    async fn set_vaga_variante(&self, Parameters(a): Parameters<SetVagaVarianteArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("set_vaga_variante", serde_json::json!({ "vaga_id": a.vaga_id, "variante_id": a.variante_id }))
     }
 
     #[tool(

@@ -28,17 +28,21 @@ pub fn register_vaga(
     localizacao: Option<&str>,
     modelo_trabalho: Option<&str>,
     fonte_conexao: Option<&str>,
+    variante_id: Option<&str>,
 ) -> Result<String, String> {
     if titulo.trim().is_empty() || empresa.trim().is_empty() || url.trim().is_empty() {
         return Err("titulo, empresa e url são obrigatórios".to_string());
+    }
+    if let Some(v) = variante_id {
+        crate::documentos::variantes::validar(data_dir, v)?;
     }
     let conn = open_db(data_dir)?;
     let n = conn
         .execute(
             "INSERT OR IGNORE INTO vagas \
-             (titulo, empresa, plataforma, url, localizacao, modelo_trabalho, fonte_conexao, descoberta_em, status) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), 'descoberta')",
-            rusqlite::params![titulo, empresa, plataforma, url, localizacao, modelo_trabalho, fonte_conexao],
+             (titulo, empresa, plataforma, url, localizacao, modelo_trabalho, fonte_conexao, variante_id, descoberta_em, status) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), 'descoberta')",
+            rusqlite::params![titulo, empresa, plataforma, url, localizacao, modelo_trabalho, fonte_conexao, variante_id],
         )
         .map_err(|e| format!("erro ao registar vaga: {e}"))?;
 
@@ -60,12 +64,16 @@ pub fn update_vaga_status(
     vaga_id: i64,
     status: &str,
     detalhe: Option<&str>,
+    variante_id: Option<&str>,
 ) -> Result<String, String> {
     if !VALID_STATUS.contains(&status) {
         return Err(format!(
             "status inválido: '{status}'. Válidos: {}",
             VALID_STATUS.join(", ")
         ));
+    }
+    if let Some(v) = variante_id {
+        crate::documentos::variantes::validar(data_dir, v)?;
     }
     let conn = open_db(data_dir)?;
     let n = match status {
@@ -85,10 +93,26 @@ pub fn update_vaga_status(
     .map_err(|e| format!("erro ao atualizar vaga: {e}"))?;
 
     if n == 0 {
-        Err(format!("Vaga {vaga_id} não encontrada."))
-    } else {
-        Ok(format!("Vaga {vaga_id} → {status}"))
+        return Err(format!("Vaga {vaga_id} não encontrada."));
     }
+    if let Some(v) = variante_id {
+        conn.execute("UPDATE vagas SET variante_id = ?1 WHERE id = ?2", rusqlite::params![v, vaga_id])
+            .map_err(|e| format!("erro ao gravar a variante: {e}"))?;
+    }
+    Ok(format!("Vaga {vaga_id} → {status}"))
+}
+
+/// Records which variant the agent chose for a vaga (spec 2.1). Validated against search_variants.yaml.
+pub fn set_vaga_variante(data_dir: &Path, vaga_id: i64, variante_id: &str) -> Result<String, String> {
+    crate::documentos::variantes::validar(data_dir, variante_id)?;
+    let conn = open_db(data_dir)?;
+    let n = conn
+        .execute("UPDATE vagas SET variante_id = ?1 WHERE id = ?2", rusqlite::params![variante_id, vaga_id])
+        .map_err(|e| format!("erro ao gravar a variante: {e}"))?;
+    if n == 0 {
+        return Err(format!("Vaga {vaga_id} não encontrada."));
+    }
+    Ok(format!("Vaga {vaga_id}: variante {variante_id}."))
 }
 
 /// Records a submitted application and flips the vaga to 'aplicada' in one
@@ -156,21 +180,59 @@ mod tests {
     fn register_vaga_inserts_and_dedupes_by_url() {
         let dir = temp_dir("vaga-reg");
         seed_db(&dir);
-        let msg = register_vaga(&dir, "Backend Dev", "Initech", "linkedin", "https://x/2", None, Some("remoto"), None).unwrap();
+        let msg = register_vaga(&dir, "Backend Dev", "Initech", "linkedin", "https://x/2", None, Some("remoto"), None, None).unwrap();
         assert!(msg.contains("registada (ID"), "got: {msg}");
-        let msg = register_vaga(&dir, "Backend Dev", "Initech", "linkedin", "https://x/2", None, None, None).unwrap();
+        let msg = register_vaga(&dir, "Backend Dev", "Initech", "linkedin", "https://x/2", None, None, None, None).unwrap();
         assert!(msg.contains("já registada"), "got: {msg}");
-        assert!(register_vaga(&dir, "", "Initech", "l", "https://x/3", None, None, None).is_err());
+        assert!(register_vaga(&dir, "", "Initech", "l", "https://x/3", None, None, None, None).is_err());
+    }
+
+    fn with_variants(dir: &std::path::Path) {
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n  - id: devops\n").unwrap();
+    }
+
+    fn variante_of(dir: &std::path::Path, id: i64) -> Option<String> {
+        open_db(dir).unwrap().query_row("SELECT variante_id FROM vagas WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn the_agent_records_the_vagas_variant_three_ways() {
+        let dir = temp_dir("vaga-var");
+        seed_db(&dir);
+        with_variants(&dir);
+        register_vaga(&dir, "SRE", "Initech", "linkedin", "https://x/9", None, None, None, Some("devops")).unwrap();
+        let id: i64 = open_db(&dir).unwrap().query_row("SELECT id FROM vagas WHERE url='https://x/9'", [], |r| r.get(0)).unwrap();
+        assert_eq!(variante_of(&dir, id).as_deref(), Some("devops"));
+        update_vaga_status(&dir, 1, "analisada", Some("ok"), Some("backend")).unwrap();
+        assert_eq!(variante_of(&dir, 1).as_deref(), Some("backend"));
+        set_vaga_variante(&dir, 1, "devops").unwrap();
+        assert_eq!(variante_of(&dir, 1).as_deref(), Some("devops"));
+    }
+
+    #[test]
+    fn an_unknown_variant_is_refused_and_nothing_is_written() {
+        let dir = temp_dir("vaga-var-bad");
+        seed_db(&dir);
+        with_variants(&dir);
+        assert!(register_vaga(&dir, "X", "Y", "l", "https://x/10", None, None, None, Some("frontend")).is_err());
+        let n: i64 = open_db(&dir).unwrap().query_row("SELECT COUNT(*) FROM vagas WHERE url='https://x/10'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0, "no vaga with an invented variant");
+        assert!(update_vaga_status(&dir, 1, "analisada", None, Some("frontend")).is_err());
+        let st: String = open_db(&dir).unwrap().query_row("SELECT status FROM vagas WHERE id=1", [], |r| r.get(0)).unwrap();
+        assert_eq!(st, "descoberta", "the status did not move either");
+        assert!(set_vaga_variante(&dir, 1, "frontend").is_err());
+        assert!(set_vaga_variante(&dir, 999, "backend").is_err(), "unknown vaga");
+        assert_eq!(variante_of(&dir, 1), None);
     }
 
     #[test]
     fn update_status_validates_and_fills_detail_columns() {
         let dir = temp_dir("vaga-status");
         seed_db(&dir);
-        assert!(update_vaga_status(&dir, 1, "status_inventado", None).is_err());
-        assert!(update_vaga_status(&dir, 999, "analisada", None).is_err());
+        assert!(update_vaga_status(&dir, 1, "status_inventado", None, None).is_err());
+        assert!(update_vaga_status(&dir, 999, "analisada", None, None).is_err());
 
-        update_vaga_status(&dir, 1, "analisada", Some("cobre 3/4 must-haves")).unwrap();
+        update_vaga_status(&dir, 1, "analisada", Some("cobre 3/4 must-haves"), None).unwrap();
         let conn = open_db(&dir).unwrap();
         let (st, ms): (String, String) = conn
             .query_row("SELECT status, match_score FROM vagas WHERE id=1", [], |r| {
@@ -180,7 +242,7 @@ mod tests {
         assert_eq!(st, "analisada");
         assert!(ms.contains("must-haves"));
 
-        update_vaga_status(&dir, 1, "pulada", Some("sem visto")).unwrap();
+        update_vaga_status(&dir, 1, "pulada", Some("sem visto"), None).unwrap();
         let motivo: String = conn
             .query_row("SELECT motivo_status FROM vagas WHERE id=1", [], |r| r.get(0))
             .unwrap();

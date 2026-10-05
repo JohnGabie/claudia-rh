@@ -176,6 +176,8 @@ pub struct SearchVariant {
     #[serde(default)] pub idiomas_aplicacao: Vec<String>,
     #[serde(default)] pub cv_gerado_path: String,
     #[serde(default)] pub cv_gerado_em: String,
+    /// The user's main variant: the default for a vaga the agent gave no variant to. At most one.
+    #[serde(default)] pub principal: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -321,6 +323,7 @@ pub fn guardar_search_variants(app: AppHandle, variantes: SearchVariants) -> Res
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    crate::documentos::variantes::checar_uma_principal(&variantes)?;
     let content = serde_yaml::to_string(&variantes).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
@@ -866,6 +869,7 @@ pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<
 #[tauri::command]
 pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result<(), String> {
     let path = search_variants_path(&app)?;
+    let id_salvo = variante.id.clone();
     let mut sv = match std::fs::read_to_string(&path) {
         Ok(content) => serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => SearchVariants::default(),
@@ -875,6 +879,9 @@ pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result
         sv.variantes[pos] = variante;
     } else {
         sv.variantes.push(variante);
+    }
+    if sv.variantes.iter().any(|v| v.id == id_salvo && v.principal) {
+        crate::documentos::variantes::manter_uma_principal(&mut sv, &id_salvo);
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

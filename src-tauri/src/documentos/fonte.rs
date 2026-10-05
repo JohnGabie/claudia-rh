@@ -39,14 +39,26 @@ impl DocumentSource for DbDocumentSource {
                 (id, "escolhido pelo agente".to_string())
             }
             None => {
-                let variante: Option<String> = conn
+                let gravada: Option<String> = conn
                     .query_row("SELECT variante_id FROM vagas WHERE id = ?1", [vaga_id], |r| r.get(0))
                     .ok()
-                    .flatten();
+                    .flatten()
+                    .filter(|v: &String| !v.is_empty());
+                let (variante, de_onde) = match gravada {
+                    Some(v) => (Some(v), "gravada na vaga"),
+                    None => match super::variantes::principal(&self.data_dir) {
+                        Some(p) => (Some(p), "a principal"),
+                        None => (None, ""),
+                    },
+                };
                 let e = super::escolha::escolher(&conn, tipo, variante.as_deref()).ok_or_else(|| {
                     format!("não há {tipo} para anexar: marque um como preferido no app (Perfil → Currículos) ou gere um para a variante da vaga")
                 })?;
-                (e.id, e.regra.to_string())
+                let regra = match &variante {
+                    Some(v) => format!("{} (variante {v}, {de_onde})", e.regra),
+                    None => format!("{} (sem variante)", e.regra),
+                };
+                (e.id, regra)
             }
         };
         let a = super::seguranca::resolve_attachable(&conn, &self.data_dir, id)?;
@@ -93,7 +105,49 @@ mod tests {
         let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, Some("Meu")).unwrap();
         crate::documentos::definir_preferido(&c, d.id, Some("backend")).unwrap();
         let a = DbDocumentSource { data_dir: dir.clone() }.for_upload(7, "curriculo", None).unwrap();
-        assert_eq!((a.id, a.regra.as_str()), (d.id, "preferido da variante"));
+        assert_eq!(a.id, d.id);
+        assert!(a.regra.starts_with("preferido da variante"), "{}", a.regra);
+    }
+
+    #[test]
+    fn without_a_vaga_variant_the_principal_is_used() {
+        let dir = setup("principal");
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n  - id: devops\n    principal: true\n").unwrap();
+        let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        c.execute("INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status) VALUES (8, 't', 'e', 'p', 'https://x/8', datetime('now'), 'candidatando')", []).unwrap();
+        let src = dir.join("ops.pdf");
+        std::fs::write(&src, b"%PDF-1.7 ops").unwrap();
+        let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, Some("Ops")).unwrap();
+        crate::documentos::definir_preferido(&c, d.id, Some("devops")).unwrap();
+        let a = DbDocumentSource { data_dir: dir.clone() }.for_upload(8, "curriculo", None).unwrap();
+        assert_eq!(a.id, d.id);
+        assert!(a.regra.contains("preferido da variante") && a.regra.contains("devops") && a.regra.contains("principal"), "{}", a.regra);
+    }
+
+    #[test]
+    fn the_vagas_own_variant_beats_the_principal_and_the_result_says_so() {
+        let dir = setup("own");
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n  - id: devops\n    principal: true\n").unwrap();
+        let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let src = dir.join("be.pdf");
+        std::fs::write(&src, b"%PDF-1.7 be").unwrap();
+        let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, Some("BE")).unwrap();
+        crate::documentos::definir_preferido(&c, d.id, Some("backend")).unwrap();
+        let a = DbDocumentSource { data_dir: dir.clone() }.for_upload(7, "curriculo", None).unwrap();
+        assert!(a.regra.contains("backend") && a.regra.contains("gravada na vaga"), "{}", a.regra);
+    }
+
+    #[test]
+    fn no_variant_anywhere_is_said_too() {
+        let dir = setup("none");
+        let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        c.execute("INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status) VALUES (9, 't', 'e', 'p', 'https://x/9', datetime('now'), 'candidatando')", []).unwrap();
+        let src = dir.join("g.pdf");
+        std::fs::write(&src, b"%PDF-1.7 g").unwrap();
+        let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, None).unwrap();
+        crate::documentos::definir_preferido(&c, d.id, None).unwrap();
+        let a = DbDocumentSource { data_dir: dir }.for_upload(9, "curriculo", None).unwrap();
+        assert!(a.regra.contains("preferido geral") && a.regra.contains("sem variante"), "{}", a.regra);
     }
 
     #[test]
