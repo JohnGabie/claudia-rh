@@ -22,8 +22,25 @@ pub fn get_candidate_profile(data_dir: &Path) -> Result<String, String> {
 }
 
 /// Reads search_variants.yaml — the search terms the session should try.
+///
+/// Never returns `cv_gerado_path`/`cv_gerado_em`: no tool hands a file path to the agent (spec 2.2).
+/// The file is returned untouched when it has neither field.
 pub fn get_search_variants(data_dir: &Path) -> Result<String, String> {
-    read_data_file(data_dir, "search_variants.yaml")
+    let raw = read_data_file(data_dir, "search_variants.yaml")?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw).map_err(|e| format!("search_variants.yaml inválido: {e}"))?;
+    let mut removeu = false;
+    if let Some(lista) = doc.get_mut("variantes").and_then(|v| v.as_sequence_mut()) {
+        for v in lista {
+            if let Some(m) = v.as_mapping_mut() {
+                removeu |= m.remove("cv_gerado_path").is_some();
+                removeu |= m.remove("cv_gerado_em").is_some();
+            }
+        }
+    }
+    if !removeu {
+        return Ok(raw);
+    }
+    serde_yaml::to_string(&doc).map_err(|e| e.to_string())
 }
 
 /// Reads strategy.md — the candidate's standing preferences about what to apply to.
@@ -369,6 +386,16 @@ mod tests {
         let yaml = "variantes:\n  - termo: \"rust developer\"\n";
         std::fs::write(dir.join("search_variants.yaml"), yaml).unwrap();
         assert_eq!(get_search_variants(&dir).unwrap(), yaml);
+    }
+
+    #[test]
+    fn get_search_variants_never_returns_the_generated_cv_path() {
+        let dir = temp_dir("variants-no-path");
+        let yaml = "variantes:\n  - id: backend\n    peso: 60\n    cv_gerado_path: C:/Users/x/curriculos/cv.html\n    cv_gerado_em: \"2026-10-04\"\n";
+        std::fs::write(dir.join("search_variants.yaml"), yaml).unwrap();
+        let out = get_search_variants(&dir).unwrap();
+        assert!(!out.contains("cv_gerado_path") && !out.contains("cv_gerado_em") && !out.contains("C:/Users"), "got: {out}");
+        assert!(out.contains("backend") && out.contains("peso"), "the other fields stay: {out}");
     }
 
     #[test]

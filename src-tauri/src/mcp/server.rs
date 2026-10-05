@@ -66,7 +66,7 @@ struct RegisterVagaArgs {
     modelo_trabalho: Option<String>,
     /// Nome da conexão que compartilhou a vaga (descoberta via rede)
     fonte_conexao: Option<String>,
-    /// id da variante (de get_search_variants) que melhor serve esta vaga; omita se nenhuma serve
+    /// id da variante (de list_variantes) que melhor serve esta vaga; omita se nenhuma serve
     variante_id: Option<String>,
 }
 
@@ -78,7 +78,7 @@ struct UpdateVagaStatusArgs {
     status: String,
     /// Para 'analisada': resumo do match. Para 'pulada'/'pendente_revisao': motivo
     detalhe: Option<String>,
-    /// id da variante (de get_search_variants) que melhor serve esta vaga; omita se nenhuma serve
+    /// id da variante (de list_variantes) que melhor serve esta vaga; omita se nenhuma serve
     variante_id: Option<String>,
 }
 
@@ -86,7 +86,7 @@ struct UpdateVagaStatusArgs {
 struct SetVagaVarianteArgs {
     /// ID da vaga
     vaga_id: i64,
-    /// id da variante (de get_search_variants) que melhor serve esta vaga
+    /// id da variante (de list_variantes) que melhor serve esta vaga
     variante_id: String,
 }
 
@@ -392,7 +392,7 @@ impl ClaudiaMcp {
     }
 
     #[tool(
-        description = "Grava qual variante do candidato serve esta vaga (o id de get_search_variants). É ela que decide qual currículo browser_upload anexa. Sem variante gravada, vale a variante principal do usuário."
+        description = "Grava qual variante do candidato serve esta vaga (o id de list_variantes). É ela que decide qual currículo browser_upload anexa. Sem variante gravada, vale a variante principal do usuário."
     )]
     async fn set_vaga_variante(&self, Parameters(a): Parameters<SetVagaVarianteArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
         self.call("set_vaga_variante", serde_json::json!({ "vaga_id": a.vaga_id, "variante_id": a.variante_id }))
