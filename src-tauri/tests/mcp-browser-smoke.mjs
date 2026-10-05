@@ -75,6 +75,9 @@ try {
     check(tools.includes(need), `tool ${need} is listed`);
   }
   check(tools.includes("update_vaga_status"), "the existing tools are still there");
+  for (const need of ["list_variantes", "get_variante", "update_variante", "list_documentos", "get_documento", "set_documento_preferido", "save_cover_letter"]) {
+    check(tools.includes(need), `tool ${need} is listed`);
+  }
   check(!tools.some((t) => /activity|dev_?mode|trace/i.test(t)), "no tool exposes the Activity log to the AI");
 
   const opened = await call("browser_open", { url: pageUrl });
