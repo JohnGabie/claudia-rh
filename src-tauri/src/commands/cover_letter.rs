@@ -137,6 +137,11 @@ fn build_system_prompt(data: &CandidatoBase, idioma: &str, data_dir: &std::path:
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
 
+/// The letter the agent wrote through the MCP (save_cover_letter), in the default colour.
+pub(crate) fn render_carta(body_text: &str, data: &CandidatoBase, empresa: &str, cargo: &str, idioma: &str) -> String {
+    build_cover_letter_html(body_text, data, empresa, cargo, idioma, "#D97757")
+}
+
 fn build_cover_letter_html(
     body_text: &str,
     data: &CandidatoBase,
