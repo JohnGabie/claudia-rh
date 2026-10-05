@@ -34,8 +34,13 @@ pub fn get_strategy(data_dir: &Path) -> Result<String, String> {
 /// How many previous versions of the profile we keep.
 const BACKUP_DEPTH: usize = 5;
 
+fn backup_de(data_dir: &Path, file: &str, n: usize) -> std::path::PathBuf {
+    data_dir.join(format!("{file}.bak-{n}"))
+}
+
+#[cfg(test)]
 fn backup_path(data_dir: &Path, n: usize) -> std::path::PathBuf {
-    data_dir.join(format!("candidate_base.yaml.bak-{n}"))
+    backup_de(data_dir, "candidate_base.yaml", n)
 }
 
 /// Rejects the rotation before it mutates anything if a slot is occupied by a
@@ -43,12 +48,12 @@ fn backup_path(data_dir: &Path, n: usize) -> std::path::PathBuf {
 /// loop has no rollback — without this check a mid-loop failure would destroy
 /// the oldest generation and leave a hole in the numbering, for a write that
 /// never happened.
-fn check_slots_are_writable(data_dir: &Path) -> Result<(), String> {
+fn check_slots_are_writable(data_dir: &Path, file: &str) -> Result<(), String> {
     for n in 1..=BACKUP_DEPTH {
-        let slot = backup_path(data_dir, n);
+        let slot = backup_de(data_dir, file, n);
         if slot.is_dir() {
             return Err(format!(
-                "candidate_base.yaml.bak-{n} é uma pasta; remova-a para o backup poder ser criado"
+                "{file}.bak-{n} é uma pasta; remova-a para o backup poder ser criado"
             ));
         }
     }
@@ -57,12 +62,12 @@ fn check_slots_are_writable(data_dir: &Path) -> Result<(), String> {
 
 /// Slides candidate_base.yaml.bak-N to .bak-(N+1). The oldest backup falls off
 /// the end. Does not touch the live profile — see `archive_current`.
-fn slide_backups(data_dir: &Path) -> Result<(), String> {
+fn slide_backups(data_dir: &Path, file: &str) -> Result<(), String> {
     // Walk down so each slot is free before we move into it.
     for n in (1..BACKUP_DEPTH).rev() {
-        let from = backup_path(data_dir, n);
+        let from = backup_de(data_dir, file, n);
         if from.exists() {
-            std::fs::rename(&from, backup_path(data_dir, n + 1))
+            std::fs::rename(&from, backup_de(data_dir, file, n + 1))
                 .map_err(|e| format!("erro ao rodar backup {n}: {e}"))?;
         }
     }
@@ -75,42 +80,56 @@ fn slide_backups(data_dir: &Path) -> Result<(), String> {
 /// path. Moving it away meant a later failure — a full disk, a scanner holding
 /// the file — left the app with no profile at all, and the error message said
 /// nothing about where it went.
-fn archive_current(data_dir: &Path) -> Result<(), String> {
-    std::fs::copy(data_dir.join("candidate_base.yaml"), backup_path(data_dir, 1))
+fn archive_current(data_dir: &Path, file: &str) -> Result<(), String> {
+    std::fs::copy(data_dir.join(file), backup_de(data_dir, file, 1))
         .map(|_| ())
-        .map_err(|e| format!("erro ao criar backup do perfil: {e}"))
+        .map_err(|e| {
+            if file == "candidate_base.yaml" {
+                format!("erro ao criar backup do perfil: {e}")
+            } else {
+                format!("erro ao criar backup de {file}: {e}")
+            }
+        })
 }
 
-/// Preserves the current profile before it is overwritten.
+/// Preserves the current file before it is overwritten.
 ///
-/// A missing profile is not an error: the first write has nothing to preserve.
-fn rotate_backups(data_dir: &Path) -> Result<(), String> {
-    if !data_dir.join("candidate_base.yaml").exists() {
+/// A missing file is not an error: the first write has nothing to preserve.
+fn rotate_backups_de(data_dir: &Path, file: &str) -> Result<(), String> {
+    if !data_dir.join(file).exists() {
         return Ok(());
     }
-    check_slots_are_writable(data_dir)?;
-    slide_backups(data_dir)?;
-    archive_current(data_dir)
+    check_slots_are_writable(data_dir, file)?;
+    slide_backups(data_dir, file)?;
+    archive_current(data_dir, file)
 }
 
-/// Backs up, then replaces candidate_base.yaml atomically.
-///
+#[cfg(test)]
+fn rotate_backups(data_dir: &Path) -> Result<(), String> {
+    rotate_backups_de(data_dir, "candidate_base.yaml")
+}
+
 /// Every path that overwrites the profile goes through here — the MCP tool and
 /// the Perfil tab's form saves alike. The form path used to be a bare
 /// fs::write: no backup, and a crash mid-save left a truncated profile with
 /// nothing to fall back on.
 pub(crate) fn write_profile_atomically(data_dir: &Path, yaml: &str) -> Result<(), String> {
-    // No backup, no write.
-    rotate_backups(data_dir)?;
+    write_yaml_atomically(data_dir, "candidate_base.yaml", yaml)
+}
 
-    let tmp = data_dir.join("candidate_base.yaml.tmp");
+/// Backs up, then replaces `file` (in data_dir) atomically. Shared by the profile and the variants.
+pub(crate) fn write_yaml_atomically(data_dir: &Path, file: &str, yaml: &str) -> Result<(), String> {
+    // No backup, no write.
+    rotate_backups_de(data_dir, file)?;
+
+    let tmp = data_dir.join(format!("{file}.tmp"));
     std::fs::write(&tmp, yaml).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         format!("erro ao escrever ficheiro temporário: {e}")
     })?;
-    std::fs::rename(&tmp, data_dir.join("candidate_base.yaml")).map_err(|e| {
+    std::fs::rename(&tmp, data_dir.join(file)).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        format!("erro ao gravar candidate_base.yaml: {e}")
+        format!("erro ao gravar {file}: {e}")
     })
 }
 

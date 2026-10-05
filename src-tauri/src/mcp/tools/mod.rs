@@ -1,12 +1,17 @@
 // One file per domain (see .claude/MCP-DESIGN.md — extensibility contract):
 // adding tool #10 must cost the same as tool #4. Shared helpers live here.
 
+mod documentos;
 mod memory;
 mod pendencias;
 mod profile;
 mod propostas;
+mod variantes;
 mod vagas;
 pub mod browser;
+
+pub use documentos::{get_documento, list_documentos, set_documento_preferido};
+pub use variantes::{get_variante, list_variantes, update_variante};
 
 pub use memory::get_memory_summary;
 pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga, list_pendencias};
