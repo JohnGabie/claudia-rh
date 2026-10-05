@@ -68,7 +68,7 @@ mod tests {
             .collect::<Result<Vec<_>>>()
             .unwrap();
         tables.retain(|t| t != "sqlite_sequence");
-        for expected in ["candidaturas", "feedbacks", "pendencias", "propostas_perfil", "sessoes", "vagas"] {
+        for expected in ["candidaturas", "documentos", "feedbacks", "pendencias", "preferidos", "propostas_perfil", "sessoes", "vagas"] {
             assert!(tables.contains(&expected.to_string()), "missing table: {expected}");
         }
     }

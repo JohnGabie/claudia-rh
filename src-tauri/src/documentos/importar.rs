@@ -6,6 +6,28 @@ use std::path::Path;
 
 pub const MAX_BYTES: u64 = 10 * 1024 * 1024;
 
+pub(crate) fn dentro_do_limite(len: u64) -> bool {
+    len <= MAX_BYTES
+}
+
+/// A .docx is a ZIP with a Word document inside, not any ZIP renamed.
+fn parece_docx(bytes: &[u8]) -> bool {
+    let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return false };
+    let tipos = z.by_name("[Content_Types].xml").is_ok();
+    let word = z.by_name("word/document.xml").is_ok();
+    tipos && word
+}
+
+/// Creates the file; fails if anything already has that name (never overwrites).
+pub(crate) fn gravar_novo(dest: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(dest).map_err(|_| "conflito de nome ao importar; tente de novo".to_string())?;
+    f.write_all(bytes).map_err(|e| {
+        let _ = std::fs::remove_file(dest);
+        e.to_string()
+    })
+}
+
 pub fn importar(conn: &Connection, data_dir: &Path, tipo: &str, origem: &Path, nome: Option<&str>) -> Result<Documento, String> {
     if tipo != "curriculo" && tipo != "carta" {
         return Err(format!("tipo inválido: {tipo}"));
@@ -18,11 +40,15 @@ pub fn importar(conn: &Connection, data_dir: &Path, tipo: &str, origem: &Path, n
     };
     let unreadable = || "não foi possível ler o arquivo escolhido".to_string();
     let meta = std::fs::metadata(origem).map_err(|_| unreadable())?;
-    if meta.len() > MAX_BYTES {
+    if !dentro_do_limite(meta.len()) {
         return Err("o arquivo passa de 10 MB".into());
     }
     let bytes = std::fs::read(origem).map_err(|_| unreadable())?;
-    let real = if formato == "pdf" { bytes.starts_with(b"%PDF-") } else { bytes.starts_with(b"PK\x03\x04") };
+    // The file may have grown between the metadata and the read.
+    if !dentro_do_limite(bytes.len() as u64) {
+        return Err("o arquivo passa de 10 MB".into());
+    }
+    let real = if formato == "pdf" { bytes.starts_with(b"%PDF-") } else { bytes.starts_with(b"PK\x03\x04") && parece_docx(&bytes) };
     if !real {
         return Err(format!("o arquivo não é um {} de verdade", formato.to_uppercase()));
     }
@@ -32,10 +58,7 @@ pub fn importar(conn: &Connection, data_dir: &Path, tipo: &str, origem: &Path, n
     // The stored name is always generated: whatever the user called the file never becomes a path.
     let arquivo = format!("importado-{nanos}.{formato}");
     let dest = dir.join(&arquivo);
-    if dest.exists() {
-        return Err("conflito de nome ao importar; tente de novo".into());
-    }
-    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    gravar_novo(&dest, &bytes)?;
     let sha = super::seguranca::sha256_file(&dest).map_err(|e| e.to_string())?;
     let stem = origem.file_stem().and_then(|s| s.to_str()).unwrap_or("Currículo");
     let nome = nome.unwrap_or(stem).trim();
@@ -78,11 +101,47 @@ mod tests {
         crate::documentos::seguranca::resolve_attachable(&c, &dir, d.id).unwrap();
     }
 
+    fn docx_bytes(with_word: bool) -> Vec<u8> {
+        use std::io::Write;
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let o = zip::write::SimpleFileOptions::default();
+        z.start_file("[Content_Types].xml", o).unwrap();
+        z.write_all(b"<Types/>").unwrap();
+        if with_word {
+            z.start_file("word/document.xml", o).unwrap();
+            z.write_all(b"<w:document/>").unwrap();
+        }
+        z.finish().unwrap().into_inner()
+    }
+
     #[test]
-    fn a_docx_is_accepted_by_its_zip_header() {
+    fn a_real_docx_is_accepted() {
         let (c, dir) = setup("docx");
-        let src = file(&dir, "cv.docx", b"PK\x03\x04 resto");
+        let src = file(&dir, "cv.docx", &docx_bytes(true));
         assert_eq!(importar(&c, &dir, "curriculo", &src, Some("Word")).unwrap().formato, "docx");
+    }
+
+    #[test]
+    fn a_zip_renamed_docx_is_refused() {
+        let (c, dir) = setup("zipdocx");
+        let src = file(&dir, "cv.docx", &docx_bytes(false));
+        assert!(importar(&c, &dir, "curriculo", &src, None).unwrap_err().contains("não é um DOCX"));
+        let src = file(&dir, "cv2.docx", b"PK\x03\x04 not a zip at all");
+        assert!(importar(&c, &dir, "curriculo", &src, None).is_err());
+    }
+
+    #[test]
+    fn an_existing_destination_is_never_overwritten() {
+        let (_c, dir) = setup("noover");
+        let dest = dir.join("ja-existe.pdf");
+        std::fs::write(&dest, b"%PDF-1.7 original").unwrap();
+        assert!(gravar_novo(&dest, b"%PDF-1.7 outro").is_err());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"%PDF-1.7 original");
+    }
+
+    #[test]
+    fn the_size_limit_is_checked_on_the_bytes_read() {
+        assert!(dentro_do_limite(MAX_BYTES) && !dentro_do_limite(MAX_BYTES + 1));
     }
 
     #[test]

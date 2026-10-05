@@ -20,7 +20,7 @@ pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", Sha256::digest(&bytes)))
 }
 
-fn is_bare_name(name: &str) -> bool {
+pub(crate) fn is_bare_name(name: &str) -> bool {
     !name.is_empty() && !name.contains(['/', '\\', ':']) && !name.starts_with("..")
 }
 

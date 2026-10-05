@@ -1,66 +1,91 @@
-//! Tauri commands of the document library (spec section 6). Wave 0 fixes the signatures; wave 1 (B2)
-//! fills the bodies marked NOT_YET.
-use crate::documentos::biblioteca::{self, DocumentoDetalhe, DocumentoView, Tag, VarianteResumo};
+//! Tauri commands of the document library (spec section 6). All async: disk and hashing work runs
+//! off the main thread.
 use crate::documentos;
+use crate::documentos::biblioteca::{self, DocumentoDetalhe, DocumentoView, Tag, VarianteResumo};
 use tauri::{AppHandle, Manager};
-
-const NOT_YET: &str = "não implementado ainda (Parte 2, onda 1)";
+use tauri_plugin_opener::OpenerExt;
 
 fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn listar_documentos(app: AppHandle, tipo: String) -> Result<Vec<DocumentoView>, String> {
-    biblioteca::listar_view(&biblioteca::open_conn(&data_dir(&app)?)?, &tipo)
+/// Tauri runs sync commands on the main thread: a 10 MB hash there freezes the window. Every document
+/// command is async and does its disk work here.
+async fn bloqueante<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn obter_documento(_app: AppHandle, _id: i64) -> Result<DocumentoDetalhe, String> {
-    Err(NOT_YET.into())
-}
-
-#[tauri::command]
-pub fn importar_documento(app: AppHandle, tipo: String, caminho_origem: String, nome: Option<String>) -> Result<DocumentoView, String> {
+pub async fn listar_documentos(app: AppHandle, tipo: String) -> Result<Vec<DocumentoView>, String> {
     let dir = data_dir(&app)?;
-    let conn = biblioteca::open_conn(&dir)?;
-    let d = documentos::importar::importar(&conn, &dir, &tipo, std::path::Path::new(&caminho_origem), nome.as_deref())?;
-    biblioteca::ver(&conn, d.id)
+    bloqueante(move || biblioteca::listar_view(&biblioteca::open_conn(&dir)?, &tipo)).await
 }
 
 #[tauri::command]
-pub fn renomear_documento(_app: AppHandle, _id: i64, _nome: String) -> Result<(), String> {
-    Err(NOT_YET.into())
+pub async fn obter_documento(app: AppHandle, id: i64) -> Result<DocumentoDetalhe, String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || biblioteca::detalhe(&biblioteca::open_conn(&dir)?, &dir, id)).await
 }
 
 #[tauri::command]
-pub fn atualizar_tags_documento(_app: AppHandle, _id: i64, _tags: Vec<Tag>) -> Result<(), String> {
-    Err(NOT_YET.into())
+pub async fn importar_documento(app: AppHandle, tipo: String, caminho_origem: String, nome: Option<String>) -> Result<DocumentoView, String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || {
+        let conn = biblioteca::open_conn(&dir)?;
+        let d = documentos::importar::importar(&conn, &dir, &tipo, std::path::Path::new(&caminho_origem), nome.as_deref())?;
+        biblioteca::ver(&conn, d.id)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn definir_preferido(app: AppHandle, id: i64, variante_id: Option<String>) -> Result<(), String> {
-    documentos::definir_preferido(&biblioteca::open_conn(&data_dir(&app)?)?, id, variante_id.as_deref())
+pub async fn renomear_documento(app: AppHandle, id: i64, nome: String) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || biblioteca::renomear(&biblioteca::open_conn(&dir)?, id, &nome)).await
 }
 
 #[tauri::command]
-pub fn remover_preferido(_app: AppHandle, _tipo: String, _variante_id: Option<String>) -> Result<(), String> {
-    Err(NOT_YET.into())
+pub async fn atualizar_tags_documento(app: AppHandle, id: i64, tags: Vec<Tag>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || biblioteca::gravar_tags(&biblioteca::open_conn(&dir)?, id, &tags)).await
 }
 
 #[tauri::command]
-pub fn abrir_documento(_app: AppHandle, _id: i64) -> Result<(), String> {
-    Err(NOT_YET.into())
+pub async fn definir_preferido(app: AppHandle, id: i64, variante_id: Option<String>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || documentos::definir_preferido(&biblioteca::open_conn(&dir)?, id, variante_id.as_deref())).await
 }
 
 #[tauri::command]
-pub fn apagar_documento(_app: AppHandle, _id: i64) -> Result<(), String> {
-    Err(NOT_YET.into())
+pub async fn remover_preferido(app: AppHandle, tipo: String, variante_id: Option<String>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || biblioteca::remover_preferido(&biblioteca::open_conn(&dir)?, &tipo, variante_id.as_deref())).await
+}
+
+/// Does not check the sha256: opening a file the user edited outside is legitimate; attaching one is
+/// not (the upload still goes through `resolve_attachable`).
+#[tauri::command]
+pub async fn abrir_documento(app: AppHandle, id: i64) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let path = bloqueante(move || {
+        let conn = biblioteca::open_conn(&dir)?;
+        let d = documentos::obter(&conn, id).map_err(|e| e.to_string())?.ok_or_else(|| format!("o documento {id} não existe"))?;
+        biblioteca::dentro_da_pasta(&dir, &d.arquivo).ok_or_else(|| format!("o arquivo de \"{}\" sumiu: gere ou importe de novo", d.nome))
+    })
+    .await?;
+    app.opener().open_path(path.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn listar_variantes(_app: AppHandle) -> Result<Vec<VarianteResumo>, String> {
-    Err(NOT_YET.into())
+pub async fn apagar_documento(app: AppHandle, id: i64) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    bloqueante(move || biblioteca::apagar(&biblioteca::open_conn(&dir)?, &dir, id)).await
+}
+
+#[tauri::command]
+pub async fn listar_variantes(app: AppHandle) -> Result<Vec<VarianteResumo>, String> {
+    let vs = crate::commands::perfil::ler_search_variants(app)?;
+    Ok(vs.into_iter().map(|v| VarianteResumo { id: v.id, nome_exibicao: v.nome_exibicao, ativa: v.ativa }).collect())
 }
 
 #[cfg(test)]
