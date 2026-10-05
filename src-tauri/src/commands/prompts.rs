@@ -458,9 +458,10 @@ mod migration_tests {
             assert!(p.contains(tool), "the prompt must teach {tool}");
         }
         assert!(!p.contains("cv_gerado_path"), "the agent no longer looks for a CV path");
-        for cat in ["sem_documento"] {
+        for cat in ["sem_curriculo", "sem_carta"] {
             assert!(p.contains(cat), "the prompt must mention pendencia category {cat}");
         }
+        assert!(!p.contains("sem_documento"), "sem_documento is replaced by sem_curriculo and sem_carta");
     }
 
     #[test]
