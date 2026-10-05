@@ -252,3 +252,24 @@ test("erroBancoAusente: status 3 becomes the 'start the app first' error, others
   const outro = new Error("x");
   assert.equal(erroBancoAusente(outro, "x"), outro);
 });
+
+test("erroDeExec reads the guest exit code from the localized stdout line", () => {
+  const ok = erroDeExec({ status: 0, stdout: "Processo encerrado com o código: 0\r\n" }, "id", "System");
+  assert.equal(ok, null);
+  const pt = erroDeExec({ status: 0, stdout: "x\r\nProcesso encerrado com o código: 3\r\n" }, "id", "System");
+  assert.equal(pt.status, 3);
+  assert.equal(pt.code, "ERR_EXEC_FAILED");
+  assert.match(pt.message, /código: 3/);
+  const en = erroDeExec({ status: 0, stdout: "Process exited with code: 1" }, "id", "System");
+  assert.equal(en.status, 1);
+  assert.equal(erroDeExec({ status: 0, stdout: "nothing useful here" }, "id", "System"), null);
+  assert.equal(erroDeExec({ status: 0, stdout: "" }, "id", "System"), null);
+  assert.equal(erroDeExec({ status: 1, stdout: "Process exited with code: 0" }, "id", "System").status, 1);
+  // last match wins
+  assert.equal(erroDeExec({ status: 0, stdout: "exit code: 5\nProcess exited with code: 0" }, "id", "System"), null);
+});
+
+test("erroBancoAusente works with a guest code parsed from stdout", () => {
+  const e = erroDeExec({ status: 0, stdout: "Processo encerrado com o código: 3" }, "id", "ExistingLogin");
+  assert.match(erroBancoAusente(e, "G").message, /does not exist in the guest yet/);
+});

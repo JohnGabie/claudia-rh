@@ -125,9 +125,25 @@ function wsb(args) {
   return r;
 }
 
-/** Returns an Error if wsb exec failed (status !== 0), null otherwise. */
+/**
+ * wsb exec always exits 0 on the host; the guest exit code only shows up as a localized text line
+ * (pt-BR "Processo encerrado com o código: 3", English "... code: 3"). Returns the last one, or null.
+ */
+export function codigoDoGuest(stdout) {
+  const m = [...String(stdout ?? "").matchAll(/(?:c\S{0,2}digo|code)[^\r\n:]*:\s*(-?\d+)\s*$/gim)];
+  return m.length ? { code: Number(m.at(-1)[1]), line: m.at(-1)[0].trim() } : null;
+}
+
+/** Returns an Error if wsb exec failed (own status !== 0) or the guest reported a non-zero code, null otherwise. */
 export function erroDeExec(r, id, como) {
-  if (r.status === 0) return null;
+  if (r.status === 0) {
+    const g = codigoDoGuest(r.stdout);
+    if (!g || g.code === 0) return null;
+    const err = new Error(`wsb exec: guest process failed (${g.line}) in sandbox ${id} as ${como}`);
+    err.code = "ERR_EXEC_FAILED";
+    err.status = g.code;
+    return err;
+  }
   const msg = (r.stderr || r.stdout || "").trim();
   const detail = msg ? `: ${msg}` : "";
   const err = new Error(`wsb exec failed (status ${r.status}) in sandbox ${id} as ${como}${detail}`);

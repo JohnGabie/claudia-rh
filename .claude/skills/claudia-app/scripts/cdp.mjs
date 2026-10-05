@@ -3,8 +3,18 @@ export const HOST = process.env.CDP_HOST || "127.0.0.1";
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function alvos(port) {
-  const r = await fetch(`http://${HOST}:${port}/json/list`);
-  return r.json();
+  try {
+    const r = await fetch(`http://${HOST}:${port}/json/list`);
+    return await r.json();
+  } catch (e) { return falhaCdp(port, e); }
+}
+
+/** Exits 1 with a readable message instead of an unhandled "fetch failed" stack. */
+export function falhaCdp(port, err) {
+  const causa = err?.cause?.code ?? err?.cause?.message ?? err?.message ?? String(err);
+  console.error(`CDP not reachable at ${HOST}:${port}: ${causa}`);
+  console.error("For a sandbox target run: node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar");
+  process.exit(1);
 }
 
 export async function ligar(url) {
