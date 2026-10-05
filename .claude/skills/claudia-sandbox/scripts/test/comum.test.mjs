@@ -209,3 +209,32 @@ test("dentroDe: different drives", () => {
 test("dentroDe: folder named ..foo", () => {
   assert.equal(dentroDe("C:\\a", "C:\\a\\..foo"), true, "folder named ..foo is a child, not parent");
 });
+
+test("novoCenarioDir: recreates folder with .cenario marker (failed run recovery)", () => {
+  const temp = tempDir("marker");
+  try {
+    const target = path.join(temp, "with-marker");
+    // Simulate a failed run that left .cenario marker
+    fs.mkdirSync(path.join(target, "appdata", APP_ID), { recursive: true });
+    fs.writeFileSync(path.join(target, ".cenario"), "");
+    fs.writeFileSync(path.join(target, "garbage.txt"), "leftover from failed run");
+
+    // Second run should succeed and clean up the garbage
+    const dir = novoCenarioDir(target, "t");
+    assert.ok(fs.existsSync(path.join(dir, "appdata", APP_ID)));
+    assert.ok(fs.existsSync(path.join(dir, ".cenario")), "marker recreated");
+    assert.equal(fs.existsSync(path.join(dir, "garbage.txt")), false, "garbage cleaned up");
+  } finally {
+    cleanup(temp);
+  }
+});
+
+test("novoCenarioDir: sibling path is no longer refused as ancestor", () => {
+  // A sibling like "<repo_parent>/<repo_name_prefix>" should not be refused
+  // dentroDe-based ancestor check works correctly for non-ancestry cases
+  const repoParent = path.dirname(REPO_ROOT);
+  const testDir = path.join(repoParent, "test-sibling-scenario");
+
+  assert.equal(dentroDe(testDir, REPO_ROOT), false, "sibling is not ancestor of REPO_ROOT");
+  assert.equal(dentroDe(REPO_ROOT, testDir), false, "REPO_ROOT is not ancestor of sibling");
+});

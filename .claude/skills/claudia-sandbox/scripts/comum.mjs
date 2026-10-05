@@ -41,14 +41,16 @@ export function novoCenarioDir(saida, nome) {
   if (dir === REPO_ROOT) {
     throw new Error("novoCenarioDir: target is REPO_ROOT");
   }
-  if (REPO_ROOT.startsWith(dir) && dir !== REPO_ROOT) {
+  if (dentroDe(dir, REPO_ROOT)) {
     throw new Error("novoCenarioDir: target is an ancestor of REPO_ROOT");
   }
 
-  // Check if non-empty directory exists without cenario.json
+  // Check if non-empty directory exists without cenario.json or .cenario marker
   if (fs.existsSync(dir)) {
     const entries = fs.readdirSync(dir);
-    if (entries.length > 0 && !fs.existsSync(path.join(dir, "cenario.json"))) {
+    const hasCenarioJson = fs.existsSync(path.join(dir, "cenario.json"));
+    const hasMarker = fs.existsSync(path.join(dir, ".cenario"));
+    if (entries.length > 0 && !hasCenarioJson && !hasMarker) {
       throw new Error(`novoCenarioDir: target directory must not have existing files without cenario.json: ${dir}`);
     }
   }
@@ -56,6 +58,7 @@ export function novoCenarioDir(saida, nome) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
   fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".cenario"), "");
   return dir;
 }
 

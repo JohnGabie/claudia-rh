@@ -41,6 +41,7 @@ test("cenario copia", () => {
   assert.equal(db.prepare("SELECT x FROM t").get().x, 42, "copia consolida wal");
   db.close();
   assert.equal(fs.existsSync(path.join(dados, "claudia_rh.db-wal")), false, "copia sem arquivo wal");
+  assert.equal(fs.existsSync(path.join(dados, "claudia_rh.db-shm")), false, "copia sem arquivo shm");
   const d = JSON.parse(fs.readFileSync(path.join(dados, "disparo.json"), "utf8"));
   assert.equal(d.ativo, false, "copia desliga automacao");
   assert.equal(d.limiar_minutos, 5, "copia preserva campos");
@@ -70,6 +71,7 @@ test("cenario copia: saida dentro de origem", () => {
   const origem = path.join(base, "origem");
   fs.mkdirSync(origem, { recursive: true });
   fs.writeFileSync(path.join(origem, "file.txt"), "data");
+  const antesOrigem = hashArvore(origem);
 
   // Test: --saida is a subdirectory of --origem
   const saidaDentro = path.join(origem, "x");
@@ -77,7 +79,7 @@ test("cenario copia: saida dentro de origem", () => {
   assert.equal(r.code, 1, "saida dentro de origem sai com 1");
   assert.match(r.err, /overlap/, "erro menciona overlap");
   assert.equal(fs.existsSync(saidaDentro), false, "saida nao criada");
-  assert.ok(fs.existsSync(path.join(origem, "file.txt")), "origem intacta");
+  assert.equal(hashArvore(origem), antesOrigem, "origem intacta");
 });
 
 test("cenario copia: database corrompido", () => {
@@ -112,4 +114,34 @@ test("cenario copia: saida folder guard (non-empty without cenario.json)", () =>
   assert.match(r.err, /must not have existing files|cenario.json/, "erro menciona guard");
   assert.equal(hashArvore(origem), antes, "origem intacta");
   assert.equal(hashArvore(saidaDir), antesDir, "saida folder intacta");
+});
+
+test("cenario copia: failed run recovery with .cenario marker", () => {
+  const base = tempDir("copia-recovery");
+  // First run: garbage db (will fail)
+  const origemBad = path.join(base, "origem-bad");
+  fs.mkdirSync(origemBad, { recursive: true });
+  fs.writeFileSync(path.join(origemBad, "candidate_base.yaml"), "dados: {}\n");
+  fs.writeFileSync(path.join(origemBad, "claudia_rh.db"), "not a database");
+
+  const saida = path.join(base, "saida");
+  const r1 = rodar(SCRIPT, ["--autorizado", "--origem", origemBad, "--saida", saida]);
+  assert.equal(r1.code, 1, "primeira tentativa com db ruim falha");
+  // The .cenario marker should now exist, allowing the second run
+  assert.ok(fs.existsSync(path.join(saida, ".cenario")), "marker exists after failed run");
+
+  // Second run: good data to same --saida (should succeed because of .cenario marker)
+  const origemGood = path.join(base, "origem-good");
+  fs.mkdirSync(origemGood, { recursive: true });
+  fs.writeFileSync(path.join(origemGood, "candidate_base.yaml"), "dados: {}\n");
+  const db = new DatabaseSync(path.join(origemGood, "claudia_rh.db"));
+  db.exec("PRAGMA journal_mode=WAL; CREATE TABLE t(x); INSERT INTO t VALUES (42);");
+  db.close();
+
+  const r2 = rodar(SCRIPT, ["--autorizado", "--origem", origemGood, "--saida", saida]);
+  assert.equal(r2.code, 0, "segunda tentativa com dados bons sucede");
+  const dados = path.join(saida, "appdata", "io.github.johngabie.claudia-rh");
+  const dbCopy = new DatabaseSync(path.join(dados, "claudia_rh.db"), { readOnly: true });
+  assert.equal(dbCopy.prepare("SELECT x FROM t").get().x, 42, "dados copiados corretamente");
+  dbCopy.close();
 });
