@@ -125,6 +125,16 @@ function wsb(args) {
   return r;
 }
 
+/** Returns an Error if wsb exec failed (status !== 0), null otherwise. */
+export function erroDeExec(r, id, como) {
+  if (r.status === 0) return null;
+  const msg = (r.stderr || r.stdout || "").trim();
+  const detail = msg ? `: ${msg}` : "";
+  const err = new Error(`wsb exec failed (status ${r.status}) in sandbox ${id} as ${como}${detail}`);
+  err.code = "ERR_EXEC_FAILED";
+  return err;
+}
+
 export function sandboxId(id) {
   if (id) return id;
   const ids = idsDeWsbList(wsb(["list"]).stdout);
@@ -138,8 +148,22 @@ export function sandboxIp(id) {
   return m[0];
 }
 
-/** Runs a PowerShell snippet in the guest. -EncodedCommand avoids quoting issues; wsb exec returns no process output. */
+/** Runs a PowerShell snippet in the guest. -EncodedCommand avoids quoting issues; wsb exec returns no process output. Throws if execution fails. */
 export function noGuest(id, como, ps) {
   const enc = Buffer.from(ps, "utf16le").toString("base64");
-  return wsb(["exec", "--id", id, "-r", como, "-c", `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${enc}`]).status;
+  const r = wsb(["exec", "--id", id, "-r", como, "-c", `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${enc}`]);
+  const err = erroDeExec(r, id, como);
+  if (err) throw err;
+  return r.status;
+}
+
+/** Validate a number is an integer in the given range. Throws with code ERR_PARSE_ARGS_USAGE. */
+export function validarInt(value, min, max, name) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    const err = new Error(`${name}: must be an integer between ${min} and ${max}, got ${value}`);
+    err.code = "ERR_PARSE_ARGS_USAGE";
+    throw err;
+  }
+  return n;
 }

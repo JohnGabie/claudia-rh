@@ -4,14 +4,16 @@
 //   --iniciar   start the app with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>
 //   --exe-path  app exe inside the guest (e.g. the installed copy); without it, the lab's guest-run.ps1 starts the published exe
 import { parseArgs } from "node:util";
-import { sandboxId, sandboxIp, noGuest, falhaDe } from "./comum.mjs";
+import { sandboxId, sandboxIp, noGuest, validarInt, falhaDe } from "./comum.mjs";
 
 try {
   const { values } = parseArgs({ options: {
     id: { type: "string" }, porta: { type: "string", default: "9333" }, "porta-host": { type: "string", default: "19333" },
     iniciar: { type: "boolean" }, "exe-path": { type: "string" }, timeout: { type: "string", default: "90" },
   } });
-  const porta = Number(values.porta), portaHost = Number(values["porta-host"]), timeout = Number(values.timeout);
+  const porta = validarInt(values.porta, 1, 65535, "--porta");
+  const portaHost = validarInt(values["porta-host"], 1, 65535, "--porta-host");
+  const timeout = validarInt(values.timeout, 1, 0xFFFFFFFF, "--timeout");
   const id = sandboxId(values.id);
   const ip = sandboxIp(id);
   noGuest(id, "System", [
