@@ -30,4 +30,29 @@ export interface SearchVariant {
   idiomas_aplicacao: string[];
   cv_gerado_path: string;
   cv_gerado_em: string;
+  // At most one variant is the main one; the backend clears the others when one is saved with true.
+  principal: boolean;
 }
+
+export type TipoDocumento = "curriculo" | "carta";
+export type TipoTag = "variante" | "template" | "cor" | "idioma" | "livre";
+export interface Tag { tipo: TipoTag; valor: string }
+
+// Mirrors documentos::biblioteca::DocumentoView (spec section 6). No file names, no paths.
+export interface Documento {
+  id: number;
+  tipo: TipoDocumento;
+  nome: string;
+  origem: "gerado" | "importado";
+  formato: "pdf" | "docx";
+  idioma: string | null;
+  tags: Tag[];
+  tamanho: number;
+  criado_em: string;
+  vaga_id: number | null;
+  preferido_global: boolean;
+  preferido_variantes: string[];
+  tem_preview: boolean;
+}
+export interface DocumentoDetalhe extends Documento { preview_html: string | null }
+export interface VarianteResumo { id: string; nome_exibicao: string; ativa: boolean }

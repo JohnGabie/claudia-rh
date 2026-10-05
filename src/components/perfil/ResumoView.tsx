@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useT } from "../../i18n";
-import { Plus, FileText, MailOpen, Lightbulb } from "lucide-react";
-import { SearchVariant } from "../../types";
+import { Plus, FileText, Lightbulb } from "lucide-react";
+import { docsApi, DOCUMENTOS_MUDARAM } from "../../lib/documentos-api";
+import { SearchVariant, Documento, TipoDocumento } from "../../types";
 import { CandidateBase, ChatFocus, EditTarget, Proposta } from "./types";
 import { ProfileHeader, ExperienciaSection, ProjetosSection, FormacaoSection, CompetenciasSection, IdiomasSection, VariantCard } from "./sections";
 
@@ -13,12 +14,48 @@ export const ResumoView: React.FC<{
   data: CandidateBase | null;
   variants: SearchVariant[];
   onOpenChat: (focus?: ChatFocus) => void;
-  onOpenCurriculos: () => void;
-  onOpenCoverLetters: () => void;
+  onOpenDocumentos: () => void;
   onDirectEdit: (target: EditTarget) => void;
   onReloadData: () => void;
-}> = ({ data, variants, onOpenChat, onOpenCurriculos, onOpenCoverLetters, onDirectEdit, onReloadData }) => {
+}> = ({ data, variants, onOpenChat, onOpenDocumentos, onDirectEdit, onReloadData }) => {
   const t = useT();
+  const [curriculos, setCurriculos] = useState<Documento[]>([]);
+  const [cartas, setCartas] = useState<Documento[]>([]);
+
+  // The "preferred" selects of each variant read the library; reloaded when the DB changes.
+  const carregarDocs = useCallback(() => {
+    docsApi.listar("curriculo").then(setCurriculos).catch(console.error);
+    docsApi.listar("carta").then(setCartas).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    carregarDocs();
+    const un = listen("db-atualizada", carregarDocs);
+    window.addEventListener(DOCUMENTOS_MUDARAM, carregarDocs);
+    return () => {
+      un.then((f) => f());
+      window.removeEventListener(DOCUMENTOS_MUDARAM, carregarDocs);
+    };
+  }, [carregarDocs]);
+
+  const handlePreferido = async (variantId: string, tipo: TipoDocumento, docId: number | null) => {
+    try {
+      if (docId === null) await docsApi.removerPreferido(tipo, variantId);
+      else await docsApi.definirPreferido(docId, variantId);
+    } catch (e) {
+      console.error(e);
+    }
+    carregarDocs();
+  };
+
+  // P2: the main variant is chosen with a select; the backend clears the others when one is saved as main.
+  const principal = variants.find((v) => v.principal) ?? null;
+  const handlePrincipal = async (variantId: string) => {
+    const alvo = variantId ? variants.find((v) => v.id === variantId) : principal;
+    if (!alvo) return;
+    await invoke("guardar_variante_unica", { variante: { ...alvo, principal: variantId !== "" } }).catch(console.error);
+    onReloadData();
+  };
   const [localPesos, setLocalPesos] = useState<Record<string, number>>({});
   const committedPesosRef = useRef<Record<string, number>>({});
 
@@ -116,7 +153,7 @@ export const ResumoView: React.FC<{
           {t.profile.newVariant}
         </button>
         <button
-          onClick={onOpenCurriculos}
+          onClick={onOpenDocumentos}
           style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "7px 14px", background: "transparent",
@@ -126,20 +163,7 @@ export const ResumoView: React.FC<{
           }}
         >
           <FileText size={14} />
-          {t.profile.resumes}
-        </button>
-        <button
-          onClick={onOpenCoverLetters}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "7px 14px", background: "transparent",
-            border: "1px solid var(--border)", borderRadius: 8,
-            fontSize: 13, color: "var(--text-secondary)", cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          <MailOpen size={14} />
-          {t.profile.coverLetters}
+          {t.profile.goToDocuments}
         </button>
         <button
           onClick={() => onOpenChat()}
@@ -284,6 +308,26 @@ export const ResumoView: React.FC<{
           </button>
         </div>
 
+        {variants.some((v) => v.ativa) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <label htmlFor="variante-principal" style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>
+              {t.profile.mainVariant}
+            </label>
+            <select
+              id="variante-principal"
+              value={principal?.id ?? ""}
+              onChange={(e) => handlePrincipal(e.target.value)}
+              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-surface)", fontSize: 12, color: "var(--text-primary)", fontFamily: "inherit" }}
+            >
+              <option value="">{t.profile.none}</option>
+              {variants.filter((v) => v.ativa || v.principal).map((v) => (
+                <option key={v.id} value={v.id}>{v.nome_exibicao}</option>
+              ))}
+            </select>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{t.profile.mainVariantHint}</span>
+          </div>
+        )}
+
         {variants.length === 0 ? (
           <div style={{
             background: "var(--bg-surface)", border: "1px dashed var(--border)",
@@ -317,6 +361,9 @@ export const ResumoView: React.FC<{
                 onDragBar={(newPct) => handleDragBar(v.id, newPct)}
                 onDragEnd={handleDragEnd}
                 onToggleAtiva={() => handleToggleAtiva(v.id)}
+                curriculos={curriculos}
+                cartas={cartas}
+                onPreferido={(tipo, docId) => handlePreferido(v.id, tipo, docId)}
               />
             ))}
           </div>

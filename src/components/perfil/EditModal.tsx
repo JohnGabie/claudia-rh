@@ -448,7 +448,7 @@ const VarianteEditor: React.FC<{ varianteId: string; variants: SearchVariant[]; 
     if (initial) {
       return { ...initial, foco_competencias: [...initial.foco_competencias], foco_experiencia: [...initial.foco_experiencia], regioes_aceitas: [...initial.regioes_aceitas], modelos_trabalho: [...initial.modelos_trabalho], idiomas_aplicacao: [...initial.idiomas_aplicacao] };
     }
-    return { id: varianteId || `variante_${Date.now()}`, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "" };
+    return { id: varianteId || `variante_${Date.now()}`, nome_exibicao: "", peso: 50, ativa: true, foco_competencias: [], foco_experiencia: [], regioes_aceitas: [], modelos_trabalho: [], idiomas_aplicacao: [], cv_gerado_path: "", cv_gerado_em: "", principal: false };
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

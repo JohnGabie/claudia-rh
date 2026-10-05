@@ -10,6 +10,7 @@ import { useT } from "./i18n";
 import { Dashboard } from "./components/dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/perfil";
+import { Documentos } from "./components/documentos";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
@@ -155,7 +156,12 @@ function App() {
 
               {/* Perfil */}
               <div style={{ display: view === "perfil" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-                <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} />
+                <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} onOpenDocumentos={() => setView("documentos")} />
+              </div>
+
+              {/* Currículos */}
+              <div style={{ display: view === "documentos" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Documentos />
               </div>
 
               {/* Terminal — nunca desmontado */}

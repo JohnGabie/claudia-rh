@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import { useT } from "../../i18n";
 import { Pencil } from "lucide-react";
-import { SearchVariant } from "../../types";
+import { SearchVariant, Documento, TipoDocumento } from "../../types";
+import { preferidoDaVariante } from "../documentos/logica";
 import { CandidateBase, EditTarget } from "./types";
 
 // ── Logo ───────────────────────────────────────────────────────────────────
@@ -233,7 +234,10 @@ export const VariantCard: React.FC<{
   onDragBar: (newPct: number) => void;
   onDragEnd: () => void;
   onToggleAtiva: () => void;
-}> = ({ variant, pct, maxPct, onEdit, onDragBar, onDragEnd, onToggleAtiva }) => {
+  curriculos: Documento[];
+  cartas: Documento[];
+  onPreferido: (tipo: TipoDocumento, docId: number | null) => void;
+}> = ({ variant, pct, maxPct, onEdit, onDragBar, onDragEnd, onToggleAtiva, curriculos, cartas, onPreferido }) => {
   const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   const onDragBarRef = useRef(onDragBar);
@@ -305,6 +309,25 @@ export const VariantCard: React.FC<{
           ))}
           {variant.modelos_trabalho.slice(0, 2).map((m, i) => (
             <span key={i} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent-strong)" }}>{m}</span>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+          {([
+            { tipo: "curriculo" as const, rotulo: t.profile.variantPreferredResume, lista: curriculos },
+            { tipo: "carta" as const, rotulo: t.profile.variantPreferredLetter, lista: cartas },
+          ]).map(({ tipo, rotulo, lista }) => (
+            <label key={tipo} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", minWidth: 0 }}>
+              {rotulo}
+              <select
+                value={preferidoDaVariante(lista, variant.id)?.id ?? ""}
+                onChange={(e) => onPreferido(tipo, e.target.value === "" ? null : Number(e.target.value))}
+                style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-base)", fontSize: 12, color: "var(--text-primary)", fontFamily: "inherit", maxWidth: 200 }}
+              >
+                <option value="">{t.profile.none}</option>
+                {lista.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+              </select>
+            </label>
           ))}
         </div>
       </div>

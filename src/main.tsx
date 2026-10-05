@@ -14,10 +14,17 @@ function forwardConsole(fnName: "warn" | "error", logger: (m: string) => Promise
 forwardConsole("warn", warn);
 forwardConsole("error", error);
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <LocaleProvider>
-      <App />
-    </LocaleProvider>
-  </React.StrictMode>,
-);
+async function start() {
+  // Dev-only: in a plain browser (no Tauri) the screens run against an in-memory mock. Dead code in production.
+  if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+    (await import("./lib/dev-mock")).instalarMockTauri();
+  }
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>
+    </React.StrictMode>,
+  );
+}
+void start();
