@@ -46,7 +46,9 @@ Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo
 
 ### Antigo e novo, lado a lado
 
-| Modelo | Descrição antiga (935 chars) | Descrição nova (965 chars) |
+Medido com o nome anterior da skill (`claudia-teste`); a medição após o rename está abaixo.
+
+| Modelo | Descrição antiga (935 chars) | Descrição nova (1020 chars) |
 |---|---|---|
 | Sonnet, rodada 1 | 16/16 | 16/16 |
 | Sonnet, rodada 2 | 16/16 | 16/16 |
@@ -86,3 +88,14 @@ Os números 5/16, 6/16, 7/16 e 11/16 de corridas anteriores deste documento fora
 ### Remedição com alvo remoto (Sonnet, 2 rodadas)
 
 Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao Sandbox): 21/21 válidos nas duas rodadas, sem regressão nos 16 antigos (16/16 antes e depois). O conjunto continua escrito por quem escreveu a descrição; vale a mesma ressalva acima.
+
+### Após o rename
+
+Medições com o skill name renomeada para `claudia-teste-e2e`, sem mudança de descrição. 21 prompts (16 originais + 5 ligados ao Sandbox):
+
+| Modelo | Rodada 1 | Rodada 2 |
+|---|---|---|
+| Sonnet | 21/21 | 21/21 |
+| Opus | 21/21 | 21/21 |
+
+Nenhuma execução inválida em ambas as rodadas.

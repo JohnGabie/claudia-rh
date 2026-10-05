@@ -65,9 +65,17 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 - **Demonstra:** `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` (debug ou release): exit 1 em ~90 s, "CDP did not answer ... within 90s".
 - **Situação:** falha verificada com ambos os builds (2026-10-05). Use degraus 2 e 3 da escada de prints (`claudia-teste-e2e`) em vez de CDP.
 
+## 10. Espaço livre no C: do host
+
+- **Comportamento:** o disco virtual do Windows Sandbox fica no C: do host, mesmo quando a pasta de trabalho (`SANDBOX_LAB_DIR`) está em outro disco. Com pouco espaço livre no C:, a instalação silenciosa do app (`/S`) fica muito mais lenta e o C: pode chegar a 0 bytes. Confira o espaço livre antes de `test-up` e mantenha uma folga de vários GB. Derrube o Sandbox entre etapas pesadas para liberar espaço.
+- **Demonstra:** `Get-Volume C: | Select-Object SizeRemaining` no host antes e depois de `test-up.ps1`.
+- **Situação:** verificado (observado ao vivo).
+
 ## Evals de disparo
 
 Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.
+
+Medido com o nome anterior da skill (`claudia-sandbox`); a medição após o rename está abaixo.
 
 | Rodada (2026-10-05) | Resultado | Inválidas |
 |---|---|---|
@@ -76,4 +84,15 @@ Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs son
 
 Nas duas rodadas, os 9 casos "deve" chamaram `Skill(claudia-teste-sandbox)`. Nos "não deve": olhar a tela do app aberto, print do Perfil e "olha o app que tá rodando no Sandbox" foram para `Skill(claudia-teste-e2e)`; o registro no Linear para `Skill(linear-claudia)`; `cargo test` e o ajuste de CSS começaram por ferramenta comum (`PowerShell`, `Grep`), sem skill.
 
-Limites da medição: um modelo só, duas rodadas, prompts curtos. A descrição não precisou de ajuste depois da primeira versão (894 caracteres). Ao mudar a descrição desta skill ou a da `claudia-teste-e2e`, rode de novo os evals das duas: os casos de fronteira ("olha o app no Sandbox" e "monta um Windows limpo") dependem das duas descrições juntas.
+Limites da medição: um modelo só, duas rodadas, prompts curtos. A descrição não precisou de ajuste depois da primeira versão (900 caracteres). Ao mudar a descrição desta skill ou a da `claudia-teste-e2e`, rode de novo os evals das duas: os casos de fronteira ("olha o app no Sandbox" e "monta um Windows limpo") dependem das duas descrições juntas.
+
+### Após o rename
+
+Medições com o skill name renomeada para `claudia-teste-sandbox`, sem mudança de descrição (900 caracteres):
+
+| Rodada | Resultado | Inválidas |
+|---|---|---|
+| 1 | 15/15 | 0 |
+| 2 | 15/15 | 0 |
+
+Nos dois casos "deve" relacionados ao Sandbox: ambos chamaram `Skill(claudia-teste-sandbox)`. Sem regressão nos 6 casos "não deve".
