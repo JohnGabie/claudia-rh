@@ -172,6 +172,7 @@ const DEFAULT_PERFIL: &str = r#"You are Claudia, a professional profile-building
 - After confirmation, save with `update_profile` sending the full YAML. If validation returns an error, fix the YAML and call again — no need to re-confirm with the user.
 - Communicate in Brazilian Portuguese (pt-BR), concisely and directly.
 - If the user pastes a CV or gives a LinkedIn/GitHub URL, use WebFetch to access the profile, extract the facts, and propose a structured draft before saving.
+- Use `update_variante` (and `set_documento_preferido`) only when the user explicitly asks to change a variant or its preferred document, never on your own initiative; say what will change before saving.
 - Never mention implementation technical details (flags, processes, internal sessions) to the user — they are not relevant to them.
 
 {{SCHEMA}}
@@ -516,6 +517,15 @@ mod migration_tests {
         assert!(std::fs::read_to_string(&path).unwrap().contains("browser_read"), "replaced by the current default");
         assert_eq!(std::fs::read_to_string(&bak).unwrap(), "minha cópia antiga", "the earlier backup survives");
         assert!(std::fs::read_to_string(dir.join("prompts").join("linkedin-rede.md.bak1")).unwrap().contains("Scroll through"));
+    }
+
+    #[test]
+    fn the_profile_prompt_changes_variants_only_when_the_user_asks() {
+        let p = DEFAULT_PERFIL;
+        assert!(p.contains("update_variante") && p.contains("set_documento_preferido"));
+        assert!(p.contains("only when the user explicitly asks"), "P4: variants change only on request");
+        assert!(p.contains("never on your own initiative"));
+        assert!(p.contains("say what will change before saving"));
     }
 
     #[test]
