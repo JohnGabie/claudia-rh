@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 export const APP_ID = "io.github.johngabie.claudia-rh";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
@@ -110,4 +111,35 @@ export function desligarAutomacao(dataDir) {
   cfg.ativo = false;
   fs.writeFileSync(p, JSON.stringify(cfg));
   fs.writeFileSync(path.join(dataDir, "modo_autonomo.json"), JSON.stringify({ skip_permissions: false }));
+}
+
+const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+export function idsDeWsbList(texto) {
+  return [...new Set(String(texto ?? "").match(GUID) ?? [])];
+}
+
+function wsb(args) {
+  const r = spawnSync("wsb", args, { encoding: "utf8" });
+  if (r.error) throw new Error(`wsb is not available: ${r.error.message}`);
+  return r;
+}
+
+export function sandboxId(id) {
+  if (id) return id;
+  const ids = idsDeWsbList(wsb(["list"]).stdout);
+  if (ids.length !== 1) throw new Error(`Expected exactly one running sandbox, found ${ids.length}. Start one with the lab's test-up.ps1 or pass --id.`);
+  return ids[0];
+}
+
+export function sandboxIp(id) {
+  const m = (wsb(["ip", "--id", id]).stdout ?? "").match(/\d{1,3}(\.\d{1,3}){3}/);
+  if (!m) throw new Error(`Could not read the sandbox IP (wsb ip --id ${id}). The profile needs networking enabled.`);
+  return m[0];
+}
+
+/** Runs a PowerShell snippet in the guest. -EncodedCommand avoids quoting issues; wsb exec returns no process output. */
+export function noGuest(id, como, ps) {
+  const enc = Buffer.from(ps, "utf16le").toString("base64");
+  return wsb(["exec", "--id", id, "-r", como, "-c", `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${enc}`]).status;
 }
