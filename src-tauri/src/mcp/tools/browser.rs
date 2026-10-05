@@ -701,7 +701,14 @@ impl BrowserTools {
     }
 
     // ── recording ─────────────────────────────────────────────────────────
-    async fn finish(&self, tool: &str, started: Instant, r: Result<Outcome, String>, c: Option<&CdpClient>) -> Result<String, String> {
+    async fn finish_with(
+        &self,
+        tool: &str,
+        started: Instant,
+        r: Result<Outcome, String>,
+        c: Option<&CdpClient>,
+        alvo: Option<(String, String)>,
+    ) -> Result<String, String> {
         self.agent_active.store(false, Ordering::SeqCst);
         let loop_key = match &r {
             Ok(o) => o.loop_key.clone().or_else(|| o.target.clone()),
@@ -735,6 +742,10 @@ impl BrowserTools {
                 let e = friendly(e);
                 rec.result = if e.starts_with("RECUSADO") { "refused" } else { "error" }.into();
                 rec.error = Some(e.clone());
+                if let Some((t, r)) = alvo {
+                    rec.target = Some(t);
+                    rec.role = Some(r);
+                }
                 if let (true, Some(c)) = (self.sink.enabled(), c) {
                     rec.shot_after = Self::capture(c, None, 1.0, 80).await; // full size on failure
                 }
@@ -759,6 +770,10 @@ impl BrowserTools {
             return out;
         }
         out.map(|m| attach_extra(&m, &extra)).map_err(|e| e + &extra)
+    }
+
+    async fn finish(&self, tool: &str, started: Instant, r: Result<Outcome, String>, c: Option<&CdpClient>) -> Result<String, String> {
+        self.finish_with(tool, started, r, c, None).await
     }
 
     // ── tools ─────────────────────────────────────────────────────────────
@@ -1012,6 +1027,7 @@ impl BrowserTools {
             Ok(t) => t,
             Err(e) => return self.finish("browser_upload", started, Err(e), None).await,
         };
+        let mut alvo: Option<(String, String)> = None;
         let r = async {
             let tipo = tipo.unwrap_or("curriculo");
             if tipo != "curriculo" && tipo != "carta" {
@@ -1023,6 +1039,7 @@ impl BrowserTools {
                 .ok_or_else(|| "RECUSADO: anexar exige exatamente uma vaga em 'candidatando' (a vaga sendo candidatada).".to_string())?;
             let att = self.docs.for_upload(vaga, tipo, documento)?;
             let n = self.resolve_ref(&c, reference).await?;
+            alvo = Some((n.name.clone(), n.role.clone()));
             let file = att.path.to_string_lossy().to_string();
             let (shot, x, y) = self.locate(&c, &n, true).await?;
             let field = if Self::is_file_input(&c, n.backend_node_id).await {
@@ -1052,25 +1069,29 @@ impl BrowserTools {
             let (held, accept) = Self::file_field_state(&c, field).await;
             let probe_js = format!("document.body ? document.body.innerText.includes({}) : false", serde_json::to_string(&file_name).unwrap_or_default());
             let on_page = Self::eval(&c, &probe_js).await.ok().and_then(|v| v.as_bool()).unwrap_or(false);
-            let kb = att.tamanho.div_ceil(1024);
-            let mut message = format!("Anexou \"{}\" (arquivo {}, {}, {} KB) pela regra: {}.", att.nome, file_name, att.formato, kb, att.regra);
+            let mut message = format!("Anexou \"{}\" (arquivo {}, {}, {} bytes) pela regra: {}.", att.nome, file_name, att.formato, att.tamanho, att.regra);
             if !accept_allows(&accept, &att.formato) {
                 message.push_str(&format!(" Atenção: o campo aceita só {accept} e o arquivo é {}; o site provavelmente vai recusá-lo. Confira com browser_text e, se recusado, registre uma pendência.", att.formato));
             } else if held != file_name && !on_page {
                 message.push_str(" Atenção: o campo não ficou com o arquivo e a página não mostrou o nome dele; confira com browser_read ou browser_text antes de seguir.");
+            }
+            // Add the state line after constructing the message.
+            if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
+                message.push('\n');
+                message.push_str(&Self::state_line(&c, &ax).await);
             }
             Ok(Outcome {
                 message,
                 target: Some(n.name),
                 role: Some(n.role),
                 // Never the content: name, format, size and a short hash only.
-                text: Some(format!("{} | {} | {} B | sha256 {}", att.nome, att.formato, att.tamanho, &att.sha256[..att.sha256.len().min(12)])),
+                text: Some(format!("{} | {} | {} bytes | sha256 {}", att.nome, att.formato, att.tamanho, &att.sha256[..att.sha256.len().min(12)])),
                 shot_before: shot,
                 ..Default::default()
             })
         }
         .await;
-        self.finish("browser_upload", started, r, Some(&c)).await
+        self.finish_with("browser_upload", started, r, Some(&c), alvo).await
     }
 
     /// (name of the file the field holds, its accept attribute), read in the isolated world. Empty when unreadable.

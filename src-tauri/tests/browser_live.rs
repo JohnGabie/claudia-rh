@@ -1459,3 +1459,45 @@ async fn an_html_id_instead_of_a_ref_gets_a_message_that_explains_refs() {
     let e = t.upload("cv", None, None).await.unwrap_err();
     assert!(e.contains("eN") && e.contains("browser_read"), "{e}");
 }
+
+#[tokio::test]
+#[ignore]
+async fn an_upload_result_ends_with_the_state_line() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap();
+    assert!(out.lines().last().is_some_and(|l| l.starts_with("estado: ")), "{out}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_failed_upload_is_logged_with_its_target() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone()).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    t.upload(&ref_of(&list, "button", "Botão que não abre nada"), None, None).await.unwrap_err();
+    let actions = mem.actions.lock().unwrap();
+    let rec = actions.iter().rev().find(|r| r.tool == "browser_upload").unwrap();
+    assert_eq!(rec.target.as_deref(), Some("Botão que não abre nada"));
+    assert!(rec.role.is_some());
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_upload_message_and_the_log_use_the_same_size_unit() {
+    let l = launch().await;
+    let mem = Mem::new();
+    let t = tools_with_sink(&l, mem.clone()).with_documents(fake_doc("pdf"));
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Currículo"), None, None).await.unwrap();
+    let actions = mem.actions.lock().unwrap();
+    let rec = actions.iter().rev().find(|r| r.tool == "browser_upload").unwrap();
+    let bytes = std::fs::metadata(&fake_doc("pdf").path).unwrap().len();
+    assert!(out.contains(&format!("{bytes} bytes")), "{out}");
+    assert!(rec.text.as_deref().unwrap_or("").contains(&format!("{bytes} bytes")));
+}
