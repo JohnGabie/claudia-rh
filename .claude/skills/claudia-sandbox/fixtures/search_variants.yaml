@@ -1,0 +1,41 @@
+variantes:
+  - id: backend
+    nome_exibicao: Backend Pleno
+    peso: 60
+    ativa: true
+    foco_competencias:
+      - Python
+      - FastAPI
+    foco_experiencia: []
+    regioes_aceitas:
+      - remoto-global
+    modelos_trabalho:
+      - remoto
+      - hibrido
+    idiomas_aplicacao:
+      - en
+      - pt
+    cv_gerado_path: ""
+    cv_gerado_em: ""
+  - id: fullstack
+    nome_exibicao: Fullstack Pleno
+    peso: 40
+    ativa: true
+    foco_competencias:
+      - React
+      - TypeScript
+    foco_experiencia: []
+    regioes_aceitas:
+      - remoto-global
+    modelos_trabalho:
+      - remoto
+    idiomas_aplicacao:
+      - en
+    cv_gerado_path: ""
+    cv_gerado_em: ""
+preferencias_globais:
+  faixa_salarial:
+    minimo: 0
+    maximo: 0
+    moeda: EUR
+  red_lines: []
