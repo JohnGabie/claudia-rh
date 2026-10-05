@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir } from "../comum.mjs";
+import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir, dentroDe } from "../comum.mjs";
 import { tempDir, SCRIPTS } from "./util.mjs";
 
 function cleanup(dir) {
@@ -182,4 +182,30 @@ falhaDe(e);
   } finally {
     cleanup(tempScript);
   }
+});
+
+test("dentroDe: equal paths", () => {
+  assert.equal(dentroDe("C:\\a", "C:\\a"), true, "same path is inside");
+});
+
+test("dentroDe: child path", () => {
+  assert.equal(dentroDe("C:\\a", "C:\\a\\b"), true, "child is inside parent");
+  assert.equal(dentroDe("C:\\a", "C:\\a\\b\\c"), true, "deep child is inside parent");
+});
+
+test("dentroDe: parent path", () => {
+  assert.equal(dentroDe("C:\\a\\b", "C:\\a"), false, "parent is not inside child");
+});
+
+test("dentroDe: sibling paths", () => {
+  assert.equal(dentroDe("C:\\a", "C:\\b"), false, "sibling is not inside");
+  assert.equal(dentroDe("C:\\a\\x", "C:\\a\\y"), false, "sibling subdirs are not inside");
+});
+
+test("dentroDe: different drives", () => {
+  assert.equal(dentroDe("C:\\a", "D:\\b"), false, "different drive is not inside");
+});
+
+test("dentroDe: folder named ..foo", () => {
+  assert.equal(dentroDe("C:\\a", "C:\\a\\..foo"), true, "folder named ..foo is a child, not parent");
 });

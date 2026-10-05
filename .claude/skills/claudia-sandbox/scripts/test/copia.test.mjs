@@ -93,3 +93,23 @@ test("cenario copia: database corrompido", () => {
   assert.equal(r.code, 1, "db corrompido sai com 1");
   assert.match(r.err, /integrity|database|claudia_rh\.db/, "erro menciona db ou integrity");
 });
+
+test("cenario copia: saida folder guard (non-empty without cenario.json)", () => {
+  const base = tempDir("copia-guard");
+  const origem = path.join(base, "origem");
+  fs.mkdirSync(origem, { recursive: true });
+  fs.writeFileSync(path.join(origem, "importante.txt"), "critical data");
+  const antes = hashArvore(origem);
+
+  // Create a non-empty directory without cenario.json to be used as --saida
+  const saidaDir = path.join(base, "saida folder");
+  fs.mkdirSync(saidaDir, { recursive: true });
+  fs.writeFileSync(path.join(saidaDir, "importante.txt"), "critical data");
+  const antesDir = hashArvore(saidaDir);
+
+  const r = rodar(SCRIPT, ["--autorizado", "--origem", origem, "--saida", saidaDir]);
+  assert.equal(r.code, 1, "folder guard sai com 1");
+  assert.match(r.err, /must not have existing files|cenario.json/, "erro menciona guard");
+  assert.equal(hashArvore(origem), antes, "origem intacta");
+  assert.equal(hashArvore(saidaDir), antesDir, "saida folder intacta");
+});

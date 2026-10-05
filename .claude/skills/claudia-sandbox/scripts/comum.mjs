@@ -6,6 +6,12 @@ import path from "node:path";
 export const APP_ID = "io.github.johngabie.claudia-rh";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 
+/** Check if path b is inside path a. Works across different drives. */
+export function dentroDe(a, b) {
+  const rel = path.relative(a, b);
+  return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(".." + path.sep));
+}
+
 export function sair(msg, code = 1) {
   console.error(msg);
   process.exit(code);
