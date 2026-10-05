@@ -5,6 +5,7 @@
 //   --saida             default %TEMP%\claudia-sandbox\copia, recreated on every run
 //   --manter-automacao  keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy)
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
@@ -22,21 +23,76 @@ if (!values.autorizado) {
 try {
   const origem = path.resolve(values.origem || path.join(process.env.APPDATA, APP_ID));
   if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) throw new Error(`Source data not found: ${origem}`);
-  const dir = novoCenarioDir(values.saida, "copia");
-  const dados = path.join(dir, "appdata", APP_ID);
-  fs.cpSync(origem, dados, { recursive: true });
-  // Fold each copied WAL into its database so the copy is a single consistent file.
-  for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {
-    if (!e.isFile() || !e.name.endsWith(".db")) continue;
-    const f = path.join(e.parentPath ?? e.path, e.name);
-    if (fs.existsSync(`${f}-wal`)) {
-      const db = new DatabaseSync(f);
-      db.exec("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;");
-      db.close();
-    }
-    fs.rmSync(`${f}-wal`, { force: true });
-    fs.rmSync(`${f}-shm`, { force: true });
+
+  // Resolve saida the same way novoCenarioDir does.
+  const saidaPath = path.resolve(values.saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-sandbox", "copia"));
+
+  // Check for overlap: --saida must not be inside --origem or vice versa.
+  const relOrigemToSaida = path.relative(origem, saidaPath);
+  const relSaidaToOrigem = path.relative(saidaPath, origem);
+  const originemLower = origem.toLowerCase();
+  const saidaLower = saidaPath.toLowerCase();
+  if (!relOrigemToSaida.startsWith("..") || !relSaidaToOrigem.startsWith("..")) {
+    throw new Error(`--saida must not overlap --origem: origem=${origem}, saida=${saidaPath}`);
   }
-  if (!values["manter-automacao"]) desligarAutomacao(dados);
-  console.log(escreverCenario(dir, "copia", origem));
+
+  // Copy with retries to handle transient state from live databases.
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const dir = novoCenarioDir(values.saida, "copia");
+      const dados = path.join(dir, "appdata", APP_ID);
+      fs.cpSync(origem, dados, { recursive: true, dereference: true });
+
+      // Fold each copied WAL into its database so the copy is a single consistent file.
+      for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {
+        if (!e.isFile() || !e.name.endsWith(".db")) continue;
+        const f = path.join(e.parentPath ?? e.path, e.name);
+        if (fs.existsSync(`${f}-wal`)) {
+          let db;
+          try {
+            db = new DatabaseSync(f);
+            db.exec("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;");
+            db.close();
+          } catch (err) {
+            if (db) try { db.close(); } catch {}
+            throw err;
+          }
+        }
+        fs.rmSync(`${f}-wal`, { force: true });
+        fs.rmSync(`${f}-shm`, { force: true });
+      }
+
+      // Verify integrity of all databases.
+      for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {
+        if (!e.isFile() || !e.name.endsWith(".db")) continue;
+        const f = path.join(e.parentPath ?? e.path, e.name);
+        let db;
+        try {
+          db = new DatabaseSync(f, { readOnly: true });
+          const result = db.prepare("PRAGMA integrity_check").get();
+          db.close();
+          if (result.integrity_check !== "ok") {
+            throw new Error(`Copied database failed integrity_check: ${f}`);
+          }
+        } catch (err) {
+          if (db) try { db.close(); } catch {}
+          throw new Error(`Copied database ${f}: ${err.message}`);
+        }
+      }
+
+      if (!values["manter-automacao"]) desligarAutomacao(dados);
+      console.log(escreverCenario(dir, "copia", origem));
+      process.exit(0);
+    } catch (err) {
+      lastError = err;
+      if (attempt < 3) {
+        try {
+          fs.rmSync(saidaPath, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+  }
+
+  throw new Error(`copied database failed integrity_check after 3 attempts: close the app and retry. Last error: ${lastError.message}`);
 } catch (e) { falhaDe(e); }

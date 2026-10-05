@@ -53,5 +53,43 @@ test("cenario copia", () => {
   const ausente = rodar(SCRIPT, ["--autorizado", "--origem", path.join(base, "nao existe"), "--saida", saida]);
   assert.equal(ausente.code, 1);
   assert.match(ausente.err, /nao existe/, "origem ausente nomeia o caminho");
+
+  // Minor: assert exit 0 for --manter-automacao run
+  const mantAuto = rodar(SCRIPT, ["--autorizado", "--manter-automacao", "--origem", origem, "--saida", saida]);
+  assert.equal(mantAuto.code, 0, "manter-automacao run exits 0");
+
+  // Minor: assert stderr matches for authorization check
+  const semAuto = rodar(SCRIPT, ["--origem", origem, "--saida", path.join(base, "sem-auto")]);
+  assert.match(semAuto.err, /--autorizado/, "stderr mentions --autorizado when missing");
+
   vivo.close();
+});
+
+test("cenario copia: saida dentro de origem", () => {
+  const base = tempDir("copia-overlap");
+  const origem = path.join(base, "origem");
+  fs.mkdirSync(origem, { recursive: true });
+  fs.writeFileSync(path.join(origem, "file.txt"), "data");
+
+  // Test: --saida is a subdirectory of --origem
+  const saidaDentro = path.join(origem, "x");
+  const r = rodar(SCRIPT, ["--autorizado", "--origem", origem, "--saida", saidaDentro]);
+  assert.equal(r.code, 1, "saida dentro de origem sai com 1");
+  assert.match(r.err, /overlap/, "erro menciona overlap");
+  assert.equal(fs.existsSync(saidaDentro), false, "saida nao criada");
+  assert.ok(fs.existsSync(path.join(origem, "file.txt")), "origem intacta");
+});
+
+test("cenario copia: database corrompido", () => {
+  const base = tempDir("copia-corrupt");
+  const origem = path.join(base, "origem");
+  fs.mkdirSync(origem, { recursive: true });
+  fs.writeFileSync(path.join(origem, "candidate_base.yaml"), "dados: {}\n");
+  // Write garbage instead of valid SQLite database
+  fs.writeFileSync(path.join(origem, "claudia_rh.db"), "not a database");
+
+  const saida = path.join(base, "saida");
+  const r = rodar(SCRIPT, ["--autorizado", "--origem", origem, "--saida", saida]);
+  assert.equal(r.code, 1, "db corrompido sai com 1");
+  assert.match(r.err, /integrity|database|claudia_rh\.db/, "erro menciona db ou integrity");
 });
