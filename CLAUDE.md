@@ -41,7 +41,7 @@ Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de 
 Specs: `docs/superpowers/specs/`
 Planos: `docs/superpowers/plans/`
 
-Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → **teste no app rodando (`claudia-teste`)** → review → merge em `dev`.
+Um ciclo = spec aprovada → plano → branch a partir de `dev` → implementação → **teste no app rodando (`claudia-app`)** → review → merge em `dev`.
 
 O passo de teste é obrigatório:
 
@@ -61,6 +61,15 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 - Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.
 - Backend: em `src-tauri/`, `cargo check` / `cargo test` / `cargo clippy`.
 - App: `npm run tauri dev`.
+
+## Teste em máquina limpa
+
+| Quero… | Skill |
+|---|---|
+| ver, clicar ou conferir o app rodando, tirar print, reproduzir bug | `claudia-app` (local ou no Sandbox) |
+| montar um Windows limpo, escolher os dados, publicar ou instalar o app, ligar o CDP no guest | `claudia-sandbox` |
+
+A `claudia-sandbox` usa um laboratório Windows Sandbox mantido fora do repositório, localizado pela variável `SANDBOX_LAB_DIR`. Cenários de dados: `novo`, `mock` e `copia` (este só com autorização do usuário na rodada). Falha do app num Windows limpo é resultado do teste: registre no Linear, não contorne no laboratório.
 
 ## Dívida conhecida
 
