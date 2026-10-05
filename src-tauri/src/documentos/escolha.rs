@@ -38,7 +38,8 @@ mod tests {
     }
 
     fn doc(c: &rusqlite::Connection, origem: &str, variante: Option<&str>) -> i64 {
-        inserir(c, &NovoDocumento { tipo: "curriculo", nome: "CV", origem, arquivo: "x.pdf", arquivo_html: None, formato: "pdf", idioma: None, sha256: "0", tamanho: 1, variante_id: variante }).unwrap()
+        let arquivo = format!("x{}.pdf", c.query_row("SELECT COUNT(*) FROM documentos", [], |r| r.get::<_, i64>(0)).unwrap());
+        inserir(c, &NovoDocumento { tipo: "curriculo", nome: "CV", origem, arquivo: &arquivo, arquivo_html: None, formato: "pdf", idioma: None, sha256: "0", tamanho: 1, variante_id: variante }).unwrap()
     }
 
     #[test]

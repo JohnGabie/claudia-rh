@@ -88,3 +88,10 @@ CREATE TABLE IF NOT EXISTS anexos (
     documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL,
     anexado_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Old CVs/letters already brought into the library (origem = "curriculos/<file>.html"). Deleting the
+-- document does not touch this table, so a deleted migration never comes back at the next start.
+CREATE TABLE IF NOT EXISTS migrados (
+    origem TEXT PRIMARY KEY,
+    migrado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);

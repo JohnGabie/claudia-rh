@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 pub struct Antigo {
     pub tipo: &'static str,
     pub origem: PathBuf,
+    /// Marker key in `migrados`: "<pasta>/<file>.html".
+    pub chave: String,
     pub base: String,
     pub nome: String,
     pub tags: Vec<Tag>,
@@ -41,6 +43,17 @@ fn ja_migrado(conn: &rusqlite::Connection, base: &str) -> bool {
         .is_ok()
 }
 
+fn marcado(conn: &rusqlite::Connection, chave: &str) -> bool {
+    conn.query_row("SELECT 1 FROM migrados WHERE origem = ?1", [chave], |_| Ok(())).is_ok()
+}
+
+fn marcar(conn: &rusqlite::Connection, chave: &str) {
+    let _ = conn.execute("INSERT OR IGNORE INTO migrados (origem) VALUES (?1)", [chave]);
+}
+
+/// Only one migration at a time: the start-up run and the "documentos" listener run can overlap.
+static TRAVA: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub fn pendentes(data_dir: &Path) -> Result<Vec<Antigo>, String> {
     let conn = biblioteca::open_conn(data_dir)?;
     let mut out = Vec::new();
@@ -59,7 +72,13 @@ pub fn pendentes(data_dir: &Path) -> Result<Vec<Antigo>, String> {
             }
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
             let base = format!("migrado-{stem}");
+            let chave = format!("{pasta}/{}", e.file_name().to_string_lossy());
+            if marcado(&conn, &chave) {
+                continue;
+            }
             if ja_migrado(&conn, &base) {
+                // Migrated by a build without markers: record it now so deleting it later sticks.
+                marcar(&conn, &chave);
                 continue;
             }
             let quando = data_de(&stem);
@@ -73,7 +92,7 @@ pub fn pendentes(data_dir: &Path) -> Result<Vec<Antigo>, String> {
                 let empresa = empresa.len().checked_sub(17).and_then(|i| empresa.get(..i)).unwrap_or(empresa);
                 (format!("Carta {} ({quando})", empresa.replace('-', " ")), vec![])
             };
-            out.push(Antigo { tipo, origem: path, base, nome, tags });
+            out.push(Antigo { tipo, origem: path, chave, base, nome, tags });
         }
     }
     Ok(out)
@@ -150,6 +169,7 @@ where
     F: Fn(PathBuf, PathBuf) -> Fut,
     Fut: Future<Output = Result<(), String>>,
 {
+    let _guarda = TRAVA.lock().await;
     let mut r = Relatorio::default();
     let lista = match pendentes(data_dir) {
         Ok(l) => l,
@@ -160,6 +180,7 @@ where
     };
     let docs = super::docs_dir(data_dir);
     for a in lista {
+        let chave = a.chave.clone();
         let html = match std::fs::read_to_string(&a.origem) {
             Ok(h) => h,
             Err(e) => {
@@ -167,12 +188,21 @@ where
                 continue;
             }
         };
+        // Re-check right before touching files: a document registered since the list was built owns them.
+        if biblioteca::open_conn(data_dir).map(|c| ja_migrado(&c, &a.base)).unwrap_or(false) {
+            continue;
+        }
         // Leftovers of an interrupted run are ours (migrado-* has no row): clear them so it can retry.
         let _ = std::fs::remove_file(docs.join(format!("{}.html", a.base)));
         let _ = std::fs::remove_file(docs.join(format!("{}.pdf", a.base)));
         let novo = NovoGerado { tipo: a.tipo.into(), nome: a.nome, base: a.base.clone(), html, idioma: None, variante_id: None, vaga_id: None, tags: a.tags };
         match registrar_gerado(data_dir, novo, &print).await {
-            Ok(_) => r.migrados += 1,
+            Ok(_) => {
+                r.migrados += 1;
+                if let Ok(c) = biblioteca::open_conn(data_dir) {
+                    marcar(&c, &chave);
+                }
+            }
             Err(e) => r.falhas.push(format!("{}: {e}", a.base)),
         }
     }
@@ -180,8 +210,10 @@ where
     r
 }
 
+pub const EVENTO_ATUALIZADOS: &str = "documentos-atualizados";
+
 pub async fn ao_iniciar(app: tauri::AppHandle) {
-    use tauri::Manager;
+    use tauri::{Emitter, Manager};
     let Ok(data_dir) = app.path().app_data_dir() else { return };
     let r = migrar_com(&data_dir, |h: PathBuf, p: PathBuf| {
         let app = app.clone();
@@ -190,6 +222,10 @@ pub async fn ao_iniciar(app: tauri::AppHandle) {
     .await;
     if r.migrados > 0 || !r.falhas.is_empty() {
         crate::diagnostics::emit_event("documentos", "migracao", None, &format!("migrados={} falhas={}", r.migrados, r.falhas.len()));
+    }
+    // The screen reloads the library on this exact event name (contract with the frontend).
+    if r.migrados > 0 {
+        let _ = app.emit(EVENTO_ATUALIZADOS, serde_json::json!({ "novos": r.migrados }));
     }
 }
 
@@ -232,6 +268,11 @@ mod tests {
         let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
         let v = crate::documentos::biblioteca::ver(&c, 1).unwrap();
         assert!(v.tags.iter().any(|t| t.tipo == "template" && t.valor == "classic-ats"), "{:?}", v.tags);
+    }
+
+    #[test]
+    fn the_event_name_is_the_frontend_contract() {
+        assert_eq!(EVENTO_ATUALIZADOS, "documentos-atualizados");
     }
 
     #[tokio::test]
@@ -287,6 +328,59 @@ mod tests {
             std::fs::write(dir.join("cover_letters").join(name), "x").unwrap();
         }
         assert_eq!(pendentes(&dir).unwrap().len(), 3);
+    }
+
+    /// A print that yields, so two migrations running concurrently really interleave.
+    async fn slow_pdf(_h: PathBuf, p: PathBuf) -> Result<(), String> {
+        tokio::task::yield_now().await;
+        std::fs::write(p, b"%PDF-1.7 migrado").map_err(|e| e.to_string())
+    }
+
+    #[tokio::test]
+    async fn two_concurrent_migrations_register_each_file_once_and_keep_the_files() {
+        let dir = setup("conc");
+        let (a, b) = tokio::join!(migrar_com(&dir, slow_pdf), migrar_com(&dir, slow_pdf));
+        assert!(a.falhas.is_empty() && b.falhas.is_empty(), "{:?} {:?}", a.falhas, b.falhas);
+        assert_eq!(a.migrados + b.migrados, 2);
+        let r = rows(&dir);
+        assert_eq!(r.len(), 2, "{r:?}");
+        let docs = crate::documentos::docs_dir(&dir);
+        for (_, _, arq) in r {
+            assert!(docs.join(&arq).exists(), "{arq} must exist");
+            assert!(docs.join(arq.replace(".pdf", ".html")).exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_migrated_document_the_user_deletes_does_not_come_back() {
+        let dir = setup("deleted");
+        let r = migrar_com(&dir, fake_pdf).await;
+        assert_eq!(r.migrados, 2);
+        {
+            let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            biblioteca::apagar(&c, &dir, 1).unwrap();
+        }
+        let r = migrar_com(&dir, fake_pdf).await;
+        assert_eq!((r.migrados, r.falhas.len()), (0, 0), "{:?}", r.falhas);
+        assert_eq!(rows(&dir).len(), 1, "the deleted one stays deleted");
+        assert!(dir.join("curriculos").join("cv_classic-ats_2026-09-30_10-00.html").exists(), "the original is never touched");
+    }
+
+    #[tokio::test]
+    async fn documents_migrated_before_the_marker_table_existed_are_backfilled() {
+        let dir = setup("backfill");
+        migrar_com(&dir, fake_pdf).await;
+        {
+            let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            c.execute("DELETE FROM migrados", []).unwrap(); // as if migrated by an older build
+        }
+        migrar_com(&dir, fake_pdf).await; // sees the rows, records the markers
+        {
+            let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            biblioteca::apagar(&c, &dir, 1).unwrap();
+        }
+        let r = migrar_com(&dir, fake_pdf).await;
+        assert_eq!(r.migrados, 0);
     }
 
     fn pendente(dir: &Path, n: &str, json: &str) {

@@ -193,7 +193,10 @@ mod tests {
     }
 
     fn doc(c: &Connection, html: Option<&str>) -> i64 {
-        inserir(c, &NovoDocumento { tipo: "curriculo", nome: "CV", origem: "gerado", arquivo: "segredo-123.pdf", arquivo_html: html, formato: "pdf", idioma: Some("pt"), sha256: "abcdef", tamanho: 10, variante_id: Some("backend") }).unwrap()
+        // Unique per row (documentos.arquivo is UNIQUE); the first row keeps the name the leak test looks for.
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM documentos", [], |r| r.get(0)).unwrap();
+        let arquivo = if n == 0 { "segredo-123.pdf".to_string() } else { format!("outro-{n}.pdf") };
+        inserir(c, &NovoDocumento { tipo: "curriculo", nome: "CV", origem: "gerado", arquivo: &arquivo, arquivo_html: html, formato: "pdf", idioma: Some("pt"), sha256: "abcdef", tamanho: 10, variante_id: Some("backend") }).unwrap()
     }
 
     #[test]
