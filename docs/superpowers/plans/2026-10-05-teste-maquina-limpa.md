@@ -625,7 +625,7 @@ Executor: agente que carrega a skill `skill-creator` e segue o processo dela (ra
 - [ ] **Passo 1:** ler a spec, `CLAUDE.md`, `.claude/skills/claudia-teste/SKILL.md` (estilo e tamanho de referência) e `%SANDBOX_LAB_DIR%\.claude\skills\sandbox-lab\SKILL.md`.
 - [ ] **Passo 2:** escrever `SKILL.md` em pt-BR com frontmatter `name: claudia-sandbox` e `description` ≤ 1.024 caracteres, cobrindo os 8 itens da spec ("Conteúdo da skill"). Corpo ≤ 120 linhas; detalhe vai para `references/`. A skill é um mapa: capacidades, cenários e quando usar cada um, regras; não prescreve roteiro de teste.
 - [ ] **Passo 3:** `references/pastas-de-dados.md`: o que fica em `%APPDATA%\io.github.johngabie.claudia-rh` (YAMLs do perfil, `strategy.md`, `claudia_rh.db`, `disparo.json`, `modo_autonomo.json`, `notif.json`, `welcome_seen`, `diagnostics\`) e em `%LOCALAPPDATA%\io.github.johngabie.claudia-rh` (browser e Activity log, quando existirem na versão em teste). Conferir cada nome no código (`grep` em `src-tauri/src`) e marcar como "não verificado" o que não for encontrado.
-- [ ] **Passo 4:** `references/limites.md`: comportamentos do laboratório que afetam o teste, cada um com o comando que o demonstra: winapp não alcança o guest com `networking: Disable`; app iniciado por `winapp target exec` termina quando o comando termina (iniciar com `wsb exec --id <id> -r ExistingLogin`); target do cargo em pasta mapeada falha com `os error 1392` (usar disco do guest); só um Sandbox por vez; `.exe` de `tauri build --no-bundle` não instala pré-requisitos (WebView2), o instalador sim.
+- [ ] **Passo 4:** `references/limites.md`: comportamentos do laboratório que afetam o teste, cada um com o comando que o demonstra (se o comando não reproduzir o comportamento, marcar como "não verificado"): winapp não alcança o guest com `networking: Disable`; app iniciado por `winapp target exec` termina quando o comando termina (iniciar com `wsb exec --id <id> -r ExistingLogin`); target do cargo em pasta mapeada falha com `os error 1392` (usar disco do guest); só um Sandbox por vez; `.exe` de `tauri build --no-bundle` não instala pré-requisitos (WebView2), o instalador sim.
 - [ ] **Passo 5:** `evals/evals.json` no formato do `claudia-teste/evals/evals.json`: ≥ 8 prompts que devem disparar (máquina limpa, Sandbox, instalador, primeira abertura, desinstalação, PC novo, testar com meus dados sem mexer neles, build do zero) e ≥ 5 que não devem (olhar tela no `tauri dev`, `cargo test`, registrar no Linear, mexer no CSS, bug na tela de Perfil).
 - [ ] **Passo 6:** rodar os evals de disparo (Sonnet, 2 rodadas); registrar resultado em `references/limites.md` (seção "Evals de disparo"), com a mesma regra da `claudia-teste`: execução inválida não conta. Ajustar a descrição até disparar em todos os "deve" sem disparar nos "não deve".
 - [ ] **Passo 7:** varredura de agnosticismo nos arquivos da tarefa (ver Tarefa 10, passo 2) e commit — `git commit -m "feat(skill): claudia-sandbox skill for clean-machine testing"`
@@ -638,10 +638,11 @@ Executor: agente que carrega a skill `skill-creator` e segue o processo dela (ra
 - Modificar: `.claude/skills/claudia-teste/SKILL.md` (frontmatter `description` e seção "Mais detalhe")
 - Modificar: `.claude/skills/claudia-teste/evals/evals.json`
 
+- [ ] **Passo 0:** antes de qualquer mudança, rodar `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet` (2 rodadas) e guardar o resultado por caso como referência.
 - [ ] **Passo 1:** na `description`, acrescentar ao trecho "NÃO use para …": `teste em Windows limpo ou Sandbox (use claudia-sandbox)`. Manter ≤ 1.024 caracteres (medir com `(Get-Content SKILL.md -Raw)` e contar o bloco).
 - [ ] **Passo 2:** em "Mais detalhe", acrescentar: `- Teste em Windows limpo (Sandbox): skill claudia-sandbox`.
 - [ ] **Passo 3:** em `evals.json`, acrescentar 3 casos "não deve disparar": "testa o instalador num Windows limpo", "roda o app no Sandbox com dados mockados", "funciona num PC novo sem nada instalado?".
-- [ ] **Passo 4:** rodar `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet` (2 rodadas). Esperado: todos os casos antigos com o mesmo resultado de antes e os 3 novos sem disparar. Se algum antigo piorar, reverter a frase e reportar.
+- [ ] **Passo 4:** rodar `node .claude/skills/claudia-teste/evals/rodar-evals.mjs sonnet` (2 rodadas). Esperado: todos os casos antigos repetem o resultado de referência do Passo 0 e os 3 novos não disparam. Se algum antigo piorar, reverter a frase e reportar.
 - [ ] **Passo 5:** commit — `git commit -m "docs(skill): point clean-machine testing to claudia-sandbox"`
 
 ---
@@ -673,9 +674,9 @@ Executor: agente Opus. Pré-requisitos: `SANDBOX_LAB_DIR` definido; nenhum Sandb
   1. `pwsh -File .claude/skills/claudia-sandbox/scripts/cenario-<c>.ps1`
   2. `pwsh -File .claude/skills/claudia-sandbox/scripts/publicar.ps1 -App <exe> -Cenario %TEMP%\claudia-sandbox\<c>`
   3. `$env:LAB_APP_PROJECT=<raiz do repo>; $env:LAB_WORK_DIR=<workDir do passo 2>; & "$env:SANDBOX_LAB_DIR\scripts\test-up.ps1" -Config lab.config.app-winapp.json`
-  4. `wsb exec --id <id> -r System -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-firewall.ps1"`
+  4. (`<id>` = id impresso pelo `test-up.ps1`, também em `wsb list`) `wsb exec --id <id> -r System -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-firewall.ps1"`
   5. `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1"`
-  6. `winapp ui list-windows --on sandbox` e `winapp target screenshot sandbox -o <evidencias>\<c>.png`; ler o PNG.
+  6. `winapp ui list-windows --on sandbox` e `winapp target screenshot sandbox -o %TEMP%\claudia-sandbox\evidencias\<c>.png`; ler o PNG.
   7. `& "$env:SANDBOX_LAB_DIR\scripts\test-down.ps1"`
 - [ ] **Passo 3:** relatório (fora do repositório, em `%TEMP%\claudia-sandbox\evidencias\relatorio.md`): por cenário, comandos, exit codes, o que a tela mostrou. Falha do app é registrada como achado (nome, passo, print) para virar task no Linear; não é contornada.
 - [ ] **Passo 4:** cenário `copia` **só** se o usuário autorizar nesta rodada; sem autorização, registrar "não verificado: aguarda autorização".
@@ -696,4 +697,4 @@ Executor: agente Opus, independente dos implementadores.
 
 - [ ] **Passo 1:** apresentar ao usuário o resumo: commits, resultado dos testes, evals, smoke e revisão. Aguardar a decisão.
 - [ ] **Passo 2 (com aprovação):** `git checkout dev && git merge --no-ff feat/clean-machine-testing`.
-- [ ] **Passo 3 (com aprovação):** `git checkout feat/browser-cdp-mcp && git rebase dev`. Conflito esperado em `CLAUDE.md` (a branch reescreve o arquivo): manter o conteúdo da branch e reinserir a seção "Teste em máquina limpa" depois de "## Build"; em `claudia-teste/SKILL.md`, manter as duas mudanças. Depois do rebase, rodar as rodadas de teste da branch e conferir exit codes.
+- [ ] **Passo 3 (com aprovação):** `git checkout feat/browser-cdp-mcp && git rebase dev`. Conflito esperado em `CLAUDE.md` (conferir antes com `git diff dev feat/browser-cdp-mcp -- CLAUDE.md`): manter o conteúdo da branch e reinserir a seção "Teste em máquina limpa" depois de "## Build"; em `claudia-teste/SKILL.md`, manter as duas mudanças. Depois do rebase, rodar as rodadas de teste definidas no `CLAUDE.md` resultante (unitários: `cargo test --lib` em `src-tauri/` e `npx tsc --noEmit`) e conferir exit codes.

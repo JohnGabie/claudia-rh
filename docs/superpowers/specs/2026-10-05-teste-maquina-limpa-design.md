@@ -22,7 +22,8 @@ O laboratório é uma pasta independente (variável `SANDBOX_LAB_DIR`) com:
 
 | Item | Uso |
 |---|---|
-| `scripts\test-up.ps1 -Config <perfil>` / `scripts\test-down.ps1` | sobe / derruba o Sandbox (um por vez) |
+| `scripts\test-up.ps1 -Config <perfil>` / `scripts\test-down.ps1` | sobe / derruba o Sandbox (um por vez); o id da instância aparece na saída do `test-up` e em `wsb list` |
+| `sandbox\` | montada read-only no guest em `C:\labsandbox` (scripts do guest: `C:\labsandbox\app\...`) |
 | `scripts\app-stage.ps1 -App <exe\|pasta> -AppData <pastas> -LocalAppData <pastas> [-WorkDir] [-Clean]` | publica app e dados em `<WorkDir>\deploy` (no guest: `C:\appdeploy`) |
 | `lab.config.app.json` | app sem rede |
 | `lab.config.app-winapp.json` | app com rede para o winapp; internet bloqueada por `sandbox\app\guest-firewall.ps1` |
