@@ -12,13 +12,13 @@ mod notificacoes;
 mod prompt;
 mod pty_manager;
 
-use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
+use commands::cover_letter::gerar_cover_letter;
 use commands::welcome::{verificar_setup, welcome_necessario, marcar_welcome_concluido};
 use commands::linkedin::{iniciar_busca_linkedin_rede, listar_vagas_linkedin_rede, obter_status_linkedin_rede};
 use commands::updater::{instalar_atualizacao, verificar_atualizacao};
 use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
 use commands::prompts::{abrir_ficheiro_prompt, abrir_pasta_dados};
-use commands::curriculos::{gerar_curriculo, listar_curriculos, abrir_curriculo, apagar_curriculo};
+use commands::curriculos::gerar_curriculo;
 use commands::credenciais::{
     apagar_credencial, guardar_credencial, obter_credencial, obter_utilizador_credencial,
 };
@@ -78,6 +78,10 @@ fn start_mcp_notify_listener(app: &tauri::AppHandle) -> Option<u16> {
                     "db" => {
                         let _ = app.emit("db-atualizada", ());
                         let _ = app.emit("pendencia-resolvida", ());
+                    }
+                    // The MCP wrote a cover letter to documentos/pendentes/: the app makes its PDF.
+                    "documentos" => {
+                        tauri::async_runtime::spawn(crate::documentos::migrar::ao_iniciar(app.clone()));
                     }
                     _ => {}
                 }
@@ -285,6 +289,9 @@ pub fn run() {
             // Ensure all prompt files exist on disk
             commands::prompts::ensure_all_prompts(&data_dir);
 
+            // Old generated CVs/letters join the document library in the background (never deleted).
+            tauri::async_runtime::spawn(documentos::migrar::ao_iniciar(app.handle().clone()));
+
             // Start background tasks
             idle_watcher::start(app.handle().clone(), idle_arc, Arc::clone(&conn_arc));
             db_watcher::start(app.handle().clone(), Arc::clone(&conn_arc));
@@ -351,13 +358,7 @@ pub fn run() {
             marcar_resultado_candidatura,
             sugerir_feedback,
             gerar_curriculo,
-            listar_curriculos,
-            abrir_curriculo,
-            apagar_curriculo,
             gerar_cover_letter,
-            listar_cover_letters,
-            abrir_cover_letter,
-            apagar_cover_letter,
             abrir_ficheiro_prompt,
             abrir_pasta_dados,
             obter_iniciar_com_sistema,
@@ -376,6 +377,13 @@ pub fn run() {
             commands::documentos::listar_documentos,
             commands::documentos::importar_documento,
             commands::documentos::definir_preferido,
+            commands::documentos::obter_documento,
+            commands::documentos::renomear_documento,
+            commands::documentos::atualizar_tags_documento,
+            commands::documentos::remover_preferido,
+            commands::documentos::abrir_documento,
+            commands::documentos::apagar_documento,
+            commands::documentos::listar_variantes,
             commands::activity::activity_log_get,
             commands::activity::activity_log_image,
             browser::service::browser_status,

@@ -1,9 +1,15 @@
 //! The library of documents the agent may attach. Files live in <app data>/documentos/; the database
 //! holds only bare file names, so a row can never point outside that folder.
+pub mod biblioteca;
 pub mod escolha;
 pub mod fonte;
 pub mod importar;
+pub mod migrar;
+pub mod pdf;
+pub mod registrar;
 pub mod seguranca;
+pub mod texto;
+pub mod variantes;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
