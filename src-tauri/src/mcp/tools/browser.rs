@@ -85,6 +85,13 @@ pub struct Attachment {
 
 pub trait DocumentSource: Send + Sync {
     fn for_upload(&self, vaga_id: i64, tipo: &str, documento: Option<i64>) -> Result<Attachment, String>;
+    /// Called once per successful upload, so the app remembers which document went to which vaga.
+    fn attached(&self, _vaga_id: i64, _tipo: &str, _documento_id: i64) {}
+}
+
+/// The Activity log line of an upload: id and name of the document, never its content or path.
+pub(crate) fn upload_log_text(att: &Attachment) -> String {
+    format!("documento {} | {} | {} | {} bytes | sha256 {}", att.id, att.nome, att.formato, att.tamanho, &att.sha256[..att.sha256.len().min(12)])
 }
 
 pub struct NoDocuments;
@@ -1075,6 +1082,8 @@ impl BrowserTools {
             } else if held != file_name && !on_page {
                 message.push_str(" Atenção: o campo não ficou com o arquivo e a página não mostrou o nome dele; confira com browser_read ou browser_text antes de seguir.");
             }
+            // Success path only (every failure above returned): remember which document went to this vaga.
+            self.docs.attached(vaga, tipo, att.id);
             // Add the state line after constructing the message.
             if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
                 message.push('\n');
@@ -1085,7 +1094,7 @@ impl BrowserTools {
                 target: Some(n.name),
                 role: Some(n.role),
                 // Never the content: name, format, size and a short hash only.
-                text: Some(format!("{} | {} | {} bytes | sha256 {}", att.nome, att.formato, att.tamanho, &att.sha256[..att.sha256.len().min(12)])),
+                text: Some(upload_log_text(&att)),
                 shot_before: shot,
                 ..Default::default()
             })
@@ -1454,6 +1463,22 @@ impl GuardContext for DbGuardContext {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_upload_line_in_the_activity_log_names_the_document_and_its_id() {
+        let att = super::Attachment {
+            id: 42,
+            nome: "CV Backend".into(),
+            formato: "pdf".into(),
+            tamanho: 1234,
+            sha256: "0123456789abcdef0123".into(),
+            path: "x.pdf".into(),
+            regra: "r".into(),
+        };
+        let t = super::upload_log_text(&att);
+        assert!(t.starts_with("documento 42 | CV Backend | pdf | 1234 bytes"), "{t}");
+        assert!(!t.contains("x.pdf"), "never a path");
+    }
+
     #[test]
     fn a_file_field_accept_rule_is_read_like_the_browser_does() {
         use super::accept_allows;

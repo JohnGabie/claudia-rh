@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS candidaturas (
     vaga_id INTEGER NOT NULL REFERENCES vagas(id),
     enviada_em TEXT NOT NULL,
     pasta_arquivos TEXT NOT NULL,
-    metodo TEXT NOT NULL
+    metodo TEXT NOT NULL,
+    documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS pendencias (
@@ -76,4 +77,14 @@ CREATE TABLE IF NOT EXISTS preferidos (
     variante_id TEXT NOT NULL DEFAULT '',
     documento_id INTEGER NOT NULL REFERENCES documentos(id) ON DELETE CASCADE,
     PRIMARY KEY (tipo, variante_id)
+);
+
+-- Which document was attached to a vaga: written by the app on every successful browser_upload.
+-- documento_id goes NULL if the document is deleted later (the attachment still happened).
+CREATE TABLE IF NOT EXISTS anexos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vaga_id INTEGER NOT NULL REFERENCES vagas(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('curriculo', 'carta')),
+    documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL,
+    anexado_em TEXT NOT NULL DEFAULT (datetime('now'))
 );

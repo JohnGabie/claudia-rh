@@ -74,6 +74,17 @@ impl DocumentSource for DbDocumentSource {
         std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
         Ok(Attachment { id: a.id, nome: a.nome, formato: a.formato, tamanho: a.tamanho, sha256: a.sha256, path, regra })
     }
+
+    fn attached(&self, vaga_id: i64, tipo: &str, documento_id: i64) {
+        // The upload already worked: a failure to remember it must not turn it into a tool error.
+        let r = crate::mcp::tools::open_db(&self.data_dir).and_then(|conn| {
+            conn.execute("INSERT INTO anexos (vaga_id, tipo, documento_id) VALUES (?1, ?2, ?3)", rusqlite::params![vaga_id, tipo, documento_id])
+                .map_err(|e| e.to_string())
+        });
+        if let Err(e) = r {
+            eprintln!("[anexos] could not record the attachment: {e}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +185,22 @@ mod tests {
         assert_eq!(std::fs::read(&a.path).unwrap(), b"%PDF-1.7 bytes do cv", "exactly the verified bytes");
         let base = std::fs::canonicalize(crate::documentos::docs_dir(&dir)).unwrap();
         assert!(std::fs::canonicalize(&a.path).unwrap().starts_with(&base), "still inside the documents folder");
+    }
+
+    #[test]
+    fn an_attachment_is_recorded_for_the_vaga() {
+        let dir = setup("attached");
+        let c = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let src = dir.join("a.pdf");
+        std::fs::write(&src, b"%PDF-1.7 a").unwrap();
+        let d = crate::documentos::importar::importar(&c, &dir, "curriculo", &src, None).unwrap();
+        DbDocumentSource { data_dir: dir.clone() }.attached(7, "curriculo", d.id);
+        let (vaga, tipo, doc): (i64, String, i64) = c
+            .query_row("SELECT vaga_id, tipo, documento_id FROM anexos", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        assert_eq!((vaga, tipo.as_str(), doc), (7, "curriculo", d.id));
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM anexos", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1, "exactly one row per attachment");
     }
 
     #[test]

@@ -17,6 +17,8 @@ pub(crate) fn apply(conn: &Connection) -> Result<()> {
         ("ALTER TABLE sessoes ADD COLUMN tempo_pausado_segundos INTEGER DEFAULT 0;", "sessoes.tempo_pausado_segundos"),
         ("ALTER TABLE sessoes ADD COLUMN pausada_em TEXT;", "sessoes.pausada_em"),
         ("ALTER TABLE vagas ADD COLUMN fonte_conexao TEXT;", "vagas.fonte_conexao"),
+        // Fresh databases get it from schema.sql; this is for databases created before it existed.
+        ("ALTER TABLE candidaturas ADD COLUMN documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL;", "candidaturas.documento_id"),
     ] {
         if let Err(e) = conn.execute_batch(sql) {
             if !e.to_string().contains("duplicate column") {
@@ -68,7 +70,7 @@ mod tests {
             .collect::<Result<Vec<_>>>()
             .unwrap();
         tables.retain(|t| t != "sqlite_sequence");
-        for expected in ["candidaturas", "documentos", "feedbacks", "pendencias", "preferidos", "propostas_perfil", "sessoes", "vagas"] {
+        for expected in ["anexos", "candidaturas", "documentos", "feedbacks", "pendencias", "preferidos", "propostas_perfil", "sessoes", "vagas"] {
             assert!(tables.contains(&expected.to_string()), "missing table: {expected}");
         }
     }

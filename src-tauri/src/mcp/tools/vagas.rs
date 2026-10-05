@@ -126,8 +126,9 @@ pub fn register_candidatura(
     let mut conn = open_db(data_dir)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute(
-        "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo) \
-         VALUES (?1, datetime('now'), ?2, ?3)",
+        "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo, documento_id) \
+         VALUES (?1, datetime('now'), ?2, ?3, \
+                 (SELECT documento_id FROM anexos WHERE vaga_id = ?1 AND tipo = 'curriculo' ORDER BY id DESC LIMIT 1))",
         rusqlite::params![vaga_id, pasta_arquivos, metodo],
     )
     .map_err(|e| format!("erro ao registar candidatura: {e}"))?;
@@ -263,6 +264,47 @@ mod tests {
         assert!(register_candidatura(&dir, 999, "/tmp/x", "form").is_err());
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM candidaturas", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);
+    }
+
+    fn add_doc(conn: &rusqlite::Connection, tipo: &str, nome: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO documentos (tipo, nome, origem, arquivo, formato, sha256, tamanho) VALUES (?1, ?2, 'importado', ?2, 'pdf', 'h', 1)",
+            rusqlite::params![tipo, nome],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn add_anexo(conn: &rusqlite::Connection, vaga: i64, tipo: &str, doc: i64) {
+        conn.execute("INSERT INTO anexos (vaga_id, tipo, documento_id) VALUES (?1, ?2, ?3)", rusqlite::params![vaga, tipo, doc]).unwrap();
+    }
+
+    #[test]
+    fn the_candidatura_remembers_the_cv_that_was_attached() {
+        let dir = temp_dir("vaga-cand-doc");
+        seed_db(&dir);
+        let conn = open_db(&dir).unwrap();
+        let old = add_doc(&conn, "curriculo", "old.pdf");
+        let new = add_doc(&conn, "curriculo", "new.pdf");
+        let carta = add_doc(&conn, "carta", "carta.pdf");
+        add_anexo(&conn, 1, "curriculo", old);
+        add_anexo(&conn, 1, "curriculo", new);
+        add_anexo(&conn, 1, "carta", carta); // the newest row overall is a cover letter: it must not win
+        register_candidatura(&dir, 1, "/tmp/acme", "formulario").unwrap();
+        let got: Option<i64> = conn.query_row("SELECT documento_id FROM candidaturas WHERE vaga_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(got, Some(new), "the most recent CV, not the first and not the letter");
+    }
+
+    #[test]
+    fn without_an_attachment_the_candidatura_has_no_document() {
+        let dir = temp_dir("vaga-cand-nodoc");
+        seed_db(&dir);
+        let conn = open_db(&dir).unwrap();
+        let carta = add_doc(&conn, "carta", "carta.pdf");
+        add_anexo(&conn, 1, "carta", carta);
+        register_candidatura(&dir, 1, "/tmp/acme", "formulario").unwrap();
+        let got: Option<i64> = conn.query_row("SELECT documento_id FROM candidaturas WHERE vaga_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(got, None);
     }
 
     #[test]
