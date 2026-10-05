@@ -30,7 +30,7 @@ Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOS
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
 | Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
-CDP no guest exige build com DevTools do WebView2 habilitado: o build release do projeto não abre a porta de depuração, então publique um build de debug (ver `claudia-sandbox`, seção 6).
+CDP no guest não funciona hoje: a porta de depuração não abre, nem com build de debug. Use os degraus 2 e 3 da escada de prints (ver `claudia-sandbox`, seção 6).
 
 Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 

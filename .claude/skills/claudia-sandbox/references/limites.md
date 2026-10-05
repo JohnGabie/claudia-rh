@@ -51,7 +51,7 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 - **Comportamento:** com `--remote-debugging-port`, o DevTools do WebView2 escuta só no loopback do guest; o host não alcança direto pelo IP do guest. `cdp-guest.mjs` cria, como System, `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<porta-host> connectaddress=127.0.0.1 connectport=<porta>` e uma regra de firewall de entrada para `<porta-host>`.
 - **Demonstra:** com o app aberto com CDP no guest, `curl http://<ip do guest>:9333/json/version` (ip de `wsb ip --id <id>`) não responde; depois de `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --id <id>`, `curl http://<ip do guest>:19333/json/version` responde.
 - **Fonte:** spec do repositório, seção "CDP do app dentro do Sandbox".
-- **Situação:** não verificado ponta a ponta (2026-10-05): o portproxy e a regra de firewall foram criados e a porta do host chegou ao guest, mas o app release não abriu o CDP, então não houve resposta HTTP. Reteste com um build de debug (item 9).
+- **Situação:** portproxy e regra de firewall verificados como funcionais (2026-10-05), mas CDP não respondeu em nenhuma tentativa (release e debug). Não há resposta HTTP em `http://127.0.0.1:9333/json/version` no guest, com ou sem `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` e com ou sem política por app.
 
 ## 8. `wsb exec` sempre sai com 0 no host
 
@@ -59,11 +59,11 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 - **Demonstra:** `wsb exec --id <id> -r ExistingLogin -c "cmd /c exit 7"`: exit 0 no host, stdout com "... código: 7".
 - **Situação:** verificado (2026-10-05, pt-BR; também com `powershell -EncodedCommand` e `exit 3`). Outros idiomas: o parser aceita "code", mas o texto exato não foi visto ao vivo.
 
-## 9. CDP no guest exige build com DevTools do WebView2
+## 9. CDP no guest não funciona
 
-- **Comportamento:** o build release do projeto não abre a porta de depuração remota; o `src-tauri/Cargo.toml` declara `tauri` com `features = ["tray-icon"]`, sem `devtools`. No smoke, com o app release instalado no guest, o processo do `msedgewebview2.exe` subiu sem `--remote-debugging-port` mesmo com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` chegando ao processo, e `cdp-guest.mjs --iniciar` falhou por timeout. Para CDP no guest, publique um build de debug: `npx tauri build --debug --bundles nsis` (instalador) ou `npx tauri build --debug --no-bundle`.
-- **Demonstra:** `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` com o app release: exit 1, "CDP did not answer ... within 90s".
-- **Situação:** falha verificada com o build release; a causa vem do código (Cargo.toml) e a abertura do CDP com build de debug ainda não foi confirmada ao vivo.
+- **Comportamento:** a porta de depuração remota do WebView2 não responde, nem com build release nem com build de debug. Com o app rodando no guest (debug ou release), o processo do `msedgewebview2.exe` não exibe `--remote-debugging-port` na linha de comando mesmo com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` no ambiente do processo (`claudia-rh.exe`). Política por app (`HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments`) também é ignorada. O `portproxy` do `cdp-guest.mjs` e a regra de firewall funcionam (confirmado ao vivo), mas não há resposta HTTP. A causa não foi isolada (possível diferença: runtime WebView2 do guest vs. host, usuário `WDAGUtilityAccount`).
+- **Demonstra:** `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` (debug ou release): exit 1 em ~90 s, "CDP did not answer ... within 90s".
+- **Situação:** falha verificada com ambos os builds (2026-10-05). Use degraus 2 e 3 da escada de prints (`claudia-app`) em vez de CDP.
 
 ## Evals de disparo
 
