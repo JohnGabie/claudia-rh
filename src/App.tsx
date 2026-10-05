@@ -181,7 +181,7 @@ function App() {
 
               {/* Pendências */}
               <div style={{ display: view === "pendencias" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-                <Pendencias onNavigateToPerfil={() => setView("perfil")} />
+                <Pendencias onNavigateToPerfil={() => setView("perfil")} onNavigateToDocumentos={() => setView("documentos")} />
               </div>
 
               {/* Configurações */}

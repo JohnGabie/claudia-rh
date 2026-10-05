@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
+import { alvoDoUpload, lerLinhaUpload, formatarTamanho } from "./dashboard/anexos";
 
 interface EventRow {
   id: number;
@@ -130,6 +131,7 @@ export const ActivityLogScreen: React.FC<{ onBack: () => void }> = ({ onBack }) 
     ["browser", t.kindBrowser],
   ];
   const kindLabel = (k: string) => kinds.find(([v]) => v === k)?.[1] ?? k;
+  const uploadSel = selected?.tool === "browser_upload" ? lerLinhaUpload(selected.text) : null;
   const filtered = kind !== "" || session !== "" || vaga !== "";
 
   const field = (label: string, value: React.ReactNode) =>
@@ -227,8 +229,8 @@ export const ActivityLogScreen: React.FC<{ onBack: () => void }> = ({ onBack }) 
                       >
                         <td style={{ padding: "7px 8px 7px 12px", whiteSpace: "nowrap", color: "var(--text-secondary)" }}>{formatTime(r.ts)}</td>
                         <td style={{ padding: "7px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tool ?? kindLabel(r.kind)}</td>
-                        <td style={{ padding: "7px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.target ?? r.url ?? ""}>
-                          {r.target ?? r.url}
+                        <td style={{ padding: "7px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={alvoDoUpload(r.text) ?? r.target ?? r.url ?? ""}>
+                          {r.tool === "browser_upload" ? (alvoDoUpload(r.text) ?? r.target ?? r.url) : (r.target ?? r.url)}
                         </td>
                         <td
                           style={{
@@ -281,7 +283,13 @@ export const ActivityLogScreen: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 {field(t.fieldTool, selected.tool)}
                 {field(t.fieldTarget, selected.target)}
                 {field(t.fieldRole, selected.role)}
-                {field(t.fieldText, selected.text)}
+                {uploadSel
+                  ? <>
+                      {field(t.fieldDocument, `${uploadSel.nome} (${uploadSel.formato.toUpperCase()}) · #${uploadSel.id}`)}
+                      {field(t.fieldSize, formatarTamanho(uploadSel.bytes))}
+                      {field(t.fieldFingerprint, uploadSel.sha)}
+                    </>
+                  : field(t.fieldText, selected.text)}
                 {field(t.fieldUrl, selected.url)}
                 {field(t.fieldResult, selected.result)}
                 {field(t.fieldError, selected.error && <span style={{ color: "var(--danger)" }}>{selected.error}</span>)}

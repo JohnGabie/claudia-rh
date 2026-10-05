@@ -5,6 +5,7 @@ import { ExternalLink, Folder } from "lucide-react";
 import { Vaga } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useT } from "../i18n";
+import { rotuloDocumentoCandidatura } from "./dashboard/anexos";
 
 
 interface Candidatura {
@@ -18,6 +19,8 @@ interface Candidatura {
   pasta_arquivos: string;
   metodo: string;
   resultado: string | null;
+  documento_id: number | null;
+  documento_nome: string | null;
 }
 
 const STATUS_STYLE: Record<string, { background: string; color: string }> = {
@@ -281,7 +284,7 @@ export const Vagas: React.FC = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.method, t.jobs.tableHeaders.result, t.jobs.tableHeaders.sent, "", ""].map((h, i) => (
+                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.document, t.jobs.tableHeaders.method, t.jobs.tableHeaders.result, t.jobs.tableHeaders.sent, "", ""].map((h, i) => (
                     <th key={i} style={{
                       padding: "10px 12px",
                       textAlign: "left",
@@ -315,6 +318,11 @@ export const Vagas: React.FC = () => {
                       </td>
                       <td style={{ padding: "10px 12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
                         {c.plataforma}
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "var(--text-secondary)", maxWidth: 200 }}>
+                        <div title={rotuloDocumentoCandidatura(c)} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {rotuloDocumentoCandidatura(c)}
+                        </div>
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <span style={{

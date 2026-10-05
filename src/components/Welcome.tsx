@@ -25,6 +25,7 @@ import {
 import { useT, useLocale } from "../i18n";
 import type { Locale } from "../i18n";
 import type { View } from "./Sidebar";
+import { docsApi } from "../lib/documentos-api";
 
 interface SetupStatus {
   claude_instalado: boolean;
@@ -680,8 +681,14 @@ const StepProfile: React.FC<{
   hasProfile: boolean;
   onSetup: () => void;
   onDashboard: () => void;
-}> = ({ hasProfile, onSetup, onDashboard }) => {
+  onResumes: () => void;
+}> = ({ hasProfile, onSetup, onDashboard, onResumes }) => {
   const t = useT();
+  // Stays false while loading or if the library cannot be read: no warning then, never a false alarm.
+  const [semCurriculo, setSemCurriculo] = useState(false);
+  useEffect(() => {
+    docsApi.listar("curriculo").then((l) => setSemCurriculo(l.length === 0)).catch(() => setSemCurriculo(false));
+  }, []);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{
@@ -702,6 +709,26 @@ const StepProfile: React.FC<{
             {hasProfile ? t.welcome.profileAlreadyDone : t.welcome.profileEmpty}
           </span>
         </div>
+        {semCurriculo && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10, marginTop: 10,
+            padding: "10px 14px", borderRadius: 8,
+            background: "color-mix(in srgb, var(--warning) 8%, var(--bg-sunken))",
+            border: "1px solid color-mix(in srgb, var(--warning) 25%, var(--border))",
+          }}>
+            <AlertCircle size={16} color="var(--warning)" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{t.welcome.noResumeWarning}</span>
+            <button
+              onClick={onResumes}
+              style={{
+                padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-surface)",
+                color: "var(--accent-strong)", fontSize: 12, fontWeight: 500, fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
+              }}
+            >
+              {t.welcome.openResumes}
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <button
@@ -796,6 +823,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onComplete }) => {
               hasProfile={status?.perfil_preenchido ?? false}
               onSetup={() => complete("perfil")}
               onDashboard={() => complete("dashboard")}
+              onResumes={() => complete("documentos")}
             />
           )}
         </div>
