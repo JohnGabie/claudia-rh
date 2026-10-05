@@ -26,6 +26,27 @@ export function labDir() {
 
 export function novoCenarioDir(saida, nome) {
   const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-sandbox", nome));
+
+  // Safety checks before deletion
+  const parsed = path.parse(dir);
+  if (parsed.root === dir) {
+    throw new Error("novoCenarioDir: target is a filesystem root");
+  }
+  if (dir === REPO_ROOT) {
+    throw new Error("novoCenarioDir: target is REPO_ROOT");
+  }
+  if (REPO_ROOT.startsWith(dir) && dir !== REPO_ROOT) {
+    throw new Error("novoCenarioDir: target is an ancestor of REPO_ROOT");
+  }
+
+  // Check if non-empty directory exists without cenario.json
+  if (fs.existsSync(dir)) {
+    const entries = fs.readdirSync(dir);
+    if (entries.length > 0 && !fs.existsSync(path.join(dir, "cenario.json"))) {
+      throw new Error(`novoCenarioDir: target directory must not have existing files without cenario.json: ${dir}`);
+    }
+  }
+
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
   fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });
@@ -47,15 +68,36 @@ export function escreverCenario(dir, nome, origem = null) {
 
 const DISPARO_PADRAO = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, janelas: [] };
 
+/** Validate a janela entry: dia_semana 0..6, inicio/fim strings, ativo boolean. */
+function janelaValida(janela) {
+  return janela && typeof janela === "object" &&
+    Number.isInteger(janela.dia_semana) && janela.dia_semana >= 0 && janela.dia_semana <= 6 &&
+    typeof janela.inicio === "string" && typeof janela.fim === "string" &&
+    typeof janela.ativo === "boolean";
+}
+
 /** The app falls back to ativo=true when disparo.json misses required fields, so always write the full shape. */
 export function desligarAutomacao(dataDir) {
   const p = path.join(dataDir, "disparo.json");
   let antigo = {};
-  try { antigo = JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* missing or invalid: defaults */ }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+    if (parsed && typeof parsed === "object") antigo = parsed;
+  } catch { /* missing or invalid: defaults */ }
+
   const cfg = { ...DISPARO_PADRAO };
-  for (const k of ["limiar_minutos", "limite_diario", "limite_tempo_minutos", "janelas"]) {
-    if (antigo[k] != null) cfg[k] = antigo[k];
+
+  // Copy numeric fields only when valid
+  for (const k of ["limiar_minutos", "limite_diario", "limite_tempo_minutos"]) {
+    const v = antigo[k];
+    if (Number.isInteger(v) && v >= 0 && v <= 0xFFFFFFFF) cfg[k] = v;
   }
+
+  // Copy janelas only when array of valid entries
+  if (Array.isArray(antigo.janelas) && antigo.janelas.every(janelaValida)) {
+    cfg.janelas = antigo.janelas;
+  }
+
   cfg.ativo = false;
   fs.writeFileSync(p, JSON.stringify(cfg));
   fs.writeFileSync(path.join(dataDir, "modo_autonomo.json"), JSON.stringify({ skip_permissions: false }));
