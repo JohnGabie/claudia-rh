@@ -51,13 +51,13 @@ Variáveis exigidas pelos perfis `app*`: `LAB_APP_PROJECT` (pasta do projeto, mo
 .claude/skills/claudia-sandbox/          (nova)
 ├─ SKILL.md
 ├─ scripts/
-│  ├─ comum.ps1            ← constantes e funções compartilhadas
-│  ├─ cenario-novo.ps1     ← sem dados
-│  ├─ cenario-mock.ps1     ← dados fictícios
-│  ├─ cenario-copia.ps1    ← cópia dos dados do usuário (exige -Autorizado)
-│  ├─ publicar.ps1         ← app + cenário → app-stage.ps1 do laboratório
-│  ├─ cdp-guest.ps1        ← inicia o app no guest com CDP e expõe a porta ao host
-│  ├─ banco-guest.ps1      ← snapshot do banco do guest para o host
+│  ├─ comum.mjs            ← constantes e funções compartilhadas
+│  ├─ cenario-novo.mjs     ← sem dados
+│  ├─ cenario-mock.mjs     ← dados fictícios
+│  ├─ cenario-copia.mjs    ← cópia dos dados do usuário (exige --autorizado)
+│  ├─ publicar.mjs         ← app + cenário → app-stage.ps1 do laboratório
+│  ├─ cdp-guest.mjs        ← inicia o app no guest com CDP e expõe a porta ao host
+│  ├─ banco-guest.mjs      ← snapshot do banco do guest para o host
 │  └─ test/
 ├─ fixtures/               ← candidate_base.yaml, search_variants.yaml, strategy.md, seed.sql
 ├─ references/             ← limites.md, pastas-de-dados.md
@@ -71,10 +71,14 @@ Variáveis exigidas pelos perfis `app*`: `LAB_APP_PROJECT` (pasta do projeto, mo
 ├─ references/, evals/
 ```
 
+### Linguagem
+
+Scripts do host em **Node ≥ 22.13**, o mesmo runtime da `claudia-app`: `node:sqlite` (sem `sqlite3.exe` no host), `node:test`, `parseArgs`; comandos externos (`wsb`, `winapp`, `pwsh`) por `child_process`. PowerShell só onde é nativo do Windows: `print-janela.ps1`, os comandos enviados ao guest e o `app-stage.ps1` do laboratório. Sem dependências npm.
+
 ### Contrato dos cenários (`claudia-sandbox`)
 
-Cada `cenario-*.ps1`:
-- Parâmetro `-Saida <pasta>` (padrão `%TEMP%\claudia-sandbox\<cenario>`); a pasta é recriada a cada execução.
+Cada `cenario-*.mjs` (`node <script> [opções]`):
+- Opção `--saida <pasta>` (padrão `%TEMP%\claudia-sandbox\<cenario>`); a pasta é recriada a cada execução.
 - Produz `<Saida>\appdata\io.github.johngabie.claudia-rh\` (pode ficar vazia) e `<Saida>\localappdata\` (vazia).
 - Grava `<Saida>\cenario.json`: `{ "cenario", "criadoEm", "origem", "arquivos" }`.
 - Última linha do stdout: o JSON de `cenario.json`. Exit 0 em sucesso, 2 em erro de uso, 1 em falha.
@@ -83,29 +87,29 @@ Cada `cenario-*.ps1`:
 |---|---|
 | `novo` | pasta de dados vazia: o app nasce do zero (welcome, criação de perfil). |
 | `mock` | YAMLs e `strategy.md` de `fixtures/`; `claudia_rh.db` criado de `src-tauri/src/db/schema.sql` + `fixtures/seed.sql`; `welcome_seen`; `disparo.json` com `ativo: false`; `modo_autonomo.json` com `skip_permissions: false`. Dados fictícios, sem pessoa real. |
-| `copia` | sem `-Autorizado`: recusa com exit 2. Com: copia `%APPDATA%\io.github.johngabie.claudia-rh` só lendo a origem (banco copiado com `-wal`/`-shm` e consolidado na cópia com `PRAGMA wal_checkpoint(TRUNCATE)`); `%LOCALAPPDATA%` (perfil do browser, cookies) **não** é copiado. Na cópia, `disparo.json.ativo=false` e `modo_autonomo.json.skip_permissions=false`, salvo `-ManterAutomacao`. |
+| `copia` | sem `--autorizado`: recusa com exit 2. Com: copia `%APPDATA%\io.github.johngabie.claudia-rh` só lendo a origem (banco copiado com `-wal`/`-shm` e consolidado na cópia com `PRAGMA wal_checkpoint(TRUNCATE)`); `%LOCALAPPDATA%` (perfil do browser, cookies) **não** é copiado. Na cópia, `disparo.json.ativo=false` e `modo_autonomo.json.skip_permissions=false`, salvo `--manter-automacao`. |
 
 `disparo.json` é sempre gravado com todos os campos (`ativo`, `limiar_minutos`, `limite_diario`, `limite_tempo_minutos`, `janelas`): sem `limiar_minutos` o app ignora o arquivo e assume `ativo: true` (`src-tauri/src/lib.rs`, `load_idle_config`).
 
-`publicar.ps1 -App <exe|instalador|pasta> -Cenario <pasta do cenário> [-WorkDir]` chama `app-stage.ps1` do laboratório com `-AppData <Cenario>\appdata\io.github.johngabie.claudia-rh -Clean`. `-WorkDir` padrão: `$env:LAB_WORK_DIR`, senão `%TEMP%\claudia-sandbox\work`.
+`publicar.mjs --app <exe|instalador|pasta> --cenario <pasta do cenário> [--work-dir]` chama `app-stage.ps1` do laboratório (via `pwsh`) com `-AppData <cenario>\appdata\io.github.johngabie.claudia-rh -Clean`. `--work-dir` padrão: `$env:LAB_WORK_DIR`, senão `%TEMP%\claudia-sandbox\work`.
 
 ### CDP do app dentro do Sandbox (`claudia-sandbox`)
 
-`cdp-guest.ps1 [-Id <sandbox>] [-Porta 9333] [-PortaHost 19333] [-Iniciar]`, rodado no host:
+`cdp-guest.mjs [--id <sandbox>] [--porta 9333] [--porta-host 19333] [--iniciar] [--exe-path <exe no guest>]`, rodado no host:
 1. Resolve o id (único em `wsb list` se omitido) e o IP do guest (`wsb ip`).
-2. Como System no guest: `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<PortaHost> connectaddress=127.0.0.1 connectport=<Porta>` e regra de firewall de entrada para `<PortaHost>`.
-3. Com `-Iniciar`: como o usuário do guest, define `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<Porta>` e roda `C:\labsandbox\app\guest-run.ps1` no mesmo processo.
-4. Espera até `http://<ip>:<PortaHost>/json/version` responder (timeout com mensagem) e imprime `{ "host", "porta" }` para usar como `CDP_HOST`/`CDP_PORT`.
+2. Como System no guest: `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<porta-host> connectaddress=127.0.0.1 connectport=<porta>` e regra de firewall de entrada para `<porta-host>`.
+3. Com `--iniciar`: como o usuário do guest, define `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` e, no mesmo processo, inicia `--exe-path` (ex.: o app instalado) ou roda `C:\labsandbox\app\guest-run.ps1`.
+4. Espera até `http://<ip>:<porta-host>/json/version` responder (timeout com mensagem) e imprime `{ "host", "porta" }` para usar como `CDP_HOST`/`CDP_PORT`.
 
 Pré-requisito: perfil com rede (`lab.config.app-winapp.json`) e WebView2 presente no guest. O `.exe` de `tauri build --no-bundle` não instala o WebView2; o instalador sim. Sem WebView2 o app não abre e o CDP não existe: isso é resultado do teste.
 
-`banco-guest.ps1 [-Id <sandbox>]`: no guest, `C:\lab\tools\sqlite\sqlite3.exe "%APPDATA%\io.github.johngabie.claudia-rh\claudia_rh.db" ".backup C:\labwork\db\claudia_rh.db"`; imprime o caminho no host (`<WorkDir>\guest-rw\db\claudia_rh.db`) para usar como `CLAUDIA_DB`. É um snapshot: repetir após cada ação que muda o banco.
+`banco-guest.mjs [--id <sandbox>] [--work-dir]`: no guest, `C:\lab\tools\sqlite\sqlite3.exe "%APPDATA%\io.github.johngabie.claudia-rh\claudia_rh.db" ".backup C:\labwork\db\claudia_rh.db"`; imprime o caminho no host (`<work-dir>\guest-rw\db\claudia_rh.db`) para usar como `CLAUDIA_DB`. É um snapshot: repetir após cada ação que muda o banco.
 
 ### Observação com alvo local ou Sandbox (`claudia-app`)
 
 - `CDP_HOST` (padrão `127.0.0.1`) e `CDP_PORT` em todos os scripts que falam CDP (`cdp.mjs`, `subir.mjs`, `ver.mjs`, `invocar.mjs`, `observar.mjs`).
 - `regras.validarVersaoApp` aceita a página do `tauri dev` (`localhost:1420`) e a do build de release (origem `tauri.localhost`).
-- `regras.decidirSubida` ganha `remoto`: com `CDP_HOST` diferente de `127.0.0.1`/`localhost`, nunca sobe `tauri dev`; se o CDP não responde, `abortar` com motivo apontando para `claudia-sandbox` (`cdp-guest.ps1 -Iniciar`).
+- `regras.decidirSubida` ganha `remoto`: com `CDP_HOST` diferente de `127.0.0.1`/`localhost`, nunca sobe `tauri dev`; se o CDP não responde, `abortar` com motivo apontando para `claudia-sandbox` (`cdp-guest.mjs --iniciar`).
 - `banco.mjs` e `observar.mjs` usam `CLAUDIA_DB` quando definido; senão, o banco do `%APPDATA%` local.
 - Regras de segurança existentes (rótulo perigoso, SQL só leitura, comando de escrita só com `--escrever`) valem igual nos dois alvos.
 
@@ -138,7 +142,7 @@ Regra: toda afirmação sobre a UI vem com print; se nenhum degrau funcionar, di
 3. Específico do app: pastas de dados, browser próprio baixado na primeira abertura, `debug-logs`, Activity log.
 4. Cenários: o que cada um produz e quando faz sentido; `copia` exige pedir autorização ao usuário naquela rodada.
 5. O que publicar: exe de `tauri build --no-bundle` (sem pré-requisitos) ou instalador (cuida de pré-requisitos como o WebView2; instalação silenciosa NSIS com `/S`).
-6. Ligar o CDP no guest (`cdp-guest.ps1`) e observar com a `claudia-app`; banco via `banco-guest.ps1`; prints pela escada.
+6. Ligar o CDP no guest (`cdp-guest.mjs`) e observar com a `claudia-app`; banco via `banco-guest.mjs`; prints pela escada.
 7. Regras: nunca acionar envio de candidatura; falha do app num Windows limpo é resultado do teste — registrar, não contornar; achado fora do escopo vira task no Linear (`linear-claudia`).
 8. Melhorias no próprio ferramental (laboratório, scripts e cenários desta skill, a skill em si): quando o agente notar algo que tornaria o teste mais fácil, rápido ou confiável, sugere ao usuário com o motivo e o custo; com o "sim" do usuário, implementa (o laboratório tem processo próprio, fora deste repositório); se não for o momento, registra no Linear (`linear-claudia`). Nunca muda o ferramental por conta própria no meio de um teste.
 9. Testes: o agente desenha os testes e decide se escreve testes automáticos.
@@ -159,12 +163,12 @@ Gatilhos: testar em Windows limpo/isolado, Sandbox, instalador, primeira abertur
 
 - Laboratório ausente ou incompleto: scripts param com mensagem que nomeia a variável/arquivo.
 - `copia` sem dados de origem: exit 1 com o caminho procurado.
-- `sqlite3` ausente: `mock`/`copia` falham com os caminhos tentados (`-Sqlite` permite outro).
-- CDP remoto sem resposta: `subir.mjs` aborta com motivo; `cdp-guest.ps1` sai com timeout e o URL testado.
+- Opção desconhecida ou obrigatória ausente: exit 2 com o uso correto.
+- CDP remoto sem resposta: `subir.mjs` aborta com motivo; `cdp-guest.mjs` sai com timeout e o URL testado.
 
 ## Critérios de teste
 
-- `claudia-sandbox/scripts/test/*.test.ps1` (sem Sandbox): cada cenário com origem/destino temporários; `copia` sem `-Autorizado` → exit 2; origem não modificada (hash antes/depois); automação desligada na cópia; banco do `mock` abre e tem as linhas do seed; contrato de `cenario.json`; `publicar.ps1` contra laboratório falso. Exit ≠ 0 em qualquer falha.
+- `node --test .claude/skills/claudia-sandbox/scripts/test/` (sem Sandbox): cada cenário com origem/destino temporários; `copia` sem `--autorizado` → exit 2; origem não modificada (hash antes/depois); automação desligada na cópia; banco do `mock` abre e tem as linhas do seed; contrato de `cenario.json`; `publicar.mjs` contra laboratório falso; parser da saída do `wsb list`. Exit ≠ 0 em qualquer falha.
 - `claudia-app/scripts/test/regras.test.mjs`: página de release aceita; `remoto` sem CDP → `abortar`; `remoto` nunca → `subir`; casos atuais continuam verdes.
 - `print-janela.ps1`: teste que captura a tela inteira para um arquivo temporário e confere PNG válido com dimensões > 0.
 - Prova de mutação: quebrar uma regra faz o teste nomeado falhar.

@@ -4,9 +4,9 @@
 
 **Objetivo:** duas skills especializadas — `claudia-sandbox` (nova: Windows Sandbox limpo, cenários de dados, publicar/instalar, CDP no guest) e `claudia-app` (a `claudia-teste` renomeada: observar o app por CDP localmente ou no Sandbox, com prints em escada).
 
-**Arquitetura:** o específico do ambiente vive em `.claude/skills/claudia-sandbox/` (scripts PowerShell, fixtures, referências, evals); a observação do app continua nos scripts Node da skill renomeada `.claude/skills/claudia-app/`, que passam a aceitar `CDP_HOST` e `CLAUDIA_DB`. O laboratório é localizado por `SANDBOX_LAB_DIR` e usado só pela sua interface pública. Cada cenário produz uma pasta com `appdata\io.github.johngabie.claudia-rh\` e `cenario.json`; `publicar.ps1` entrega app + cenário ao laboratório; `cdp-guest.ps1` expõe o CDP do app no guest ao host.
+**Arquitetura:** o específico do ambiente vive em `.claude/skills/claudia-sandbox/` (scripts Node, fixtures, referências, evals); a observação do app continua nos scripts Node da skill renomeada `.claude/skills/claudia-app/`, que passam a aceitar `CDP_HOST` e `CLAUDIA_DB`. O laboratório é localizado por `SANDBOX_LAB_DIR` e usado só pela sua interface pública. Cada cenário produz uma pasta com `appdata\io.github.johngabie.claudia-rh\` e `cenario.json`; `publicar.mjs` entrega app + cenário ao laboratório; `cdp-guest.mjs` expõe o CDP do app no guest ao host.
 
-**Stack:** PowerShell 7 (compatível com Windows PowerShell 5.1), Node ≥ 22 (`node:test`, `node:sqlite`), sqlite3 do laboratório, winapp CLI, skill-creator.
+**Stack:** Node ≥ 22.13 (`node:test`, `node:sqlite`, `node:util.parseArgs`, `child_process` para `wsb`/`winapp`/`pwsh`), PowerShell só onde é nativo do Windows (`print-janela.ps1`, comandos enviados ao guest, `app-stage.ps1` do laboratório), winapp CLI, skill-creator.
 
 **Spec:** `docs/superpowers/specs/2026-10-05-teste-maquina-limpa-design.md`
 
@@ -15,8 +15,8 @@
 - Identifier do app: `io.github.johngabie.claudia-rh` (nunca alterar).
 - Comentários de código e mensagens de commit em inglês; textos da skill, referências e docs em pt-BR.
 - Sem dependências novas para o usuário final; nada instalado globalmente na máquina do dev.
-- Scripts não escrevem fora da pasta `-Saida`/`-WorkDir` informada; a origem do cenário `copia` só é lida.
-- `copia` sem `-Autorizado` sai com exit 2 e não lê a origem.
+- Scripts não escrevem fora da pasta `--saida`/`--work-dir` informada; a origem do cenário `copia` só é lida.
+- `copia` sem `--autorizado` sai com exit 2 e não lê a origem.
 - `disparo.json` gravado pelos scripts tem sempre todos os campos (`ativo`, `limiar_minutos`, `limite_diario`, `limite_tempo_minutos`, `janelas`): sem `limiar_minutos` o app ignora o arquivo e usa `ativo: true` (`src-tauri/src/lib.rs`, `load_idle_config`).
 - Arquivos agnósticos: nenhum arquivo novo ou alterado menciona sessões de trabalho, pessoas, modelos, nomes de máquina, IPs, caminhos pessoais ou pastas fora do repositório além de `SANDBOX_LAB_DIR`/`LAB_WORK_DIR`/`%TEMP%`/`%APPDATA%`/`%LOCALAPPDATA%`.
 - Cada agente executor trabalha em worktree própria e usa `CARGO_TARGET_DIR` fora do `target/` do repositório quando compilar.
@@ -26,8 +26,8 @@
 1. Origem do `copia` com o app aberto (banco em uso, `-wal` com dados não consolidados): a cópia precisa abrir e conter as linhas do `-wal`. Teste na Tarefa 4 (`copia consolida wal`).
 2. `disparo.json` existente com campos extras ou faltando `limiar_minutos`: o resultado precisa ser JSON completo com `ativo: false`. Teste na Tarefa 1 (`automacao completa a partir de arquivo parcial`).
 3. `CDP_HOST` remoto sem resposta: `regras.decidirSubida` nunca devolve `subir` com `remoto: true` (logo `subir.mjs` não sobe `tauri dev` no host); aborta com motivo. Teste na Tarefa 7 (`remoto sem CDP aborta`).
-4. `-Saida` já existente com lixo de execução anterior: a pasta é recriada, sem sobras. Teste na Tarefa 1 (`saida recriada`).
-5. Caminhos com espaços (`-Saida`, `-Origem`, `-App`): todos os scripts funcionam. Coberto usando pastas temporárias com espaço no nome em todos os testes.
+4. `--saida` já existente com lixo de execução anterior: a pasta é recriada, sem sobras. Teste na Tarefa 1 (`saida recriada`).
+5. Caminhos com espaços (`--saida`, `--origem`, `--app`): todos os scripts funcionam. Coberto usando pastas temporárias com espaço no nome em todos os testes.
 
 ---
 
@@ -35,18 +35,17 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `.claude/skills/claudia-sandbox/scripts/comum.ps1` | constantes e funções: `$AppId`, `$RepoRoot`, `Get-LabDir`, `Get-SqliteExe`, `Invoke-Sqlite`, `New-CenarioDir`, `Write-Cenario`, `Set-AutomacaoDesligada`, `Write-Utf8` |
-| `.../scripts/cenario-novo.ps1` | cenário sem dados |
-| `.../scripts/cenario-mock.ps1` | cenário com fixtures |
-| `.../scripts/cenario-copia.ps1` | cenário com cópia dos dados do usuário |
-| `.../scripts/publicar.ps1` | app + cenário → `app-stage.ps1` |
-| `.../scripts/test/assert.ps1` | `Assert-True`, `Complete-Tests`, `New-TempDir`, `Invoke-Script` |
-| `.../scripts/test/*.test.ps1` | um arquivo de teste por script |
-| `.../scripts/test/run-all.ps1` | roda todos os testes; exit ≠ 0 se algum falhar |
+| `.claude/skills/claudia-sandbox/scripts/comum.mjs` | constantes e funções: `APP_ID`, `REPO_ROOT`, `sair`, `falhaDe`, `labDir`, `novoCenarioDir`, `escreverCenario`, `desligarAutomacao`; funções de Sandbox (`idsDeWsbList`, `sandboxId`, `sandboxIp`, `noGuest`) |
+| `.../scripts/cenario-novo.mjs` | cenário sem dados |
+| `.../scripts/cenario-mock.mjs` | cenário com fixtures |
+| `.../scripts/cenario-copia.mjs` | cenário com cópia dos dados do usuário |
+| `.../scripts/publicar.mjs` | app + cenário → `app-stage.ps1` |
+| `.../scripts/test/util.mjs` | `tempDir`, `rodar`, `SCRIPTS` |
+| `.../scripts/test/*.test.mjs` | um arquivo de teste por script (`node --test`) |
 | `.../fixtures/*` | dados fictícios |
 | `.../references/limites.md`, `pastas-de-dados.md` | referências da skill |
 | `.../SKILL.md`, `.../evals/evals.json` | skill e evals de disparo |
-| `.claude/skills/claudia-sandbox/scripts/cdp-guest.ps1`, `banco-guest.ps1` | CDP do app no guest exposto ao host; snapshot do banco do guest |
+| `.claude/skills/claudia-sandbox/scripts/cdp-guest.mjs`, `banco-guest.mjs` | CDP do app no guest exposto ao host; snapshot do banco do guest |
 | `.claude/skills/claudia-app/` (renomeada de `claudia-teste`) | `SKILL.md`, `evals/`, `scripts/regras.mjs`, `cdp.mjs`, `subir.mjs`, `ver.mjs`, `invocar.mjs`, `observar.mjs`, `banco.mjs` com `CDP_HOST`/`CLAUDIA_DB` |
 | `.claude/skills/claudia-app/scripts/print-janela.ps1` (+ teste) | print da janela nativa ou da tela inteira, sem CDP |
 | `CLAUDE.md` | nome novo da skill + seção "Teste em máquina limpa" |
@@ -55,7 +54,7 @@
 
 - **Onda 1:** Tarefa 1.
 - **Onda 2 (paralelo, arquivos distintos):** Tarefas 2, 3, 4, 7, 10.
-- **Onda 3 (paralelo):** Tarefa 5 (o teste usa `cenario-novo.ps1` da Tarefa 2), Tarefa 8 (prints, depois da 7) e Tarefa 9 (CDP/banco no guest).
+- **Onda 3 (paralelo):** Tarefa 5 (o teste usa `cenario-novo.mjs` da Tarefa 2), Tarefa 8 (prints, depois da 7) e Tarefa 9 (CDP/banco no guest).
 - **Onda 4:** Tarefa 6 (skill `claudia-sandbox`; documenta os scripts prontos).
 - **Onda 5:** Tarefa 11 (smoke) e Tarefa 12 (revisão + varredura).
 - **Fim:** integração decidida pelo usuário (Tarefa 13).
@@ -65,198 +64,165 @@
 ### Tarefa 1: base comum e harness de teste
 
 **Arquivos:**
-- Criar: `.claude/skills/claudia-sandbox/scripts/comum.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/assert.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/comum.test.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/run-all.ps1`
+- Criar: `.claude/skills/claudia-sandbox/scripts/comum.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/util.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/comum.test.mjs`
 
 **Interfaces:**
-- Produz (`comum.ps1`, carregado com `. (Join-Path $PSScriptRoot 'comum.ps1')`):
-  - `$AppId = 'io.github.johngabie.claudia-rh'`
-  - `$RepoRoot` — raiz do repositório (4 níveis acima de `scripts/`)
-  - `Get-LabDir() -> string` — valida `SANDBOX_LAB_DIR` e `scripts\app-stage.ps1`; lança exceção com o nome do que falta
-  - `Get-SqliteExe([string]$Sqlite) -> string` — `-Sqlite` explícito, senão `<lab>\shared\tools\sqlite\sqlite3.exe`, senão `sqlite3` no PATH; lança exceção listando os caminhos tentados
-  - `Invoke-Sqlite([string]$Exe, [string]$Db, [string]$Sql) -> string[]` — envia `$Sql` por stdin; lança exceção se exit ≠ 0
-  - `New-CenarioDir([string]$Saida, [string]$Nome) -> string` — recria a pasta; cria `appdata\$AppId` e `localappdata`; devolve caminho absoluto
-  - `Write-Cenario([string]$Dir, [string]$Nome, [string]$Origem) -> string` — grava e devolve o JSON compacto de `cenario.json`
-  - `Set-AutomacaoDesligada([string]$DataDir)` — grava `disparo.json` completo com `ativo:false` (preserva campos existentes) e `modo_autonomo.json` = `{"skip_permissions":false}`
-  - `Write-Utf8([string]$Path, [string]$Text)` — UTF-8 sem BOM
-- Produz (`assert.ps1`): `Assert-True([bool]$Cond, [string]$Nome)`, `Complete-Tests()`, `New-TempDir([string]$Prefixo) -> string` (nome com espaço), `Invoke-Script([string]$Path, [string[]]$ScriptArgs) -> @{ Code; Out; Err }`
+- Produz (`comum.mjs`):
+  - `APP_ID = "io.github.johngabie.claudia-rh"`, `REPO_ROOT` (4 níveis acima de `scripts/`)
+  - `sair(msg, code = 1)` — escreve no stderr e encerra
+  - `falhaDe(err)` — encerra com 2 se o erro é de uso (`code` começando com `ERR_PARSE_ARGS`), senão 1
+  - `labDir() -> string` — valida `SANDBOX_LAB_DIR` e `scripts\app-stage.ps1`; lança erro com o nome do que falta
+  - `novoCenarioDir(saida, nome) -> string` — recria a pasta (padrão `%TEMP%\claudia-sandbox\<nome>`); cria `appdata\<APP_ID>` e `localappdata`
+  - `escreverCenario(dir, nome, origem) -> string` — grava e devolve o JSON de `cenario.json` (`origem: null` quando ausente)
+  - `desligarAutomacao(dataDir)` — `disparo.json` completo com `ativo:false` (preserva campos existentes) e `modo_autonomo.json` = `{"skip_permissions":false}`
+- Produz (`test/util.mjs`): `tempDir(prefixo) -> string` (nome com espaço), `rodar(script, args, env) -> { code, out, ultima, err }`, `SCRIPTS` (pasta `scripts/`)
 
-- [ ] **Passo 1: escrever `assert.ps1`**
+- [ ] **Passo 1: `test/util.mjs`**
 
-```powershell
-# Minimal assertion helpers shared by the scenario tests.
-$script:Falhas = 0
+```js
+// Small helpers shared by the scenario tests.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 
-function Assert-True([bool]$Cond, [string]$Nome) {
-  if ($Cond) { Write-Host "PASS $Nome" } else { Write-Host "FAILED $Nome" -ForegroundColor Red; $script:Falhas++ }
+export const SCRIPTS = path.join(import.meta.dirname, "..");
+
+/** Temp folder with a space in its name, so every test also covers paths with spaces. */
+export function tempDir(prefixo) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `cs test ${prefixo} `));
 }
 
-function Complete-Tests {
-  if ($script:Falhas) { Write-Host "$($script:Falhas) failure(s)"; exit 1 }
-  Write-Host 'OK'; exit 0
-}
-
-function New-TempDir([string]$Prefixo) {
-  $d = Join-Path ([IO.Path]::GetTempPath()) ("cs test $Prefixo " + [guid]::NewGuid().ToString('N').Substring(0, 8))
-  New-Item -ItemType Directory -Force $d | Out-Null
-  return $d
-}
-
-function Invoke-Script([string]$Path, [string[]]$ScriptArgs) {
-  $errFile = [IO.Path]::GetTempFileName()
-  $out = & pwsh -NoProfile -File $Path @ScriptArgs 2>$errFile
-  $code = $LASTEXITCODE
-  $err = Get-Content $errFile -Raw; Remove-Item $errFile
-  return @{ Code = $code; Out = @($out); Err = $err }
+export function rodar(script, args = [], env = {}) {
+  const r = spawnSync(process.execPath, [script, ...args], { encoding: "utf8", env: { ...process.env, ...env } });
+  const out = (r.stdout ?? "").trim().split(/\r?\n/);
+  return { code: r.status, out, ultima: out.at(-1), err: r.stderr ?? "" };
 }
 ```
 
-- [ ] **Passo 2: escrever o teste `comum.test.ps1` (falha: `comum.ps1` não existe)**
+- [ ] **Passo 2: teste `comum.test.mjs` (falha: `comum.mjs` não existe)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-. (Join-Path $PSScriptRoot '..\comum.ps1')
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { APP_ID, novoCenarioDir, escreverCenario, desligarAutomacao, labDir } from "../comum.mjs";
+import { tempDir } from "./util.mjs";
 
-# New-CenarioDir recreates the folder
-$base = New-TempDir 'comum'
-$saida = Join-Path $base 'saida x'
-New-Item -ItemType Directory -Force (Join-Path $saida 'lixo') | Out-Null
-$dir = New-CenarioDir $saida 'teste'
-Assert-True (-not (Test-Path (Join-Path $dir 'lixo'))) 'saida recriada'
-Assert-True (Test-Path (Join-Path $dir "appdata\$AppId")) 'appdata do app criado'
-Assert-True (Test-Path (Join-Path $dir 'localappdata')) 'localappdata criado'
+test("saida recriada", () => {
+  const saida = path.join(tempDir("comum"), "saida x");
+  fs.mkdirSync(path.join(saida, "lixo"), { recursive: true });
+  const dir = novoCenarioDir(saida, "t");
+  assert.equal(fs.existsSync(path.join(dir, "lixo")), false);
+  assert.ok(fs.existsSync(path.join(dir, "appdata", APP_ID)));
+  assert.ok(fs.existsSync(path.join(dir, "localappdata")));
+});
 
-# Write-Cenario contract
-$json = Write-Cenario $dir 'teste' 'origem-x' | ConvertFrom-Json
-$file = Get-Content (Join-Path $dir 'cenario.json') -Raw | ConvertFrom-Json
-Assert-True ($json.cenario -eq 'teste' -and $file.cenario -eq 'teste') 'cenario.json gravado e devolvido'
-Assert-True ($null -ne $file.criadoEm -and $file.origem -eq 'origem-x') 'cenario.json com criadoEm e origem'
+test("cenario.json gravado e devolvido", () => {
+  const dir = novoCenarioDir(path.join(tempDir("comum"), "c"), "t");
+  const devolvido = JSON.parse(escreverCenario(dir, "t", "origem-x"));
+  const gravado = JSON.parse(fs.readFileSync(path.join(dir, "cenario.json"), "utf8"));
+  assert.equal(devolvido.cenario, "t");
+  assert.equal(gravado.origem, "origem-x");
+  assert.ok(gravado.criadoEm);
+  assert.equal(JSON.parse(escreverCenario(dir, "t")).origem, null);
+});
 
-# Set-AutomacaoDesligada from a partial file
-$data = Join-Path $dir "appdata\$AppId"
-Write-Utf8 (Join-Path $data 'disparo.json') '{"ativo":true,"limite_diario":3}'
-Set-AutomacaoDesligada $data
-$d = Get-Content (Join-Path $data 'disparo.json') -Raw | ConvertFrom-Json
-Assert-True ($d.ativo -eq $false -and $d.limiar_minutos -eq 15 -and $d.limite_diario -eq 3 -and $null -ne $d.janelas) 'automacao completa a partir de arquivo parcial'
-$m = Get-Content (Join-Path $data 'modo_autonomo.json') -Raw | ConvertFrom-Json
-Assert-True ($m.skip_permissions -eq $false) 'modo autonomo desligado'
+test("automacao completa a partir de arquivo parcial", () => {
+  const dir = novoCenarioDir(path.join(tempDir("comum"), "a"), "t");
+  const dados = path.join(dir, "appdata", APP_ID);
+  fs.writeFileSync(path.join(dados, "disparo.json"), '{"ativo":true,"limite_diario":3}');
+  desligarAutomacao(dados);
+  const d = JSON.parse(fs.readFileSync(path.join(dados, "disparo.json"), "utf8"));
+  assert.deepEqual(d, { ativo: false, limiar_minutos: 15, limite_diario: 3, limite_tempo_minutos: 0, janelas: [] });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dados, "modo_autonomo.json"), "utf8")), { skip_permissions: false });
+});
 
-# Get-LabDir validation
-$old = $env:SANDBOX_LAB_DIR
-$env:SANDBOX_LAB_DIR = $null
-$msg = try { Get-LabDir; '' } catch { $_.Exception.Message }
-Assert-True ($msg -match 'SANDBOX_LAB_DIR') 'lab ausente nomeia a variavel'
-$env:SANDBOX_LAB_DIR = $base
-$msg = try { Get-LabDir; '' } catch { $_.Exception.Message }
-Assert-True ($msg -match 'app-stage\.ps1') 'lab incompleto nomeia o arquivo'
-$env:SANDBOX_LAB_DIR = $old
-
-Remove-Item $base -Recurse -Force
-Complete-Tests
+test("lab ausente ou incompleto nomeia o que falta", () => {
+  const antigo = process.env.SANDBOX_LAB_DIR;
+  delete process.env.SANDBOX_LAB_DIR;
+  assert.throws(() => labDir(), /SANDBOX_LAB_DIR/);
+  process.env.SANDBOX_LAB_DIR = tempDir("lab");
+  assert.throws(() => labDir(), /app-stage\.ps1/);
+  if (antigo === undefined) delete process.env.SANDBOX_LAB_DIR; else process.env.SANDBOX_LAB_DIR = antigo;
+});
 ```
 
-- [ ] **Passo 3: rodar e ver falhar**
+- [ ] **Passo 3: rodar e ver falhar** — `node --test .claude/skills/claudia-sandbox/scripts/test/` → erro de import (`comum.mjs` inexistente), exit ≠ 0.
 
-Rodar: `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/comum.test.ps1`
-Esperado: erro ao carregar `comum.ps1` (arquivo inexistente), exit ≠ 0.
+- [ ] **Passo 4: `comum.mjs`**
 
-- [ ] **Passo 4: escrever `comum.ps1`**
+```js
+// Shared constants and helpers for the clean-machine scenario scripts.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-```powershell
-# Shared constants and helpers for the clean-machine scenario scripts.
-$AppId = 'io.github.johngabie.claudia-rh'
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+export const APP_ID = "io.github.johngabie.claudia-rh";
+export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 
-function Write-Utf8([string]$Path, [string]$Text) {
-  [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
+export function sair(msg, code = 1) {
+  console.error(msg);
+  process.exit(code);
 }
 
-function Get-LabDir {
-  $d = $env:SANDBOX_LAB_DIR
-  if (-not $d) { throw 'SANDBOX_LAB_DIR is not set: point it to the Windows Sandbox lab folder.' }
-  $stage = Join-Path $d 'scripts\app-stage.ps1'
-  if (-not (Test-Path $stage)) { throw "Incomplete lab: $stage not found." }
-  return (Resolve-Path $d).Path
+/** Usage errors (bad or missing options) exit 2; everything else exits 1. */
+export function falhaDe(err) {
+  sair(err.message, String(err.code ?? "").startsWith("ERR_PARSE_ARGS") ? 2 : 1);
 }
 
-function Get-SqliteExe([string]$Sqlite) {
-  $tried = @()
-  if ($Sqlite) { if (Test-Path $Sqlite) { return $Sqlite }; $tried += $Sqlite }
-  if ($env:SANDBOX_LAB_DIR) {
-    $p = Join-Path $env:SANDBOX_LAB_DIR 'shared\tools\sqlite\sqlite3.exe'
-    if (Test-Path $p) { return $p }; $tried += $p
+export function labDir() {
+  const d = process.env.SANDBOX_LAB_DIR;
+  if (!d) throw new Error("SANDBOX_LAB_DIR is not set: point it to the Windows Sandbox lab folder.");
+  const stage = path.join(d, "scripts", "app-stage.ps1");
+  if (!fs.existsSync(stage)) throw new Error(`Incomplete lab: ${stage} not found.`);
+  return path.resolve(d);
+}
+
+export function novoCenarioDir(saida, nome) {
+  const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-sandbox", nome));
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
+  fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });
+  return dir;
+}
+
+function arquivosDe(raiz) {
+  return fs.readdirSync(raiz, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => path.join(e.parentPath ?? e.path, e.name));
+}
+
+export function escreverCenario(dir, nome, origem = null) {
+  const arquivos = arquivosDe(path.join(dir, "appdata")).map((f) => path.relative(dir, f));
+  const json = JSON.stringify({ cenario: nome, criadoEm: new Date().toISOString(), origem: origem ?? null, arquivos });
+  fs.writeFileSync(path.join(dir, "cenario.json"), json);
+  return json;
+}
+
+const DISPARO_PADRAO = { ativo: false, limiar_minutos: 15, limite_diario: 10, limite_tempo_minutos: 0, janelas: [] };
+
+/** The app falls back to ativo=true when disparo.json misses required fields, so always write the full shape. */
+export function desligarAutomacao(dataDir) {
+  const p = path.join(dataDir, "disparo.json");
+  let antigo = {};
+  try { antigo = JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* missing or invalid: defaults */ }
+  const cfg = { ...DISPARO_PADRAO };
+  for (const k of ["limiar_minutos", "limite_diario", "limite_tempo_minutos", "janelas"]) {
+    if (antigo[k] != null) cfg[k] = antigo[k];
   }
-  $c = Get-Command sqlite3 -ErrorAction SilentlyContinue
-  if ($c) { return $c.Source }; $tried += 'sqlite3 (PATH)'
-  throw "sqlite3 not found. Tried: $($tried -join '; ')"
-}
-
-function Invoke-Sqlite([string]$Exe, [string]$Db, [string]$Sql) {
-  $out = $Sql | & $Exe $Db 2>&1
-  if ($LASTEXITCODE -ne 0) { throw "sqlite3 failed ($LASTEXITCODE) on ${Db}: $out" }
-  return $out
-}
-
-function New-CenarioDir([string]$Saida, [string]$Nome) {
-  if (-not $Saida) { $Saida = Join-Path $env:TEMP "claudia-sandbox\$Nome" }
-  if (Test-Path $Saida) { Remove-Item $Saida -Recurse -Force }
-  New-Item -ItemType Directory -Force (Join-Path $Saida "appdata\$AppId"), (Join-Path $Saida 'localappdata') | Out-Null
-  return (Resolve-Path $Saida).Path
-}
-
-function Write-Cenario([string]$Dir, [string]$Nome, [string]$Origem) {
-  $root = Join-Path $Dir 'appdata'
-  $files = @(Get-ChildItem $root -Recurse -File | ForEach-Object { $_.FullName.Substring($Dir.Length + 1) })
-  # [string] turns $null into '': map it back so scenarios without a source write "origem": null.
-  $o = [ordered]@{ cenario = $Nome; criadoEm = (Get-Date).ToString('o'); origem = $(if ($Origem) { $Origem } else { $null }); arquivos = $files }
-  $json = $o | ConvertTo-Json -Depth 4 -Compress
-  Write-Utf8 (Join-Path $Dir 'cenario.json') $json
-  return $json
-}
-
-function Set-AutomacaoDesligada([string]$DataDir) {
-  # The app falls back to ativo=true when disparo.json misses required fields, so always write the full shape.
-  $cfg = [ordered]@{ ativo = $false; limiar_minutos = 15; limite_diario = 10; limite_tempo_minutos = 0; janelas = @() }
-  $p = Join-Path $DataDir 'disparo.json'
-  if (Test-Path $p) {
-    try {
-      $old = Get-Content $p -Raw | ConvertFrom-Json
-      foreach ($k in 'limiar_minutos', 'limite_diario', 'limite_tempo_minutos') { if ($null -ne $old.$k) { $cfg[$k] = $old.$k } }
-      if ($null -ne $old.janelas) { $cfg.janelas = @($old.janelas) }
-    } catch { }
-  }
-  $cfg.ativo = $false
-  Write-Utf8 $p ($cfg | ConvertTo-Json -Depth 6 -Compress)
-  Write-Utf8 (Join-Path $DataDir 'modo_autonomo.json') '{"skip_permissions":false}'
+  cfg.ativo = false;
+  fs.writeFileSync(p, JSON.stringify(cfg));
+  fs.writeFileSync(path.join(dataDir, "modo_autonomo.json"), JSON.stringify({ skip_permissions: false }));
 }
 ```
 
-- [ ] **Passo 5: escrever `run-all.ps1`**
-
-```powershell
-# Runs every *.test.ps1 in this folder; exits non-zero if any fails.
-$fail = 0
-foreach ($t in Get-ChildItem $PSScriptRoot -Filter *.test.ps1 | Sort-Object Name) {
-  Write-Host "== $($t.Name)"
-  & pwsh -NoProfile -File $t.FullName
-  if ($LASTEXITCODE -ne 0) { $fail++ }
-}
-if ($fail) { Write-Host "$fail test file(s) failed"; exit 1 }
-Write-Host 'ALL OK'; exit 0
-```
-
-- [ ] **Passo 6: rodar e ver passar**
-
-Rodar: `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/run-all.ps1; echo "exit=$LASTEXITCODE"`
-Esperado: todas as linhas `PASS`, `ALL OK`, `exit=0`.
-
-- [ ] **Passo 7: prova de mutação**
-
-Em `Set-AutomacaoDesligada`, trocar `$cfg.ativo = $false` por `$cfg.ativo = $true`; rodar `comum.test.ps1`; confirmar a linha `FAILED automacao completa a partir de arquivo parcial`; restaurar e rodar de novo (verde).
-
-- [ ] **Passo 8: commit**
+- [ ] **Passo 5: rodar e ver passar** — `node --test .claude/skills/claudia-sandbox/scripts/test/; echo "exit=$LASTEXITCODE"` → todos `ok`, `exit=0`.
+- [ ] **Passo 6: prova de mutação** — trocar `cfg.ativo = false;` por `cfg.ativo = true;`; confirmar `not ok … automacao completa a partir de arquivo parcial`; restaurar e rodar de novo (verde).
+- [ ] **Passo 7: commit**
 
 ```bash
 git add .claude/skills/claudia-sandbox/scripts
@@ -268,51 +234,54 @@ git commit -m "feat(skill): shared helpers and test harness for clean-machine sc
 ### Tarefa 2: cenário `novo`
 
 **Arquivos:**
-- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-novo.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/novo.test.ps1`
+- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-novo.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/novo.test.mjs`
 
 **Interfaces:**
-- Consome: `comum.ps1` (Tarefa 1), `assert.ps1`.
-- Produz: `cenario-novo.ps1 [-Saida <pasta>]` → exit 0; última linha do stdout = JSON de `cenario.json` com `cenario: "novo"`, `origem: null`, `arquivos: []`.
+- Consome: `comum.mjs`, `test/util.mjs` (Tarefa 1).
+- Produz: `node cenario-novo.mjs [--saida <pasta>]` → exit 0; última linha do stdout = JSON de `cenario.json` com `cenario: "novo"`, `origem: null`, `arquivos: []`.
 
 - [ ] **Passo 1: teste (falha: script inexistente)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-$script = Join-Path $PSScriptRoot '..\cenario-novo.ps1'
-$base = New-TempDir 'novo'
-$saida = Join-Path $base 'out dir'
-$r = Invoke-Script $script @('-Saida', $saida)
-Assert-True ($r.Code -eq 0) 'novo exit 0'
-$j = $r.Out[-1] | ConvertFrom-Json
-Assert-True ($j.cenario -eq 'novo' -and @($j.arquivos).Count -eq 0) 'novo sem arquivos'
-Assert-True ($null -eq $j.origem) 'novo com origem null'
-Assert-True (Test-Path (Join-Path $saida 'appdata\io.github.johngabie.claudia-rh')) 'novo cria pasta de dados vazia'
-Remove-Item $base -Recurse -Force
-Complete-Tests
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { tempDir, rodar, SCRIPTS } from "./util.mjs";
+
+test("cenario novo", () => {
+  const saida = path.join(tempDir("novo"), "out dir");
+  const r = rodar(path.join(SCRIPTS, "cenario-novo.mjs"), ["--saida", saida]);
+  assert.equal(r.code, 0, r.err);
+  const j = JSON.parse(r.ultima);
+  assert.equal(j.cenario, "novo");
+  assert.equal(j.origem, null);
+  assert.deepEqual(j.arquivos, []);
+  assert.ok(fs.existsSync(path.join(saida, "appdata", "io.github.johngabie.claudia-rh")));
+});
+
+test("opcao desconhecida sai com 2", () => {
+  assert.equal(rodar(path.join(SCRIPTS, "cenario-novo.mjs"), ["--xyz"]).code, 2);
+});
 ```
 
-- [ ] **Passo 2: rodar e ver falhar** — `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/novo.test.ps1` → `FAILED novo exit 0`.
-
+- [ ] **Passo 2: rodar e ver falhar.**
 - [ ] **Passo 3: implementar**
 
-```powershell
-<#
-.SYNOPSIS
-  Clean-machine scenario "novo": empty app data folder, so the app starts from scratch.
-.PARAMETER Saida  Output folder (default: %TEMP%\claudia-sandbox\novo). Recreated on every run.
-#>
-param([string]$Saida = '')
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
+```js
+// Clean-machine scenario "novo": empty app data folder, so the app starts from scratch.
+// Usage: node cenario-novo.mjs [--saida <folder>]   (default %TEMP%\claudia-sandbox\novo, recreated on every run)
+import { parseArgs } from "node:util";
+import { novoCenarioDir, escreverCenario, falhaDe } from "./comum.mjs";
+
 try {
-  $dir = New-CenarioDir $Saida 'novo'
-  Write-Output (Write-Cenario $dir 'novo' $null)
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  const { values } = parseArgs({ options: { saida: { type: "string" } } });
+  console.log(escreverCenario(novoCenarioDir(values.saida, "novo"), "novo"));
+} catch (e) { falhaDe(e); }
 ```
 
-- [ ] **Passo 4: rodar e ver passar** — mesmo comando, exit 0.
+- [ ] **Passo 4: rodar e ver passar.**
 - [ ] **Passo 5: commit** — `git commit -m "feat(skill): empty-data clean-machine scenario"`
 
 ---
@@ -321,12 +290,12 @@ try {
 
 **Arquivos:**
 - Criar: `.claude/skills/claudia-sandbox/fixtures/candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `seed.sql`
-- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-mock.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/mock.test.ps1`
+- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-mock.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/mock.test.mjs`
 
 **Interfaces:**
-- Consome: `comum.ps1`; `src-tauri/src/db/schema.sql`; sqlite3 via `Get-SqliteExe`.
-- Produz: `cenario-mock.ps1 [-Saida <pasta>] [-Sqlite <exe>]` → pasta com `candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `claudia_rh.db`, `welcome_seen`, `disparo.json` (ativo false), `modo_autonomo.json`.
+- Consome: `comum.mjs`; `src-tauri/src/db/schema.sql`; `node:sqlite`.
+- Produz: `node cenario-mock.mjs [--saida <pasta>]` → pasta com `candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `claudia_rh.db`, `welcome_seen`, `disparo.json` (ativo false), `modo_autonomo.json`.
 
 - [ ] **Passo 1: fixtures**
 
@@ -355,67 +324,68 @@ INSERT INTO sessoes (iniciada_em, terminada_em, motivo_disparo, motivo_termino, 
 
 - [ ] **Passo 2: teste (falha: script inexistente)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-. (Join-Path $PSScriptRoot '..\comum.ps1')
-$script = Join-Path $PSScriptRoot '..\cenario-mock.ps1'
-$base = New-TempDir 'mock'
-$saida = Join-Path $base 'out dir'
-$r = Invoke-Script $script @('-Saida', $saida)
-Assert-True ($r.Code -eq 0) "mock exit 0 $($r.Err)"
-$data = Join-Path $saida "appdata\$AppId"
-foreach ($f in 'candidate_base.yaml', 'search_variants.yaml', 'strategy.md', 'claudia_rh.db', 'welcome_seen', 'disparo.json', 'modo_autonomo.json') {
-  Assert-True (Test-Path (Join-Path $data $f)) "mock tem $f"
-}
-$exe = Get-SqliteExe ''
-$n = Invoke-Sqlite $exe (Join-Path $data 'claudia_rh.db') 'SELECT count(*) FROM vagas;'
-Assert-True ("$n".Trim() -eq '3') 'mock banco com as vagas do seed'
-$d = Get-Content (Join-Path $data 'disparo.json') -Raw | ConvertFrom-Json
-Assert-True ($d.ativo -eq $false -and $null -ne $d.limiar_minutos) 'mock disparo desligado e completo'
-$y = Get-Content (Join-Path $data 'candidate_base.yaml') -Raw
-foreach ($k in 'dados_pessoais:', 'experiencia:', 'projetos:', 'formacao:', 'competencias:', 'idiomas:', 'fontes_usadas:', 'gaps_conhecidos:', 'respostas_modelo:', 'ultima_atualizacao:') {
-  Assert-True ($y -match "(?m)^$k") "mock yaml tem $k"
-}
-$j = $r.Out[-1] | ConvertFrom-Json
-Assert-True ($j.cenario -eq 'mock') 'mock cenario.json'
-Remove-Item $base -Recurse -Force
-Complete-Tests
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { tempDir, rodar, SCRIPTS } from "./util.mjs";
+
+test("cenario mock", () => {
+  const saida = path.join(tempDir("mock"), "out dir");
+  const r = rodar(path.join(SCRIPTS, "cenario-mock.mjs"), ["--saida", saida]);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(JSON.parse(r.ultima).cenario, "mock");
+  const dados = path.join(saida, "appdata", "io.github.johngabie.claudia-rh");
+  for (const f of ["candidate_base.yaml", "search_variants.yaml", "strategy.md", "claudia_rh.db", "welcome_seen", "disparo.json", "modo_autonomo.json"]) {
+    assert.ok(fs.existsSync(path.join(dados, f)), `mock tem ${f}`);
+  }
+  const db = new DatabaseSync(path.join(dados, "claudia_rh.db"), { readOnly: true });
+  assert.equal(db.prepare("SELECT count(*) AS n FROM vagas").get().n, 3);
+  db.close();
+  const d = JSON.parse(fs.readFileSync(path.join(dados, "disparo.json"), "utf8"));
+  assert.equal(d.ativo, false, "mock disparo desligado");
+  assert.equal(typeof d.limiar_minutos, "number", "mock disparo completo");
+  const y = fs.readFileSync(path.join(dados, "candidate_base.yaml"), "utf8");
+  for (const k of ["dados_pessoais", "experiencia", "projetos", "formacao", "competencias", "idiomas", "fontes_usadas", "gaps_conhecidos", "respostas_modelo", "ultima_atualizacao"]) {
+    assert.match(y, new RegExp(`^${k}:`, "m"), `mock yaml tem ${k}`);
+  }
+});
 ```
 
-Pré-requisito do teste: `SANDBOX_LAB_DIR` definido (sqlite3 do laboratório) ou `sqlite3` no PATH.
-
-- [ ] **Passo 3: rodar e ver falhar** — `FAILED mock exit 0`.
-
+- [ ] **Passo 3: rodar e ver falhar.**
 - [ ] **Passo 4: implementar**
 
-```powershell
-<#
-.SYNOPSIS
-  Clean-machine scenario "mock": fictional profile and database built from the repo schema.
-.PARAMETER Saida   Output folder (default: %TEMP%\claudia-sandbox\mock). Recreated on every run.
-.PARAMETER Sqlite  sqlite3.exe to use (default: the lab's, then PATH).
-#>
-param([string]$Saida = '', [string]$Sqlite = '')
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
+```js
+// Clean-machine scenario "mock": fictional profile and a database built from the repo schema plus a seed.
+// Usage: node cenario-mock.mjs [--saida <folder>]   (default %TEMP%\claudia-sandbox\mock, recreated on every run)
+import fs from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { DatabaseSync } from "node:sqlite";
+import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, falhaDe } from "./comum.mjs";
+
 try {
-  $exe = Get-SqliteExe $Sqlite
-  $dir = New-CenarioDir $Saida 'mock'
-  $data = Join-Path $dir "appdata\$AppId"
-  $fx = Join-Path $PSScriptRoot '..\fixtures'
-  foreach ($f in 'candidate_base.yaml', 'search_variants.yaml', 'strategy.md') { Copy-Item (Join-Path $fx $f) $data }
-  $schema = Get-Content (Join-Path $RepoRoot 'src-tauri\src\db\schema.sql') -Raw
-  $seed = Get-Content (Join-Path $fx 'seed.sql') -Raw
-  Invoke-Sqlite $exe (Join-Path $data 'claudia_rh.db') ($schema + "`n" + $seed) | Out-Null
-  Write-Utf8 (Join-Path $data 'welcome_seen') '1'
-  Set-AutomacaoDesligada $data
-  Write-Output (Write-Cenario $dir 'mock' 'fixtures')
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  const { values } = parseArgs({ options: { saida: { type: "string" } } });
+  const dir = novoCenarioDir(values.saida, "mock");
+  const dados = path.join(dir, "appdata", APP_ID);
+  const fx = path.join(import.meta.dirname, "..", "fixtures");
+  for (const f of ["candidate_base.yaml", "search_variants.yaml", "strategy.md"]) {
+    fs.copyFileSync(path.join(fx, f), path.join(dados, f));
+  }
+  const db = new DatabaseSync(path.join(dados, "claudia_rh.db"));
+  db.exec(fs.readFileSync(path.join(REPO_ROOT, "src-tauri", "src", "db", "schema.sql"), "utf8"));
+  db.exec(fs.readFileSync(path.join(fx, "seed.sql"), "utf8"));
+  db.close();
+  fs.writeFileSync(path.join(dados, "welcome_seen"), "1");
+  desligarAutomacao(dados);
+  console.log(escreverCenario(dir, "mock", "fixtures"));
+} catch (e) { falhaDe(e); }
 ```
 
 - [ ] **Passo 5: rodar e ver passar.**
-- [ ] **Passo 6: prova de mutação** — remover a linha `Set-AutomacaoDesligada $data`; confirmar `FAILED mock disparo desligado e completo`; restaurar.
+- [ ] **Passo 6: prova de mutação** — remover a linha `desligarAutomacao(dados);`; confirmar `not ok` com a mensagem `mock disparo desligado` (o arquivo não existe → falha na leitura); restaurar.
 - [ ] **Passo 7: commit** — `git commit -m "feat(skill): mock-data clean-machine scenario with fictional fixtures"`
 
 ---
@@ -423,193 +393,218 @@ try {
 ### Tarefa 4: cenário `copia`
 
 **Arquivos:**
-- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-copia.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/copia.test.ps1`
+- Criar: `.claude/skills/claudia-sandbox/scripts/cenario-copia.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/copia.test.mjs`
 
 **Interfaces:**
-- Consome: `comum.ps1`.
-- Produz: `cenario-copia.ps1 -Autorizado [-Origem <pasta>] [-Saida <pasta>] [-ManterAutomacao] [-Sqlite <exe>]`. Sem `-Autorizado`: exit 2, mensagem pedindo autorização, nada lido. `-Origem` padrão: `%APPDATA%\io.github.johngabie.claudia-rh`. `%LOCALAPPDATA%` nunca é copiado.
+- Consome: `comum.mjs`, `node:sqlite`.
+- Produz: `node cenario-copia.mjs --autorizado [--origem <pasta>] [--saida <pasta>] [--manter-automacao]`. Sem `--autorizado`: exit 2, mensagem pedindo autorização, nada lido. `--origem` padrão: `%APPDATA%\io.github.johngabie.claudia-rh`. `%LOCALAPPDATA%` nunca é copiado.
 
 - [ ] **Passo 1: teste (falha: script inexistente)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-. (Join-Path $PSScriptRoot '..\comum.ps1')
-$script = Join-Path $PSScriptRoot '..\cenario-copia.ps1'
-$exe = Get-SqliteExe ''
-$base = New-TempDir 'copia'
-$origem = Join-Path $base 'origem dados'
-New-Item -ItemType Directory -Force (Join-Path $origem 'sub') | Out-Null
-Write-Utf8 (Join-Path $origem 'candidate_base.yaml') 'dados_pessoais: {}'
-Write-Utf8 (Join-Path $origem 'sub\nota.txt') 'x'
-Write-Utf8 (Join-Path $origem 'disparo.json') '{"ativo":true,"limiar_minutos":5,"limite_diario":7,"limite_tempo_minutos":0,"janelas":[]}'
-# Database whose last row lives only in the -wal file: sqlite3 folds the WAL on close,
-# so copy db + wal while a connection is still open.
-$vivo = Join-Path $base 'vivo'; New-Item -ItemType Directory $vivo | Out-Null
-$psi = New-Object Diagnostics.ProcessStartInfo $exe, ('"' + (Join-Path $vivo 'claudia_rh.db') + '"')
-$psi.RedirectStandardInput = $true; $psi.UseShellExecute = $false
-$p = [Diagnostics.Process]::Start($psi)
-$p.StandardInput.WriteLine('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE t(x); INSERT INTO t VALUES (42);')
-$p.StandardInput.Flush(); Start-Sleep -Seconds 1
-Copy-Item (Join-Path $vivo 'claudia_rh.db'), (Join-Path $vivo 'claudia_rh.db-wal') $origem
-$p.StandardInput.WriteLine('.quit'); $p.WaitForExit()
-Assert-True (Test-Path (Join-Path $origem 'claudia_rh.db-wal')) 'fixture tem wal com dados'
-function Get-TreeHash($p) { (Get-ChildItem $p -Recurse -File | Sort-Object FullName | ForEach-Object { (Get-FileHash $_.FullName).Hash }) -join ',' }
-$antes = Get-TreeHash $origem
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { tempDir, rodar, SCRIPTS } from "./util.mjs";
 
-$r = Invoke-Script $script @('-Origem', $origem, '-Saida', (Join-Path $base 'sem'))
-Assert-True ($r.Code -eq 2) 'copia sem autorizacao sai com 2'
-Assert-True (-not (Test-Path (Join-Path $base 'sem\appdata'))) 'copia sem autorizacao nao copia nada'
+const SCRIPT = path.join(SCRIPTS, "cenario-copia.mjs");
+const APP = "io.github.johngabie.claudia-rh";
 
-$saida = Join-Path $base 'out dir'
-$r = Invoke-Script $script @('-Autorizado', '-Origem', $origem, '-Saida', $saida)
-Assert-True ($r.Code -eq 0) "copia exit 0 $($r.Err)"
-$data = Join-Path $saida "appdata\$AppId"
-Assert-True (Test-Path (Join-Path $data 'sub\nota.txt')) 'copia recursiva'
-$v = Invoke-Sqlite $exe (Join-Path $data 'claudia_rh.db') 'SELECT x FROM t;'
-Assert-True ("$v".Trim() -eq '42') 'copia consolida wal'
-Assert-True (-not (Test-Path (Join-Path $data 'claudia_rh.db-wal'))) 'copia sem arquivo wal'
-$d = Get-Content (Join-Path $data 'disparo.json') -Raw | ConvertFrom-Json
-Assert-True ($d.ativo -eq $false -and $d.limiar_minutos -eq 5) 'copia desliga automacao e preserva campos'
-Assert-True ((Get-TreeHash $origem) -eq $antes) 'origem intacta'
-Assert-True (@(Get-ChildItem (Join-Path $saida 'localappdata') -Force).Count -eq 0) 'localappdata nao copiado'
+function hashArvore(raiz) {
+  return fs.readdirSync(raiz, { recursive: true, withFileTypes: true }).filter((e) => e.isFile())
+    .map((e) => path.join(e.parentPath ?? e.path, e.name)).sort()
+    .map((f) => `${path.relative(raiz, f)}:${crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex")}`).join(",");
+}
 
-$r = Invoke-Script $script @('-Autorizado', '-ManterAutomacao', '-Origem', $origem, '-Saida', $saida)
-$d = Get-Content (Join-Path $data 'disparo.json') -Raw | ConvertFrom-Json
-Assert-True ($d.ativo -eq $true) 'ManterAutomacao preserva disparo'
+test("cenario copia", () => {
+  const base = tempDir("copia");
+  const origem = path.join(base, "origem dados");
+  fs.mkdirSync(path.join(origem, "sub"), { recursive: true });
+  fs.writeFileSync(path.join(origem, "candidate_base.yaml"), "dados_pessoais: {}\n");
+  fs.writeFileSync(path.join(origem, "sub", "nota.txt"), "x");
+  fs.writeFileSync(path.join(origem, "disparo.json"), '{"ativo":true,"limiar_minutos":5,"limite_diario":7,"limite_tempo_minutos":0,"janelas":[]}');
+  // The last row lives only in the -wal file while this connection stays open (as with the app running).
+  const vivo = new DatabaseSync(path.join(origem, "claudia_rh.db"));
+  vivo.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE t(x); INSERT INTO t VALUES (42);");
+  assert.ok(fs.existsSync(path.join(origem, "claudia_rh.db-wal")), "fixture tem wal");
+  const antes = hashArvore(origem);
 
-$r = Invoke-Script $script @('-Autorizado', '-Origem', (Join-Path $base 'nao existe'), '-Saida', $saida)
-Assert-True ($r.Code -eq 1 -and $r.Err -match 'nao existe') 'origem ausente sai com 1 e nomeia o caminho'
+  const sem = rodar(SCRIPT, ["--origem", origem, "--saida", path.join(base, "sem")]);
+  assert.equal(sem.code, 2, "copia sem autorizacao sai com 2");
+  assert.equal(fs.existsSync(path.join(base, "sem", "appdata")), false, "copia sem autorizacao nao copia nada");
 
-Remove-Item $base -Recurse -Force
-Complete-Tests
+  const saida = path.join(base, "out dir");
+  const r = rodar(SCRIPT, ["--autorizado", "--origem", origem, "--saida", saida]);
+  assert.equal(r.code, 0, r.err);
+  const dados = path.join(saida, "appdata", APP);
+  assert.ok(fs.existsSync(path.join(dados, "sub", "nota.txt")), "copia recursiva");
+  const db = new DatabaseSync(path.join(dados, "claudia_rh.db"), { readOnly: true });
+  assert.equal(db.prepare("SELECT x FROM t").get().x, 42, "copia consolida wal");
+  db.close();
+  assert.equal(fs.existsSync(path.join(dados, "claudia_rh.db-wal")), false, "copia sem arquivo wal");
+  const d = JSON.parse(fs.readFileSync(path.join(dados, "disparo.json"), "utf8"));
+  assert.equal(d.ativo, false, "copia desliga automacao");
+  assert.equal(d.limiar_minutos, 5, "copia preserva campos");
+  assert.equal(hashArvore(origem), antes, "origem intacta");
+  assert.deepEqual(fs.readdirSync(path.join(saida, "localappdata")), [], "localappdata nao copiado");
+
+  rodar(SCRIPT, ["--autorizado", "--manter-automacao", "--origem", origem, "--saida", saida]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dados, "disparo.json"), "utf8")).ativo, true, "manter-automacao preserva disparo");
+
+  const ausente = rodar(SCRIPT, ["--autorizado", "--origem", path.join(base, "nao existe"), "--saida", saida]);
+  assert.equal(ausente.code, 1);
+  assert.match(ausente.err, /nao existe/, "origem ausente nomeia o caminho");
+  vivo.close();
+});
 ```
 
 - [ ] **Passo 2: rodar e ver falhar.**
-
 - [ ] **Passo 3: implementar**
 
-```powershell
-<#
-.SYNOPSIS
-  Clean-machine scenario "copia": copy of the user's real app data. Reads the source only.
-  Requires -Autorizado: ask the user for permission for this round before running it.
-.PARAMETER Origem           Source data folder (default: %APPDATA%\io.github.johngabie.claudia-rh).
-.PARAMETER Saida            Output folder (default: %TEMP%\claudia-sandbox\copia). Recreated on every run.
-.PARAMETER ManterAutomacao  Keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy).
-.PARAMETER Sqlite           sqlite3.exe to use (default: the lab's, then PATH).
-#>
-param([switch]$Autorizado, [string]$Origem = '', [string]$Saida = '', [switch]$ManterAutomacao, [string]$Sqlite = '')
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
-if (-not $Autorizado) {
-  [Console]::Error.WriteLine("Scenario 'copia' reads the user's real data: ask the user for permission for this round, then run again with -Autorizado.")
-  exit 2
+```js
+// Clean-machine scenario "copia": copy of the user's real app data. Reads the source only.
+// Requires --autorizado: ask the user for permission for this round before running it.
+// Usage: node cenario-copia.mjs --autorizado [--origem <folder>] [--saida <folder>] [--manter-automacao]
+//   --origem            default %APPDATA%\io.github.johngabie.claudia-rh
+//   --saida             default %TEMP%\claudia-sandbox\copia, recreated on every run
+//   --manter-automacao  keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy)
+import fs from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { DatabaseSync } from "node:sqlite";
+import { APP_ID, novoCenarioDir, escreverCenario, desligarAutomacao, falhaDe, sair } from "./comum.mjs";
+
+let values;
+try {
+  ({ values } = parseArgs({ options: {
+    autorizado: { type: "boolean" }, origem: { type: "string" }, saida: { type: "string" }, "manter-automacao": { type: "boolean" },
+  } }));
+} catch (e) { falhaDe(e); }
+if (!values.autorizado) {
+  sair("Scenario 'copia' reads the user's real data: ask the user for permission for this round, then run again with --autorizado.", 2);
 }
 try {
-  if (-not $Origem) { $Origem = Join-Path $env:APPDATA $AppId }
-  if (-not (Test-Path $Origem -PathType Container)) { throw "Source data not found: $Origem" }
-  $exe = Get-SqliteExe $Sqlite
-  $dir = New-CenarioDir $Saida 'copia'
-  $data = Join-Path $dir "appdata\$AppId"
-  robocopy $Origem $data /E /R:1 /W:1 /NFL /NDL /NP /NJH /NJS | Out-Null
-  if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE): $Origem" }
-  # Fold each copied WAL into its database so the copy is a single consistent file.
-  foreach ($db in Get-ChildItem $data -Recurse -Filter *.db -File) {
-    if (Test-Path "$($db.FullName)-wal") { Invoke-Sqlite $exe $db.FullName 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;' | Out-Null }
-    Remove-Item "$($db.FullName)-wal", "$($db.FullName)-shm" -ErrorAction SilentlyContinue
+  const origem = path.resolve(values.origem || path.join(process.env.APPDATA, APP_ID));
+  if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) throw new Error(`Source data not found: ${origem}`);
+  const dir = novoCenarioDir(values.saida, "copia");
+  const dados = path.join(dir, "appdata", APP_ID);
+  fs.cpSync(origem, dados, { recursive: true });
+  // Fold each copied WAL into its database so the copy is a single consistent file.
+  for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {
+    if (!e.isFile() || !e.name.endsWith(".db")) continue;
+    const f = path.join(e.parentPath ?? e.path, e.name);
+    if (fs.existsSync(`${f}-wal`)) {
+      const db = new DatabaseSync(f);
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;");
+      db.close();
+    }
+    fs.rmSync(`${f}-wal`, { force: true });
+    fs.rmSync(`${f}-shm`, { force: true });
   }
-  if (-not $ManterAutomacao) { Set-AutomacaoDesligada $data }
-  Write-Output (Write-Cenario $dir 'copia' $Origem)
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  if (!values["manter-automacao"]) desligarAutomacao(dados);
+  console.log(escreverCenario(dir, "copia", origem));
+} catch (e) { falhaDe(e); }
 ```
 
 - [ ] **Passo 4: rodar e ver passar.**
-- [ ] **Passo 5: prova de mutação** — remover o bloco do `wal_checkpoint`; confirmar `FAILED copia consolida wal` ou `FAILED copia sem arquivo wal`; restaurar.
+- [ ] **Passo 5: prova de mutação** — remover o bloco `if (fs.existsSync(\`${f}-wal\`)) { … }`; confirmar `not ok` com `copia consolida wal`; restaurar.
 - [ ] **Passo 6: commit** — `git commit -m "feat(skill): authorized copy-of-user-data clean-machine scenario"`
 
 ---
 
-### Tarefa 5: `publicar.ps1`
+### Tarefa 5: `publicar.mjs`
 
 **Arquivos:**
-- Criar: `.claude/skills/claudia-sandbox/scripts/publicar.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/publicar.test.ps1`
+- Criar: `.claude/skills/claudia-sandbox/scripts/publicar.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/publicar.test.mjs`
 
 **Interfaces:**
-- Consome: `comum.ps1` (`Get-LabDir`, `$AppId`); interface do laboratório `scripts\app-stage.ps1 -App -AppData -WorkDir -Clean`.
-- Produz: `publicar.ps1 -App <exe|instalador|pasta> -Cenario <pasta> [-WorkDir <pasta>]` → exit 0 e JSON `{workDir, deploy, cenario}` na última linha.
+- Consome: `comum.mjs` (`labDir`, `APP_ID`); `cenario-novo.mjs` (Tarefa 2, no teste); interface do laboratório `scripts\app-stage.ps1 -App -AppData -WorkDir -Clean` (PowerShell, chamado por `pwsh`).
+- Produz: `node publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <pasta>]` → exit 0 e JSON `{workDir, deploy, cenario}` na última linha.
 
 - [ ] **Passo 1: teste com laboratório falso (falha: script inexistente)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-$script = Join-Path $PSScriptRoot '..\publicar.ps1'
-$novo = Join-Path $PSScriptRoot '..\cenario-novo.ps1'
-$base = New-TempDir 'publicar'
-$lab = Join-Path $base 'lab x'
-New-Item -ItemType Directory -Force (Join-Path $lab 'scripts') | Out-Null
-# Fake app-stage that records its parameters
-@'
-param([string]$App, [string[]]$AppData, [string[]]$LocalAppData, [string]$WorkDir, [switch]$Clean)
-[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'called.json'), (@{ App = $App; AppData = $AppData; WorkDir = $WorkDir; Clean = [bool]$Clean } | ConvertTo-Json))
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { tempDir, rodar, SCRIPTS } from "./util.mjs";
+
+const FAKE_STAGE = `param([string]$App, [string[]]$AppData, [string[]]$LocalAppData, [string]$WorkDir, [switch]$Clean)
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'called.json'), (@{ App = $App; AppData = @($AppData); WorkDir = $WorkDir; Clean = [bool]$Clean } | ConvertTo-Json))
 exit 0
-'@ | Set-Content (Join-Path $lab 'scripts\app-stage.ps1')
-$app = Join-Path $base 'app x.exe'; Set-Content $app 'x'
-$cen = Join-Path $base 'cen x'
-Invoke-Script $novo @('-Saida', $cen) | Out-Null
-$work = Join-Path $base 'work x'
+`;
 
-$env:SANDBOX_LAB_DIR = $lab
-$r = Invoke-Script $script @('-App', $app, '-Cenario', $cen, '-WorkDir', $work)
-Assert-True ($r.Code -eq 0) "publicar exit 0 $($r.Err)"
-$c = Get-Content (Join-Path $lab 'scripts\called.json') -Raw | ConvertFrom-Json
-Assert-True ($c.App -eq $app -and $c.WorkDir -eq $work -and $c.Clean) 'publicar repassa App, WorkDir e Clean'
-Assert-True (@($c.AppData)[0] -like '*appdata\io.github.johngabie.claudia-rh') 'publicar repassa a pasta de dados do app'
+test("publicar", () => {
+  const base = tempDir("publicar");
+  const lab = path.join(base, "lab x");
+  fs.mkdirSync(path.join(lab, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(lab, "scripts", "app-stage.ps1"), FAKE_STAGE);
+  const app = path.join(base, "app x.exe"); fs.writeFileSync(app, "x");
+  const cen = path.join(base, "cen x");
+  rodar(path.join(SCRIPTS, "cenario-novo.mjs"), ["--saida", cen]);
+  const work = path.join(base, "work x");
+  const script = path.join(SCRIPTS, "publicar.mjs");
 
-$r = Invoke-Script $script @('-App', $app, '-Cenario', $base, '-WorkDir', $work)
-Assert-True ($r.Code -eq 1 -and $r.Err -match 'cenario\.json') 'publicar recusa pasta sem cenario.json'
+  const r = rodar(script, ["--app", app, "--cenario", cen, "--work-dir", work], { SANDBOX_LAB_DIR: lab });
+  assert.equal(r.code, 0, r.err);
+  const c = JSON.parse(fs.readFileSync(path.join(lab, "scripts", "called.json"), "utf8"));
+  assert.equal(c.App, app);
+  assert.equal(c.WorkDir, work);
+  assert.equal(c.Clean, true);
+  assert.match([c.AppData].flat()[0], /appdata[\\/]io\.github\.johngabie\.claudia-rh$/, "publicar repassa a pasta de dados do app");
+  assert.equal(JSON.parse(r.ultima).cenario, "novo");
 
-$env:SANDBOX_LAB_DIR = $base
-$r = Invoke-Script $script @('-App', $app, '-Cenario', $cen, '-WorkDir', $work)
-Assert-True ($r.Code -eq 1 -and $r.Err -match 'app-stage\.ps1') 'publicar com lab incompleto nomeia o arquivo'
+  const semMeta = rodar(script, ["--app", app, "--cenario", base, "--work-dir", work], { SANDBOX_LAB_DIR: lab });
+  assert.equal(semMeta.code, 1);
+  assert.match(semMeta.err, /cenario\.json/, "publicar recusa pasta sem cenario.json");
 
-Remove-Item $base -Recurse -Force
-Complete-Tests
+  const labRuim = rodar(script, ["--app", app, "--cenario", cen, "--work-dir", work], { SANDBOX_LAB_DIR: base });
+  assert.equal(labRuim.code, 1);
+  assert.match(labRuim.err, /app-stage\.ps1/, "publicar com lab incompleto nomeia o arquivo");
+
+  assert.equal(rodar(script, ["--app", app], { SANDBOX_LAB_DIR: lab }).code, 2, "sem --cenario sai com 2");
+});
 ```
 
 - [ ] **Passo 2: rodar e ver falhar.**
-
 - [ ] **Passo 3: implementar**
 
-```powershell
-<#
-.SYNOPSIS
-  Publishes the app plus a scenario folder to the Windows Sandbox lab (lab's scripts\app-stage.ps1).
-.PARAMETER App      App exe, installer, or build folder.
-.PARAMETER Cenario  Folder produced by one of the cenario-*.ps1 scripts.
-.PARAMETER WorkDir  Lab work folder (default: $env:LAB_WORK_DIR, else %TEMP%\claudia-sandbox\work).
-#>
-param([Parameter(Mandatory)][string]$App, [Parameter(Mandatory)][string]$Cenario, [string]$WorkDir = '')
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
+```js
+// Publishes the app plus a scenario folder to the Windows Sandbox lab (lab's scripts\app-stage.ps1).
+// Usage: node publicar.mjs --app <exe|installer|folder> --cenario <scenario folder> [--work-dir <folder>]
+//   --work-dir  default $env:LAB_WORK_DIR, else %TEMP%\claudia-sandbox\work
+import fs from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { spawnSync } from "node:child_process";
+import { APP_ID, labDir, falhaDe } from "./comum.mjs";
+
 try {
-  $lab = Get-LabDir
-  $meta = Join-Path $Cenario 'cenario.json'
-  if (-not (Test-Path $meta)) { throw "Not a scenario folder (cenario.json missing): $Cenario" }
-  if (-not $WorkDir) { $WorkDir = $(if ($env:LAB_WORK_DIR) { $env:LAB_WORK_DIR } else { Join-Path $env:TEMP 'claudia-sandbox\work' }) }
-  $stage = @{ App = $App; AppData = @(Join-Path $Cenario "appdata\$AppId"); WorkDir = $WorkDir; Clean = $true }
-  & (Join-Path $lab 'scripts\app-stage.ps1') @stage | Out-Host
-  if ($LASTEXITCODE) { throw "app-stage.ps1 failed ($LASTEXITCODE)" }
-  $nome = (Get-Content $meta -Raw | ConvertFrom-Json).cenario
-  Write-Output ([ordered]@{ workDir = $WorkDir; deploy = (Join-Path $WorkDir 'deploy'); cenario = $nome } | ConvertTo-Json -Compress)
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  const { values } = parseArgs({ options: { app: { type: "string" }, cenario: { type: "string" }, "work-dir": { type: "string" } } });
+  if (!values.app || !values.cenario) {
+    throw Object.assign(new Error("Usage: node publicar.mjs --app <exe|installer|folder> --cenario <folder> [--work-dir <folder>]"), { code: "ERR_PARSE_ARGS_USAGE" });
+  }
+  const lab = labDir();
+  const meta = path.join(values.cenario, "cenario.json");
+  if (!fs.existsSync(meta)) throw new Error(`Not a scenario folder (cenario.json missing): ${values.cenario}`);
+  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR || path.join(process.env.TEMP, "claudia-sandbox", "work");
+  const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(lab, "scripts", "app-stage.ps1"),
+    "-App", values.app, "-AppData", path.join(values.cenario, "appdata", APP_ID), "-WorkDir", workDir, "-Clean"],
+    { stdio: ["ignore", "inherit", "inherit"] });
+  if (r.status !== 0) throw new Error(`app-stage.ps1 failed (${r.status ?? r.error?.message})`);
+  const cenario = JSON.parse(fs.readFileSync(meta, "utf8")).cenario;
+  console.log(JSON.stringify({ workDir, deploy: path.join(workDir, "deploy"), cenario }));
+} catch (e) { falhaDe(e); }
 ```
 
 - [ ] **Passo 4: rodar e ver passar.**
-- [ ] **Passo 5: rodar a suíte inteira** — `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/run-all.ps1; echo "exit=$LASTEXITCODE"` → `ALL OK`, `exit=0`.
+- [ ] **Passo 5: rodar a suíte inteira** — `node --test .claude/skills/claudia-sandbox/scripts/test/; echo "exit=$LASTEXITCODE"` → `exit=0`.
 - [ ] **Passo 6: commit** — `git commit -m "feat(skill): publish app and scenario to the sandbox lab"`
 
 ---
@@ -628,9 +623,9 @@ Executor: agente que carrega a skill `skill-creator` e segue o processo dela (ra
 - Consome: scripts das Tarefas 1–5 e 9 (nomes e parâmetros exatos neste plano); skill `claudia-app` (Tarefas 7–8) para observar e tirar prints; laboratório via `SANDBOX_LAB_DIR` (interface na spec, seção "Contexto: interface do laboratório").
 
 - [ ] **Passo 1:** ler a spec, `CLAUDE.md`, `.claude/skills/claudia-app/SKILL.md` (estilo e tamanho de referência) e `%SANDBOX_LAB_DIR%\.claude\skills\sandbox-lab\SKILL.md`.
-- [ ] **Passo 2:** escrever `SKILL.md` em pt-BR com frontmatter `name: claudia-sandbox` e `description` ≤ 1.024 caracteres, cobrindo os 9 itens da spec (inclusive o item 8: sugerir melhorias do ferramental ao usuário, implementar só com o "sim" dele, senão registrar no Linear) ("Conteúdo da `claudia-sandbox`"). Corpo ≤ 120 linhas; detalhe vai para `references/`. A skill é um mapa: capacidades, cenários e quando usar cada um, regras; não prescreve roteiro de teste. Fluxo típico descrito como exemplo, não como obrigação: cenário → `publicar.ps1` → `test-up.ps1 -Config lab.config.app-winapp.json` → instalar ou `guest-run.ps1` → `cdp-guest.ps1` → observar com `claudia-app` (`CDP_HOST`/`CDP_PORT`, `CLAUDIA_DB` de `banco-guest.ps1`) → prints → `test-down.ps1`.
+- [ ] **Passo 2:** escrever `SKILL.md` em pt-BR com frontmatter `name: claudia-sandbox` e `description` ≤ 1.024 caracteres, cobrindo os 9 itens da spec (inclusive o item 8: sugerir melhorias do ferramental ao usuário, implementar só com o "sim" dele, senão registrar no Linear) ("Conteúdo da `claudia-sandbox`"). Corpo ≤ 120 linhas; detalhe vai para `references/`. A skill é um mapa: capacidades, cenários e quando usar cada um, regras; não prescreve roteiro de teste. Fluxo típico descrito como exemplo, não como obrigação: cenário → `publicar.mjs` → `test-up.ps1 -Config lab.config.app-winapp.json` → instalar ou `guest-run.ps1` → `cdp-guest.mjs` → observar com `claudia-app` (`CDP_HOST`/`CDP_PORT`, `CLAUDIA_DB` de `banco-guest.mjs`) → prints → `test-down.ps1`.
 - [ ] **Passo 3:** `references/pastas-de-dados.md`: o que fica em `%APPDATA%\io.github.johngabie.claudia-rh` (YAMLs do perfil, `strategy.md`, `claudia_rh.db`, `disparo.json`, `modo_autonomo.json`, `notif.json`, `welcome_seen`, `diagnostics\`) e em `%LOCALAPPDATA%\io.github.johngabie.claudia-rh` (browser e Activity log, quando existirem na versão em teste). Conferir cada nome no código (`grep` em `src-tauri/src`) e marcar como "não verificado" o que não for encontrado.
-- [ ] **Passo 4:** `references/limites.md`: comportamentos do laboratório que afetam o teste, cada um com o comando que o demonstra (se o comando não reproduzir o comportamento, marcar como "não verificado"): winapp não alcança o guest com `networking: Disable`; app iniciado por `winapp target exec` termina quando o comando termina (iniciar com `wsb exec --id <id> -r ExistingLogin`); `wsb exec` não devolve a saída do processo; target do cargo em pasta mapeada falha com `os error 1392` (usar disco do guest); só um Sandbox por vez; `.exe` de `tauri build --no-bundle` não instala pré-requisitos (WebView2), o instalador sim; o WebView2 só aceita CDP em `127.0.0.1` do guest (daí o `portproxy` do `cdp-guest.ps1`).
+- [ ] **Passo 4:** `references/limites.md`: comportamentos do laboratório que afetam o teste, cada um com o comando que o demonstra (se o comando não reproduzir o comportamento, marcar como "não verificado"): winapp não alcança o guest com `networking: Disable`; app iniciado por `winapp target exec` termina quando o comando termina (iniciar com `wsb exec --id <id> -r ExistingLogin`); `wsb exec` não devolve a saída do processo; target do cargo em pasta mapeada falha com `os error 1392` (usar disco do guest); só um Sandbox por vez; `.exe` de `tauri build --no-bundle` não instala pré-requisitos (WebView2), o instalador sim; o WebView2 só aceita CDP em `127.0.0.1` do guest (daí o `portproxy` do `cdp-guest.mjs`).
 - [ ] **Passo 5:** `evals/evals.json` no formato de `.claude/skills/claudia-app/evals/evals.json`: ≥ 8 prompts que devem disparar (máquina limpa, Sandbox, instalador, primeira abertura, desinstalação, PC novo, testar com meus dados sem mexer neles, build do zero) e ≥ 5 que não devem (olhar a tela do app já aberto, tirar print do Perfil, `cargo test`, registrar no Linear, mexer no CSS).
 - [ ] **Passo 6:** copiar `.claude/skills/claudia-app/evals/rodar-evals.mjs` para `.claude/skills/claudia-sandbox/evals/rodar-evals.mjs` trocando só a constante `NOME` para `"claudia-sandbox"`; rodar `node .claude/skills/claudia-sandbox/evals/rodar-evals.mjs sonnet` (2 rodadas); registrar resultado em `references/limites.md` (seção "Evals de disparo"): execução inválida não conta. Ajustar a descrição até disparar em todos os "deve" sem disparar nos "não deve".
 - [ ] **Passo 7:** varredura de agnosticismo nos arquivos da tarefa (Tarefa 12, Passo 2) e commit — `git commit -m "feat(skill): claudia-sandbox skill for clean-machine testing"`
@@ -753,7 +748,7 @@ if (hostRemoto(HOST)) {
   const ok = v && validarVersaoApp(v, await ler(`http://${HOST}:${porta}/json/list`)).ok;
   const decisao = decidirSubida({ appRodando: ok, appTemCdp: ok, remoto: true });
   if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", host: HOST, porta })); process.exit(0); }
-  console.log(JSON.stringify({ acao: "abortar", motivo: `sem CDP do app em ${HOST}:${porta}; no Sandbox, inicie o app com claudia-sandbox/scripts/cdp-guest.ps1 -Iniciar` }));
+  console.log(JSON.stringify({ acao: "abortar", motivo: `sem CDP do app em ${HOST}:${porta}; no Sandbox, inicie o app com node claudia-sandbox/scripts/cdp-guest.mjs --iniciar` }));
   process.exit(3);
 }
 ```
@@ -768,7 +763,7 @@ if (hostRemoto(HOST)) {
 | Alvo | Como |
 |---|---|
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
-| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `claudia-sandbox/scripts/cdp-guest.ps1`; banco: `CLAUDIA_DB` impresso por `claudia-sandbox/scripts/banco-guest.ps1` (snapshot; repetir após cada ação) |
+| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node claudia-sandbox/scripts/cdp-guest.mjs`; banco: `CLAUDIA_DB` impresso por `node claudia-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
 - [ ] **Passo 8: evals** — em `evals/evals.json`, acrescentar "deve disparar": "tira um print da tela de Perfil", "olha o app que tá rodando no Sandbox"; "não deve disparar": "monta um Windows limpo com dados mockados", "testa o instalador num PC novo", "prepara o Sandbox com cópia dos meus dados". Rodar `node .claude/skills/claudia-app/evals/rodar-evals.mjs sonnet` (2 rodadas). Esperado: casos antigos repetem a referência do Passo 0; casos novos conforme o esperado. Se algum antigo piorar, ajustar a descrição e repetir; se não convergir, reportar.
 - [ ] **Passo 9: commit** — `git commit -m "refactor(skill): rename claudia-teste to claudia-app and support a remote CDP target"`
@@ -868,121 +863,142 @@ try {
 ### Tarefa 9: CDP e banco do guest (`claudia-sandbox`)
 
 **Arquivos:**
-- Modificar: `.claude/skills/claudia-sandbox/scripts/comum.ps1` (funções de Sandbox)
-- Criar: `.claude/skills/claudia-sandbox/scripts/cdp-guest.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/banco-guest.ps1`
-- Criar: `.claude/skills/claudia-sandbox/scripts/test/sandbox-id.test.ps1`
+- Modificar: `.claude/skills/claudia-sandbox/scripts/comum.mjs` (funções de Sandbox)
+- Criar: `.claude/skills/claudia-sandbox/scripts/cdp-guest.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/banco-guest.mjs`
+- Criar: `.claude/skills/claudia-sandbox/scripts/test/sandbox.test.mjs`
 
 **Interfaces:**
-- Consome: `comum.ps1`; laboratório (`C:\labsandbox\app\guest-run.ps1`, `C:\lab\tools\sqlite\sqlite3.exe`, `C:\labwork`); `wsb`.
-- Produz em `comum.ps1`: `Get-IdsFromWsbList([string[]]$Lines) -> string[]`, `Get-SandboxId([string]$Id) -> string`, `Get-SandboxIp([string]$Id) -> string`, `Invoke-Guest([string]$Id, [ValidateSet('System','ExistingLogin')][string]$Como, [string]$PowerShell)` (envia com `-EncodedCommand`, sem problemas de aspas).
-- Produz: `cdp-guest.ps1 [-Id] [-Porta 9333] [-PortaHost 19333] [-Iniciar] [-ExePath <exe no guest>] [-TimeoutSec 90]` → JSON `{host, porta, browser}`; `banco-guest.ps1 [-Id] [-WorkDir]` → JSON `{db}` (caminho no host).
+- Consome: `comum.mjs`; laboratório (`C:\labsandbox\app\guest-run.ps1`, `C:\lab\tools\sqlite\sqlite3.exe`, `C:\labwork`); `wsb` no PATH do host.
+- Produz em `comum.mjs`: `idsDeWsbList(texto) -> string[]`, `sandboxId(id) -> string`, `sandboxIp(id) -> string`, `noGuest(id, como, ps) -> number` (`como` = `"System"` | `"ExistingLogin"`; envia o PowerShell com `-EncodedCommand`, sem problemas de aspas; `wsb exec` não devolve a saída do processo).
+- Produz: `node cdp-guest.mjs [--id] [--porta 9333] [--porta-host 19333] [--iniciar] [--exe-path <exe no guest>] [--timeout 90]` → JSON `{host, porta, browser}`; `node banco-guest.mjs [--id] [--work-dir] [--timeout 30]` → JSON `{db}` (caminho no host).
 
 - [ ] **Passo 1: teste do parser (falha)**
 
-```powershell
-. (Join-Path $PSScriptRoot 'assert.ps1')
-. (Join-Path $PSScriptRoot '..\comum.ps1')
-$linhas = @('Id                                   Status   Uptime', '6f446955-fba4-455f-af60-4da1c64f8b3b Running  00:03:10')
-Assert-True ((Get-IdsFromWsbList $linhas) -join ',' -eq '6f446955-fba4-455f-af60-4da1c64f8b3b') 'extrai um id'
-Assert-True (@(Get-IdsFromWsbList @('Nenhum ambiente')).Count -eq 0) 'sem sandbox, nenhum id'
-Complete-Tests
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import { idsDeWsbList } from "../comum.mjs";
+
+test("extrai um id da saida do wsb list", () => {
+  const texto = "Id                                   Status   Uptime\n6f446955-fba4-455f-af60-4da1c64f8b3b Running  00:03:10\n";
+  assert.deepEqual(idsDeWsbList(texto), ["6f446955-fba4-455f-af60-4da1c64f8b3b"]);
+});
+
+test("sem sandbox, nenhum id", () => {
+  assert.deepEqual(idsDeWsbList("Nenhum ambiente"), []);
+  assert.deepEqual(idsDeWsbList(undefined), []);
+});
 ```
 
 - [ ] **Passo 2: rodar e ver falhar.**
-- [ ] **Passo 3: implementar em `comum.ps1`**
+- [ ] **Passo 3: acrescentar a `comum.mjs`** (e `import { spawnSync } from "node:child_process";` no topo)
 
-```powershell
-function Get-IdsFromWsbList([string[]]$Lines) {
-  return @($Lines | Select-String -Pattern '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' -AllMatches |
-    ForEach-Object { $_.Matches.Value } | Select-Object -Unique)
+```js
+const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+export function idsDeWsbList(texto) {
+  return [...new Set(String(texto ?? "").match(GUID) ?? [])];
 }
 
-function Get-SandboxId([string]$Id) {
-  if ($Id) { return $Id }
-  $ids = Get-IdsFromWsbList @(wsb list 2>$null)
-  if ($ids.Count -ne 1) { throw "Expected exactly one running sandbox, found $($ids.Count). Start one with the lab's test-up.ps1 or pass -Id." }
-  return $ids[0]
+function wsb(args) {
+  const r = spawnSync("wsb", args, { encoding: "utf8" });
+  if (r.error) throw new Error(`wsb is not available: ${r.error.message}`);
+  return r;
 }
 
-function Get-SandboxIp([string]$Id) {
-  $ip = ((wsb ip --id $Id 2>$null) | Select-String -Pattern '\d{1,3}(\.\d{1,3}){3}' | Select-Object -First 1).Matches.Value
-  if (-not $ip) { throw "Could not read the sandbox IP (wsb ip --id $Id). The profile needs networking enabled." }
-  return $ip
+export function sandboxId(id) {
+  if (id) return id;
+  const ids = idsDeWsbList(wsb(["list"]).stdout);
+  if (ids.length !== 1) throw new Error(`Expected exactly one running sandbox, found ${ids.length}. Start one with the lab's test-up.ps1 or pass --id.`);
+  return ids[0];
 }
 
-function Invoke-Guest([string]$Id, [ValidateSet('System', 'ExistingLogin')][string]$Como, [string]$PowerShell) {
-  $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($PowerShell))
-  wsb exec --id $Id -r $Como -c "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $enc" | Out-Null
+export function sandboxIp(id) {
+  const m = (wsb(["ip", "--id", id]).stdout ?? "").match(/\d{1,3}(\.\d{1,3}){3}/);
+  if (!m) throw new Error(`Could not read the sandbox IP (wsb ip --id ${id}). The profile needs networking enabled.`);
+  return m[0];
+}
+
+/** Runs a PowerShell snippet in the guest. -EncodedCommand avoids quoting issues; wsb exec returns no process output. */
+export function noGuest(id, como, ps) {
+  const enc = Buffer.from(ps, "utf16le").toString("base64");
+  return wsb(["exec", "--id", id, "-r", como, "-c", `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${enc}`]).status;
 }
 ```
 
-- [ ] **Passo 4: `cdp-guest.ps1`**
+- [ ] **Passo 4: `cdp-guest.mjs`**
 
-```powershell
-<#
-.SYNOPSIS
-  Exposes the app's WebView2 DevTools port (inside the sandbox guest) to the host, optionally starting the app with CDP on.
-  Prints {host, porta, browser}: use them as CDP_HOST / CDP_PORT with the claudia-app scripts.
-.PARAMETER Iniciar   Start the app with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<Porta>.
-.PARAMETER ExePath   App exe inside the guest (e.g. the installed copy). Without it, the lab's guest-run.ps1 starts the published exe.
-#>
-param([string]$Id = '', [int]$Porta = 9333, [int]$PortaHost = 19333, [switch]$Iniciar, [string]$ExePath = '', [int]$TimeoutSec = 90)
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
+```js
+// Exposes the app's WebView2 DevTools port (inside the sandbox guest) to the host, optionally starting the app with CDP on.
+// Prints {host, porta, browser}: use them as CDP_HOST / CDP_PORT with the claudia-app scripts.
+// Usage: node cdp-guest.mjs [--id <sandbox>] [--porta 9333] [--porta-host 19333] [--iniciar] [--exe-path <exe in guest>] [--timeout 90]
+//   --iniciar   start the app with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>
+//   --exe-path  app exe inside the guest (e.g. the installed copy); without it, the lab's guest-run.ps1 starts the published exe
+import { parseArgs } from "node:util";
+import { sandboxId, sandboxIp, noGuest, falhaDe } from "./comum.mjs";
+
 try {
-  $Id = Get-SandboxId $Id
-  $ip = Get-SandboxIp $Id
-  Invoke-Guest $Id System @"
-netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$PortaHost | Out-Null
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$PortaHost connectaddress=127.0.0.1 connectport=$Porta | Out-Null
-Remove-NetFirewallRule -DisplayName 'claudia-cdp' -ErrorAction SilentlyContinue
-New-NetFirewallRule -DisplayName 'claudia-cdp' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $PortaHost | Out-Null
-"@
-  if ($Iniciar) {
-    $start = $(if ($ExePath) { "Start-Process '$ExePath'" } else { '& C:\labsandbox\app\guest-run.ps1' })
-    Invoke-Guest $Id ExistingLogin "`$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=$Porta'; $start"
+  const { values } = parseArgs({ options: {
+    id: { type: "string" }, porta: { type: "string", default: "9333" }, "porta-host": { type: "string", default: "19333" },
+    iniciar: { type: "boolean" }, "exe-path": { type: "string" }, timeout: { type: "string", default: "90" },
+  } });
+  const porta = Number(values.porta), portaHost = Number(values["porta-host"]), timeout = Number(values.timeout);
+  const id = sandboxId(values.id);
+  const ip = sandboxIp(id);
+  noGuest(id, "System", [
+    `netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=${portaHost} | Out-Null`,
+    `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=${portaHost} connectaddress=127.0.0.1 connectport=${porta} | Out-Null`,
+    "Remove-NetFirewallRule -DisplayName 'claudia-cdp' -ErrorAction SilentlyContinue",
+    `New-NetFirewallRule -DisplayName 'claudia-cdp' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${portaHost} | Out-Null`,
+  ].join("\n"));
+  if (values.iniciar) {
+    const exe = values["exe-path"];
+    const start = exe ? `Start-Process '${exe.replace(/'/g, "''")}'` : "& C:\\labsandbox\\app\\guest-run.ps1";
+    noGuest(id, "ExistingLogin", `$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=${porta}'; ${start}`);
   }
-  $url = "http://${ip}:$PortaHost/json/version"
-  $v = $null; $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  while (-not $v -and (Get-Date) -lt $deadline) { try { $v = Invoke-RestMethod $url -TimeoutSec 3 } catch { Start-Sleep -Seconds 2 } }
-  if (-not $v) { throw "CDP did not answer at $url within ${TimeoutSec}s. Check that WebView2 exists in the guest and the app is running (claudia-app print ladder shows why)." }
-  Write-Output ([ordered]@{ host = $ip; porta = $PortaHost; browser = $v.Browser } | ConvertTo-Json -Compress)
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  const url = `http://${ip}:${portaHost}/json/version`;
+  const fim = Date.now() + timeout * 1000;
+  let v = null;
+  while (!v && Date.now() < fim) {
+    try { v = await (await fetch(url, { signal: AbortSignal.timeout(3000) })).json(); }
+    catch { await new Promise((r) => setTimeout(r, 2000)); }
+  }
+  if (!v) throw new Error(`CDP did not answer at ${url} within ${timeout}s. Check that WebView2 exists in the guest and the app is running (the claudia-app screenshot ladder shows why).`);
+  console.log(JSON.stringify({ host: ip, porta: portaHost, browser: v.Browser }));
+} catch (e) { falhaDe(e); }
 ```
 
-- [ ] **Passo 5: `banco-guest.ps1`**
+- [ ] **Passo 5: `banco-guest.mjs`**
 
-```powershell
-<#
-.SYNOPSIS
-  Copies a consistent snapshot of the app database from the sandbox guest to the host.
-  Prints {db}: use it as CLAUDIA_DB with the claudia-app scripts. Repeat after each action that changes data.
-.PARAMETER WorkDir  Lab work folder used by publicar.ps1 (default: $env:LAB_WORK_DIR).
-#>
-param([string]$Id = '', [string]$WorkDir = '', [int]$TimeoutSec = 30)
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'comum.ps1')
+```js
+// Copies a consistent snapshot of the app database from the sandbox guest to the host.
+// Prints {db}: use it as CLAUDIA_DB with the claudia-app scripts. Repeat after each action that changes data.
+// Usage: node banco-guest.mjs [--id <sandbox>] [--work-dir <folder>] [--timeout 30]   (--work-dir default $env:LAB_WORK_DIR)
+import fs from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { APP_ID, sandboxId, noGuest, falhaDe } from "./comum.mjs";
+
 try {
-  $Id = Get-SandboxId $Id
-  if (-not $WorkDir) { $WorkDir = $env:LAB_WORK_DIR }
-  if (-not $WorkDir) { throw 'LAB_WORK_DIR is not set: pass -WorkDir (the folder used by publicar.ps1).' }
-  $hostDb = Join-Path $WorkDir 'guest-rw\db\claudia_rh.db'
-  Remove-Item $hostDb -ErrorAction SilentlyContinue
-  Invoke-Guest $Id ExistingLogin @"
-New-Item -ItemType Directory -Force C:\labwork\db | Out-Null
-& C:\lab\tools\sqlite\sqlite3.exe (Join-Path `$env:APPDATA '$AppId\claudia_rh.db') '.backup C:/labwork/db/claudia_rh.db'
-"@
-  $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  while (-not (Test-Path $hostDb) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-  if (-not (Test-Path $hostDb)) { throw "Snapshot not found at $hostDb after ${TimeoutSec}s (does the app database exist in the guest yet?)." }
-  Write-Output ([ordered]@{ db = $hostDb } | ConvertTo-Json -Compress)
-  exit 0
-} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+  const { values } = parseArgs({ options: { id: { type: "string" }, "work-dir": { type: "string" }, timeout: { type: "string", default: "30" } } });
+  const id = sandboxId(values.id);
+  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR;
+  if (!workDir) throw new Error("LAB_WORK_DIR is not set: pass --work-dir (the folder used by publicar.mjs).");
+  const hostDb = path.join(workDir, "guest-rw", "db", "claudia_rh.db");
+  fs.rmSync(hostDb, { force: true });
+  noGuest(id, "ExistingLogin", [
+    "New-Item -ItemType Directory -Force C:\\labwork\\db | Out-Null",
+    `& C:\\lab\\tools\\sqlite\\sqlite3.exe (Join-Path $env:APPDATA '${APP_ID}\\claudia_rh.db') '.backup C:/labwork/db/claudia_rh.db'`,
+  ].join("\n"));
+  const fim = Date.now() + Number(values.timeout) * 1000;
+  while (!fs.existsSync(hostDb) && Date.now() < fim) await new Promise((r) => setTimeout(r, 1000));
+  if (!fs.existsSync(hostDb)) throw new Error(`Snapshot not found at ${hostDb} (does the app database exist in the guest yet?).`);
+  console.log(JSON.stringify({ db: hostDb }));
+} catch (e) { falhaDe(e); }
 ```
 
-- [ ] **Passo 6: rodar a suíte** — `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/run-all.ps1` → `ALL OK`. `cdp-guest.ps1` e `banco-guest.ps1` são verificados no smoke (Tarefa 11), porque dependem de um Sandbox rodando.
+- [ ] **Passo 6: rodar a suíte** — `node --test .claude/skills/claudia-sandbox/scripts/test/; echo "exit=$LASTEXITCODE"` → `exit=0`. `cdp-guest.mjs` e `banco-guest.mjs` são verificados no smoke (Tarefa 11), porque dependem de um Sandbox rodando.
 - [ ] **Passo 7: commit** — `git commit -m "feat(skill): expose the guest app's CDP and database to the host"`
 
 ---
@@ -1017,20 +1033,20 @@ Executor: agente Opus. Pré-requisitos: `SANDBOX_LAB_DIR` definido; nenhum Sandb
 
 - [ ] **Passo 1: build** com target fora do repo: `$env:CARGO_TARGET_DIR="$env:TEMP\claudia-sandbox\target"; npm ci; npx tauri build --bundles nsis`. Registrar tempo, o `.exe` do app (`$env:CARGO_TARGET_DIR\release\claudia-rh.exe`) e o instalador (`$env:CARGO_TARGET_DIR\release\bundle\nsis\*.exe`).
 - [ ] **Passo 2: cenários `novo` e `mock` com o exe solto.** Para cada `<c>`:
-  1. `pwsh -File .claude/skills/claudia-sandbox/scripts/cenario-<c>.ps1`
-  2. `pwsh -File .claude/skills/claudia-sandbox/scripts/publicar.ps1 -App <exe> -Cenario %TEMP%\claudia-sandbox\<c>`
+  1. `node .claude/skills/claudia-sandbox/scripts/cenario-<c>.mjs`
+  2. `node .claude/skills/claudia-sandbox/scripts/publicar.mjs --app <exe> --cenario %TEMP%\claudia-sandbox\<c>`
   3. `$env:LAB_APP_PROJECT=<raiz do repo>; $env:LAB_WORK_DIR=<workDir impresso no passo 2>; & "$env:SANDBOX_LAB_DIR\scripts\test-up.ps1" -Config lab.config.app-winapp.json`
   4. (`<id>` = id impresso pelo `test-up.ps1`, também em `wsb list`) `wsb exec --id <id> -r System -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-firewall.ps1"`
   5. `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1"`
   6. Prints pela escada do Sandbox (degraus 2 e 3; o 1 depende de CDP): `winapp ui screenshot --on sandbox -a claudia-rh -o …\<c>-janela.png`, `winapp target screenshot sandbox -o …\<c>-tela.png`; ler os PNGs e descrever o que mostram.
   7. `& "$env:SANDBOX_LAB_DIR\scripts\test-down.ps1"`
 - [ ] **Passo 3: instalador + CDP (cenário `mock`).**
-  1. Cenário `mock`, `publicar.ps1 -App <instalador>`, `test-up.ps1 -Config lab.config.app-winapp.json` (sem firewall ainda: o instalador pode baixar o WebView2).
+  1. Cenário `mock`, `publicar.mjs --app <instalador>`, `test-up.ps1 -Config lab.config.app-winapp.json` (sem firewall ainda: o instalador pode baixar o WebView2).
   2. `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1 -NoStart"` (copia os dados) e `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`; aguardar; localizar o exe instalado (`winapp target exec sandbox -- powershell -c "Get-ChildItem $env:LOCALAPPDATA,$env:ProgramFiles -Recurse -Filter claudia-rh.exe -ErrorAction SilentlyContinue | Select -Expand FullName"`).
   3. Firewall (`guest-firewall.ps1` como System).
-  4. `pwsh -File .claude/skills/claudia-sandbox/scripts/cdp-guest.ps1 -Iniciar -ExePath <exe instalado>` → `{host, porta}`.
+  4. `node .claude/skills/claudia-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe instalado>` → `{host, porta}`.
   5. `$env:CDP_HOST=<host>; $env:CDP_PORT=<porta>; node .claude/skills/claudia-app/scripts/subir.mjs` (esperado `reutilizar`), `ver.mjs arvore`, `ver.mjs tela …\mock-cdp.png` (degrau 1).
-  6. `banco-guest.ps1` → `$env:CLAUDIA_DB=<db>; node .claude/skills/claudia-app/scripts/banco.mjs "SELECT count(*) AS n FROM vagas"` (esperado `3`).
+  6. `node .claude/skills/claudia-sandbox/scripts/banco-guest.mjs` → `$env:CLAUDIA_DB=<db>; node .claude/skills/claudia-app/scripts/banco.mjs "SELECT count(*) AS n FROM vagas"` (esperado `3`).
   7. Registrar a origem real da página do app (`/json/list`) e confrontar com a regra `tauri.localhost`; divergência → corrigir a regra e o teste (Tarefa 7) antes de seguir.
   8. `test-down.ps1`.
 - [ ] **Passo 4: local** — com o app do usuário fechado ou com autorização para subir um `tauri dev`: `node .claude/skills/claudia-app/scripts/subir.mjs`, `ver.mjs arvore`, `pwsh .claude/skills/claudia-app/scripts/print-janela.ps1`. Se o app do usuário estiver aberto sem CDP, `subir.mjs` devolve `perguntar`: perguntar antes.
@@ -1043,9 +1059,9 @@ Executor: agente Opus. Pré-requisitos: `SANDBOX_LAB_DIR` definido; nenhum Sandb
 
 Executor: agente Opus, independente dos implementadores.
 
-- [ ] **Passo 1:** revisão de código da branch inteira contra a spec (`requesting-code-review`): contrato dos cenários, exit codes, origem só lida, `disparo.json` completo, nenhuma escrita fora de `-Saida`/`-WorkDir`, `subir.mjs` nunca sobe `tauri dev` com alvo remoto, regras de segurança da `claudia-app` intactas.
+- [ ] **Passo 1:** revisão de código da branch inteira contra a spec (`requesting-code-review`): contrato dos cenários, exit codes, origem só lida, `disparo.json` completo, nenhuma escrita fora de `--saida`/`--work-dir`, `subir.mjs` nunca sobe `tauri dev` com alvo remoto, regras de segurança da `claudia-app` intactas.
 - [ ] **Passo 2:** varredura de agnosticismo em `git diff dev --name-only`: procurar referências a sessões de trabalho, pessoas, modelos de IA usados na construção, nomes de máquina, IPs, usuários do Windows, caminhos absolutos pessoais ou pastas externas além das variáveis permitidas nas restrições globais. Cada ocorrência: arquivo:linha e correção.
-- [ ] **Passo 3:** rodar de novo `pwsh -NoProfile -File .claude/skills/claudia-sandbox/scripts/test/run-all.ps1`, `node --test .claude/skills/claudia-app/scripts/test/` e `pwsh -NoProfile -File .claude/skills/claudia-app/scripts/test/print-janela.test.ps1`; conferir `exit=0` em cada um.
+- [ ] **Passo 3:** rodar de novo `node --test .claude/skills/claudia-sandbox/scripts/test/`, `node --test .claude/skills/claudia-app/scripts/test/` e `pwsh -NoProfile -File .claude/skills/claudia-app/scripts/test/print-janela.test.ps1`; conferir `exit=0` em cada um.
 
 ---
 
