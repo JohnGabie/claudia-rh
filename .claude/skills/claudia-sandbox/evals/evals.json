@@ -1,0 +1,21 @@
+{
+  "deve_disparar": [
+    "testa o app numa máquina limpa",
+    "sobe o Windows Sandbox e roda a Claudia lá dentro",
+    "testa o instalador novo da Claudia antes de eu lançar a release",
+    "quero ver a primeira abertura do app, com o welcome, como um usuário novo veria",
+    "confere se a desinstalação deixa lixo no sistema",
+    "a Claudia funciona num PC novo sem nada instalado?",
+    "quero testar com os meus dados de verdade, mas sem mexer neles",
+    "faz um build do zero e testa num Windows limpo",
+    "monta um Windows limpo com dados mockados"
+  ],
+  "nao_deve_disparar": [
+    "olha a tela do app que já tá aberto e me diz o que aparece",
+    "tira um print da tela de Perfil",
+    "roda cargo test",
+    "registra no Linear que o botão de exportar tá quebrado",
+    "mexe no CSS do card de vaga pra ficar com menos padding",
+    "olha o app que tá rodando no Sandbox"
+  ]
+}
