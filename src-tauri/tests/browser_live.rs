@@ -1501,3 +1501,75 @@ async fn the_upload_message_and_the_log_use_the_same_size_unit() {
     assert!(out.contains(&format!("{bytes} bytes")), "{out}");
     assert!(rec.text.as_deref().unwrap_or("").contains(&format!("{bytes} bytes")));
 }
+
+// ── Test attachment tracking when upload succeeds or fails ──────────────────────
+
+/// A DocumentSource that records calls to attached().
+struct TrackedDocs {
+    attached_calls: Arc<Mutex<Vec<(i64, String, i64)>>>,
+    path: std::path::PathBuf,
+    formato: &'static str,
+}
+
+impl TrackedDocs {
+    fn new(formato: &'static str) -> Arc<Self> {
+        let p = std::env::temp_dir().join(format!("claudia-upload-tracked-{}-{formato}.{formato}", std::process::id()));
+        std::fs::write(&p, if formato == "pdf" { &b"%PDF-1.7 teste"[..] } else { &b"PK\x03\x04 teste"[..] }).unwrap();
+        Arc::new(TrackedDocs {
+            attached_calls: Arc::new(Mutex::new(vec![])),
+            path: p,
+            formato,
+        })
+    }
+
+    fn get_calls(&self) -> Vec<(i64, String, i64)> {
+        self.attached_calls.lock().unwrap().clone()
+    }
+}
+
+impl claudia_rh_lib::mcp::tools::browser::DocumentSource for TrackedDocs {
+    fn for_upload(&self, _vaga: i64, _tipo: &str, _doc: Option<i64>) -> Result<claudia_rh_lib::mcp::tools::browser::Attachment, String> {
+        Ok(claudia_rh_lib::mcp::tools::browser::Attachment {
+            id: 42,
+            nome: "Tracked CV".into(),
+            formato: self.formato.into(),
+            tamanho: std::fs::metadata(&self.path).unwrap().len(),
+            sha256: "abcdef0123456789".into(),
+            path: self.path.clone(),
+            regra: "test".into(),
+        })
+    }
+
+    fn attached(&self, vaga_id: i64, tipo: &str, documento_id: i64) {
+        self.attached_calls.lock().unwrap().push((vaga_id, tipo.to_string(), documento_id));
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn successful_upload_calls_attached_with_vaga_type_and_document_id() {
+    let l = launch().await;
+    let tracked = TrackedDocs::new("pdf");
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(tracked.clone());
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Currículo"), Some("curriculo"), None).await.unwrap();
+    assert!(out.contains("Tracked CV"), "upload succeeded: {out}");
+    let calls = tracked.get_calls();
+    assert_eq!(calls.len(), 1, "exactly one attached() call");
+    assert_eq!(calls[0], (7, "curriculo".to_string(), 42), "called with vaga=7, tipo=curriculo, documento_id=42");
+}
+
+#[tokio::test]
+#[ignore]
+async fn failed_upload_does_not_call_attached() {
+    let l = launch().await;
+    let tracked = TrackedDocs::new("pdf");
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(tracked.clone());
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let e = t.upload(&ref_of(&list, "button", "Botão que não abre nada"), None, None).await.unwrap_err();
+    assert!(e.contains("seletor de arquivo"), "upload failed as expected: {e}");
+    let calls = tracked.get_calls();
+    assert_eq!(calls.len(), 0, "no attached() calls on failure");
+}
