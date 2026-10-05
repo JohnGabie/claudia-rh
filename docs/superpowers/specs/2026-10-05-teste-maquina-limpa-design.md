@@ -140,7 +140,8 @@ Regra: toda afirmação sobre a UI vem com print; se nenhum degrau funcionar, di
 5. O que publicar: exe de `tauri build --no-bundle` (sem pré-requisitos) ou instalador (cuida de pré-requisitos como o WebView2; instalação silenciosa NSIS com `/S`).
 6. Ligar o CDP no guest (`cdp-guest.ps1`) e observar com a `claudia-app`; banco via `banco-guest.ps1`; prints pela escada.
 7. Regras: nunca acionar envio de candidatura; falha do app num Windows limpo é resultado do teste — registrar, não contornar; achado fora do escopo vira task no Linear (`linear-claudia`).
-8. Testes: o agente desenha os testes e decide se escreve testes automáticos.
+8. Melhorias no próprio ferramental (laboratório, scripts e cenários desta skill, a skill em si): quando o agente notar algo que tornaria o teste mais fácil, rápido ou confiável, sugere ao usuário com o motivo e o custo; com o "sim" do usuário, implementa (o laboratório tem processo próprio, fora deste repositório); se não for o momento, registra no Linear (`linear-claudia`). Nunca muda o ferramental por conta própria no meio de um teste.
+9. Testes: o agente desenha os testes e decide se escreve testes automáticos.
 
 Gatilhos: testar em Windows limpo/isolado, Sandbox, instalador, primeira abertura, desinstalação, "funciona num PC novo", testar com dados do usuário sem mexer neles. Observar o app já rodando (local ou no Sandbox) é da `claudia-app`.
 
