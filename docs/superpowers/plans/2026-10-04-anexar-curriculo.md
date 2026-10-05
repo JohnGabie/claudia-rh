@@ -1273,6 +1273,19 @@ A spec não cobre estes pontos. Cada um tem recomendação; **nada aqui é imple
 
 Decisão **derivada da spec, não nova**: `arquivo_html` passa a ser um **nome simples dentro de `documentos/`**, como `arquivo` (seção 3: arquivos "sempre dentro de `<dados>/documentos/`"; seção 11: caminho sempre conferido dentro da pasta). Os currículos novos deixam de ir para `curriculos/`; os antigos são copiados pela migração (nada é apagado).
 
+### Respostas do usuário (2026-10-04) — valem sobre a tabela acima
+
+| # | Decisão |
+|---|---|
+| P1 | Recomendação aceita: mantém streaming; `cover-letter-done` leva o `Documento`. |
+| P2 | **Select** (campo de seleção) da variante principal na seção de variantes do Perfil (não um botão por cartão). |
+| P3 | Recomendação aceita: fila `documentos/pendentes/` + app gera o PDF. |
+| P4 | **Diferente da recomendação:** sem checagem automática de fatos. `update_variante` só na sessão de Perfil, com backup, e o prompt do Perfil manda alterar só a pedido do usuário. Pular os passos da checagem `foco_*` contra o perfil. |
+| P5 | Recomendação aceita (`anexos`) **+ o Activity log registra o anexo** (id e nome do documento na linha do `browser_upload`). |
+| P6 | **Diferente da recomendação:** duas categorias, `sem_curriculo` e `sem_carta`. |
+| P7 | **Sim, conteúdo muda por variante**, definido pelo usuário com a IA. Desenho proposto na spec 2.3, **aguardando aprovação**: não entra nas Ondas 0–3; vira tarefa própria depois que a spec 2.3 for aprovada. A Onda 1 (A) só registra a variante no documento. |
+| 14b | **Autorizada** a edição do prompt, só para as tools novas. |
+
 ## Execução em ondas
 
 Regras (CLAUDE.md, "Quem faz cada etapa"): uma preocupação por agente, uma worktree por agente, **arquivos diferentes por frente**, contrato escrito. O orquestrador (Opus) integra depois que todas as frentes da onda terminam, roda de novo as rodadas e só então abre a onda seguinte. Cada agente usa o próprio `CARGO_TARGET_DIR` fora do repo (ex.: `C:/Users/joaog/.cache/claudia-p2-<frente>`) e confere a base da worktree antes de começar (`git log -1` igual ao commit que o orquestrador indicou).

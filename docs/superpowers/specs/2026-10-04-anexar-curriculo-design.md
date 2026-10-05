@@ -33,6 +33,29 @@
 4. **Vagas que se acumulam em `candidatando`:** bug conhecido, em aberto, resolvido em outra frente (registrar no Linear). Não entra nesta spec.
 5. **Regra dura: o Chrome nunca pode falhar por causa de um upload.** Ver seção 8.
 
+## 2.2 Decisões do usuário para a Parte 2 (2026-10-04)
+
+Respostas às propostas P1–P7 do plano da Parte 2:
+
+- **P1, cover letter:** mantém a geração em segundo plano com streaming; o evento de "pronta" passa a levar o documento da biblioteca.
+- **P2, variante principal:** marcada por um **campo de seleção** (select) na seção de variantes do Perfil; no máximo uma.
+- **P3, carta escrita pelo agente:** o MCP grava o HTML numa fila (`documentos/pendentes/`), avisa o app, que gera o PDF pelo WebView2 e registra; a tool espera até 20 s pelo id ou responde "em preparo".
+- **P4, alterar variante:** **a variante só muda a pedido do usuário**, na conversa do Perfil feita com ele. `update_variante` existe só na sessão de Perfil (nunca na de execução) e grava com backup; o prompt do Perfil diz para alterar só quando o usuário pedir. Não há checagem automática de fatos além disso (não adotada).
+- **P5, qual documento foi anexado:** tabela `anexos` (vaga, tipo, documento, hora), gravada a cada `browser_upload` bem-sucedido; ao registrar a candidatura, o currículo anexado vai para `candidaturas.documento_id`; **e o Activity log registra o anexo** (id e nome do documento na linha do upload).
+- **P6, pendência:** **duas categorias**, `sem_curriculo` e `sem_carta`.
+- **Edição do prompt de execução:** autorizada, **só** para ensinar as tools novas (documentos, variantes, cover letter, variante da vaga).
+- **P7, conteúdo por variante:** **sim**. O conteúdo do currículo muda por variante, e **quem define é o usuário junto com a IA** (na conversa do Perfil): pode reordenar experiências, mudar experiências e campos, refazer o currículo. Ver 2.3.
+
+## 2.3 Conteúdo do currículo por variante (P7) — PROPOSTA, aguardando aprovação
+
+O usuário decidiu que o conteúdo muda por variante (2.2, P7). O **como** abaixo é proposta do assistente e **não está aprovado**:
+
+- Cada variante em `search_variants.yaml` ganha um bloco `curriculo` com ajustes sobre o `candidate_base.yaml`, nunca uma cópia dele: ordem das experiências, experiências ocultas, texto de descrição/conquistas por experiência, ordem e destaque de competências, resumo (headline) próprio.
+- Quem escreve esse bloco é a conversa do Perfil (usuário + IA), pelo `update_variante`, só a pedido do usuário (P4). A sessão de execução só lê.
+- Ao gerar o currículo de uma variante, o gerador aplica os ajustes; sem bloco, sai o currículo de hoje.
+- Regra de honestidade (spec de sistema): os ajustes reordenam, ocultam e reescrevem fatos que existem no `candidate_base.yaml`; não criam experiência, empresa, cargo ou competência nova. Experiência referida por um ajuste que não existe no perfil é recusada na gravação.
+- Entra como tarefa nova da Parte 2, depois da Onda 1, com o seu próprio plano.
+
 ## 3. Modelo de dados (migration, não `CREATE TABLE` solto)
 
 Tabela `documentos`:
