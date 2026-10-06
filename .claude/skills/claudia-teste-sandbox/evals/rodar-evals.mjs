@@ -1,8 +1,8 @@
-// Trigger eval for the claudia-teste skill, without Python's select() on pipes
+// Trigger eval for the claudia-teste-sandbox skill, without Python's select() on pipes
 // (it raises WinError 10038 on Windows and made the official runner report 0 for everything).
 //
 // Criterion: the skill counts as triggered when the model's FIRST tool call is
-// Skill with input.skill === "claudia-teste". Decided from the complete assistant
+// Skill with input.skill === "claudia-teste-sandbox". Decided from the complete assistant
 // event, not from streamed deltas: the tool input arrives in fragments, and an
 // earlier version that matched on accumulated deltas missed real triggers.
 import { spawn } from "node:child_process";
@@ -13,7 +13,7 @@ const RAIZ = new URL("../../../../", import.meta.url).pathname.replace(/^\/([A-Z
 const E = JSON.parse(fs.readFileSync(new URL("./evals.json", import.meta.url), "utf8"));
 const SET = [...E.deve_disparar.map((query) => ({ query, should_trigger: true })), ...E.nao_deve_disparar.map((query) => ({ query, should_trigger: false }))];
 const MODELO = process.argv[2] ?? "sonnet";
-const NOME = "claudia-teste";
+const NOME = "claudia-teste-sandbox";
 
 function rodar(query) {
   return new Promise((resolve) => {

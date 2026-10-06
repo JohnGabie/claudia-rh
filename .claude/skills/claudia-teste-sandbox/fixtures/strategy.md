@@ -1,0 +1,3 @@
+- Priorizar vagas remotas de backend com Python.
+- Aplicar a vagas fullstack apenas quando o stack incluir React.
+- Evitar vagas presenciais fora de Lisboa.

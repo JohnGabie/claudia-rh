@@ -3,7 +3,8 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { validarVersaoApp, decidirSubida } from "./regras.mjs";
+import { validarVersaoApp, decidirSubida, hostRemoto } from "./regras.mjs";
+import { HOST } from "./cdp.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
 const CANDIDATAS = [9333, 9334, 9335, 9336];
@@ -13,17 +14,27 @@ async function ler(url) {
   catch { return null; }
 }
 
+if (hostRemoto(HOST)) {
+  const porta = Number(process.env.CDP_PORT ?? 9333);
+  const v = await ler(`http://${HOST}:${porta}/json/version`);
+  const ok = v && validarVersaoApp(v, await ler(`http://${HOST}:${porta}/json/list`)).ok;
+  const decisao = decidirSubida({ appRodando: ok, appTemCdp: ok, remoto: true });
+  if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", host: HOST, porta })); process.exit(0); }
+  console.log(JSON.stringify({ acao: "abortar", motivo: `sem CDP do app em ${HOST}:${porta}; no Sandbox, inicie o app com node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar` }));
+  process.exit(3);
+}
+
 /** A port is free only if nothing answers at all — an answer, even a 404, means it is taken. */
 async function portaLivre(porta) {
-  try { await fetch(`http://127.0.0.1:${porta}/json/version`, { signal: AbortSignal.timeout(1500) }); return false; }
+  try { await fetch(`http://${HOST}:${porta}/json/version`, { signal: AbortSignal.timeout(1500) }); return false; }
   catch { return true; }
 }
 
 async function acharAppComCdp() {
   for (const p of CANDIDATAS) {
-    const v = await ler(`http://127.0.0.1:${p}/json/version`);
+    const v = await ler(`http://${HOST}:${p}/json/version`);
     if (!v) continue;
-    const r = validarVersaoApp(v, await ler(`http://127.0.0.1:${p}/json/list`));
+    const r = validarVersaoApp(v, await ler(`http://${HOST}:${p}/json/list`));
     if (r.ok) return p;
   }
   return null;
@@ -56,8 +67,8 @@ filho.unref();
 
 for (let i = 0; i < 60; i++) {
   await new Promise((r) => setTimeout(r, 3000));
-  const v = await ler(`http://127.0.0.1:${porta}/json/version`);
-  if (v && validarVersaoApp(v, await ler(`http://127.0.0.1:${porta}/json/list`)).ok) {
+  const v = await ler(`http://${HOST}:${porta}/json/version`);
+  if (v && validarVersaoApp(v, await ler(`http://${HOST}:${porta}/json/list`)).ok) {
     console.log(JSON.stringify({ acao: "subiu", porta, pid: filho.pid, log }));
     process.exit(0);
   }

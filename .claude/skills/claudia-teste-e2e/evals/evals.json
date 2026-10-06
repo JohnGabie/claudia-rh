@@ -10,13 +10,18 @@
     "o bug do Perfil tá acontecendo de novo",
     "olha o que tá errado nessa tela",
     "só mexi no CSS, confere se ficou bom",
-    "corrige este bug no Perfil"
+    "corrige este bug no Perfil",
+    "tira um print da tela de Perfil",
+    "olha o app que tá rodando no Sandbox"
   ],
   "nao_deve_disparar": [
     "roda cargo test",
     "candidata nessa vaga do LinkedIn",
     "registra uma issue no Linear",
     "explica o pty_manager.rs",
-    "qual a cor do tema?"
+    "qual a cor do tema?",
+    "monta um Windows limpo com dados mockados",
+    "testa o instalador num PC novo",
+    "prepara o Sandbox com cópia dos meus dados"
   ]
 }

@@ -5,14 +5,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { alvos, ligar, sleep } from "./cdp.mjs";
+import { alvos, ligar, sleep, HOST } from "./cdp.mjs";
+import { hostRemoto } from "./regras.mjs";
 
 const PORTA = Number(process.env.CDP_PORT ?? 9333);
 const i = process.argv.indexOf("--linhas");
 const LINHAS = i > 0 ? Number(process.argv[i + 1]) : 60;
 
 async function lerTerminal() {
-  const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420/.test(t.url));
+  const alvo = (await alvos(PORTA)).find((t) => t.type === "page" && /1420|tauri\.localhost/.test(t.url));
   if (!alvo) return { indisponivel: "sem página do app" };
   const { cdp, fechar } = await ligar(alvo.webSocketDebuggerUrl);
   await cdp("Runtime.enable");
@@ -29,17 +30,24 @@ async function lerTerminal() {
 }
 
 function lerLog() {
+  if (hostRemoto(HOST)) return { indisponivel: "log do subir.mjs não existe para alvo remoto" };
   const f = path.join(process.env.TEMP || ".", "tauri-cdp.log");
   if (!fs.existsSync(f)) return { indisponivel: "sem log do subir.mjs" };
   return { texto: fs.readFileSync(f, "utf8").split("\n").slice(-LINHAS).join("\n") };
 }
 
 function lerSessoes() {
-  const dados = path.join(process.env.APPDATA, "io.github.johngabie.claudia-rh", "claudia_rh.db");
+  const dados = process.env.CLAUDIA_DB || path.join(process.env.APPDATA, "io.github.johngabie.claudia-rh", "claudia_rh.db");
   const db = new DatabaseSync(dados, { readOnly: true });
   const linhas = db.prepare("SELECT * FROM sessoes ORDER BY id DESC LIMIT 5").all();
   db.close();
   return linhas;
+}
+
+// A remote target has its own database: never fall back to the host's app folder.
+if (hostRemoto(HOST) && !process.env.CLAUDIA_DB) {
+  console.error(`recusado: remote target (CDP_HOST=${HOST}): set CLAUDIA_DB from node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs`);
+  process.exit(2);
 }
 
 const saida = { terminal: await lerTerminal(), log: lerLog(), sessoes: lerSessoes() };

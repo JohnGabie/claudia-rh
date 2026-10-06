@@ -42,11 +42,13 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 
 ## Evals de disparo (2026-10-01 e 02)
 
-Medidos com `node .claude/skills/claudia-teste/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
+Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-e2e)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
 
 ### Antigo e novo, lado a lado
 
-| Modelo | Descrição antiga (935 chars) | Descrição nova (965 chars) |
+Medido com o nome anterior da skill (`claudia-teste`); a medição após o rename está abaixo.
+
+| Modelo | Descrição antiga (932 chars) | Descrição nova (965 chars) |
 |---|---|---|
 | Sonnet, rodada 1 | 16/16 | 16/16 |
 | Sonnet, rodada 2 | 16/16 | 16/16 |
@@ -61,8 +63,8 @@ Execuções inválidas na medição que valeu: **0** em todas as oito. Antes del
 
 | | Antiga | Nova |
 |---|---|---|
-| Opus r1 | falha: primeira ferramenta `Bash` | dispara `Skill(claudia-teste)` |
-| Opus r2 | falha: primeira ferramenta `ToolSearch` | dispara `Skill(claudia-teste)` |
+| Opus r1 | falha: primeira ferramenta `Bash` | dispara `Skill(claudia-teste-e2e)` |
+| Opus r2 | falha: primeira ferramenta `ToolSearch` | dispara `Skill(claudia-teste-e2e)` |
 | Sonnet r1 e r2 | dispara | dispara |
 
 Nenhum dos outros 15 casos piorou em nenhum dos dois modelos: os 11 "deve disparar" disparam e os 5 "não deve disparar" não disparam, nas quatro rodadas com a descrição nova.
@@ -82,3 +84,18 @@ Os números 5/16, 6/16, 7/16 e 11/16 de corridas anteriores deste documento fora
 - Duas repetições por prompt, não dez. Um prompt de fronteira pode oscilar.
 - Mede o disparo, não se o fluxo seguinte presta. A skill disparar e depois seguir o fluxo certo é outra verificação.
 - O conjunto tem 16 prompts escritos por quem escreveu a descrição. Não cobre formas de pedir que ninguém previu.
+
+### Remedição com alvo remoto (Sonnet, 2 rodadas)
+
+Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao Sandbox): 21/21 válidos nas duas rodadas, sem regressão nos 16 antigos (16/16 antes e depois). A medição foi feita com a descrição de 1023 caracteres (após o rename para `claudia-app`). O conjunto continua escrito por quem escreveu a descrição; vale a mesma ressalva acima.
+
+### Após o rename
+
+Medições com a skill renomeada para `claudia-teste-e2e`. A descrição mudou no rename: 965 → 1023 caracteres no primeiro rename (para `claudia-app`: entraram o nome da outra skill e a referência ao alvo Sandbox) e depois 1023 → 1020 no segundo rename (para `claudia-teste-e2e`: pequeno enxugamento de redação). Os resultados 21/21 abaixo (Sonnet e Opus, 2 rodadas cada) medem a versão de 1020 caracteres. 21 prompts (16 originais + 5 ligados ao Sandbox):
+
+| Modelo | Rodada 1 | Rodada 2 |
+|---|---|---|
+| Sonnet | 21/21 | 21/21 |
+| Opus | 21/21 | 21/21 |
+
+Nenhuma execução inválida em ambas as rodadas.

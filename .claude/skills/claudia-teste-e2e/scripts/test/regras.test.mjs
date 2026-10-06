@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validarVersaoApp, decidirSubida } from "../regras.mjs";
+import { validarVersaoApp, decidirSubida, hostRemoto } from "../regras.mjs";
 
 const versaoApp = { Browser: "Edg/154.0.4258.48", "Protocol-Version": "1.3" };
 const paginaApp = [{ type: "page", url: "http://localhost:1420/" }];
@@ -95,4 +95,23 @@ test("recusa múltiplos statements, mesmo que o primeiro seja SELECT", () => {
 
 test("recusa SQL vazio", () => {
   assert.equal(sqlSomenteLeitura("").ok, false);
+});
+
+test("aceita a página do build de release", () => {
+  assert.equal(validarVersaoApp(versaoApp, [{ type: "page", url: "http://tauri.localhost/" }]).ok, true);
+});
+
+test("remoto sem CDP aborta, nunca sobe tauri dev", () => {
+  assert.equal(decidirSubida({ appRodando: false, appTemCdp: false, remoto: true }), "abortar");
+});
+
+test("remoto com CDP reutiliza", () => {
+  assert.equal(decidirSubida({ appRodando: true, appTemCdp: true, remoto: true }), "reutilizar");
+});
+
+test("hostRemoto distingue local de remoto", () => {
+  assert.equal(hostRemoto(undefined), false);
+  assert.equal(hostRemoto("127.0.0.1"), false);
+  assert.equal(hostRemoto("localhost"), false);
+  assert.equal(hostRemoto("172.20.0.5"), true);
 });

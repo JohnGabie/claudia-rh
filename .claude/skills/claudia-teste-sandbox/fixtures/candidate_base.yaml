@@ -1,0 +1,81 @@
+dados_pessoais:
+  nome_completo: Ana Exemplo
+  email: ana@example.com
+  telefone: "+351 910 000 000"
+  localizacao_atual: Lisboa, Portugal
+  endereco: Rua Exemplo 1
+  nacionalidade: Portuguesa
+  data_nascimento: "1995-05-20"
+  cpf: ""
+  links:
+    - tipo: LinkedIn
+      url: https://example.com/in/ana-exemplo
+    - tipo: GitHub
+      url: https://example.com/ana-exemplo
+experiencia:
+  - empresa: Exemplo Ltda
+    cargo: Backend Developer
+    tipo_vinculo: CLT
+    inicio: "2022-03"
+    fim: ""
+    descricao: |
+      Desenvolvimento de APIs REST em Python e FastAPI.
+      Manutencao de servicos em Docker.
+    conquistas:
+      - Reduziu o tempo de resposta da API principal em 40%
+    tecnologias:
+      - Python
+      - FastAPI
+      - Docker
+  - empresa: Demo SA
+    cargo: Junior Developer
+    tipo_vinculo: Estágio
+    inicio: "2020-06"
+    fim: "2022-02"
+    descricao: |
+      Desenvolvimento de interfaces web em React.
+    conquistas: []
+    tecnologias:
+      - React
+      - TypeScript
+projetos:
+  - nome: ProjetoExemplo
+    descricao: |
+      Aplicacao de demonstracao para gestao de tarefas.
+    tecnologias:
+      - Python
+      - Docker
+    url: https://example.com/ana-exemplo/projeto-exemplo
+    origem: ""
+formacao:
+  - instituicao: Universidade Exemplo
+    curso: Licenciatura em Engenharia Informatica
+    inicio: "2016-09"
+    fim: "2020-07"
+competencias:
+  - Python
+  - FastAPI
+  - Docker
+  - React
+  - TypeScript
+idiomas:
+  - idioma: Português
+    nivel: Nativo
+  - idioma: Inglês
+    nivel: Avançado
+fontes_usadas:
+  - tipo: GitHub
+    referencia: https://example.com/ana-exemplo
+    consultado_em: "2026-01-05"
+  - tipo: LinkedIn
+    referencia: https://example.com/in/ana-exemplo
+    consultado_em: "2026-01-05"
+gaps_conhecidos:
+  - competencia: Kubernetes
+    contexto: Never used in production
+    como_abordar: Mention Docker experience as a foundation
+respostas_modelo:
+  porque_esta_vaga: ""
+  pretensao_salarial_texto: ""
+  notice_period: ""
+ultima_atualizacao: "2026-01-05"

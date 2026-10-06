@@ -1,18 +1,18 @@
 // See and click the running app.
 // Usage: node ver.mjs arvore | tela [arquivo.png] | clicar "<rótulo>"   (env CDP_PORT, default 9333)
 import fs from "node:fs";
-import { alvos, ligar, sleep } from "./cdp.mjs";
+import { HOST, alvos, ligar, sleep } from "./cdp.mjs";
 import { rotuloPerigoso } from "./regras.mjs";
 
 const PORTA = Number(process.env.CDP_PORT ?? 9333);
 const [cmd, arg] = process.argv.slice(2);
 
 const lista = await alvos(PORTA);
-const alvo = lista.find((t) => t.type === "page" && /1420/.test(t.url));
+const alvo = lista.find((t) => t.type === "page" && /1420|tauri\.localhost/.test(t.url));
 if (!alvo) { console.error("sem página do app na porta " + PORTA + ". Rode subir.mjs"); process.exit(1); }
 
 // A frozen/hidden tab swallows input events silently, so activate it first.
-await fetch(`http://127.0.0.1:${PORTA}/json/activate/${alvo.id}`).catch(() => {});
+await fetch(`http://${HOST}:${PORTA}/json/activate/${alvo.id}`).catch(() => {});
 const { cdp, fechar } = await ligar(alvo.webSocketDebuggerUrl);
 await cdp("Runtime.enable"); await cdp("Accessibility.enable"); await cdp("DOM.enable"); await cdp("Page.bringToFront");
 const ev = async (e) => (await cdp("Runtime.evaluate", { expression: e, returnByValue: true })).result?.result?.value;
