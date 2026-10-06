@@ -12,6 +12,38 @@ pub fn ler(data_dir: &Path) -> Result<SearchVariants, String> {
     }
 }
 
+/// Edits search_variants.yaml as a YAML value, touching only `campos` of variant `id` (and, when the
+/// edit marks it principal, un-marking the others that carry `principal: true`). Everything the
+/// SearchVariants struct does not model (descricao, unknown keys, top-level blocks) survives, and no
+/// default-valued field is added. Returns the new file text; the caller writes it with a backup.
+pub fn editar_campos(data_dir: &Path, id: &str, campos: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    use serde_yaml::Value;
+    let texto = std::fs::read_to_string(data_dir.join("search_variants.yaml"))
+        .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { format!("variante desconhecida: {id}") } else { format!("erro ao ler search_variants.yaml: {e}") })?;
+    let mut doc: Value = serde_yaml::from_str(&texto).map_err(|e| format!("search_variants.yaml inválido: {e}"))?;
+    let lista = doc.get_mut("variantes").and_then(Value::as_sequence_mut).ok_or_else(|| format!("variante desconhecida: {id}"))?;
+    let pos = lista.iter().position(|v| v.get("id").and_then(Value::as_str) == Some(id)).ok_or_else(|| format!("variante desconhecida: {id}"))?;
+    let alvo = lista[pos].as_mapping_mut().ok_or("variante inválida em search_variants.yaml")?;
+    for (k, v) in campos {
+        alvo.insert(Value::from(k.as_str()), serde_yaml::to_value(v).map_err(|e| e.to_string())?);
+    }
+    // Same type check the struct gave before: a bad value is refused, nothing is written.
+    let nova: crate::commands::perfil::SearchVariant =
+        serde_yaml::from_value(lista[pos].clone()).map_err(|e| format!("valor inválido: {e}"))?;
+    if nova.principal {
+        for (i, outra) in lista.iter_mut().enumerate() {
+            if i != pos {
+                if let Some(m) = outra.as_mapping_mut() {
+                    if m.get("principal").and_then(Value::as_bool) == Some(true) {
+                        m.insert(Value::from("principal"), Value::Bool(false));
+                    }
+                }
+            }
+        }
+    }
+    serde_yaml::to_string(&doc).map_err(|e| e.to_string())
+}
+
 pub fn validar(data_dir: &Path, id: &str) -> Result<(), String> {
     let sv = ler(data_dir)?;
     if sv.variantes.iter().any(|v| v.id == id) {

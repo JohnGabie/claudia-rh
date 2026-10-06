@@ -47,19 +47,8 @@ pub fn update_variante(data_dir: &Path, id: &str, campos: &serde_json::Value, se
     if let Some(k) = obj.keys().find(|k| !EDITAVEIS.contains(&k.as_str())) {
         return Err(format!("campo não editável: {k}. Editáveis: {}", EDITAVEIS.join(", ")));
     }
-    let mut sv = variantes::ler(data_dir)?;
-    let pos = sv.variantes.iter().position(|v| v.id == id).ok_or_else(|| format!("variante desconhecida: {id}"))?;
-    let mut atual = serde_json::to_value(&sv.variantes[pos]).map_err(|e| e.to_string())?;
-    for (k, v) in obj {
-        atual[k] = v.clone();
-    }
-    let nova: SearchVariant = serde_json::from_value(atual).map_err(|e| format!("valor inválido: {e}"))?;
-    let principal = nova.principal;
-    sv.variantes[pos] = nova;
-    if principal {
-        variantes::manter_uma_principal(&mut sv, id);
-    }
-    let yaml = serde_yaml::to_string(&sv).map_err(|e| e.to_string())?;
+    // Edit the YAML itself, not a SearchVariants round trip: that dropped every key the struct does not model.
+    let yaml = variantes::editar_campos(data_dir, id, obj)?;
     super::profile::write_yaml_atomically(data_dir, "search_variants.yaml", &yaml)?;
     Ok(format!(
         "Variante {id} atualizada ({}). A versão anterior fica em search_variants.yaml.bak-1.",
@@ -127,5 +116,48 @@ mod tests {
         // P4 (user decision): no automatic fact check; the Profile prompt is what limits the agent.
         let d = dir();
         update_variante(&d, "backend", &serde_json::json!({ "foco_competencias": ["COBOL"] }), SessionKind::Interactive).unwrap();
+    }
+
+    const RICO: &str = "variantes:\n  - id: devops-sre\n    nome_exibicao: DevOps\n    peso: 50\n    descricao: Plataforma e SRE\n    campo_futuro: [a, b]\n  - id: backend\n    nome_exibicao: Backend\n    descricao: APIs\npreferencias_globais:\n  faixa_salarial:\n    minimo: 45000\n    moeda: DKK\n    nota_livre: x\n  extra_pref: 1\nred_lines:\n  - sem plantao\nperguntas_pendentes:\n  - pergunta: viaja?\n    prioridade: alta\nchave_desconhecida:\n  k: v\n";
+
+    fn dir_rico() -> std::path::PathBuf {
+        let d = temp_dir("mcp-var-rico");
+        std::fs::write(d.join("search_variants.yaml"), RICO).unwrap();
+        d
+    }
+
+    fn yaml_de(d: &std::path::Path) -> serde_yaml::Value {
+        serde_yaml::from_str(&std::fs::read_to_string(d.join("search_variants.yaml")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn update_variante_preserves_unknown_keys_everywhere() {
+        let d = dir_rico();
+        update_variante(&d, "devops-sre", &serde_json::json!({ "peso": 70 }), SessionKind::Interactive).unwrap();
+        let antes: serde_yaml::Value = serde_yaml::from_str(RICO).unwrap();
+        let depois = yaml_de(&d);
+        for i in 0..2 {
+            assert_eq!(depois["variantes"][i]["descricao"], antes["variantes"][i]["descricao"], "descricao of variant {i}");
+        }
+        assert_eq!(depois["variantes"][0]["campo_futuro"], antes["variantes"][0]["campo_futuro"]);
+        for k in ["preferencias_globais", "red_lines", "perguntas_pendentes", "chave_desconhecida"] {
+            assert_eq!(depois[k], antes[k], "{k}");
+        }
+        assert_eq!(depois["variantes"][0]["peso"].as_f64(), Some(70.0));
+    }
+
+    #[test]
+    fn update_variante_changes_only_the_requested_field() {
+        let d = dir_rico();
+        update_variante(&d, "devops-sre", &serde_json::json!({ "peso": 70 }), SessionKind::Interactive).unwrap();
+        let antes: serde_yaml::Value = serde_yaml::from_str(RICO).unwrap();
+        let depois = yaml_de(&d);
+        assert_eq!(depois["variantes"][1], antes["variantes"][1], "the untouched variant is identical");
+        let mut esperado = antes["variantes"][0].clone();
+        esperado["peso"] = serde_yaml::Value::from(70);
+        assert_eq!(depois["variantes"][0], esperado, "the touched one differs only in peso");
+        let texto = std::fs::read_to_string(d.join("search_variants.yaml")).unwrap();
+        assert!(!texto.contains("cv_gerado"), "no empty field is introduced:\n{texto}");
+        assert_eq!(std::fs::read_to_string(d.join("search_variants.yaml.bak-1")).unwrap(), RICO, "backup still made");
     }
 }
