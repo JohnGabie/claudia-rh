@@ -407,7 +407,7 @@ git commit -m "docs: status headers and CLAUDE.md match what this branch shipped
 
 Uma issue por item, com a descrição que se explica sozinha:
 1. Os 9 minors adiados do ledger de anexar (as linhas `Final: minor (deferred)` de `.superpowers/sdd/2026-10-04-anexar-curriculo/progress.md`). Podem ir juntos numa issue com checklist.
-2. Nomes de parâmetros misturados nas tools (`id`, `variante_id`, `documento`), achado do observador.
+2. **Refazer a tipagem e a auditoria do MCP, em branch própria depois do merge.** O trabalho anterior (18 tarefas, numa branch separada) se perdeu no incidente de 2026-10-05: não está no git nem em commits soltos. Começar pelo que dói (nomes de parâmetro uniformes: hoje `id`, `variante_id` e `documento` se misturam, e a IA errou isso na rodada de teste; erro que diga o nome certo) e só depois tipagem completa. **Nada de tipagem nesta branch.** (Já registrado: ver o id no ledger.)
 3. 6.3, candidatura real no LinkedIn (Tarefa 4).
 4. Desinstalação testada **só no Sandbox** (Tarefa 4).
 5. **Prioridade máxima (Urgent):** "Nunca mais perder trabalho: processo para branches longas e proteção contra código que apaga arquivos". Texto: o incidente de 2026-10-05, as 12 horas perdidas, os 158 commits sem `dev` e o `dev` 55 commits à frente do `origin`. A solução é para **depois** desta branch e precisa de spec aprovada; a primeira proposta foi recusada pelo usuário.
