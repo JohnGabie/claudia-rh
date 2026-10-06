@@ -52,7 +52,10 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; 
 - copia só `%APPDATA%\io.github.johngabie.claudia-rh` e só lê a origem; **nunca** `%LOCALAPPDATA%` (perfil do browser, cookies);
 - recusa `--saida` e `--origem` sobrepostas;
 - consolida o WAL do SQLite na cópia e confere integridade (até 3 tentativas; se falhar, peça ao usuário para fechar o app);
-- desliga disparo e modo autônomo na cópia, salvo `--manter-automacao` (só com motivo e com o usuário ciente).
+- desliga disparo e modo autônomo na cópia, salvo `--manter-automacao` (só com motivo e com o usuário ciente);
+- não reproduz links simbólicos da origem (ex.: `diagnostics\latest`): a cópia segue o link (`dereference`) e não o recria como link; o app recria o link ao abrir. Ficam de fora também `*.db-wal` e `*.db-shm` (consolidados no banco).
+
+Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes e depois), automação desligada no guest antes e depois da primeira abertura, firewall aplicado antes da primeira abertura, contagens do banco no guest iguais às da cópia no host.
 
 ## 5. O que publicar
 
@@ -66,8 +69,15 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; 
 ## 6. Observar o app no guest
 
 1. `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs [--id <id>] [--iniciar] [--exe-path <exe no guest>] [--porta 9333] [--porta-host 19333] [--timeout 90]` → `{host, porta, browser}`. O WebView2 só escuta CDP no `127.0.0.1` do guest; o script cria `netsh portproxy` e regra de firewall no guest. Com `--iniciar`, sobe o app com CDP (`--exe-path` para o app instalado; sem ele, `guest-run.ps1`). Falha do `wsb exec` e código de saída não zero do processo no guest aparecem na hora (lidos da linha localizada "... código: N" do stdout, pois o `wsb exec` sempre sai com 0). Exige perfil com rede.
-   - **CDP no guest não funciona hoje.** A porta de depuração remota não abre, nem com build de debug. A variável de ambiente `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` chega ao processo e a política `AdditionalBrowserArguments` por app pode ser aplicada, mas o WebView2 do guest não responde em ambos os casos; a causa está em aberto. Use os degraus 2 e 3 da escada de prints em vez de CDP (experimental: `cdp-guest.mjs` monta portproxy + firewall corretamente, e falha com timeout).
-2. Use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-teste-e2e`** (tela, árvore, cliques, comandos, agentes).
+   - **CDP no guest não funciona hoje.** A porta de depuração remota não abre, nem com build de release nem com o de debug. A variável `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` chega ao ambiente do shell que inicia o app, mas o `msedgewebview2.exe` sobe sem `--remote-debugging-port`. A hipótese de que o WebView2 reaproveitaria um navegador já em execução foi **testada e refutada** (todos os `claudia-rh.exe` e `msedgewebview2.exe` encerrados antes de iniciar: nada mudou), então encerrar instâncias não ajuda. A causa é desconhecida; o caminho restante é um opt-in no app para abrir a porta em builds de teste, que precisa de spec própria. `cdp-guest.mjs` monta portproxy e firewall corretamente e falha com timeout.
+   - **Sem CDP, use UIA** (verificada ao vivo, com o app instalado): ver o passo 2.
+2. Com CDP (hoje indisponível no guest), use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-teste-e2e`** (tela, árvore, cliques, comandos, agentes). **Sem CDP, UIA pelo winapp** (perfil com rede; `-a claudia-rh` é o app):
+   - `winapp ui inspect --on sandbox -a claudia-rh -d 30`: árvore, inclusive o conteúdo web (URL da página, botões de navegação, textos). **O `-d 30` é necessário**: com a profundidade padrão, mesmo com `-i`, só aparece a barra de título nativa. Elementos fora da área visível vêm marcados `[offscreen]`.
+   - `winapp ui search --on sandbox "<texto>" -a claudia-rh`: acha elementos e devolve o id.
+   - `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh`: clica por id ou por nome. **Só navegação**; nunca botões de envio, exclusão ou busca.
+   - `winapp ui screenshot --on sandbox -a claudia-rh -w <hwnd> -o <arq>`: print só da janela do app; sem `-w` o print inclui também uma janela minúscula extra.
+   - Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript; só o que a árvore de acessibilidade expõe.
+   - A página do app instalado (release) tem origem `http://tauri.localhost/`.
 3. Banco: `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs [--id <id>] [--work-dir <p>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
 4. Prints: escada de prints da `claudia-teste-e2e` (inclui degraus sem CDP e sem rede).
 

@@ -61,15 +61,27 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 
 ## 9. CDP no guest não funciona
 
+- **Hipótese refutada (2026-10-05):** "o WebView2 reaproveita um navegador já em execução e ignora argumentos novos" foi testada com release e debug: todos os `claudia-rh.exe` e `msedgewebview2.exe` encerrados antes de iniciar com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`; o `msedgewebview2.exe` principal continuou sem `--remote-debugging-port` (só traz os argumentos que o app passa pela API), sem `DevToolsActivePort` e com `/json/version` recusando conexão. Causa desconhecida; o caminho restante é um opt-in no app para abrir a porta em builds de teste (spec própria).
 - **Comportamento:** a porta de depuração remota do WebView2 não responde, nem com build release nem com build de debug. Com o app rodando no guest (debug ou release), o processo do `msedgewebview2.exe` não exibe `--remote-debugging-port` na linha de comando mesmo com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` no ambiente do processo (`claudia-rh.exe`). Política por app (`HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments`) também é ignorada. O `portproxy` do `cdp-guest.mjs` e a regra de firewall funcionam (confirmado ao vivo), mas não há resposta HTTP. A causa não foi isolada (possível diferença: runtime WebView2 do guest vs. host, usuário `WDAGUtilityAccount`).
 - **Demonstra:** `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar --exe-path <exe no guest>` (debug ou release): exit 1 em ~90 s, "CDP did not answer ... within 90s".
-- **Situação:** falha verificada com ambos os builds (2026-10-05). Use degraus 2 e 3 da escada de prints (`claudia-teste-e2e`) em vez de CDP.
+- **Situação:** falha verificada com ambos os builds (2026-10-05), inclusive com o guest sem instâncias anteriores. Use UIA (item 11) e os degraus 2 e 3 da escada de prints (`claudia-teste-e2e`) em vez de CDP.
 
 ## 10. Espaço livre no C: do host
 
 - **Comportamento:** o disco virtual do Windows Sandbox fica no C: do host, mesmo quando a pasta de trabalho (`SANDBOX_LAB_DIR`) está em outro disco. Com pouco espaço livre no C:, a instalação silenciosa do app (`/S`) fica muito mais lenta e o C: pode chegar a 0 bytes. Confira o espaço livre antes de `test-up` e mantenha uma folga de vários GB. Derrube o Sandbox entre etapas pesadas para liberar espaço.
 - **Demonstra:** `Get-Volume C: | Select-Object SizeRemaining` no host antes e depois de `test-up.ps1`.
 - **Situação:** verificado (observado ao vivo).
+
+## 11. UIA funciona no guest (substitui o CDP)
+
+- **Comportamento:** com o app instalado e perfil com rede, `winapp ui inspect|search|invoke --on sandbox -a claudia-rh` lê o conteúdo web do WebView2 e navega. O conteúdo web só aparece com profundidade alta (`-d 30`); com a profundidade padrão, mesmo com `-i`, só a barra de título nativa. `invoke` clica por id do elemento ou por nome (só navegação; nunca envio, exclusão ou busca). Sem `-w <hwnd>`, `winapp ui screenshot` captura também uma janela minúscula extra. Limites: sem `invoke` de comandos Tauri e sem JavaScript.
+- **Demonstra:** `winapp ui inspect --on sandbox -a claudia-rh -d 30`; `winapp ui search --on sandbox "<texto>" -a claudia-rh`; `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh`.
+- **Situação:** verificado ao vivo (2026-10-05) com o app de release instalado e o cenário `mock`. A origem da página é `http://tauri.localhost/` (casa com `PAGINA_APP` em `regras.mjs`).
+
+## 12. Cenário `copia` verificado ao vivo
+
+- **Comportamento:** a cópia segue a ordem origem somente leitura, automação desligada, firewall antes da primeira abertura. Links simbólicos da origem (ex.: `diagnostics\latest`) não são copiados como links (a cópia segue o link e não o recria); o app recria o link ao abrir. `*.db-wal` e `*.db-shm` não aparecem na cópia (consolidados no banco).
+- **Situação:** verificado ao vivo (2026-10-05): origem idêntica antes e depois (caminho, tamanho e data), `disparo.ativo` e `skip_permissions` falsos no guest antes e depois de abrir o app, contagens do banco no guest iguais às da cópia no host.
 
 ## Evals de disparo
 

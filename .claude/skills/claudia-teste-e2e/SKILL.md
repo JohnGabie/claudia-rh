@@ -28,9 +28,15 @@ Defina `CDP_PORT` com a porta devolvida por `subir.mjs` (padrão 9333). `CDP_HOS
 | Alvo | Como |
 |---|---|
 | Local (`tauri dev` no host) | padrão; `node scripts/subir.mjs` |
-| Sandbox | `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
+| Sandbox | UIA (abaixo) ou, se o CDP abrir, `CDP_HOST`/`CDP_PORT` impressos por `node .claude/skills/claudia-teste-sandbox/scripts/cdp-guest.mjs --iniciar`; banco: `CLAUDIA_DB` impresso por `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs` (snapshot; repetir após cada ação) |
 
-CDP no guest não funciona hoje: a porta de depuração não abre, nem com build de debug. Use os degraus 2 e 3 da escada de prints (ver `claudia-teste-sandbox`, seção 6).
+CDP no guest não funciona hoje: a porta de depuração não abre, nem com build de debug (a hipótese do navegador já em execução foi refutada; ver `claudia-teste-sandbox`, seção 6). No Sandbox, veja e clique por **UIA**, sem CDP:
+
+- `winapp ui inspect --on sandbox -a claudia-rh -d 30` (o conteúdo web só aparece com `-d` em torno de 30; a profundidade padrão, mesmo com `-i`, não o mostra);
+- `winapp ui search --on sandbox "<texto>" -a claudia-rh`;
+- `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` (só navegação; nunca envio, exclusão ou busca).
+
+Sem `invoke` de comandos Tauri e sem JavaScript por UIA. Prints pelos degraus 2 e 3 da escada abaixo.
 
 Com `CDP_HOST` remoto, `subir.mjs` nunca sobe `tauri dev`: ou reutiliza o CDP do app no guest, ou aborta (exit 3).
 
@@ -59,7 +65,8 @@ Escada, do mais fiel ao mais robusto; usar o primeiro que funcionar e dizer qual
 | # | Local (host) | Sandbox | Mostra |
 |---|---|---|---|
 | 1 | `node scripts/ver.mjs tela <arq>` | idem, com `CDP_HOST`/`CDP_PORT` | só a página do WebView2 |
-| 2 | `pwsh -NoProfile -File scripts/print-janela.ps1 -Processo claudia-rh -Saida <arq>` | `winapp ui screenshot --on sandbox -a claudia-rh -o <arq>` | janela nativa inteira, inclusive diálogos nativos que o CDP não vê |
+| 2 | `pwsh -NoProfile -File scripts/print-janela.ps1 -Processo claudia-rh -Saida <arq>` | `winapp ui screenshot --on sandbox -a claudia-rh -w <hwnd> -o <arq>` (sem `-w`, sai também uma janela minúscula extra) | janela nativa inteira, inclusive diálogos nativos que o CDP não vê |
+| 2b | — | UIA: `winapp ui inspect --on sandbox -a claudia-rh -d 30` | árvore de acessibilidade do conteúdo web (texto, não imagem) |
 | 3 | `pwsh -NoProfile -File scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira; no Sandbox é o desktop do guest e, nos perfis `app*`, o Chrome do laboratório pode ficar na frente e cobrir o app |
 | 4 | — | sem rede: `C:\labsandbox\app\guest-observe.ps1` via `wsb exec` (PNG em `C:\labwork\run`) | tela inteira + árvore UIA |
 

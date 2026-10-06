@@ -101,7 +101,7 @@ Cada `cenario-*.mjs` (`node <script> [opções]`):
 3. Com `--iniciar`: como o usuário do guest, define `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` e, no mesmo processo, inicia `--exe-path` (ex.: o app instalado) ou roda `C:\labsandbox\app\guest-run.ps1`.
 4. Espera até `http://<ip>:<porta-host>/json/version` responder (timeout com mensagem) e imprime `{ "host", "porta" }` para usar como `CDP_HOST`/`CDP_PORT`.
 
-**Situação:** o CDP no guest não abriu em nenhuma tentativa ao vivo; ver a seção de revisão (diagnóstico). Até lá, a observação no Sandbox não depende dele.
+**Situação:** o CDP no guest não abriu em nenhuma tentativa ao vivo, e a hipótese principal foi refutada; ver a seção de revisão (diagnóstico). A observação no Sandbox não depende dele (UIA).
 
 Pré-requisito: perfil com rede (`lab.config.app-winapp.json`) e WebView2 presente no guest. O `.exe` de `tauri build --no-bundle` não instala o WebView2; o instalador sim. Sem WebView2 o app não abre e o CDP não existe: isso é resultado do teste.
 
@@ -172,11 +172,11 @@ Gatilhos: testar em Windows limpo/isolado, Sandbox, instalador, primeira abertur
 
 ## Critérios de teste
 
-- `node --test .claude/skills/claudia-teste-sandbox/scripts/test/` (sem Sandbox): cada cenário com origem/destino temporários; `copia` sem `--autorizado` → exit 2; origem não modificada (hash antes/depois); automação desligada na cópia; banco do `mock` abre e tem as linhas do seed; contrato de `cenario.json`; `publicar.mjs` contra laboratório falso; parser da saída do `wsb list`. Exit ≠ 0 em qualquer falha.
+- `node --test ".claude/skills/claudia-teste-sandbox/scripts/test/*.test.mjs"` (sem Sandbox; a forma com a pasta falha no Node 24): cada cenário com origem/destino temporários; `copia` sem `--autorizado` → exit 2; origem não modificada (hash antes/depois); automação desligada na cópia; banco do `mock` abre e tem as linhas do seed; contrato de `cenario.json`; `publicar.mjs` contra laboratório falso; parser da saída do `wsb list`. Exit ≠ 0 em qualquer falha.
 - `claudia-teste-e2e/scripts/test/regras.test.mjs`: página de release aceita; `remoto` sem CDP → `abortar`; `remoto` nunca → `subir`; casos atuais continuam verdes.
 - `print-janela.ps1`: teste que captura a tela inteira para um arquivo temporário e confere PNG válido com dimensões > 0.
 - Prova de mutação: quebrar uma regra faz o teste nomeado falhar.
-- Smoke no Sandbox (`lab.config.app-winapp.json`, internet bloqueada após a instalação): cenários `novo` e `mock`; prints pela escada; observação por UIA com o app instalado pelo instalador (`winapp ui inspect|search|invoke`), a verificar no smoke; diagnóstico do CDP no guest conforme a seção de revisão (`ver.mjs arvore` e `tela` via `CDP_HOST` só se o CDP abrir); `copia` conforme o requisito da seção de revisão (só com autorização do usuário naquela rodada).
+- Smoke no Sandbox (`lab.config.app-winapp.json`, internet bloqueada após a instalação): cenários `novo` e `mock`; prints pela escada; observação por UIA com o app instalado pelo instalador (`winapp ui inspect|search|invoke`), verificada ao vivo; diagnóstico do CDP no guest conforme a seção de revisão (hipótese refutada; `ver.mjs arvore` e `tela` via `CDP_HOST` só se o CDP abrir); `copia` conforme o requisito da seção de revisão, verificado ao vivo (só com autorização do usuário naquela rodada).
 - Smoke local: `claudia-teste-e2e` com `tauri dev` continua funcionando (`subir.mjs`, `ver.mjs arvore`, `print-janela.ps1`).
 - Evals de disparo: `claudia-teste-sandbox` dispara nos casos dela; `claudia-teste-e2e` mantém os resultados da skill original e não dispara nos casos de montar ambiente.
 - Varredura de agnosticismo nos arquivos novos/alterados.
@@ -200,24 +200,24 @@ Caminhos: `.claude/skills/claudia-teste-e2e/` e `.claude/skills/claudia-teste-sa
 
 Enquanto o CDP no guest não abrir, o app no Sandbox é observado por:
 
-- **UI Automation pelo winapp:** `winapp ui inspect|search|invoke --on sandbox -a claudia-rh` lê a árvore de acessibilidade do conteúdo do WebView2 e clica por nome de elemento.
-- **Prints:** degraus 2 e 3 da escada (e o 4 sem rede).
+- **UI Automation pelo winapp:** `winapp ui inspect --on sandbox -a claudia-rh -d 30` lê a árvore de acessibilidade do conteúdo do WebView2 (o conteúdo web só aparece com profundidade em torno de 30; a profundidade padrão, mesmo com `-i`, mostra só a barra de título nativa); `winapp ui search --on sandbox "<texto>" -a claudia-rh` acha elementos; `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` clica por id ou por nome (só navegação; nunca botões de envio, exclusão ou busca).
+- **Prints:** degraus 2 e 3 da escada (e o 4 sem rede). No degrau 2, usar `-w <hwnd>`: sem ele o print inclui também uma janela minúscula extra.
 - **Banco:** `banco-guest.mjs` e, no host, `CLAUDIA_DB` apontando para o snapshot.
 
 Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript por UIA; só o que a árvore de acessibilidade expõe.
 
-**Situação:** a verificação ao vivo da UIA sobre o app está pendente (a verificar no smoke).
+**Situação:** verificada ao vivo (app de release instalado): `inspect`, `search` e `invoke` por id e por nome funcionam. A origem da página do build de release é `http://tauri.localhost/`, o que casa com `PAGINA_APP` em `regras.mjs`.
 
 ### Diagnóstico do CDP no guest
 
 **Observado ao vivo:** a porta de depuração nunca abriu, nem com o instalador de release nem com o de debug. A variável `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` chegou ao ambiente do `claudia-rh.exe`, mas o `msedgewebview2.exe` principal subiu sem a flag. A política por app (`AdditionalBrowserArguments`) também foi ignorada. O `portproxy` e a regra de firewall funcionam. A hipótese anterior (falta da feature `devtools` no build) está refutada.
 
-**Hipótese principal a testar:** o WebView2 reaproveita um processo de navegador já em execução para a mesma pasta de dados de usuário e ignora argumentos novos. Uma instância iniciada antes sem a porta (por `guest-run.ps1` ou pelo instalador) manteria o navegador sem a flag.
+**Hipótese principal (testada e refutada):** o WebView2 reaproveita um processo de navegador já em execução para a mesma pasta de dados de usuário e ignora argumentos novos. Uma instância iniciada antes sem a porta (por `guest-run.ps1` ou pelo instalador) manteria o navegador sem a flag.
 
 **Diagnóstico:** no guest, encerrar todos os `claudia-rh.exe` e `msedgewebview2.exe`; só então iniciar o app com a variável definida; conferir a linha de comando do `msedgewebview2.exe` e `/json/version`.
 
-- **Confirmada:** o `cdp-guest.mjs` passa a encerrar as instâncias existentes (app e `msedgewebview2.exe`) antes de `--iniciar`.
-- **Refutada:** a saída é uma mudança no app (opt-in explícito para abrir a porta de depuração em builds de teste). Está fora do escopo desta spec e exige spec própria.
+- **Confirmada:** o `cdp-guest.mjs` passaria a encerrar as instâncias existentes (app e `msedgewebview2.exe`) antes de `--iniciar`.
+- **Refutada (resultado ao vivo, builds de release e de debug):** com todos os `claudia-rh.exe` e `msedgewebview2.exe` encerrados antes de iniciar com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, o `msedgewebview2.exe` principal continuou sem `--remote-debugging-port` (só os argumentos que o app passa pela API), sem `DevToolsActivePort` e sem resposta em `/json/version`. Portanto o `cdp-guest.mjs` não precisa encerrar instâncias. A causa segue desconhecida. O caminho restante é uma mudança no app (opt-in explícito para abrir a porta de depuração em builds de teste), fora do escopo desta spec e com spec própria.
 
 **Isolamento inválido:** testar o exe de release no host com um `%APPDATA%` temporário não isola nada, porque o Tauri resolve a pasta de dados pela API de known folders do Windows e não pela variável de ambiente. Esse teste não é feito.
 
@@ -231,6 +231,8 @@ Smoke do cenário `copia` (só com autorização do usuário na própria rodada)
 - relatório só com contagens, sem valores pessoais;
 - cópias apagadas ao fim.
 
+**Resultado ao vivo: passou.** Origem inalterada (listagem de caminho, tamanho e data idêntica antes e depois); automação desligada na cópia do guest antes e depois da primeira abertura; firewall aplicado antes da primeira abertura; contagens do banco no guest iguais às da cópia no host. Links simbólicos da origem (ex.: `diagnosticslatest`) **não** são copiados como links: a cópia (`fs.cpSync` com `dereference: true`) não os reproduziu na saída; o app recria o link ao abrir. Também ficam de fora `*.db-wal` e `*.db-shm`, consolidados no banco.
+
 Fora dessa rodada, a regra geral continua: `copia` só com autorização do usuário.
 
 ## Fora do escopo
@@ -240,5 +242,8 @@ Fora dessa rodada, a regra geral continua: `copia` só com autorização do usu�
 
 ## Não verificado
 
-- Instalação silenciosa do instalador NSIS dentro do Sandbox (o bootstrapper do WebView2 precisa de rede durante a instalação).
-- Origem exata da página no build de release (`tauri.localhost`, por `http` ou `https`): conferir no smoke e ajustar a regra se diferir.
+- Causa de o WebView2 do guest ignorar `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (o ambiente do próprio `claudia-rh.exe` não foi lido; outros vetores, como a política por app, não foram repetidos na última rodada).
+- UIA com os dados reais do usuário (verificada só com o cenário `mock`; evitar telas com valores pessoais).
+- Ver pelo CDP no guest (`subir.mjs` com `reutilizar`, `ver.mjs arvore|tela`, `invocar.mjs`): o CDP não abre.
+
+Verificado ao vivo: instalação silenciosa do instalador NSIS no Sandbox (com rede para o bootstrapper do WebView2) e origem da página do release (`http://tauri.localhost/`).
