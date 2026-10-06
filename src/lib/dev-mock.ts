@@ -67,6 +67,17 @@ const EVENTOS = [
   ev(1, { tool: "browser_read", url: "https://example.com/apply", result: "estado: ok", duration_ms: 900 }),
 ];
 
+// Minimal Tauri event bus so screens that `listen(...)` can be driven from the console:
+// `window.__mockEmit("documentos-atualizados", {novos: 1})`, or `window.__mockBackendDoc()` to add a
+// cover letter without going through docsApi (like the backend queue does) and then emit the event.
+let proximoCallback = 0;
+let proximoOuvinte = 0;
+const callbacks = new Map<number, (e: unknown) => void>();
+const ouvintes = new Map<number, { evento: string; cb: (e: unknown) => void }>();
+const emitir = (evento: string, payload: unknown = null) => {
+  ouvintes.forEach((o, id) => { if (o.evento === evento) o.cb({ event: evento, id, payload }); });
+};
+
 async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   switch (cmd) {
     case "ler_candidato_base": return candidato;
@@ -103,8 +114,14 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
     case "activity_log_image": return Promise.reject("mock: no screenshot");
     case "sugerir_feedback": return { sugerir: false };
     case "plugin:dialog|open": return "C:\\Users\\example\\Downloads\\curriculo-importado.pdf";
-    case "plugin:event|listen": return 1;
+    case "plugin:event|listen": {
+      const id = ++proximoOuvinte;
+      ouvintes.set(id, { evento: args.event as string, cb: callbacks.get(args.handler as number)! });
+      return id;
+    }
     case "plugin:event|unlisten":
+      ouvintes.delete(args.eventId as number);
+      return undefined;
     case "plugin:log|log":
     case "diag_heartbeat": return undefined;
     default:
@@ -117,10 +134,16 @@ export function instalarMockTauri() {
   const w = window as unknown as Record<string, unknown>;
   w.__TAURI_INTERNALS__ = {
     invoke,
-    transformCallback: () => 1,
-    unregisterCallback: () => {},
+    transformCallback: (cb: (e: unknown) => void) => { const id = ++proximoCallback; callbacks.set(id, cb); return id; },
+    unregisterCallback: (id: number) => { callbacks.delete(id); },
     convertFileSrc: (p: string) => p,
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
   };
-  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: (_evento: string, id: number) => { ouvintes.delete(id); } };
+  w.__mockEmit = emitir;
+  w.__mockOuvintes = () => ouvintes.size;
+  w.__mockBackendDoc = async () => {
+    await mockInvoke("gerar_curriculo", { templateId: "backend-saved", corPrimaria: "#D97757", idioma: "en", varianteId: "backend" });
+    emitir("documentos-atualizados", { novos: 1 });
+  };
 }
