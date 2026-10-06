@@ -19,7 +19,9 @@
 
 Em 2026-10-05 um teste de "limpeza de dados", escrito por um agente e nunca revisado, apagou o disco C do usuário. Foram cerca de 12 horas de trabalho perdidas, e só parte foi recuperada.
 
-- **Nenhum teste roda antes da Tarefa 0** (auditoria de deleção) terminar sem `BLOQUEIA`.
+- **Nenhum teste roda antes da Tarefa 0b** corrigir os `BLOQUEIA` achados na auditoria (`docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`). As travas da seção 6 da auditoria valem em todas as tarefas.
+- **`node --test` sempre com a lista de arquivos explícita**, nunca sem argumento: a descoberta automática pega `comum.test.mjs`.
+- **Cache e arquivo temporário só se apagam por caminho literal com guarda**, nunca por `$VAR` (o estado do shell não persiste entre chamadas).
 - Todo caminho que chega a `remove_dir_all`, `remove_file`, `rmSync`, `Remove-Item`, `rm -rf`, `robocopy /MIR` ou `git clean` tem de ser uma **pasta temporária criada pelo próprio teste**. Na dúvida, **não roda**: pergunte ao usuário.
 - **Nunca** passe raiz de disco, `~`, `%USERPROFILE%`, `AppData`, a pasta do projeto ou qualquer caminho real a uma função que apaga, **nem para testar a recusa**. A recusa se testa na função de validação pura.
 - **Todo subagente recebe este bloco literalmente no prompt.**
@@ -187,6 +189,25 @@ Com algum `BLOQUEIA`: **pare o plano** e leve a tabela ao usuário. Sem nenhum:
 git add docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md
 git commit -m "docs(evidence): deletion audit before running any test (0 blocking)"
 ```
+
+---
+
+### Task 0b: Corrigir os `BLOQUEIA` da auditoria (antes de qualquer teste)
+
+**Estado:** a Tarefa 0 foi feita em 2026-10-06 e achou 7 `BLOQUEIA` (`docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`, seção 1). O plano **para aqui** até o usuário aprovar estas correções (D1).
+
+Cada correção segue o ciclo de sempre (teste que falha antes, depois passa, e mutação), **com uma exceção obrigatória: nenhum teste desta tarefa chama uma função que apaga com caminho real**. A recusa se testa na função pura de validação.
+
+| # | Correção | Arquivos | Modelo |
+|---|---|---|---|
+| B1 + B2 | `motivoRecusa(dir)` pura com lista branca (só `os.tmpdir()/claudia-teste-sandbox/`, caminho real, sem reparse point, com marcador). `novoCenarioDir` a chama antes de apagar. Os testes de recusa passam a testar só `motivoRecusa`, e as três chamadas com `REPO_ROOT`, a pasta acima dele e `C:\` saem. | `claudia-teste-sandbox/scripts/comum.mjs`, `test/comum.test.mjs`, `SKILL.md` (tirar a sugestão de `--saida` em outro disco) | Sonnet + revisão Opus |
+| B3 | Marcador `.lab-deploy` exigido antes do `-Clean` | `claudia-teste-sandbox/scripts/publicar.mjs`. O `app-stage.ps1` do laboratório externo é outro repositório: só proposta ao usuário. | Sonnet |
+| B4 | `subir.mjs` aborta com a automação ligada (`disparo.ativo !== false` ou `skip_permissions === true`) | `claudia-teste-e2e/scripts/subir.mjs` | Haiku |
+| B5 | `invocar.mjs`: `JSON.parse` e `JSON.stringify`, lista negra mesmo com `--escrever`, `obter_credencial` sempre recusado. Junto, ampliar `rotuloPerigoso` em `regras.mjs`. | `claudia-teste-e2e/scripts/{invocar,regras}.mjs` e os testes deles | Sonnet |
+| B6 | Evals com `--permission-mode plan`, `--disallowedTools` e kill da árvore | `.claude/skills/*/evals/rodar-evals.mjs` | Haiku |
+| B7 | Injetar o kill em `prepare`: os testes passam `|_| {}` | `src-tauri/src/browser/service.rs` | Sonnet |
+
+Depois, a mesma revisão Opus da auditoria relê os arquivos corrigidos e confirma que não sobrou `BLOQUEIA`. Os itens das seções 2 e 3 da auditoria vão junto com a Tarefa 1 (harness live) ou para o Linear. As travas da seção 6 passam a valer em todas as tarefas.
 
 ---
 
