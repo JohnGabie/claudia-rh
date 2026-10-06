@@ -44,6 +44,78 @@ pub fn editar_campos(data_dir: &Path, id: &str, campos: &serde_json::Map<String,
     serde_yaml::to_string(&doc).map_err(|e| e.to_string())
 }
 
+fn completar(dest: &mut serde_yaml::Mapping, de: &serde_yaml::Mapping) {
+    for (k, v) in de {
+        if !dest.contains_key(k) {
+            dest.insert(k.clone(), v.clone());
+        }
+    }
+}
+
+/// What the Perfil screen sends is a typed SearchVariants; whatever the file holds beyond the struct
+/// (descricao, unknown keys at any level) is copied back from the file currently on disk, so a screen
+/// save never drops it. Keys the screen did send win.
+pub fn preservar_extras(novo: &mut SearchVariants, antigo: &SearchVariants) {
+    completar(&mut novo.extra, &antigo.extra);
+    completar(&mut novo.preferencias_globais.extra, &antigo.preferencias_globais.extra);
+    completar(&mut novo.preferencias_globais.faixa_salarial.extra, &antigo.preferencias_globais.faixa_salarial.extra);
+    for v in novo.variantes.iter_mut() {
+        if let Some(a) = antigo.variantes.iter().find(|a| a.id == v.id) {
+            completar(&mut v.extra, &a.extra);
+        }
+    }
+    for (i, p) in novo.perguntas_pendentes.iter_mut().enumerate() {
+        if let Some(a) = antigo.perguntas_pendentes.get(i).filter(|a| a.pergunta == p.pergunta) {
+            completar(&mut p.extra, &a.extra);
+        }
+    }
+}
+
+/// Whole-file save from the Perfil screen (guardar_search_variants).
+pub fn salvar_todas(data_dir: &Path, mut sv: SearchVariants) -> Result<(), String> {
+    checar_uma_principal(&sv)?;
+    preservar_extras(&mut sv, &ler(data_dir).unwrap_or_default());
+    gravar(data_dir, &sv)
+}
+
+/// One variant from the Perfil screen (guardar_variante_unica): replaces or appends it, the rest stays.
+pub fn salvar_unica(data_dir: &Path, variante: crate::commands::perfil::SearchVariant) -> Result<(), String> {
+    let id = variante.id.clone();
+    let mut sv = ler(data_dir)?;
+    match sv.variantes.iter().position(|v| v.id == id) {
+        Some(pos) => {
+            let mut v = variante;
+            completar(&mut v.extra, &sv.variantes[pos].extra);
+            sv.variantes[pos] = v;
+        }
+        None => sv.variantes.push(variante),
+    }
+    if sv.variantes.iter().any(|v| v.id == id && v.principal) {
+        manter_uma_principal(&mut sv, &id);
+    }
+    gravar(data_dir, &sv)
+}
+
+/// Weights from the dashboard sliders (guardar_pesos_variantes).
+pub fn salvar_pesos(data_dir: &Path, pesos: &std::collections::HashMap<String, f64>) -> Result<(), String> {
+    if !data_dir.join("search_variants.yaml").exists() {
+        return Ok(());
+    }
+    let mut sv = ler(data_dir)?;
+    for v in sv.variantes.iter_mut() {
+        if let Some(&peso) = pesos.get(&v.id) {
+            v.peso = (peso * 10.0).round() / 10.0; // 1 decimal place
+        }
+    }
+    gravar(data_dir, &sv)
+}
+
+fn gravar(data_dir: &Path, sv: &SearchVariants) -> Result<(), String> {
+    std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+    let yaml = serde_yaml::to_string(sv).map_err(|e| e.to_string())?;
+    std::fs::write(data_dir.join("search_variants.yaml"), yaml).map_err(|e| e.to_string())
+}
+
 pub fn validar(data_dir: &Path, id: &str) -> Result<(), String> {
     let sv = ler(data_dir)?;
     if sv.variantes.iter().any(|v| v.id == id) {
@@ -112,6 +184,59 @@ mod tests {
         assert_eq!(sv.variantes.iter().filter(|v| v.principal).count(), 1);
         sv.variantes[1].principal = true;
         assert!(checar_uma_principal(&sv).is_err(), "two principals are refused");
+    }
+
+    const RICO: &str = "variantes:\n  - id: devops-sre\n    nome_exibicao: DevOps\n    descricao: Plataforma e SRE\n    campo_futuro: [a, b]\n  - id: backend\n    nome_exibicao: Backend\n    descricao: APIs\npreferencias_globais:\n  faixa_salarial:\n    minimo: 45000\n    moeda: DKK\n    nota_livre: x\n  extra_pref: 1\nred_lines:\n  - sem plantao\nperguntas_pendentes:\n  - pergunta: viaja?\n    prioridade: alta\nchave_desconhecida:\n  k: v\n";
+
+    fn yaml(d: &std::path::Path) -> serde_yaml::Value {
+        serde_yaml::from_str(&std::fs::read_to_string(d.join("search_variants.yaml")).unwrap()).unwrap()
+    }
+
+    fn confere_preservado(d: &std::path::Path) {
+        let antes: serde_yaml::Value = serde_yaml::from_str(RICO).unwrap();
+        let depois = yaml(d);
+        for i in 0..2 {
+            assert_eq!(depois["variantes"][i]["descricao"], antes["variantes"][i]["descricao"], "descricao {i}");
+        }
+        assert_eq!(depois["variantes"][0]["campo_futuro"], antes["variantes"][0]["campo_futuro"]);
+        assert_eq!(depois["preferencias_globais"]["extra_pref"], antes["preferencias_globais"]["extra_pref"]);
+        assert_eq!(depois["preferencias_globais"]["faixa_salarial"]["nota_livre"], antes["preferencias_globais"]["faixa_salarial"]["nota_livre"]);
+        assert_eq!(depois["perguntas_pendentes"][0]["prioridade"], antes["perguntas_pendentes"][0]["prioridade"]);
+        assert_eq!(depois["red_lines"], antes["red_lines"]);
+        assert_eq!(depois["chave_desconhecida"], antes["chave_desconhecida"]);
+        let texto = std::fs::read_to_string(d.join("search_variants.yaml")).unwrap();
+        assert!(!texto.contains("cv_gerado"), "no empty cv field is introduced:\n{texto}");
+    }
+
+    #[test]
+    fn the_screen_whole_file_save_keeps_what_the_struct_does_not_model() {
+        let d = dir_with(RICO);
+        // The screen sends the typed value; here one stripped of the extras, as an older screen would.
+        let mut vindo: SearchVariants = serde_yaml::from_str(RICO).unwrap();
+        vindo.extra.clear();
+        vindo.preferencias_globais.extra.clear();
+        vindo.preferencias_globais.faixa_salarial.extra.clear();
+        vindo.perguntas_pendentes[0].extra.clear();
+        for v in vindo.variantes.iter_mut() {
+            v.extra.clear();
+        }
+        vindo.variantes[0].peso = 80.0;
+        salvar_todas(&d, vindo).unwrap();
+        confere_preservado(&d);
+        assert_eq!(yaml(&d)["variantes"][0]["peso"].as_f64(), Some(80.0));
+    }
+
+    #[test]
+    fn the_screen_single_variant_save_and_weights_keep_the_rest() {
+        let d = dir_with(RICO);
+        let mut v: crate::commands::perfil::SearchVariant = serde_yaml::from_str("id: backend\nnome_exibicao: Backend 2\n").unwrap();
+        v.peso = 33.0;
+        salvar_unica(&d, v).unwrap();
+        confere_preservado(&d);
+        assert_eq!(yaml(&d)["variantes"][1]["nome_exibicao"].as_str(), Some("Backend 2"));
+        salvar_pesos(&d, &std::collections::HashMap::from([("devops-sre".to_string(), 61.26)])).unwrap();
+        confere_preservado(&d);
+        assert_eq!(yaml(&d)["variantes"][0]["peso"].as_f64(), Some(61.3));
     }
 
     #[test]

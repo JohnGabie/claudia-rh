@@ -174,10 +174,12 @@ pub struct SearchVariant {
     #[serde(default)] pub regioes_aceitas: Vec<String>,
     #[serde(default)] pub modelos_trabalho: Vec<String>,
     #[serde(default)] pub idiomas_aplicacao: Vec<String>,
-    #[serde(default)] pub cv_gerado_path: String,
-    #[serde(default)] pub cv_gerado_em: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub cv_gerado_path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub cv_gerado_em: String,
     /// The user's main variant: the default for a vaga the agent gave no variant to. At most one.
     #[serde(default)] pub principal: bool,
+    /// Keys this struct does not model (descricao, future fields): kept so a save never drops them.
+    #[serde(flatten)] pub extra: serde_yaml::Mapping,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -185,6 +187,7 @@ pub struct FaixaSalarial {
     pub minimo: Option<f64>,
     #[serde(default)] pub moeda: String,
     #[serde(default)] pub flexivel: bool,
+    #[serde(flatten)] pub extra: serde_yaml::Mapping,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -192,6 +195,7 @@ pub struct PreferenciasGlobais {
     #[serde(default)] pub faixa_salarial: FaixaSalarial,
     #[serde(default)] pub setores_evitar: Vec<String>,
     #[serde(default)] pub empresas_evitar: Vec<String>,
+    #[serde(flatten)] pub extra: serde_yaml::Mapping,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -200,6 +204,7 @@ pub struct PerguntaPendente {
     #[serde(default)] pub origem_vaga: String,
     #[serde(default)] pub variante_relacionada: String,
     #[serde(default)] pub data: String,
+    #[serde(flatten)] pub extra: serde_yaml::Mapping,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -208,6 +213,7 @@ pub struct SearchVariants {
     #[serde(default)] pub preferencias_globais: PreferenciasGlobais,
     #[serde(default)] pub red_lines: Vec<String>,
     #[serde(default)] pub perguntas_pendentes: Vec<PerguntaPendente>,
+    #[serde(flatten)] pub extra: serde_yaml::Mapping,
 }
 
 // ── File paths ────────────────────────────────────────────────────────────────
@@ -320,12 +326,7 @@ pub fn ler_search_variants(app: AppHandle) -> Result<Vec<SearchVariant>, String>
 #[tauri::command]
 pub fn guardar_search_variants(app: AppHandle, variantes: SearchVariants) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    crate::documentos::variantes::checar_uma_principal(&variantes)?;
-    let content = serde_yaml::to_string(&variantes).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    crate::documentos::variantes::salvar_todas(path.parent().ok_or("sem diretório de dados")?, variantes)
 }
 
 #[tauri::command]
@@ -851,43 +852,13 @@ pub fn escrever_para_perfil_chrome(app: AppHandle, input: String) -> Result<(), 
 #[tauri::command]
 pub fn guardar_pesos_variantes(app: AppHandle, pesos: std::collections::HashMap<String, f64>) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    let content = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.to_string()),
-    };
-    let mut sv: SearchVariants = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
-    for v in sv.variantes.iter_mut() {
-        if let Some(&peso) = pesos.get(&v.id) {
-            v.peso = (peso * 10.0).round() / 10.0; // 1 decimal place
-        }
-    }
-    let out = serde_yaml::to_string(&sv).map_err(|e| e.to_string())?;
-    std::fs::write(&path, out).map_err(|e| e.to_string())
+    crate::documentos::variantes::salvar_pesos(path.parent().ok_or("sem diretório de dados")?, &pesos)
 }
 
 #[tauri::command]
 pub fn guardar_variante_unica(app: AppHandle, variante: SearchVariant) -> Result<(), String> {
     let path = search_variants_path(&app)?;
-    let id_salvo = variante.id.clone();
-    let mut sv = match std::fs::read_to_string(&path) {
-        Ok(content) => serde_yaml::from_str::<SearchVariants>(&content).map_err(|e| e.to_string())?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SearchVariants::default(),
-        Err(e) => return Err(e.to_string()),
-    };
-    if let Some(pos) = sv.variantes.iter().position(|v| v.id == variante.id) {
-        sv.variantes[pos] = variante;
-    } else {
-        sv.variantes.push(variante);
-    }
-    if sv.variantes.iter().any(|v| v.id == id_salvo && v.principal) {
-        crate::documentos::variantes::manter_uma_principal(&mut sv, &id_salvo);
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let content = serde_yaml::to_string(&sv).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    crate::documentos::variantes::salvar_unica(path.parent().ok_or("sem diretório de dados")?, variante)
 }
 
 #[cfg(test)]
