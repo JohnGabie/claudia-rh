@@ -200,7 +200,7 @@ Caminhos: `.claude/skills/claudia-teste-e2e/` e `.claude/skills/claudia-teste-sa
 
 Enquanto o CDP no guest não abrir, o app no Sandbox é observado por:
 
-- **UI Automation pelo winapp:** `winapp ui inspect --on sandbox -a claudia-rh -d 30` lê a árvore de acessibilidade do conteúdo do WebView2 (o conteúdo web só aparece com profundidade em torno de 30; a profundidade padrão, mesmo com `-i`, mostra só a barra de título nativa); `winapp ui search --on sandbox "<texto>" -a claudia-rh` acha elementos; `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` clica por id ou por nome (por nome, verificado com `-w <hwnd>`; por id funciona sem ele) (só navegação; nunca botões de envio, exclusão ou busca).
+- **UI Automation pelo winapp:** `winapp ui inspect --on sandbox -a claudia-rh -d 30` lê a árvore de acessibilidade do conteúdo do WebView2 (o conteúdo web só aparece com profundidade em torno de 30; a profundidade padrão, mesmo com `-i`, mostra só a barra de título nativa); `winapp ui search --on sandbox "<texto>" -a claudia-rh` acha elementos; `winapp ui invoke --on sandbox <id> -a claudia-rh` clica por id ou `winapp ui invoke --on sandbox "<nome>" -a claudia-rh -w <hwnd>` por nome (por nome verificado apenas com `-w`; por id funciona sem ele) (só navegação; nunca botões de envio, exclusão ou busca).
 - **Prints:** degraus 2 e 3 da escada (e o 4 sem rede). No degrau 2, usar `-w <hwnd>`: sem ele o print inclui também uma janela minúscula extra.
 - **Banco:** `banco-guest.mjs` e, no host, `CLAUDIA_DB` apontando para o snapshot.
 
@@ -231,7 +231,7 @@ Smoke do cenário `copia` (só com autorização do usuário na própria rodada)
 - relatório só com contagens, sem valores pessoais;
 - cópias apagadas ao fim.
 
-**Resultado ao vivo: passou.** Origem inalterada (listagem de caminho, tamanho e data idêntica antes e depois); automação desligada na cópia do guest antes e depois da primeira abertura; firewall aplicado antes da primeira abertura; contagens do banco no guest iguais às da cópia no host. Links simbólicos da origem (ex.: `diagnosticslatest`) não aparecem na cópia; o app recria o link ao abrir. Também ficam de fora `*.db-wal` e `*.db-shm`, consolidados no banco.
+**Resultado ao vivo: passou.** Origem inalterada (listagem de caminho, tamanho e data idêntica antes e depois); automação desligada na cópia do guest antes e depois da primeira abertura; firewall aplicado antes da primeira abertura; contagens do banco no guest iguais às da cópia no host. Links simbólicos da origem (ex.: `diagnostics\latest`) não aparecem na cópia; o app recria o link ao abrir. Também ficam de fora `*.db-wal` e `*.db-shm`, consolidados no banco.
 
 ## Fora do escopo
 

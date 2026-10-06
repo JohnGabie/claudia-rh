@@ -48,7 +48,7 @@ Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo
 
 Medido com o nome anterior da skill (`claudia-teste`); a medição após o rename está abaixo.
 
-| Modelo | Descrição antiga (935 chars) | Descrição nova (965 chars) |
+| Modelo | Descrição antiga (932 chars) | Descrição nova (965 chars) |
 |---|---|---|
 | Sonnet, rodada 1 | 16/16 | 16/16 |
 | Sonnet, rodada 2 | 16/16 | 16/16 |
@@ -87,11 +87,11 @@ Os números 5/16, 6/16, 7/16 e 11/16 de corridas anteriores deste documento fora
 
 ### Remedição com alvo remoto (Sonnet, 2 rodadas)
 
-Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao Sandbox): 21/21 válidos nas duas rodadas, sem regressão nos 16 antigos (16/16 antes e depois). O conjunto continua escrito por quem escreveu a descrição; vale a mesma ressalva acima.
+Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao Sandbox): 21/21 válidos nas duas rodadas, sem regressão nos 16 antigos (16/16 antes e depois). A medição foi feita com a descrição de 1023 caracteres (após o rename para `claudia-app`). O conjunto continua escrito por quem escreveu a descrição; vale a mesma ressalva acima.
 
 ### Após o rename
 
-Medições com a skill renomeada para `claudia-teste-e2e`. A descrição mudou no rename (965 → 1020 caracteres: entraram os nomes da outra skill e houve um pequeno enxugamento de redação), então os resultados 21/21 abaixo (Sonnet e Opus, 2 rodadas cada) medem a versão de 1020 caracteres. 21 prompts (16 originais + 5 ligados ao Sandbox):
+Medições com a skill renomeada para `claudia-teste-e2e`. A descrição mudou no rename: 965 → 1023 caracteres no primeiro rename (para `claudia-app`: entraram o nome da outra skill e a referência ao alvo Sandbox) e depois 1023 → 1020 no segundo rename (para `claudia-teste-e2e`: pequeno enxugamento de redação). Os resultados 21/21 abaixo (Sonnet e Opus, 2 rodadas cada) medem a versão de 1020 caracteres. 21 prompts (16 originais + 5 ligados ao Sandbox):
 
 | Modelo | Rodada 1 | Rodada 2 |
 |---|---|---|
