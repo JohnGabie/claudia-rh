@@ -200,7 +200,7 @@ Caminhos: `.claude/skills/claudia-teste-e2e/` e `.claude/skills/claudia-teste-sa
 
 Enquanto o CDP no guest não abrir, o app no Sandbox é observado por:
 
-- **UI Automation pelo winapp:** `winapp ui inspect --on sandbox -a claudia-rh -d 30` lê a árvore de acessibilidade do conteúdo do WebView2 (o conteúdo web só aparece com profundidade em torno de 30; a profundidade padrão, mesmo com `-i`, mostra só a barra de título nativa); `winapp ui search --on sandbox "<texto>" -a claudia-rh` acha elementos; `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` clica por id ou por nome (só navegação; nunca botões de envio, exclusão ou busca).
+- **UI Automation pelo winapp:** `winapp ui inspect --on sandbox -a claudia-rh -d 30` lê a árvore de acessibilidade do conteúdo do WebView2 (o conteúdo web só aparece com profundidade em torno de 30; a profundidade padrão, mesmo com `-i`, mostra só a barra de título nativa); `winapp ui search --on sandbox "<texto>" -a claudia-rh` acha elementos; `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` clica por id ou por nome (por nome, verificado com `-w <hwnd>`; por id funciona sem ele) (só navegação; nunca botões de envio, exclusão ou busca).
 - **Prints:** degraus 2 e 3 da escada (e o 4 sem rede). No degrau 2, usar `-w <hwnd>`: sem ele o print inclui também uma janela minúscula extra.
 - **Banco:** `banco-guest.mjs` e, no host, `CLAUDIA_DB` apontando para o snapshot.
 
@@ -210,7 +210,7 @@ Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript por UIA;
 
 ### Diagnóstico do CDP no guest
 
-**Observado ao vivo:** a porta de depuração nunca abriu, nem com o instalador de release nem com o de debug. A variável `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` chegou ao ambiente do `claudia-rh.exe`, mas o `msedgewebview2.exe` principal subiu sem a flag. A política por app (`AdditionalBrowserArguments`) também foi ignorada. O `portproxy` e a regra de firewall funcionam. A hipótese anterior (falta da feature `devtools` no build) está refutada.
+**Observado ao vivo:** a porta de depuração nunca abriu, nem com o instalador de release nem com o de debug. A variável `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` foi definida no shell que inicia o app (só o ambiente desse shell foi confirmado), mas o `msedgewebview2.exe` principal subiu sem a flag. A política por app (`AdditionalBrowserArguments`) também foi ignorada. O `portproxy` e a regra de firewall funcionam. A hipótese anterior (falta da feature `devtools` no build) está refutada.
 
 **Hipótese principal (testada e refutada):** o WebView2 reaproveita um processo de navegador já em execução para a mesma pasta de dados de usuário e ignora argumentos novos. Uma instância iniciada antes sem a porta (por `guest-run.ps1` ou pelo instalador) manteria o navegador sem a flag.
 
@@ -221,7 +221,7 @@ Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript por UIA;
 
 **Isolamento inválido:** testar o exe de release no host com um `%APPDATA%` temporário não isola nada, porque o Tauri resolve a pasta de dados pela API de known folders do Windows e não pela variável de ambiente. Esse teste não é feito.
 
-### Requisito: cenário `copia` na próxima rodada ao vivo
+### Requisito: smoke do cenário `copia`
 
 Smoke do cenário `copia` (só com autorização do usuário na própria rodada):
 
@@ -231,9 +231,7 @@ Smoke do cenário `copia` (só com autorização do usuário na própria rodada)
 - relatório só com contagens, sem valores pessoais;
 - cópias apagadas ao fim.
 
-**Resultado ao vivo: passou.** Origem inalterada (listagem de caminho, tamanho e data idêntica antes e depois); automação desligada na cópia do guest antes e depois da primeira abertura; firewall aplicado antes da primeira abertura; contagens do banco no guest iguais às da cópia no host. Links simbólicos da origem (ex.: `diagnosticslatest`) **não** são copiados como links: a cópia (`fs.cpSync` com `dereference: true`) não os reproduziu na saída; o app recria o link ao abrir. Também ficam de fora `*.db-wal` e `*.db-shm`, consolidados no banco.
-
-Fora dessa rodada, a regra geral continua: `copia` só com autorização do usuário.
+**Resultado ao vivo: passou.** Origem inalterada (listagem de caminho, tamanho e data idêntica antes e depois); automação desligada na cópia do guest antes e depois da primeira abertura; firewall aplicado antes da primeira abertura; contagens do banco no guest iguais às da cópia no host. Links simbólicos da origem (ex.: `diagnosticslatest`) não aparecem na cópia; o app recria o link ao abrir. Também ficam de fora `*.db-wal` e `*.db-shm`, consolidados no banco.
 
 ## Fora do escopo
 

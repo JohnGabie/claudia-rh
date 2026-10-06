@@ -48,7 +48,7 @@ Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo
 
 Medido com o nome anterior da skill (`claudia-teste`); a medição após o rename está abaixo.
 
-| Modelo | Descrição antiga (935 chars) | Descrição nova (1020 chars) |
+| Modelo | Descrição antiga (935 chars) | Descrição nova (965 chars) |
 |---|---|---|
 | Sonnet, rodada 1 | 16/16 | 16/16 |
 | Sonnet, rodada 2 | 16/16 | 16/16 |
@@ -91,7 +91,7 @@ Conjunto ampliado para 21 prompts (2 a disparar e 3 a não disparar, ligados ao 
 
 ### Após o rename
 
-Medições com o skill name renomeada para `claudia-teste-e2e`, sem mudança de descrição. 21 prompts (16 originais + 5 ligados ao Sandbox):
+Medições com a skill renomeada para `claudia-teste-e2e`. A descrição mudou no rename (965 → 1020 caracteres: entraram os nomes da outra skill e houve um pequeno enxugamento de redação), então os resultados 21/21 abaixo (Sonnet e Opus, 2 rodadas cada) medem a versão de 1020 caracteres. 21 prompts (16 originais + 5 ligados ao Sandbox):
 
 | Modelo | Rodada 1 | Rodada 2 |
 |---|---|---|

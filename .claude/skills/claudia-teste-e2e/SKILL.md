@@ -34,7 +34,7 @@ CDP no guest não funciona hoje: a porta de depuração não abre, nem com build
 
 - `winapp ui inspect --on sandbox -a claudia-rh -d 30` (o conteúdo web só aparece com `-d` em torno de 30; a profundidade padrão, mesmo com `-i`, não o mostra);
 - `winapp ui search --on sandbox "<texto>" -a claudia-rh`;
-- `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh` (só navegação; nunca envio, exclusão ou busca).
+- `winapp ui invoke --on sandbox <id> -a claudia-rh`; por nome, com `-w <hwnd>` (verificado só assim) (só navegação; nunca envio, exclusão ou busca).
 
 Sem `invoke` de comandos Tauri e sem JavaScript por UIA. Prints pelos degraus 2 e 3 da escada abaixo.
 

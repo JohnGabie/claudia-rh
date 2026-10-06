@@ -53,7 +53,7 @@ Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; 
 - recusa `--saida` e `--origem` sobrepostas;
 - consolida o WAL do SQLite na cópia e confere integridade (até 3 tentativas; se falhar, peça ao usuário para fechar o app);
 - desliga disparo e modo autônomo na cópia, salvo `--manter-automacao` (só com motivo e com o usuário ciente);
-- não reproduz links simbólicos da origem (ex.: `diagnostics\latest`): a cópia segue o link (`dereference`) e não o recria como link; o app recria o link ao abrir. Ficam de fora também `*.db-wal` e `*.db-shm` (consolidados no banco).
+- não reproduz links simbólicos da origem (ex.: `diagnostics\latest`): não aparecem na cópia; o app recria o link ao abrir. Ficam de fora também `*.db-wal` e `*.db-shm` (consolidados no banco).
 
 Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes e depois), automação desligada no guest antes e depois da primeira abertura, firewall aplicado antes da primeira abertura, contagens do banco no guest iguais às da cópia no host.
 
@@ -74,7 +74,7 @@ Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes
 2. Com CDP (hoje indisponível no guest), use `CDP_HOST`/`CDP_PORT` com a skill **`claudia-teste-e2e`** (tela, árvore, cliques, comandos, agentes). **Sem CDP, UIA pelo winapp** (perfil com rede; `-a claudia-rh` é o app):
    - `winapp ui inspect --on sandbox -a claudia-rh -d 30`: árvore, inclusive o conteúdo web (URL da página, botões de navegação, textos). **O `-d 30` é necessário**: com a profundidade padrão, mesmo com `-i`, só aparece a barra de título nativa. Elementos fora da área visível vêm marcados `[offscreen]`.
    - `winapp ui search --on sandbox "<texto>" -a claudia-rh`: acha elementos e devolve o id.
-   - `winapp ui invoke --on sandbox <id-ou-nome> -a claudia-rh`: clica por id ou por nome. **Só navegação**; nunca botões de envio, exclusão ou busca.
+   - `winapp ui invoke --on sandbox <id> -a claudia-rh` (por nome: `winapp ui invoke --on sandbox "<nome>" -a claudia-rh -w <hwnd>`, verificado só com `-w`): clica por id ou por nome. **Só navegação**; nunca botões de envio, exclusão ou busca.
    - `winapp ui screenshot --on sandbox -a claudia-rh -w <hwnd> -o <arq>`: print só da janela do app; sem `-w` o print inclui também uma janela minúscula extra.
    - Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript; só o que a árvore de acessibilidade expõe.
    - A página do app instalado (release) tem origem `http://tauri.localhost/`.
