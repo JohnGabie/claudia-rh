@@ -3,6 +3,7 @@ import { ArrowLeft, ExternalLink, FileText, Pencil, Trash2, X } from "lucide-rea
 import { useT } from "../../i18n";
 import { docsApi } from "../../lib/documentos-api";
 import type { DocumentoDetalhe, Tag, TipoTag, VarianteResumo } from "../../types";
+import { ouvirDocumentos } from "./ouvir";
 import { A4_LARGURA, FolhaA4 } from "./FolhaA4";
 import { avisoAoApagar, comTag, ehPreferido, semTag } from "./logica";
 
@@ -42,6 +43,7 @@ export const PaginaDocumento: React.FC<{ id: number; onVoltar: () => void }> = (
   }, [id]);
 
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => ouvirDocumentos(carregar), [carregar]);
 
   // Fit the sheet to the width of its column.
   useEffect(() => {

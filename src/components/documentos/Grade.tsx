@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { Loader2, Plus, Upload } from "lucide-react";
 import { useT } from "../../i18n";
-import { docsApi, DOCUMENTOS_MUDARAM } from "../../lib/documentos-api";
+import { docsApi } from "../../lib/documentos-api";
 import type { Documento, TipoDocumento, VarianteResumo } from "../../types";
 import { Cartao } from "./Cartao";
 import { Gerar } from "./Gerar";
+import { ouvirDocumentos } from "./ouvir";
 import { Filtro, filtrar, valoresDeTag } from "./logica";
 
 const btn: React.CSSProperties = {
@@ -36,11 +37,8 @@ export const Grade: React.FC<{ tipo: TipoDocumento; onAbrir: (id: number) => voi
 
   useEffect(() => { setDocs(null); setFiltro({}); setGerando(false); carregar(); }, [carregar]);
 
-  // Writes made elsewhere (Profile selects) reload the grid.
-  useEffect(() => {
-    window.addEventListener(DOCUMENTOS_MUDARAM, carregar);
-    return () => window.removeEventListener(DOCUMENTOS_MUDARAM, carregar);
-  }, [carregar]);
+  // Writes made elsewhere (Profile selects, background migration, saved cover letters) reload the grid.
+  useEffect(() => ouvirDocumentos(carregar), [carregar]);
 
   const importar = async () => {
     setErroAcao(null);

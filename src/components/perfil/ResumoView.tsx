@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useT } from "../../i18n";
 import { Plus, FileText, Lightbulb } from "lucide-react";
-import { docsApi, DOCUMENTOS_MUDARAM } from "../../lib/documentos-api";
+import { docsApi } from "../../lib/documentos-api";
+import { ouvirDocumentos } from "../documentos/ouvir";
 import { SearchVariant, Documento, TipoDocumento } from "../../types";
 import { CandidateBase, ChatFocus, EditTarget, Proposta } from "./types";
 import { ProfileHeader, ExperienciaSection, ProjetosSection, FormacaoSection, CompetenciasSection, IdiomasSection, VariantCard } from "./sections";
@@ -30,12 +31,7 @@ export const ResumoView: React.FC<{
 
   useEffect(() => {
     carregarDocs();
-    const un = listen("db-atualizada", carregarDocs);
-    window.addEventListener(DOCUMENTOS_MUDARAM, carregarDocs);
-    return () => {
-      un.then((f) => f());
-      window.removeEventListener(DOCUMENTOS_MUDARAM, carregarDocs);
-    };
+    return ouvirDocumentos(carregarDocs);
   }, [carregarDocs]);
 
   const handlePreferido = async (variantId: string, tipo: TipoDocumento, docId: number | null) => {
