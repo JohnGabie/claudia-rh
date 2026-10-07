@@ -323,6 +323,16 @@ mod tests {
     }
 
     #[test]
+    fn real_apply_button_names_are_a_send_that_spends() {
+        // Pure. These used to fall into ConfirmForm (confirm, but no spend).
+        for name in ["Apply now", "Apply", "Candidatar-se", "Bewerben", "Jetzt bewerben"] {
+            assert_eq!(classify_submit(&[], &[name.to_string()], false, true), SubmitDecision::ConfirmAndSpend, "{name}");
+        }
+        // "Apply filters" is not exactly "apply": only the exact name counts.
+        assert_eq!(classify_submit(&[], &["Apply filters".to_string()], false, true), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
     fn every_pattern_is_recognised() {
         for line in PATTERNS.lines() {
             let line = line.trim();

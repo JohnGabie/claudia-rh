@@ -62,5 +62,16 @@
     <input id="e-ok" type="text" aria-label="Campo B">
     <button id="e-ok-btn" type="submit">Próximo</button>
   </form>
+
+  <!-- C1: the click lands on the span, but the BUTTON submits (LinkedIn markup). -->
+  <form id="f-span" onsubmit="return sent('span')">
+    <button id="span-btn" type="submit"><span id="span-in">Concluir</span></button>
+  </form>
+
+  <!-- I1: the form's default button sits OUTSIDE the form tag (form="..."): Enter in the field presses it. -->
+  <form id="f-ext" onsubmit="return sent('ext')">
+    <input id="e-ext" type="text" aria-label="Campo C">
+  </form>
+  <button id="ext-btn" type="submit" form="f-ext">Concluir</button>
 </body>
 </html>

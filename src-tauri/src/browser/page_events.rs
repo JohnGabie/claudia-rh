@@ -5,8 +5,10 @@
 // pure function (`dialog_answer`); the task around it only moves events and answers.
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
+
+use futures_util::future::BoxFuture;
 
 use super::cdp::CdpClient;
 use crate::activity_log::BrowserEvent;
@@ -16,6 +18,9 @@ use crate::mcp::tools::browser::ActionSink;
 pub const MAX_DIALOG_TEXT: usize = 200;
 /// Answering a dialog gives up after this (the dialog may have closed by itself).
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(3);
+/// A `confirm()` the page opens after an await (a fetch, a timer) comes after the click returned: the
+/// approval of a guarded send still covers it for this long, until the next tool starts.
+pub const APPROVAL_GRACE: Duration = Duration::from_secs(2);
 
 /// What the policy needs to know about the moment the dialog opened.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -74,6 +79,12 @@ pub fn dialog_note(kind: &str, message: &str, accepted: bool) -> String {
 /// The message the tool returns once the agent's tab crashed.
 pub const CRASH_MESSAGE: &str = "a aba do browser travou e foi perdida; chame browser_open de novo para abrir a página outra vez";
 
+/// What a tool that finds the tab crashed must do: `browser_open` goes on (it opens a new tab, which is what
+/// the message asks for); any other tool stops with the actionable message.
+pub fn crash_stops_tool(opening: bool) -> Option<&'static str> {
+    if opening { None } else { Some(CRASH_MESSAGE) }
+}
+
 /// What one CDP event means to us.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageEvent {
@@ -112,6 +123,8 @@ pub fn classify(ev: &Value, ctx: DialogContext, last_url: &mut Option<String>) -
 #[derive(Default)]
 pub struct PageState {
     approved_click: AtomicBool,
+    /// The approval outlives its tool by `APPROVAL_GRACE` (see there); the next `begin` clears it.
+    approved_until: Mutex<Option<Instant>>,
     opening: AtomicBool,
     crashed: AtomicBool,
     tool: Mutex<Option<String>>,
@@ -120,20 +133,40 @@ pub struct PageState {
 
 impl PageState {
     pub fn context(&self) -> DialogContext {
-        DialogContext { approved_click: self.approved_click.load(Ordering::SeqCst), opening: self.opening.load(Ordering::SeqCst) }
+        self.context_at(Instant::now())
+    }
+
+    /// The context at `now` (the clock is a parameter so the grace window is testable).
+    pub fn context_at(&self, now: Instant) -> DialogContext {
+        let in_grace = self.approved_until.lock().ok().and_then(|u| *u).is_some_and(|until| now < until);
+        DialogContext { approved_click: self.approved_click.load(Ordering::SeqCst) || in_grace, opening: self.opening.load(Ordering::SeqCst) }
     }
 
     /// A tool started. `browser_open` is the only one that may leave a page with unsaved changes.
     pub fn begin(&self, tool: &str) {
         self.opening.store(tool == "browser_open", Ordering::SeqCst);
+        // A new tool: nothing approved before it carries over.
+        self.approved_click.store(false, Ordering::SeqCst);
+        if let Ok(mut u) = self.approved_until.lock() {
+            *u = None;
+        }
         if let Ok(mut t) = self.tool.lock() {
             *t = Some(tool.to_string());
         }
     }
 
-    /// The tool ended (success, refusal or error): nothing stays approved.
+    /// The tool ended (success, refusal or error). The approval stops being "during the tool" but lives on for
+    /// `APPROVAL_GRACE`, so a confirm opened after an await in the page is still covered.
     pub fn end(&self) {
-        self.approved_click.store(false, Ordering::SeqCst);
+        self.end_at(Instant::now());
+    }
+
+    pub fn end_at(&self, now: Instant) {
+        if self.approved_click.swap(false, Ordering::SeqCst) {
+            if let Ok(mut u) = self.approved_until.lock() {
+                *u = Some(now + APPROVAL_GRACE);
+            }
+        }
         self.opening.store(false, Ordering::SeqCst);
         if let Ok(mut t) = self.tool.lock() {
             *t = None;
@@ -142,7 +175,14 @@ impl PageState {
 
     /// The send guard approved the action that is running (a valid `confirm_submit`).
     pub fn approve_click(&self) {
+        self.approve_click_at(Instant::now());
+    }
+
+    pub fn approve_click_at(&self, now: Instant) {
         self.approved_click.store(true, Ordering::SeqCst);
+        if let Ok(mut u) = self.approved_until.lock() {
+            *u = Some(now + APPROVAL_GRACE);
+        }
     }
 
     pub fn during_tool(&self) -> Option<String> {
@@ -174,11 +214,23 @@ impl PageState {
 /// Starts the handler for the agent's tab. It runs whether or not the Activity log is on: an unanswered
 /// dialog would freeze the page.
 pub fn spawn_handler(client: &Arc<CdpClient>, sink: Arc<dyn ActionSink>, state: Arc<PageState>) {
-    tokio::spawn(run_handler(client.clone(), client.subscribe(), sink, state));
+    // A weak handle: the task must not keep a replaced client (and its socket) alive.
+    tokio::spawn(run_handler(Arc::downgrade(client), client.subscribe(), sink, state));
 }
 
-async fn run_handler(
-    client: Arc<CdpClient>,
+/// Whatever can answer a dialog (the CDP client; a stand-in in tests).
+pub trait Answerer: Send + Sync + 'static {
+    fn answer(&self, accept: bool) -> BoxFuture<'_, Result<(), String>>;
+}
+
+impl Answerer for CdpClient {
+    fn answer(&self, accept: bool) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move { self.call("Page.handleJavaScriptDialog", json!({ "accept": accept })).await.map(|_| ()) })
+    }
+}
+
+async fn run_handler<A: Answerer>(
+    client: Weak<A>,
     mut rx: tokio::sync::broadcast::Receiver<Value>,
     sink: Arc<dyn ActionSink>,
     state: Arc<PageState>,
@@ -193,16 +245,20 @@ async fn run_handler(
         };
         match classify(&ev, state.context(), &mut last_url) {
             Some(PageEvent::Dialog { kind, message, url, accept }) => {
+                // No client left (the tab was replaced): there is nobody to answer, so the task ends.
+                let Some(c) = client.upgrade() else { break };
+                // Read before the await: the tool may end while the answer is in flight.
+                let during_tool = state.during_tool();
                 // The note first: by the time the tool's own call returns, the line is already waiting.
                 state.push_note(dialog_note(&kind, &message, accept));
-                let answer = client.call("Page.handleJavaScriptDialog", json!({ "accept": accept }));
-                match tokio::time::timeout(ANSWER_TIMEOUT, answer).await {
+                match tokio::time::timeout(ANSWER_TIMEOUT, c.answer(accept)).await {
                     Ok(Ok(_)) => {}
                     // Already closed (a timer, or the page moved on): nothing to answer.
                     Ok(Err(e)) => crate::diagnostics::emit_event("browser", "dialog_answer_failed", None, &e),
                     Err(_) => crate::diagnostics::emit_event("browser", "dialog_answer_failed", None, "timeout"),
                 }
-                emit(&sink, BrowserEvent::Dialog { dialog_type: kind, message: clip_text(&message, MAX_DIALOG_TEXT), url });
+                drop(c);
+                emit(&sink, BrowserEvent::Dialog { dialog_type: kind, message: clip_text(&message, MAX_DIALOG_TEXT), url, accepted: accept, during_tool });
             }
             Some(PageEvent::Crashed { url }) => {
                 state.mark_crashed();
@@ -365,15 +421,90 @@ mod tests {
         s.begin("browser_click");
         assert!(!s.context().opening);
         assert_eq!(s.during_tool().as_deref(), Some("browser_click"));
-        s.approve_click();
-        assert!(s.context().approved_click);
-        s.end();
-        assert_eq!(s.context(), DialogContext::default(), "an error path must not leave the click approved");
+        let t0 = Instant::now();
+        s.approve_click_at(t0);
+        assert!(s.context_at(t0).approved_click);
+        s.end_at(t0);
+        assert_eq!(s.context_at(t0 + APPROVAL_GRACE + Duration::from_millis(1)), DialogContext::default(), "an error path must not leave the click approved");
         assert!(s.during_tool().is_none());
         s.begin("browser_open");
         assert!(s.context().opening);
         s.end();
         assert!(!s.context().opening);
+    }
+
+    #[test]
+    fn the_approval_outlives_its_tool_by_two_seconds_and_the_next_tool_clears_it() {
+        let s = PageState::default();
+        let t0 = Instant::now();
+        s.begin("browser_click");
+        s.approve_click_at(t0);
+        s.end_at(t0 + Duration::from_secs(1));
+        // An async confirm, opened after an await in the page, within the grace window: still approved.
+        assert!(s.context_at(t0 + Duration::from_millis(2500)).approved_click);
+        assert!(dialog_answer("confirm", s.context_at(t0 + Duration::from_millis(2500))));
+        // Past the window: cancelled again.
+        assert!(!s.context_at(t0 + Duration::from_millis(3100)).approved_click);
+        // The next tool clears it even inside the window.
+        s.begin("browser_read");
+        assert!(!s.context_at(t0 + Duration::from_millis(1500)).approved_click);
+    }
+
+    #[test]
+    fn begin_clears_an_approval_left_by_an_unfinished_tool() {
+        let s = PageState::default();
+        s.approve_click();
+        s.begin("browser_click");
+        assert!(!s.context().approved_click);
+    }
+
+    #[test]
+    fn after_a_crash_only_browser_open_goes_on() {
+        assert_eq!(crash_stops_tool(true), None);
+        assert_eq!(crash_stops_tool(false), Some(CRASH_MESSAGE));
+    }
+
+    struct Stub(std::sync::atomic::AtomicUsize);
+    impl Answerer for Stub {
+        fn answer(&self, _accept: bool) -> BoxFuture<'_, Result<(), String>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct Quiet;
+    impl ActionSink for Quiet {
+        fn enabled(&self) -> bool {
+            false
+        }
+        fn action(&self, _: crate::mcp::tools::browser::ActionRecord) {}
+        fn navigation(&self, _: crate::browser::nav::NavRecord) {}
+    }
+
+    #[tokio::test]
+    async fn the_handler_ends_when_its_client_is_gone_and_does_not_keep_it_alive() {
+        let client = Arc::new(Stub(Default::default()));
+        let weak = Arc::downgrade(&client);
+        let (tx, rx) = tokio::sync::broadcast::channel::<Value>(8);
+        let task = tokio::spawn(run_handler(weak, rx, Arc::new(Quiet), Arc::new(PageState::default())));
+        assert_eq!(Arc::strong_count(&client), 1, "the handler holds no strong reference");
+        drop(client);
+        // The channel stays open (like a socket that has not closed yet): only the missing client ends the task.
+        tx.send(opening("alert", "oi")).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), task).await.expect("the handler must end").unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_handler_answers_with_the_policys_decision_while_its_client_lives() {
+        let client = Arc::new(Stub(Default::default()));
+        let (tx, rx) = tokio::sync::broadcast::channel::<Value>(8);
+        let state = Arc::new(PageState::default());
+        let task = tokio::spawn(run_handler(Arc::downgrade(&client), rx, Arc::new(Quiet), state.clone()));
+        tx.send(opening("alert", "oi")).unwrap();
+        drop(tx);
+        tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap();
+        assert_eq!(client.0.load(Ordering::SeqCst), 1);
+        assert_eq!(state.take_notes(), "\nDiálogo da página (alert): \"oi\". O app respondeu: OK.");
     }
 
     #[test]

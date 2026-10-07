@@ -211,9 +211,27 @@ pub(crate) struct Info {
     /// `<input type=submit|image>` that belongs to a form, WHATEVER its name.
     #[serde(default, rename = "formSubmit")]
     form_submit: bool,
+    /// Raw facts about the element that submits (see `INFO_FN`); `submit_facts` turns them into the two flags above.
+    #[serde(default)]
+    tag: String,
+    #[serde(default)]
+    btype: String,
+    #[serde(default, rename = "hasForm")]
+    has_form: bool,
+    #[serde(default, rename = "nameEmpty")]
+    name_empty: bool,
     /// The info could not be read at all (script failed or returned garbage). Fail closed.
     #[serde(default)]
     unknown: bool,
+}
+
+/// Pure: is the element a submit button, and does it submit a form? `tag` and `btype` come from the element the
+/// page script resolved (the button, not a span inside it). Returns (nameless submit in a form, submits a form).
+pub(crate) fn submit_facts(tag: &str, btype: &str, has_form: bool, name_empty: bool) -> (bool, bool) {
+    let tag = tag.to_ascii_uppercase();
+    let ty = btype.to_ascii_lowercase();
+    let submit_like = (tag == "BUTTON" && ty == "submit") || (tag == "INPUT" && (ty == "submit" || ty == "image"));
+    (name_empty && has_form && submit_like, has_form && submit_like)
 }
 
 impl Info {
@@ -239,16 +257,31 @@ const INFO_FN: &str = r#"function(){
     }
     return ((e.getAttribute && e.getAttribute('aria-label')) || e.innerText || e.value || e.title || e.alt || e.textContent || '').toString().trim();
   };
-  const tag = (el.tagName || '').toUpperCase();
-  const type = (el.type || '').toLowerCase();
-  const form = el.form || (el.closest && el.closest('form'));
-  const submitBtn = form ? form.querySelector('button[type=submit],input[type=submit],input[type=image],button:not([type])') : null;
-  const empty = nameOf(el) === '';
-  const submitLike = (tag === 'BUTTON' && type === 'submit') || (tag === 'INPUT' && (type === 'submit' || type === 'image'));
+  // The element the user would really press: a click on a child of a button (<button><span>Concluir</span></button>)
+  // lands on the span, but it is the button that submits. Everything below is read from that button.
+  const b = (el.closest ? el : el.parentElement)?.closest('button,input[type=submit],input[type=image]') || el;
+  const tag = (b.tagName || '').toUpperCase();
+  const type = (b.type || '').toLowerCase();
+  const form = b.form || (b.closest && b.closest('form'));
+  const isSubmitEl = (e) => {
+    const t = (e.tagName || '').toUpperCase();
+    const ty = (e.type || '').toLowerCase();
+    return (t === 'BUTTON' && ty === 'submit') || (t === 'INPUT' && (ty === 'submit' || ty === 'image'));
+  };
+  // The default button is the first submit button in DOCUMENT order, wherever its tag sits (form="id" included).
+  // form.elements leaves out <input type=image>, so those are added and everything is sorted by position.
+  let submitBtn = null;
+  if (form) {
+    const all = Array.from(form.elements).filter(isSubmitEl).concat(Array.from(form.querySelectorAll('input[type=image]')));
+    all.sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
+    submitBtn = all[0] || null;
+  }
   return JSON.stringify({
-    name: nameOf(el),
-    isSubmit: empty && !!form && submitLike,
-    formSubmit: !!form && submitLike,
+    name: nameOf(b),
+    tag: tag,
+    btype: type,
+    hasForm: !!form,
+    nameEmpty: nameOf(b) === '',
     opaque: tag === 'IFRAME' || tag === 'FRAME',
     formDefault: submitBtn ? nameOf(submitBtn) : '',
     formDefaultExists: !!submitBtn
@@ -508,7 +541,10 @@ impl BrowserTools {
             if let Some(t) = g.take() {
                 let _ = tokio::time::timeout(Duration::from_secs(1), t.client.call("Page.close", json!({}))).await;
             }
-            return Err(page_events::CRASH_MESSAGE.to_string());
+            // browser_open goes on and opens a new tab; any other tool stops with the way forward.
+            if let Some(why) = page_events::crash_stops_tool(self.page_state.context().opening) {
+                return Err(why.to_string());
+            }
         }
         if let Some(t) = g.as_ref() {
             if !t.client.is_closed() {
@@ -582,7 +618,12 @@ impl BrowserTools {
 
     // ── what the page says about an element: browser-computed, never page-trusted ──
     fn parse_info(v: &Value) -> Info {
-        v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(Info::unreadable)
+        let mut info: Info = v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(Info::unreadable);
+        // The raw facts, when the page script sent them, decide the two submit flags.
+        if !info.tag.is_empty() {
+            (info.is_submit, info.form_submit) = submit_facts(&info.tag, &info.btype, info.has_form, info.name_empty);
+        }
+        info
     }
 
     /// An isolated JavaScript world in the main frame: its built-ins are pristine, whatever the
@@ -1684,6 +1725,23 @@ mod tests {
         assert!(friendly("connection closed".into()).contains("browser_read"));
         assert!(friendly("timeout calling DOM.getBoxModel".into()).contains("não respondeu"));
         assert_eq!(friendly("a navegação falhou: net::ERR_X".into()), "a navegação falhou: net::ERR_X");
+    }
+
+    #[test]
+    fn submit_facts_are_read_from_the_button_and_a_child_of_it_is_not_a_way_around() {
+        // Pure. A click_at on <span> inside <button> resolves to the BUTTON before this is called.
+        assert_eq!(submit_facts("BUTTON", "submit", true, false), (false, true));
+        assert_eq!(submit_facts("BUTTON", "submit", true, true), (true, true), "nameless: structural");
+        assert_eq!(submit_facts("INPUT", "image", true, false), (false, true));
+        assert_eq!(submit_facts("BUTTON", "button", true, false), (false, false));
+        assert_eq!(submit_facts("BUTTON", "submit", false, false), (false, false), "no form: nothing to submit");
+        // The span itself is never a submit: this is what the old script saw and why it let the click through.
+        assert_eq!(submit_facts("SPAN", "", true, false), (false, false));
+        let info = BrowserTools::parse_info(&json!(r#"{"name":"Concluir","tag":"BUTTON","btype":"submit","hasForm":true}"#));
+        let mut p = Probe::default();
+        p.add_name(&info.name);
+        p.add_info(&info);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
     }
 
     #[test]

@@ -1846,8 +1846,10 @@ async fn the_activity_log_gets_one_dialog_event_with_type_and_clipped_text() {
     let evs = sink.wait_for(1).await;
     assert_eq!(evs.len(), 1, "{evs:?}");
     match &evs[0] {
-        BrowserEvent::Dialog { dialog_type, message, url } => {
+        BrowserEvent::Dialog { dialog_type, message, url, accepted, during_tool } => {
             assert_eq!(dialog_type, "alert");
+            assert!(*accepted, "an alert is accepted");
+            assert_eq!(during_tool.as_deref(), Some("browser_click"));
             assert!(message.chars().count() <= 200, "{}", message.chars().count());
             assert!(url.as_deref().is_some_and(|u| u.contains("dialogs.html")), "{url:?}");
         }
@@ -1870,4 +1872,31 @@ async fn a_crashed_tab_is_logged_and_the_next_tool_says_how_to_recover_without_h
     // And browser_open brings a working tab back.
     t.open(&fixture_file("dialogs.html")).await.unwrap();
     assert!(t.read(None).await.is_ok());
+}
+
+// ───────────── F1 review (C1, I1): guard-form.html. PENDING SANDBOX: written, never run here. ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_on_the_child_of_a_submit_button_is_refused_like_the_button() {
+    // C1: <button><span>Concluir</span></button>; the point is over the span, the submit is the button.
+    // Mutation: read tag/type/form from the hit element instead of the button -> the click goes through.
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#span-in").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "span").await, "the form must not have been submitted");
+}
+
+#[tokio::test]
+#[ignore]
+async fn enter_finds_the_default_button_even_when_it_sits_outside_the_form_tag() {
+    // I1: <button form="f-ext"> is the form's default button; Enter in its field is judged by it.
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    eval(&a, "document.getElementById('e-ext').focus(); true").await;
+    let e = t.key("Enter", None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "ext").await);
 }
