@@ -193,9 +193,9 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 | ver, clicar ou conferir o app rodando, tirar print, reproduzir bug | `claudia-teste-e2e` (local ou no Sandbox) |
 | montar um Windows limpo, escolher os dados, publicar ou instalar o app, ligar o CDP no guest | `claudia-teste-sandbox` |
 
-A `claudia-teste-sandbox` usa o laboratório Windows Sandbox em `sandbox-lab/`, na raiz do repositório. Scripts e perfis são versionados; as ferramentas (`sandbox-lab/shared/tools/`, conferidas por `sandbox-lab/shared/tools.sha256`), a chave do MCP (`sandbox-lab/shared/secrets/`), as saídas e a pasta de trabalho (`.sandbox-work/`) ficam fora do git. De uma worktree, a skill usa o laboratório e a pasta de trabalho do checkout principal e testa o projeto da worktree. Nenhuma variável de ambiente de caminho.
+A `claudia-teste-sandbox` usa o laboratório Windows Sandbox em `sandbox-lab/`, na raiz do repositório. Os ambientes ficam declarados em `sandbox-lab/compose.json` (`test-up.ps1 -Ambiente <nome>`); o guest instala sozinho MSVC, Rust, Node e Claude Code a partir do cache local (`sandbox-lab/shared/cache/`, baixado por `cache-up.ps1`, que só cria) e usa a conta Claude logada no PC na hora da subida (só o arquivo de credencial, apagado no `test-down`). Scripts e `compose.json` são versionados; as ferramentas (`sandbox-lab/shared/tools/`, conferidas por `sandbox-lab/shared/tools.sha256`), o cache, a chave do MCP (`sandbox-lab/shared/secrets/`), as saídas e a pasta de trabalho (`.sandbox-work/`) ficam fora do git. De uma worktree, a skill usa o laboratório e a pasta de trabalho do checkout principal e testa o projeto da worktree. Nenhuma variável de ambiente de caminho.
 
-Cenários de dados: `novo`, `mock` e `copia` (este só com autorização do usuário na rodada). Falha do app num Windows limpo é resultado do teste: registre no Linear, não contorne no laboratório.
+Tudo o que os testes criam ou apagam no guest fica no disco `Z:` (VHD do próprio guest), que não existe no PC. Cenários de dados: `novo`, `mock` e `copia`, montados **só dentro do Sandbox**; o `copia` lê os dados reais só com `test-up -DadosReais` e autorização do usuário na rodada. Falha do app num Windows limpo é resultado do teste: registre no Linear, não contorne no laboratório.
 
 ## Dívida conhecida
 
