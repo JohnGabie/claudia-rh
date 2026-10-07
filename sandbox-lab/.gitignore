@@ -3,6 +3,7 @@
 shared/secrets/
 shared/tools/
 shared/out/
+shared/cache/
 evidence/
 sandbox/sandbox.generated.wsb
 sandbox/guest.config.json

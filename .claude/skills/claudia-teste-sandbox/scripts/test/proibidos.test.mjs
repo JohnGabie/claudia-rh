@@ -1,7 +1,7 @@
 // Pure tests: lists of strings only, no disk, no git.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { arquivosProibidos, achaCaminhoPessoal, textoParaConferir } from "../proibidos.mjs";
+import { arquivosProibidos, achaCaminhoPessoal, achaToken, textoParaConferir } from "../proibidos.mjs";
 
 const nomes = (lista) => arquivosProibidos(lista).map((a) => a.arquivo);
 
@@ -129,4 +129,32 @@ test("achaCaminhoPessoal: Public-like names are still flagged", () => {
 test("achaCaminhoPessoal: reports the line number and the match", () => {
   const r = achaCaminhoPessoal(`a\nb\nx ${["C:", "Users", "fulano"].join(B)} y`);
   assert.deepEqual(r, [{ linha: 3, trecho: ["C:", "Users", "fulano"].join(B) }]);
+});
+
+// Fake tokens are assembled at run time, so this source file never holds a token-shaped string.
+const falso = (tipo) => ["sk", "ant", tipo, "A1b2C3d4E5f6G7h8I9j0K1l2M3n4"].join("-");
+
+test("achaToken: finds OAuth access, refresh and API key shapes by line, never returns the text", () => {
+  const texto = ["linha ok", `token=${falso("oat01")}`, "x", `"${falso("ort01")}"`, `ANTHROPIC_API_KEY=${falso("api03")}`].join("\n");
+  const achados = achaToken(texto);
+  assert.deepEqual(achados, [{ linha: 2 }, { linha: 4 }, { linha: 5 }]);
+  assert.equal(JSON.stringify(achados).includes("A1b2C3"), false);
+});
+
+test("achaToken: finds a credential JSON with a long access or refresh token", () => {
+  const chave = ["access", "Token"].join("");
+  assert.deepEqual(achaToken(`{"${chave}": "${"x".repeat(30)}"}`), [{ linha: 1 }]);
+});
+
+test("achaToken: ignores the bare prefix, short values, empty tokens and ordinary text", () => {
+  const chave = ["refresh", "Token"].join("");
+  for (const t of ["sk-ant-", `sk-ant-oat01-curto`, `{"${chave}": ""}`, `{"${chave}": "abc"}`, "a skate-ant 01", ""]) {
+    assert.deepEqual(achaToken(t), [], t);
+  }
+});
+
+test("flags the lab installer cache and any Claude credential file", () => {
+  const lista = ["sandbox-lab/shared/cache/rust.msi", ".credentials.json", "x/.claude/.credentials.json", ".sandbox-work/credencial/.credentials.json"];
+  assert.deepEqual(nomes(lista), lista);
+  assert.deepEqual(nomes(["docs/credentials.md", "x/credentials.json.example"]), []);
 });
