@@ -149,6 +149,17 @@ Check 'up verdict: status, Z: drive and install decide the exit code' {
   if ((Get-LabUpVerdict -Status $ok -DiscoZ $z -Instalar $null -PrecisaInstalar $false).exit -ne 0) { throw 'nothing to install -> 0' }
   if ((Get-LabUpVerdict -Status $ok -DiscoZ $null -Instalar $null -PrecisaInstalar $false).exit -ne 1) { throw 'Z: is always required' }
 }
+Check 'early credential removal: only with an account, once, and only when the guest says conta=presente' {
+  $p = [pscustomobject]@{ conta = 'presente' }
+  if (-not (Test-LabCredentialRemovableNow -Conta $true -AlreadyRemoved $false -Status $p)) { throw 'presente -> remove' }
+  if (Test-LabCredentialRemovableNow -Conta $false -AlreadyRemoved $false -Status $p) { throw 'no account in the ambiente -> never' }
+  if (Test-LabCredentialRemovableNow -Conta $true -AlreadyRemoved $true -Status $p) { throw 'already removed -> never twice' }
+  if (Test-LabCredentialRemovableNow -Conta $true -AlreadyRemoved $false -Status $null) { throw 'no status -> keep' }
+  foreach ($v in @('ausente', '', 'Presente ', 'erro')) {
+    if (Test-LabCredentialRemovableNow -Conta $true -AlreadyRemoved $false -Status ([pscustomobject]@{ conta = $v })) { throw "conta='$v' -> keep" }
+  }
+  if (Test-LabCredentialRemovableNow -Conta $true -AlreadyRemoved $false -Status ([pscustomobject]@{ bootstrap = 'ok' })) { throw 'no conta field -> keep' }
+}
 Check 'up verdict: a failed package stays visible (exit 1) and the reason lists what did install' {
   $ok = [pscustomobject]@{ bootstrap = 'ok' }; $z = [pscustomobject]@{ ok = $true }
   $inst = [pscustomobject]@{ fim = 'x'; ok = $false; pacotes = @(

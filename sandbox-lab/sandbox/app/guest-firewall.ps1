@@ -3,6 +3,9 @@
 # e IPv6 global; loopback e redes privadas (NAT do Sandbox <-> host) continuam livres para winapp/MCP.
 # Saida: C:\labwork\run\firewall.txt
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
+# As SYSTEM the guard needs the WDAG profile and the bootstrap marker, both present only in the guest.
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 New-Item -ItemType Directory -Force C:\labwork\run | Out-Null
 $public = '0.0.0.0/5','8.0.0.0/7','11.0.0.0/8','12.0.0.0/6','16.0.0.0/4','32.0.0.0/3','64.0.0.0/2','128.0.0.0/3',
           '160.0.0.0/5','168.0.0.0/6','172.0.0.0/12','172.32.0.0/11','172.64.0.0/10','172.128.0.0/9','173.0.0.0/8',

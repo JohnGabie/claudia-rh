@@ -223,6 +223,22 @@ Check 'real data: a link INSIDE the app folder refuses (no link inside is fine)'
   Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @("$src\diagnostics\latest")) 'inside the app data folder'
   Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -Links @() -LinksInside @("$src\x", "$src\y")) 'link'
 }
+Check 'real data: the only tolerated link is the FILE link diagnostics\latest at the exact place' {
+  $src = "$RO\io.github.johngabie.claudia-rh"
+  $L = "$src\diagnostics\latest"
+  $r = { param($inside, $files) Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside $inside -FileLinksInside $files }
+  Should-BeNull (& $r @($L) @($L))
+  Should-BeNull (& $r @("$RO\io.github.johngabie.claudia-rh\DIAGNOSTICS/Latest") @("$src\diagnostics\latest"))   # case and slash
+  Should-BeNull (& $r @() @())
+  Should-Match (& $r @($L) @()) 'inside the app data folder'                                 # same name, folder link or junction
+  Should-Match (& $r @($L) $null) 'inside the app data folder'
+  Should-Match (& $r @("$src\x\diagnostics\latest") @("$src\x\diagnostics\latest")) 'inside'   # another level
+  Should-Match (& $r @("$src\latest") @("$src\latest")) 'inside'
+  Should-Match (& $r @("$src\diagnostics\other") @("$src\diagnostics\other")) 'inside'         # another name
+  Should-Match (& $r @($L, "$src\y") @($L, "$src\y")) 'inside'                                 # the exception covers only that one
+  Should-Match (& $r @($L, "$src\y") @($L)) 'inside'
+  Should-Match (& $r @("$src\diagnostics\latest\sub") @("$src\diagnostics\latest\sub")) 'inside'
+}
 Check 'layout import: only <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>' {
   $ok = "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1"
   Should-BeNull (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1')

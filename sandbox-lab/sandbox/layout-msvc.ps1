@@ -11,7 +11,8 @@ $res = [ordered]@{ ok = $false; id = $null; versao = $null; arquivos = 0; bytes 
 function Save-Result { $res.segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1); [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json), $utf8) }
 function Stop-With([string]$Why) { $res.erro = $Why; Save-Result; exit 1 }
 
-if (-not (Test-LabInGuest)) { Stop-With 'not inside the lab guest (needs the guest identity and the bootstrap marker)' }
+# Refusal outside the guest: print and leave. Nothing is written to the disk (no Save-Result, no layout-msvc.json).
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw | ConvertFrom-Json
 $m = $cfg.msvc
 if (-not $m) { Stop-With 'guest.config.json has no msvc entry: start the lab with -Ambiente cache-msvc' }

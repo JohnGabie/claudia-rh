@@ -32,7 +32,7 @@ function dbCorrompido(err) {
 // Throws on cpSync errors, database open errors, etc. — those propagate to top-level catch.
 function copiarUmaVez(origem, dados) {
   // Never follow a link and never reproduce one: the filter throws on a symlink or junction anywhere in the source.
-  fs.cpSync(origem, dados, { recursive: true, dereference: false, filter: filtroSemLinks(origem, fs.lstatSync) });
+  fs.cpSync(origem, dados, { recursive: true, dereference: false, filter: filtroSemLinks(origem, fs.lstatSync, fs.statSync) });
 
   // Fold each copied database: checkpoint WAL, change journal mode.
   for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {

@@ -207,6 +207,14 @@ function Get-LabUpVerdict {
   return [ordered]@{ exit = 0; motivo = 'bootstrap ok, Z: ready' + $(if ($PrecisaInstalar) { ', packages installed' } else { '' }) }
 }
 
+function Test-LabCredentialRemovableNow {
+  # test-up: the PC copy of the login may go as soon as the guest reports conta=presente (bootstrap.ps1 reads C:\labcred
+  # only once). Never when the ambiente has no account, never twice, never on a missing status or any other value.
+  param([bool]$Conta, [bool]$AlreadyRemoved, $Status)
+  if (-not $Conta -or $AlreadyRemoved -or $null -eq $Status) { return $false }
+  return ("$($Status.conta)" -eq 'presente')
+}
+
 function Invoke-LabStartWithCredential {
   # Copy the credential (when the ambiente asks), start the guest, and remove the copy if the start throws.
   # The three steps are injected, so the ordering is tested without a disk.

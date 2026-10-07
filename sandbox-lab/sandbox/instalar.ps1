@@ -14,7 +14,8 @@ $res = [ordered]@{ inicio = (Get-Date).ToString('o'); fim = $null; ok = $false; 
 function Save-Result { [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json -Depth 5), $utf8) }
 function Stop-With([string]$Why) { $res.erro = $Why; $res.fim = (Get-Date).ToString('o'); Save-Result; exit 1 }
 
-if (-not (Test-LabInGuest)) { Stop-With 'not inside the lab guest (needs the guest identity and the bootstrap marker)' }
+# Refusal outside the guest: print and leave. Nothing is written to the disk (no Save-Result, no instalar.json).
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 if (-not $elevated) { Stop-With 'not elevated' }
 $cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw | ConvertFrom-Json
 $wanted = @(@($cfg.instalar) | Where-Object { $_ })

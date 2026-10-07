@@ -90,7 +90,9 @@ if ($DadosReais) {
   $roaming = [Environment]::GetFolderPath('ApplicationData')
   $src = Join-Path $roaming $script:LabAppId
   # Links above the source AND any link inside it: a link in the data folder refuses the whole mount.
-  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside @(Get-LabReparsePoints $src)
+  $inside = Get-LabReparsePoints $src
+  # Only the file link diagnostics\latest (Claude Code's debug logger) is tolerated: skipped, never followed.
+  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside $inside -FileLinksInside (Get-LabFileLinks $inside)
   if ($why) { throw "[test-up] -DadosReais refused: $why" }
   if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
   $RealData = $src
@@ -207,7 +209,7 @@ while ((Get-Date) -lt $deadline) {
     try { $st = Get-Content -LiteralPath $StatusFile -Raw | ConvertFrom-Json } catch { continue }
     # The guest copied the login into its own profile (bootstrap.ps1 reads C:\labcred only once, at step 2c): the copy on
     # this PC is not needed any more, so it goes now and not only at test-down.
-    if ($conta -and -not $credGone -and "$($st.conta)" -eq 'presente') {
+    if (Test-LabCredentialRemovableNow -Conta $conta -AlreadyRemoved $credGone -Status $st) {
       Remove-LabCredential -RepoRoot $RepoRoot
       $credGone = $true
       Write-Host '[test-up] conta: o guest ja tem o login; a copia no PC foi apagada'

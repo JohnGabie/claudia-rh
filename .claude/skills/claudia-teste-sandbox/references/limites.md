@@ -80,7 +80,7 @@ Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout pri
 
 ## 12. Cenário `copia` verificado ao vivo
 
-- **Comportamento:** a cópia segue a ordem origem somente leitura, automação desligada, firewall antes da primeira abertura. Links simbólicos da origem (ex.: `diagnostics\latest`) não aparecem na cópia; o app recria o link ao abrir. `*.db-wal` e `*.db-shm` não aparecem na cópia (consolidados no banco).
+- **Comportamento:** a cópia segue a ordem origem somente leitura, automação desligada, firewall antes da primeira abertura. A cópia não segue nem reproduz links: o único aceito (pulado, não copiado) é `diagnostics\latest` como link de arquivo, criado pelo Claude Code, e o `claude-startup.log` real é copiado normalmente; qualquer outro link na origem recusa a cópia (`test-up -DadosReais` e `cenario-copia.mjs`). `*.db-wal` e `*.db-shm` não aparecem na cópia (consolidados no banco).
 - **Situação:** verificado ao vivo (2026-10-05): origem idêntica antes e depois (caminho, tamanho e data), `disparo.ativo` e `skip_permissions` falsos no guest antes e depois de abrir o app, contagens do banco no guest iguais às da cópia no host.
 
 ## Evals de disparo

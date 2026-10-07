@@ -44,7 +44,9 @@ Check 'partial install (MSVC failed, Node ok): the Node environment comes out, c
 Check 'partial install: Node failed -> no node env; Rust failed -> no cargo env; unfinished install -> neither' {
   $nodeBad = [pscustomobject]@{ ok = $false; fim = 'x'; pacotes = @((Pk 'msvc' 0), (Pk 'rust' 0), (Pk 'node' 1)) }
   if ($null -ne (Get-LabGuestToolEnv $nodeBad -Precisa node)) { throw 'node failed' }
-  if ($null -eq (Get-LabGuestToolEnv $nodeBad -Precisa cargo)) { throw 'msvc and rust ok -> cargo env' }
+  if ($null -ne (Get-LabGuestToolEnv $nodeBad -Precisa cargo)) { throw 'cargo also needs node (the documented command runs npm)' }
+  $allOk = [pscustomobject]@{ ok = $true; fim = 'x'; pacotes = @((Pk 'msvc' 0), (Pk 'rust' 0), (Pk 'node' 0)) }
+  if ($null -eq (Get-LabGuestToolEnv $allOk -Precisa cargo)) { throw 'msvc, rust and node ok -> cargo env' }
   $rustBad = [pscustomobject]@{ ok = $false; fim = 'x'; pacotes = @((Pk 'msvc' 0), (Pk 'rust' 1603), (Pk 'node' 0)) }
   if ($null -ne (Get-LabGuestToolEnv $rustBad -Precisa cargo)) { throw 'rust failed' }
   $running = [pscustomobject]@{ ok = $false; fim = $null; pacotes = @((Pk 'msvc' 0), (Pk 'rust' 0), (Pk 'node' 0)) }
