@@ -1,6 +1,8 @@
 # bootstrap.ps1 - roda DENTRO do Windows Sandbox (LogonCommand), PowerShell 5.1.
 # Mapeamentos: C:\lab = shared (RO), C:\lab\out = shared\out (RW), C:\labproject = projeto (RO),
 #              C:\labsandbox = sandbox\ (RO). Banco de trabalho: C:\labdata\app.sqlite.
+#              C:\labcred = pasta da credencial do Claude (RO, so quando a conta e pedida).
+#              Disco Z: = VHD C:\labdata\z.vhdx montado por disco-z.ps1 (precisa de administrador).
 # Saida: C:\lab\out\status.json + C:\lab\out\bootstrap.log
 $ErrorActionPreference = 'Continue'
 $Out      = 'C:\lab\out'
@@ -29,7 +31,11 @@ $status = [ordered]@{
   dbVerifyMatch    = $false
   projectMounted   = $false
   projectReadOnly  = $false
-  testServer       = $null
+  elevated         = $false
+  discoZ           = 'skipped'
+  conta            = 'nao-pedida'
+  instalar         = 'nada'
+  testServer      = $null
   chromeStarted    = $false
   chromeExe        = $null
   chromeCdp        = $null
@@ -55,6 +61,7 @@ if (-not $cfg) {
 # --- 1. pasta de saida gravavel ---
 try { [IO.File]::WriteAllText((Join-Path $Out '.write-test'), 'ok', $utf8); Remove-Item (Join-Path $Out '.write-test') -Force; $status.outWritable = $true }
 catch { $status.errors += "C:\lab\out nao gravavel: $_" }
+$status.elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 Log "bootstrap iniciado como $env:USERNAME em $env:COMPUTERNAME"
 Save-Status
 
@@ -85,6 +92,33 @@ try {
   } else { AddErr "sqlite3.exe ausente em $sqlite" }
 } catch { AddErr "db: $_" }
 Save-Status
+
+# --- 2b. Z: drive for everything the Sandbox tests create (spec A6). Needs an administrator. ---
+$status.phase = 'disco-z'
+if ($status.elevated) {
+  try {
+    $p = Start-Process powershell.exe -PassThru -Wait -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','C:\labsandbox\disco-z.ps1')
+    $status.discoZ = $(if ($p.ExitCode -eq 0) { 'ok' } else { 'failed' })
+  } catch { $status.discoZ = 'failed'; AddErr "disco-z: $_" }
+} else { $status.discoZ = 'needs-system'; Log 'logon is not elevated: test-up runs disco-z.ps1 as System' }
+Save-Status
+
+# --- 2c. Claude account (spec A4): copy the mounted login into this user's profile. Only presence is recorded. ---
+if ($cfg.conta) {
+  $status.phase = 'conta'
+  try {
+    $src = 'C:\labcred\.credentials.json'
+    if (Test-Path -LiteralPath $src -PathType Leaf) {
+      $dir = Join-Path $env:USERPROFILE '.claude'
+      New-Item -ItemType Directory -Force $dir | Out-Null
+      $dst = Join-Path $dir '.credentials.json'
+      Copy-Item -LiteralPath $src -Destination $dst -Force
+      Set-ItemProperty -LiteralPath $dst -Name IsReadOnly -Value $false
+      $status.conta = 'presente'
+    } else { $status.conta = 'ausente'; AddErr 'conta: the login file is not mounted' }
+  } catch { $status.conta = 'falhou'; AddErr 'conta: copy failed' }   # never log the exception text
+  Save-Status
+}
 
 # --- 3. projeto montado e somente leitura ---
 $status.phase = 'project'
@@ -173,6 +207,15 @@ $status.timestamps.coreDone = (Now)
 $coreOk = $status.outWritable -and $status.dbHashMatch -and $status.dbVerifyMatch -and $status.projectReadOnly -and $status.chromeStarted -and $status.extensionMarker
 $status.bootstrap = $(if ($coreOk) { 'ok' } else { 'failed' })
 Save-Status
+
+# --- 5b. packages (spec A3): instalar.ps1 runs detached, in parallel with the MCP phase; test-up waits for instalar.json ---
+if (@($cfg.instalar | Where-Object { $_ }).Count -gt 0) {
+  if ($status.elevated) {
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','C:\labsandbox\instalar.ps1') | Out-Null
+    $status.instalar = 'iniciado'
+  } else { $status.instalar = 'needs-system' }
+  Save-Status
+}
 
 # --- 6. hook do MCP (opcional) ---
 # Contrato: C:\labsandbox\bootstrap-mcp.ps1 (sem parametros obrigatorios), le env LAB_GUEST_CONFIG / LAB_MCP_PORT,
