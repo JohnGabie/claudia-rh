@@ -81,7 +81,7 @@ Decisões da seção 2 até aqui: R1 conferir o PID antes de matar; R2 validar o
 1. Ampliar o grep da Tarefa 0: `cpSync`, `renameSync`, `Move-Item -Force`, `writeFileSync` que sobrescreve, `git worktree remove` e o laboratório externo.
 2. Apagar cache de build: o estado do shell não persiste entre chamadas, e `rm -rf "$VAR"` com a variável vazia é um desastre. Usar **caminho literal** com guarda:
    ```powershell
-   $p='C:\Users\joaog\.cache\claudia-close-1'; $i=Get-Item -LiteralPath $p -Force -ErrorAction Stop
+   $p="$env:USERPROFILE\.cache\claudia-close-1"; $i=Get-Item -LiteralPath $p -Force -ErrorAction Stop
    if($i.FullName -ne $p -or ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw "recusado"}
    Remove-Item -LiteralPath $p -Recurse -Force
    ```

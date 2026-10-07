@@ -37,13 +37,19 @@ Em 2026-10-05 um teste de "limpeza de dados", escrito por um agente e nunca revi
 3. **No PC do usuário só rodam:** compilar (`cargo build`, `cargo clippy`), `npx tsc --noEmit`, `npm run build` e os testes de front que não tocam disco (`tests/front/*.test.ts`, com a lista explícita).
 4. Pré-requisito: o laboratório do Sandbox configurado (`SANDBOX_LAB_DIR`). Sem ele, os testes **não rodam** e ficam como "não verificado". Não há fallback para o PC.
 
+## Ajustes de 2026-10-07 (valem sobre as tarefas abaixo)
+
+- **Caminhos:** nada de caminho absoluto de máquina. Use `$USERPROFILE`/`$env:USERPROFILE`, variáveis (`SANDBOX_LAB_DIR`, `CARGO_TARGET_DIR`), caminhos relativos ao repositório ou as APIs (`temp_dir()`, `os.tmpdir()`). O laboratório do Sandbox é sempre `$SANDBOX_LAB_DIR`, que o usuário define no ambiente; o plano não escreve o caminho dele.
+- **Onde cada tarefa roda:** pela regra acima, **todo teste que apaga roda só no Sandbox**. Na Tarefa 1 (Steps 2, 3 e 5), na Tarefa 3, na Tarefa 4 (`cargo test`, testes live, ícone, smoke MCP, mutações) e na Tarefa 6, os testes rodam no Windows Sandbox, com o perfil de build do laboratório. No PC do usuário ficam só a compilação, o clippy, o `tsc`, o build e os testes de front sem disco.
+- **Tarefa 5 (smoke de uso real): BLOQUEADA** até a branch dos dados falsos completos (`feat/dados-falsos-teste`, spec `2026-10-07-dados-falsos-teste-design.md`, a escrever) estar pronta. Decisão do usuário: o smoke roda **no Sandbox, cenário de dados falsos completos**, e os dados reais não entram. Limite conhecido: o CDP não abre dentro do Sandbox, então a observação é por acessibilidade (UIA). Comandos internos e JavaScript não estão disponíveis, e o que não for verificável assim fica como "não verificado". Os Steps 1 a 4 da Tarefa 5 (backup e contagens dos dados reais) deixam de valer.
+
 ## Global Constraints
 
 - Nenhum passo de instalação novo para o usuário.
 - Nunca mudar o `identifier` Tauri `io.github.johngabie.claudia-rh`.
 - `src-tauri/src/prompt_sistema_runtime.md`: nenhuma edição neste plano.
 - Comentários de código, identificadores novos e commits em inglês. Docs e copy da UI em pt-BR.
-- Cada agente usa o próprio `CARGO_TARGET_DIR` (`C:/Users/joaog/.cache/claudia-close-<tarefa>`). No fim, apaga **só esse cache**, depois de conferir o caminho exato.
+- Cada agente usa o próprio `CARGO_TARGET_DIR` (`$USERPROFILE/.cache/claudia-close-<tarefa>`). No fim, apaga **só esse cache**, depois de conferir o caminho exato.
 - Chrome de teste: `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe` (conferido em 2026-10-06).
 - Sem push, sem merge e sem PR. Integrar é decisão do usuário (Tarefa 11).
 - Site real, login real e envio real só com autorização explícita do usuário **naquela rodada**.
@@ -317,7 +323,7 @@ mod tests {
         assert!(!is_removable_profile_dir(&r.join("x").join("claudia-live-1"), &r), "two levels down");
         assert!(!is_removable_profile_dir(&r.join("claudia-live-1").join(".."), &r), "parent component");
         assert!(!is_removable_profile_dir(Path::new("claudia-live-1"), &r), "relative");
-        assert!(!is_removable_profile_dir(Path::new(r"C:\Users\joaog\claudia-live-1"), &r), "outside temp");
+        assert!(!is_removable_profile_dir(Path::new(r"C:\fora-do-temp\claudia-live-1"), &r), "outside temp");
     }
 }
 ```
@@ -326,7 +332,7 @@ Os testes usam caminhos que **não existem** e só chamam a função pura.
 - [ ] **Step 2: Ligar e rodar só os testes puros**
 
 Acrescente `mod support;` no topo de `tests/browser_live.rs` e de `tests/viewport_live.rs`.
-Run (em `src-tauri/`): `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-close-1 cargo test --test browser_live support::`
+Run (em `src-tauri/`): `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-close-1 cargo test --test browser_live support::`
 Expected: `2 passed`.
 
 - [ ] **Step 3: Mutação**
@@ -365,7 +371,7 @@ Em `tests/viewport_live.rs`, a mesma troca, com `support::new_profile_dir("viewp
 - [ ] **Step 5: Suíte live três vezes**
 
 ```bash
-cd src-tauri && export CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-close-1 CLAUDIA_TEST_CHROME="$(cygpath -w "$TEMP")\\cft\\chrome-win64\\chrome.exe"
+cd src-tauri && export CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-close-1 CLAUDIA_TEST_CHROME="$(cygpath -w "$TEMP")\\cft\\chrome-win64\\chrome.exe"
 for i in 1 2 3; do cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon > live-$i.log 2>&1; echo "rodada $i exit=$?"; grep -E "test result|FAILED" live-$i.log; done
 ```
 Expected: exit 0 nas três (`browser_live` 70 passed, `viewport_live` 5 passed). Uma falha de CLA-36 ou CLA-38 vai para D2, com a mensagem. Depois das rodadas, nenhum `chrome.exe` com `claudia-live-` na linha de comando (`Get-CimInstance Win32_Process`).
@@ -376,7 +382,7 @@ Expected: exit 0 nas três (`browser_live` 70 passed, `viewport_live` 5 passed).
 git add src-tauri/tests/support/mod.rs src-tauri/tests/browser_live.rs src-tauri/tests/viewport_live.rs
 git commit -m "test(live): guarded profile deletion and a retrying first page so a failed launch never orphans Chrome (CLA-39)"
 ```
-Apague só `C:/Users/joaog/.cache/claudia-close-1` e os `live-*.log` que criou, conferindo os caminhos antes.
+Apague só `$USERPROFILE/.cache/claudia-close-1` e os `live-*.log` que criou, conferindo os caminhos antes.
 
 ---
 
@@ -523,7 +529,7 @@ git commit -m "fix: no anexo for a format the field refuses, no file name in upd
 cd claudia-rh && npx tsc --noEmit; echo tsc=$?
 node --test "tests/front/*.test.ts"; echo front=$?
 npm run build; echo build=$?; grep -rl "mock-documentos-dev-only\|__mockEmit\|mockInvoke" dist && echo "MOCK NO BUNDLE" || echo mock-fora
-cd src-tauri && export CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-target
+cd src-tauri && export CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-target
 cargo test --lib; echo lib=$?
 cargo clippy --all-targets; echo clippy=$?
 ```
@@ -534,7 +540,7 @@ Expected: exit 0 em todos e `mock-fora`. Os avisos do clippy são comparados ao 
 A suíte live da Tarefa 1, Step 5, uma vez. Depois os 3 testes de ícone, **uma vez**. Eles abrem uma janela visível do Chrome de teste, com perfil temporário:
 `cargo test --test browser_live -- --ignored icon --test-threads=1; echo icon=$?`
 E o smoke MCP:
-`cargo build && CLAUDIA_TEST_CHROME=... CLAUDIA_ALLOW_LOCAL_URLS=1 node tests/mcp-browser-smoke.mjs "C:/Users/joaog/.cache/claudia-target/debug/claudia-rh.exe"; echo smoke=$?` → a última linha é `TUDO OK`.
+`cargo build && CLAUDIA_TEST_CHROME=... CLAUDIA_ALLOW_LOCAL_URLS=1 node tests/mcp-browser-smoke.mjs "$USERPROFILE/.cache/claudia-target/debug/claudia-rh.exe"; echo smoke=$?` → a última linha é `TUDO OK`.
 
 - [ ] **Step 3: Mutações da leitura robusta** (nunca coladas)
 
@@ -559,7 +565,7 @@ Use `git diff --stat` para confirmar que tudo foi restaurado.
 
 Feche o app só se foi este plano que o abriu. Se foi o usuário, pergunte antes.
 ```powershell
-$dst = "C:\Users\joaog\Documents\ClaudiaRH-backup-$(Get-Date -Format yyyyMMdd-HHmm)"
+$dst = "$env:USERPROFILE\Documents\ClaudiaRH-backup-$(Get-Date -Format yyyyMMdd-HHmm)"
 if (Test-Path $dst) { throw "pasta de backup já existe: $dst" }
 robocopy "$env:APPDATA\io.github.johngabie.claudia-rh" "$dst\appdata" /E /R:1 /W:1 /NFL /NDL
 robocopy "$env:LOCALAPPDATA\io.github.johngabie.claudia-rh" "$dst\localappdata" /E /R:1 /W:1 /NFL /NDL /XD browser
