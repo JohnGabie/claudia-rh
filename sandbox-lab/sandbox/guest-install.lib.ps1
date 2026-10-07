@@ -26,7 +26,7 @@ function Get-LabInstallDone($Instalar) {
 
 function Test-LabInstallNeed {
   # What a guest script needs from instalar.json ($Precisa): 'todos' = every package ok (Instalar.ok), 'node' = Node ok
-  # (the Sandbox-only tests and the scenarios), 'cargo' = MSVC and Rust ok (the Rust build links with MSVC). The partial
+  # (the Sandbox-only tests and the scenarios), 'cargo' = MSVC, Rust and Node ok (the Rust build links with MSVC; the documented command also runs npm). The partial
   # modes also need the install to have finished (fim), so a run never starts while a package is still being installed.
   param($Instalar, [string]$Precisa = 'todos')
   if ($null -eq $Instalar) { return $false }
@@ -36,7 +36,7 @@ function Test-LabInstallNeed {
     'cargo' {
       if (-not $Instalar.fim) { return $false }
       $done = Get-LabInstallDone $Instalar
-      return (($done -contains 'msvc') -and ($done -contains 'rust'))
+      return (($done -contains 'msvc') -and ($done -contains 'rust') -and ($done -contains 'node'))
     }
     default { return $false }
   }

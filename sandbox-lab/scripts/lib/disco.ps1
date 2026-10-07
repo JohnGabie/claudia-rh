@@ -65,6 +65,17 @@ function Get-LabReparsePoints([string]$Dir) {
   return ,$found
 }
 
+function Get-LabFileLinks([string[]]$Paths) {
+  # Of reparse points already found, the ones that are links to a FILE (no Directory attribute). Reads attributes only and
+  # never follows the link; anything unreadable is NOT listed, so it stays a refusing link. SANDBOX ONLY.
+  $r = @()
+  foreach ($p in @($Paths | Where-Object { $_ })) {
+    $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($item.Attributes -band [IO.FileAttributes]::Directory)) { $r += $p }
+  }
+  return ,$r
+}
+
 function Clear-LabOut([string]$OutDir, [string]$LabDir) {
   $links = @(Get-LabLinksInPath $OutDir $LabDir) + @(Get-LabReparsePoints $OutDir)
   $refusal = Get-LabOutCleanRefusal -OutDir $OutDir -LabDir $LabDir -Links $links

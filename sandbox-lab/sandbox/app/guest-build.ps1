@@ -10,7 +10,7 @@ param(
   [string]$Build = 'npm.cmd run build',
   [string]$Artifacts = 'C:\labdata\cargo-target\release\*.exe',
   # What this run needs from instalar.ps1: 'node' = the Sandbox-only tests (MSVC/Rust may have failed), 'cargo' = a Rust
-  # build (MSVC and Rust ok), 'todos' = every package of the ambiente.
+  # build (MSVC, Rust and Node ok), 'todos' = every package of the ambiente.
   [ValidateSet('todos', 'node', 'cargo')][string]$Precisa = 'todos'
 )
 $ErrorActionPreference = 'Continue'

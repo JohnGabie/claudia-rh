@@ -236,7 +236,10 @@ function Get-LabRealDataSourceRefusal {
   # test-up -DadosReais (spec addendum 8.1): only the app's folder under Roaming, read-only, never %LOCALAPPDATA%.
   # Callers pass [Environment]::GetFolderPath('ApplicationData'), the reparse points above the source ($Links) and the ones
   # found INSIDE it ($LinksInside): any link inside refuses too (the copy scenario refuses links, it never follows them).
-  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @(), [string[]]$LinksInside = @())
+  # One exception, nothing else: the FILE link <Source>\diagnostics\latest (made by the Claude Code debug logger) is skipped,
+  # never followed. $FileLinksInside lists which of the $LinksInside are links to a FILE (not a folder or junction); the same
+  # name as a folder link or junction, at another level, or any other link still refuses.
+  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @(), [string[]]$LinksInside = @(), [string[]]$FileLinksInside = @())
   if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($RoamingAppData)) { return 'source and roaming folder are required' }
   $r = $RoamingAppData.TrimEnd('\')
   $why = Get-LabRootProblem $r
@@ -246,7 +249,13 @@ function Get-LabRealDataSourceRefusal {
   if ((ConvertTo-LabPathKey $Source) -ne (ConvertTo-LabPathKey "$r\$script:LabAppId")) { return "source is not exactly %APPDATA%\$script:LabAppId" }
   $l = @($Links | Where-Object { $_ })
   if ($l.Count) { return 'link (symlink/junction) in the path of the app data folder' }
-  if (@($LinksInside | Where-Object { $_ }).Count) { return 'link (symlink/junction) inside the app data folder: the copy scenario refuses links' }
+  $skipKey = ConvertTo-LabPathKey "$($Source.TrimEnd('\'))\diagnostics\latest"
+  $fileKeys = @(@($FileLinksInside) | Where-Object { $_ } | ForEach-Object { ConvertTo-LabPathKey ($_ -replace '/', '\') })
+  $blocking = @(@($LinksInside) | Where-Object { $_ } | Where-Object {
+    $k = ConvertTo-LabPathKey ($_ -replace '/', '\')
+    -not ($k -eq $skipKey -and $fileKeys -contains $k)
+  })
+  if ($blocking.Count) { return 'link (symlink/junction) inside the app data folder: the copy scenario refuses links' }
   return $null
 }
 

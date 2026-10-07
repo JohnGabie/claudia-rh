@@ -30,6 +30,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+# Guard (not in -DryRun, which is the documented way to test outside the guest): bootstrap.ps1 starts this script as the
+# guest logon user, so both factors hold there (WDAGUtilityAccount plus the bootstrap marker). Nothing is written on refusal.
+. (Join-Path $PSScriptRoot 'guest-install.lib.ps1')
+if (-not $DryRun -and -not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
+
 $sw = [Diagnostics.Stopwatch]::StartNew()
 $startedAt = (Get-Date).ToString('o')
 $errors = New-Object System.Collections.Generic.List[string]
