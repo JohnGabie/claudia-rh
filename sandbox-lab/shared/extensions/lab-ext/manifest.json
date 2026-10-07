@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "lab-ext",
+  "version": "1.0.0",
+  "description": "Extensao de teste do win-sandbox-lab: injeta um marcador visivel (LAB-EXT OK) em toda pagina.",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

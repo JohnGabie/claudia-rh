@@ -1,0 +1,7 @@
+# Segredos, binarios pre-baixados e saidas do guest/testes
+shared/secrets/
+shared/tools/
+shared/out/
+evidence/
+sandbox/sandbox.generated.wsb
+sandbox/guest.config.json

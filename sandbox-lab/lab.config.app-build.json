@@ -1,0 +1,62 @@
+{
+  "$comment": "Perfil: build dentro do guest com toolchains do host montados read-only em C:\\hosttools (Node, Rust msvc, MSVC, Windows SDK; ajuste os caminhos ao host). Rede ligada (registros de pacotes). Requer LAB_APP_PROJECT e LAB_WORK_DIR. Uso: scripts\\test-up.ps1 -Config lab.config.app-build.json; depois sandbox\\app\\guest-build.ps1 via winapp target exec",
+  "projectPath": "%LAB_APP_PROJECT%",
+  "extensionsDir": "shared/extensions",
+  "extensions": [
+    "lab-ext"
+  ],
+  "dbBackup": "shared/db/backup.sqlite",
+  "dbHashFile": "shared/db/backup.sha256",
+  "dbVerifySql": "shared/db/verify.sql",
+  "dbVerifyExpected": "shared/db/verify.expected.txt",
+  "chrome": {
+    "exe": "shared/tools/chrome/chrome-win64/chrome.exe",
+    "startUrl": "http://localhost:8080/test-page.html",
+    "testServerPort": 8080,
+    "remoteDebuggingPort": 9222
+  },
+  "mcp": {
+    "$comment": "Detalhes do Windows-MCP ficam em shared/mcp.json; port deve bater com ele.",
+    "port": 8000,
+    "configFile": "shared/mcp.json",
+    "authKeyFile": "shared/secrets/mcp-auth.key",
+    "authKeyEnv": "LAB_MCP_AUTH_KEY"
+  },
+  "vGPU": "Enable",
+  "clipboardRedirection": "Enable",
+  "bootTimeoutSec": 300,
+  "memoryMB": 8192,
+  "networking": "Enable",
+  "extraMappedFolders": [
+    {
+      "host": "%LAB_WORK_DIR%\\deploy",
+      "readOnly": true,
+      "sandbox": "C:\\appdeploy"
+    },
+    {
+      "host": "%LAB_WORK_DIR%\\guest-rw",
+      "readOnly": false,
+      "sandbox": "C:\\labwork"
+    },
+    {
+      "host": "%ProgramFiles%\\nodejs",
+      "readOnly": true,
+      "sandbox": "C:\\hosttools\\nodejs"
+    },
+    {
+      "host": "%USERPROFILE%\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc",
+      "readOnly": true,
+      "sandbox": "C:\\hosttools\\rust"
+    },
+    {
+      "host": "%ProgramFiles(x86)%\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC",
+      "readOnly": true,
+      "sandbox": "C:\\hosttools\\msvc"
+    },
+    {
+      "host": "%ProgramFiles(x86)%\\Windows Kits\\10",
+      "readOnly": true,
+      "sandbox": "C:\\hosttools\\winkits"
+    }
+  ]
+}
