@@ -1,12 +1,8 @@
----
-name: sandbox-lab
-description: Como usar o win-sandbox-lab - subir/derrubar o Windows Sandbox descartavel (test-up/test-down), controlar apps e o Chrome do guest com winapp --on sandbox ou com o MCP windows-sandbox (Windows-MCP via HTTP), onde gravar evidencias, onde fica o banco de trabalho e quais pastas sao read-only. Use sempre que for testar, automatizar UI, tirar screenshot ou validar objetivos (O1-O10) deste lab.
----
+# Laboratório Windows Sandbox (referência)
 
-# sandbox-lab
+Origem: skill `sandbox-lab` do laboratório, trazida para o repositório em 2026-10-07 (spec `docs/superpowers/specs/2026-10-07-laboratorio-no-repo-design.md`). **Onde este texto e o `CLAUDE.md` da raiz ou a `SKILL.md` da `claudia-teste-sandbox` divergem, valem eles.**
 
-Lab de teste descartavel: build no host, execucao num Windows Sandbox limpo, controlado por IA.
-Contrato e criterios de aprovacao: `OBJECTIVES.md` (raiz do lab). Leia antes de agir.
+O laboratório fica em `sandbox-lab/` do checkout principal (`node .claude/skills/claudia-teste-sandbox/scripts/onde.mjs` → `lab`). Contrato e critérios de aprovação do laboratório genérico: `sandbox-lab/OBJECTIVES.md`.
 
 ## Regra de seguranca n. 1
 
@@ -58,11 +54,12 @@ claude mcp list                             # windows-sandbox; na 1a vez aparece
 ```
 
   (`.mcp.json` usa `${LAB_MCP_AUTH_KEY}`; reinicie o Claude Code apos o sync para pegar o novo IP.)
+- O `.mcp.json` do laboratório (`sandbox-lab/.mcp.json`) é gerado pelo `mcp-sync.ps1`, fica fora do git e nunca contém a chave (a opção `-Literal` foi removida).
 - Tools uteis: `Snapshot`/`Screenshot` (ver a tela do guest), `Click`, `Type`, `Shortcut`, `App`, `PowerShell` (roda no guest).
 
 ## winapp no guest
 
-Skills detalhadas: `winapp-sandbox` e `winapp-ui-automation` (nesta pasta). Resumo:
+Skills detalhadas: `.claude/skills/winapp-sandbox` e `.claude/skills/winapp-ui-automation`. Resumo:
 
 ```powershell
 winapp ui list-windows --on sandbox
@@ -79,7 +76,7 @@ pagina de teste servida em `http://localhost:8080/test-page.html` no guest.
 ## Perfis (`-Config`)
 
 `scripts\test-up.ps1 -Config <perfil>`; sem `-Config` usa `lab.config.json` (projeto de exemplo).
-Caminhos nos perfis aceitam variaveis de ambiente (`%USERPROFILE%`). Cada perfil explica o uso no `$comment`.
+Caminhos nos perfis são relativos a `sandbox-lab/`; o perfil de build usa `%USERPROFILE%` e `%ProgramFiles%` só para as toolchains do host. Cada perfil explica o uso no `$comment`.
 
 | Perfil | Para que serve | Rede |
 |---|---|---|
@@ -89,23 +86,20 @@ Caminhos nos perfis aceitam variaveis de ambiente (`%USERPROFILE%`). Cada perfil
 | `lab.config.app-build.json` | build do projeto dentro do guest (`sandbox\app\guest-build.ps1`) com toolchains do host montados read-only | ligada |
 
 Perfis `lab.config.app*.json`:
-- Variaveis de ambiente no host: `LAB_APP_PROJECT` (pasta do projeto, montada read-only em `C:\labproject`)
-  e `LAB_WORK_DIR` (pasta de trabalho; `deploy\` vira `C:\appdeploy` read-only e `guest-rw\` vira `C:\labwork` gravavel).
-  Use copias: nunca aponte para o projeto ou os dados originais se o teste puder grava-los.
-- Publicar o app: `scripts\app-stage.ps1 -App <exe ou pasta> [-AppData <pasta>...] [-LocalAppData <pasta>...]`.
-  As pastas de dados devem ser copias preparadas para teste (automacoes com efeito externo desligadas).
+- Projeto: `test-up.ps1 -Project <pasta>` (a skill passa o checkout atual; montado read-only em `C:\labproject`). Pasta de trabalho: `.sandbox-work/` do checkout principal (`deploy\` vira `C:\appdeploy` read-only, `guest-rw\` vira `C:\labwork` gravável). Sem variável de ambiente.
+- Publicar o app: `node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta>` (chama `scripts\app-stage.ps1 -Clean` com a trava do marcador `.lab-deploy`).
 - No guest (`winapp target exec sandbox -- powershell -ExecutionPolicy Bypass -File <script>`):
   - `C:\labsandbox\app\guest-run.ps1 [-Exe x.exe]` - copia os dados para `%APPDATA%`/`%LOCALAPPDATA%` e inicia o app.
     Rode com `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File ..."` (id em `wsb list`):
     iniciado por `winapp target exec`, o app e encerrado quando o comando termina.
   - `C:\labsandbox\app\guest-chrome-probe.ps1 [-Port N] [-Navigate <url>]` - acha o Chrome com DevTools ligado e lista as abas.
   - `C:\labsandbox\app\guest-observe.ps1 -Process <nome>` / `guest-click.ps1 -X -Y` - screenshot, arvore UIA e clique sem winapp.
-  - Saidas em `C:\labwork\...` (= `%LAB_WORK_DIR%\guest-rw\...` no host).
+  - Saidas em `C:\labwork\...` (= `.sandbox-work\guest-rw\...` no host).
 - Nao acione no app nenhuma acao com efeito externo real (envios, publicacoes, pagamentos) e nao faca login em contas reais.
 - Falhas do proprio app no Windows limpo (dependencia ausente, erro de inicializacao) sao resultado do teste: registre, nao contorne.
 
 ## Evidencias
 
-- Host: `evidence\` (screenshots, relatorios) - nome `O<n>-<descricao>.png|md`.
+- Host: `sandbox-lab/evidence/` (ignorada pelo git; screenshots, relatorios) - nome `O<n>-<descricao>.png|md`.
 - Guest: so `C:\lab\out` sobrevive (aparece em `shared\out\`). Copie o que importar antes do `test-down`.
 - Valide resultados lendo os arquivos/screenshots, nao apenas em relatorios anteriores (O9).
