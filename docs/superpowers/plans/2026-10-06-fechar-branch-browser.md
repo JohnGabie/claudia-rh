@@ -104,6 +104,10 @@ As caixas `- [ ]` dos planos nunca foram marcadas: o estado real vem dos ledgers
 | `update_variante` responde com nome de arquivo (`search_variants.yaml.bak-1`) | `mcp/tools/variantes.rs:54` | T3-B |
 | Teste ignorado de prova do PDF ficou no código | `commands/curriculos.rs:814-829` | T3-C |
 | Janela de impressão do PDF roda com JavaScript ligado | `documentos/pdf.rs` | D9 |
+| D10 | **CLA-35 e CLA-40 bloqueiam o merge:** corrigir com agentes em worktree (spec curta antes). |
+| D11 | **Feito** (`309dc56`): `prototipo-playwright/` saiu do git (24 arquivos, conferidos com `git rm -n`); os arquivos não versionados ficaram no disco do usuário. |
+| D12 | **Feito:** worktree antiga removida depois de conferida limpa e integrada. |
+| D13 | **Confirmadas** as decisões tomadas sem o usuário (Chrome fecha com o app; revisão da Fase 2 coberta pela final; `browser_upload` em toda sessão, recusando sem vaga ativa; seletor atrasado não é fechado; upload responde só o nome do arquivo). |
 | `PrintToPdf` pode gravar depois do timeout | `pdf.rs:99` | L |
 | **Eventos do browser nunca vão para o Activity log** (download, instalação, lançamento, queda, crash de aba, diálogo); o filtro "browser" da tela fica sempre vazio | spec motor §5.6, `sink.rs:77,97` | D7 |
 | Diálogos nativos (`alert`/`confirm`, `Page.javascriptDialogOpening`) não são tratados | ledger motor:54-56 | D8 |
@@ -176,7 +180,7 @@ As caixas `- [ ]` dos planos nunca foram marcadas: o estado real vem dos ledgers
 | D6 | **Antes do merge, rápido e sem perder qualidade:** guarda de envio (CLA-37), spec curta, tudo em agentes numa worktree, com revisor Opus no fim. |
 | D7 | **Fazer agora, nesta branch:** eventos do próprio browser no Activity log (download, lançamento, queda, crash de aba, diálogo), com spec curta, agentes e revisor. |
 | D8 | **Antes do merge:** tratar diálogos nativos (`alert`/`confirm`, `Page.javascriptDialogOpening`), com spec curta, agentes e revisor. |
-| D9 | **Sim, nesta branch se for pequeno:** desligar o JavaScript na janela invisível do PDF, com teste; se não for pequeno, Linear. |
+| D9 | **Deixar como está** (decisão G6 de 2026-10-08): a janela do PDF continua com JavaScript; risco aceito, sem acesso ao app. |
 
 ### Task 0: Auditoria de deleção (só leitura, Opus)
 
