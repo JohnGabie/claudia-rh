@@ -5,7 +5,7 @@
 function Test-LabInSandbox {
   # Reads the OS identity and one guest-only file; the decision itself is the pure Test-LabSandboxDecision.
   $id = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-  return Test-LabSandboxDecision -Identity $id -HasBootstrap (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf)
+  return Test-LabSandboxDecision -Identity $id -HasBootstrap (Test-Path -LiteralPath $script:LabGuestMarker -PathType Leaf)
 }
 
 function Get-LabLinksInPath([string]$Dir, [string]$StopAt) {
@@ -21,6 +21,30 @@ function Get-LabLinksInPath([string]$Dir, [string]$StopAt) {
     $cur = $parent
   }
   return ,$links
+}
+
+function ConvertTo-LabFullPath([string]$Path, [string]$Base) {
+  # Full path with an explicit base (never the CWD). Only 'X:\...' and UNC count as absolute; drive-relative ('C:x') and
+  # rooted-without-drive ('\x') are refused because GetFullPath would resolve them against the CWD. Windows PowerShell 5.1
+  # has no two-argument GetFullPath, so relative values are joined to the base first. SANDBOX ONLY (touches no disk, but
+  # is exercised together with the disk helpers in travas.sandbox.ps1).
+  if ([string]::IsNullOrWhiteSpace($Path)) { throw 'empty path' }
+  if ($Path -match '^[A-Za-z]:\\' -or $Path -match '^\\\\') { return [IO.Path]::GetFullPath($Path) }
+  if ([IO.Path]::IsPathRooted($Path)) { throw "path is neither absolute nor relative (depends on the CWD): $Path" }
+  return [IO.Path]::GetFullPath((Join-Path $Base $Path))
+}
+
+function Resolve-LabRealPath([string]$FullPath) {
+  # Path as the OS reports it for an existing item (SANDBOX ONLY: needs a real disk); a missing item stays as given.
+  # Links are not followed here: Get-LabLinksAboveRoot finds them and the pure guards refuse them.
+  $item = Get-Item -LiteralPath $FullPath -Force -ErrorAction SilentlyContinue
+  if ($item) { return $item.FullName }
+  return $FullPath
+}
+
+function Get-LabLinksAboveRoot([string]$FullPath) {
+  # Reparse points in the path or any ancestor up to the drive root (junction, symlink, subst folder). SANDBOX ONLY.
+  return ,@(Get-LabLinksInPath $FullPath ([IO.Path]::GetPathRoot($FullPath)))
 }
 
 function Get-LabReparsePoints([string]$Dir) {
