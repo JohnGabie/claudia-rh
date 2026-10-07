@@ -85,7 +85,7 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 
 ## Evals de disparo
 
-Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.
+(Não rodar `rodar-evals.mjs` até a Tarefa 0b: CLA-56.) Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.
 
 Medido com o nome anterior da skill (`claudia-sandbox`) e a primeira versão da descrição (894 caracteres); a medição após o rename está abaixo.
 

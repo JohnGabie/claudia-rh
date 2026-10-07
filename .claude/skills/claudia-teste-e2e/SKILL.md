@@ -14,6 +14,20 @@ Dá a quem desenvolve o olhar de um dev sobre o app rodando. **Nunca interage co
 
 Todos os scripts ficam em `.claude/skills/claudia-teste-e2e/scripts/` e rodam com Node ≥ 22.13, sem instalar nada.
 
+## Regras duras (valem antes de tudo)
+
+Origem: incidente de 2026-10-05. Detalhes, decisões B1 a B7 e tabela R1 a R12: `docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`.
+
+- Teste que apaga qualquer arquivo roda **só no Windows Sandbox** (`claudia-teste-sandbox`). Nenhum caminho real em teste (raiz de disco, repositório, `AppData`, sistema).
+- **Nunca o Chrome pessoal do usuário**; o Chrome do Claudia-RH pode (inclusive no smoke MCP, R11).
+- `node --test` **sempre com a lista de arquivos explícita**. Não rodar `evals/rodar-evals.mjs` até a Tarefa 0b (CLA-56).
+- **Até a Tarefa 0b do plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md` entrar** (o código ainda não foi corrigido):
+  - antes de `subir.mjs`, a **automação (disparo por ociosidade e modo autônomo) tem de estar desligada pelo usuário na tela** (B4; depois o app de teste subirá sem automação por variável de dev). Se o app instalado estiver aberto, **pare e pergunte** (R12);
+  - `invocar.mjs --escrever`: **nunca** `apagar_*`, `excluir_*`, `remover_*`, `limpar_*`, `desinstalar*`, `instalar_*`, `iniciar_*`, `disparar_*`, `enviar_*`, e **nunca `obter_credencial`** (devolve senha) (B5);
+  - prints **só em `debug-logs/prints/`, nunca sobrescrevendo** arquivo existente (R9);
+  - botões arriscados ("Iniciar procura", "Desinstalar", "Limpar", "Instalar atualização", "Gerar", "Sair") **só no Sandbox** (R10);
+  - fechar o app **pela janela ou pelo PID que o próprio `subir.mjs` gravou**; nunca `taskkill /IM claudia-rh.exe`, `/IM node.exe` nem `Stop-Process -Name`.
+
 ## Fluxo
 
 1. **Conectar:** `node scripts/subir.mjs`. Devolve JSON com `acao`: `subiu`, `reutilizar`, `perguntar` ou `abortar`. Se `perguntar`, o app já roda sem CDP: peça ao usuário antes de reiniciar.
@@ -52,7 +66,7 @@ Primeiro reproduza no app rodando. Só feche depois de reproduzido antes e confi
 
 - Escrever direto no banco ou nos YAMLs do perfil. Escrita só por `invocar.mjs --escrever`, avisando antes.
 - Editar `prompt_sistema_runtime.md` ou o `identifier` Tauri.
-- Reiniciar o app do usuário sem perguntar, ou matar processo que não subiu.
+- Reiniciar o app do usuário sem perguntar, ou matar processo que não subiu (nem por nome de imagem: ver regras duras).
 - Clicar em rótulo destrutivo, de envio, ou sem nome (o `ver.mjs` recusa).
 - Dar teste por passado porque o `cargo test` ficou verde.
 
@@ -70,7 +84,7 @@ Escada, do mais fiel ao mais robusto; usar o primeiro que funcionar e dizer qual
 | 3 | `pwsh -NoProfile -File scripts/print-janela.ps1 -TelaInteira -Saida <arq>` | `winapp target screenshot sandbox -o <arq>` | tela inteira; no Sandbox é o desktop do guest e, nos perfis `app*`, o Chrome do laboratório pode ficar na frente e cobrir o app |
 | 4 | — | sem rede: `C:\labsandbox\app\guest-observe.ps1` via `wsb exec` (PNG em `C:\labwork\run`) | tela inteira + árvore UIA |
 
-`scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira (com vários monitores, `-TelaInteira` captura o retângulo de toda a tela virtual, com áreas pretas onde não há monitor); só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File scripts/print-janela.ps1 ...`. Prints vão para `debug-logs/prints/` por padrão (já ignorada pelo git) e podem conter dados pessoais: não anexar a issues públicas sem revisar.
+`scripts/print-janela.ps1`: PowerShell + `System.Drawing`, sem dependências; captura o retângulo da janela principal do processo (DPI-aware) ou a tela inteira (com vários monitores, `-TelaInteira` captura o retângulo de toda a tela virtual, com áreas pretas onde não há monitor); só leitura (não foca, não clica). Execute com `pwsh -NoProfile -File scripts/print-janela.ps1 ...`. Prints vão para `debug-logs/prints/` (já ignorada pelo git), só ali e sem sobrescrever e podem conter dados pessoais: não anexar a issues públicas sem revisar.
 
 **Regra:** toda afirmação sobre a UI vem com print; se nenhum degrau da escada funcionar, dizer quais falharam e por quê.
 
