@@ -6,6 +6,8 @@
 [CmdletBinding()]
 param([int]$TimeoutSec = 30)
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot 'lib\travas.ps1')
+. (Join-Path $PSScriptRoot 'lib\disco.ps1')
 
 $wsb = Get-Command wsb -ErrorAction SilentlyContinue
 if ($wsb) {
@@ -36,6 +38,10 @@ if ($still) {
   Start-Sleep -Seconds 3
   $still = Get-Process -Name 'WindowsSandboxServer','vmmemWindowsSandbox','WindowsSandboxRemoteSession','WindowsSandboxClient' -ErrorAction SilentlyContinue
 }
-if ($still) { Write-Warning "[test-down] ainda ativos: $($still | ForEach-Object { "$($_.Name)($($_.Id))" })"; exit 1 }
-Write-Host "[test-down] Sandbox encerrado." -ForegroundColor Green
-exit 0
+$code = 0
+if ($still) { Write-Warning "[test-down] ainda ativos: $($still | ForEach-Object { "$($_.Name)($($_.Id))" })"; $code = 1 }
+else { Write-Host "[test-down] Sandbox encerrado." -ForegroundColor Green }
+# The copy of the Claude login (spec A4) never outlives the Sandbox: only that file, through the pure guard.
+$RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+try { Remove-LabCredential -RepoRoot $RepoRoot } catch { Write-Warning "[test-down] login copy not removed: $($_.Exception.Message)"; $code = 1 }
+exit $code

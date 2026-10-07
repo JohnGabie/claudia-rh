@@ -8,23 +8,32 @@ param()
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'lib\travas.ps1')
+. (Join-Path $PSScriptRoot 'lib\compose.ps1')
 . (Join-Path $PSScriptRoot 'lib\disco.ps1')
 $results = New-Object System.Collections.Generic.List[object]
 function Add-Result([string]$level, [string]$check, [string]$detail = '') {
   $results.Add([pscustomobject]@{ Level = $level; Check = $check; Detail = $detail })
 }
-function P([string]$p) { $p = [Environment]::ExpandEnvironmentVariables($p); if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $Root $p } }
+function P([string]$p) { if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $Root $p } }
 
-# 1. lab.config.json
+# 1. compose.json (the old per-profile files are ambientes now)
+$compose = $null
+try { $compose = Get-Content (Join-Path $Root 'compose.json') -Raw | ConvertFrom-Json; Add-Result PASS 'compose.json e JSON valido' }
+catch { Add-Result FAIL 'compose.json e JSON valido' $_.Exception.Message }
 $cfg = $null
-try { $cfg = Get-Content (Join-Path $Root 'lab.config.json') -Raw | ConvertFrom-Json; Add-Result PASS 'lab.config.json e JSON valido' }
-catch { Add-Result FAIL 'lab.config.json e JSON valido' $_.Exception.Message }
+if ($compose) {
+  $cfg = $compose.comum
+  foreach ($n in @($compose.ambientes.PSObject.Properties.Name)) {
+    $why = Get-LabComposeRefusal -Compose $compose -Ambiente $n
+    if ($why) { Add-Result FAIL "compose.json: ambiente $n" $why } else { Add-Result PASS "compose.json: ambiente $n" }
+  }
+}
 
 if ($cfg) {
-  foreach ($k in 'projectPath','extensionsDir','dbBackup','chrome','mcp','memoryMB','networking') {
-    if ($null -eq $cfg.$k) { Add-Result FAIL "config.$k presente" } }
+  foreach ($k in 'extensionsDir','dbBackup','chrome','mcp') {
+    if ($null -eq $cfg.$k) { Add-Result FAIL "comum.$k presente" } }
   $paths = [ordered]@{
-    projectPath = $cfg.projectPath; extensionsDir = $cfg.extensionsDir; dbBackup = $cfg.dbBackup
+    projectPath = 'sample-project'; extensionsDir = $cfg.extensionsDir; dbBackup = $cfg.dbBackup
     dbHashFile = $cfg.dbHashFile; dbVerifySql = $cfg.dbVerifySql; dbVerifyExpected = $cfg.dbVerifyExpected
     'chrome.exe' = $cfg.chrome.exe; 'sqlite3.exe' = 'shared/tools/sqlite/sqlite3.exe'
     'test-page.html' = 'shared/test-page.html'; 'sandbox.template.wsb' = 'sandbox/sandbox.template.wsb'
@@ -72,7 +81,7 @@ foreach ($s in Get-ChildItem (Join-Path $Root 'scripts'), (Join-Path $Root 'scri
 
 # 3. .wsb gerado e XML valido
 try {
-  & (Join-Path $PSScriptRoot 'test-up.ps1') -GenerateOnly *> $null
+  & (Join-Path $PSScriptRoot 'test-up.ps1') -GenerateOnly -Ambiente exemplo *> $null
   $wsbPath = Join-Path $Root 'sandbox\sandbox.generated.wsb'
   [xml]$x = Get-Content $wsbPath -Raw
   $mf = @($x.Configuration.MappedFolders.MappedFolder)
