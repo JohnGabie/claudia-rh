@@ -86,6 +86,15 @@ Riscos da opção 2: dentro do guest o token fica disponível para qualquer proc
 - O `conferir-repo.mjs`, que já procura caminho de máquina, passa a procurar também padrões de token no texto versionado (prefixo dos tokens da Anthropic).
 - `shared/cache/` entra no `.gitignore` e na lista de proibidos do `proibidos.mjs`.
 
+### Decisões do usuário (2026-10-07)
+
+- **A1:** `compose.json` (opção A).
+- **A2:** cache no PC (`cache-up.ps1` só cria, nunca apaga).
+- **A4:** nenhuma das opções da tabela. O usuário quer usar **a conta que já está logada no PC dele** e tem **mais de uma conta**. Proposta (NÃO decidida), a detalhar antes do plano:
+  - Na subida, o `test-up.ps1` copia **só o arquivo de credencial** da conta escolhida, nunca a pasta `.claude` inteira: nada de sessões, memória nem configurações. O caminho é achado em tempo de execução pela API do Windows (`GetFolderPath('UserProfile')`), nunca escrito em arquivo versionado. A cópia vai para `.sandbox-work/` (fora do git), é montada só leitura no guest e é apagada pelo `test-down.ps1` através de uma função de recusa pura (só aquele arquivo, dentro de `.sandbox-work/`).
+  - Para escolher a conta: `-Conta <nome>`, mapeado num arquivo local fora do git (`sandbox-lab/shared/secrets/contas.json`: nome → pasta de configuração daquela conta). **Em aberto:** como o usuário separa as contas hoje (pastas de configuração diferentes? trocando o login?).
+  - **Risco, não verificado:** se o Claude Code do guest renovar o token, a credencial do PC pode deixar de valer e o PC pede login de novo. Precisa de teste no Sandbox antes de adotar. Se acontecer, o recuo é o token de longa duração (opção 2).
+
 ## 4. Impacto
 
 - **Laboratório:** `test-up.ps1` (lê o ambiente do `compose.json`), novo `cache-up.ps1`, novo `sandbox\instalar.ps1`, `guest-build.ps1` (sem `C:\hosttools`), os `lab.config.*.json` saem, `travas.ps1` (recusa do compose), `.gitignore`, `proibidos.mjs`, `conferir-repo.mjs`, README e skill `claudia-teste-sandbox` (seções 2 e 9).
