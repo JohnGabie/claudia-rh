@@ -30,6 +30,13 @@ Em 2026-10-05 um teste de "limpeza de dados", escrito por um agente e nunca revi
 - **Evidência vai para o repositório.** `.superpowers/` está em `.git/info/exclude` e não é versionado. A prova desta branch fica em `docs/superpowers/evidencias/` (Tarefa 2), sem caminhos pessoais.
 - Commit a cada passo verde. Trabalho de agente que não foi commitado conta como perdido.
 
+## ⛔ Regra do usuário (2026-10-07): testes que apagam rodam só no Sandbox
+
+1. **Nenhum teste usa caminho absoluto real** (`C:\`, o repositório, `AppData`, `win.ini` ou qualquer arquivo do sistema). Nem para ler, nem para provar recusa.
+2. **Todo teste que apaga qualquer arquivo roda só no Windows Sandbox**, inclusive os que apagam só a própria pasta temporária. Isso inclui `cargo test --lib`, os testes live, o smoke do MCP e os testes das skills.
+3. **No PC do usuário só rodam:** compilar (`cargo build`, `cargo clippy`), `npx tsc --noEmit`, `npm run build` e os testes de front que não tocam disco (`tests/front/*.test.ts`, com a lista explícita).
+4. Pré-requisito: o laboratório do Sandbox configurado (`SANDBOX_LAB_DIR`). Sem ele, os testes **não rodam** e ficam como "não verificado". Não há fallback para o PC.
+
 ## Global Constraints
 
 - Nenhum passo de instalação novo para o usuário.

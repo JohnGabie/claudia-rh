@@ -6,6 +6,15 @@ Motivo da auditoria: em 2026-10-05 um teste apagou o disco C do usuário, e cerc
 
 **Resultado: há `BLOQUEIA`. Nenhum teste do plano roda antes de as correções da seção 1 entrarem.**
 
+## ⛔ Regra do usuário (2026-10-07): testes que apagam rodam só no Sandbox
+
+1. **Nenhum teste usa caminho absoluto real** (`C:\`, o repositório, `AppData`, `win.ini` ou qualquer arquivo do sistema). Nem para ler, nem para provar recusa.
+2. **Todo teste que apaga qualquer arquivo roda só no Windows Sandbox**, inclusive os que apagam só a própria pasta temporária. Isso inclui `cargo test --lib`, os testes live, o smoke do MCP e os testes das skills.
+3. **No PC do usuário só rodam:** compilar (`cargo build`, `cargo clippy`), `npx tsc --noEmit`, `npm run build` e os testes de front que não tocam disco (`tests/front/*.test.ts`, com a lista explícita).
+4. Pré-requisito: o laboratório do Sandbox configurado (`SANDBOX_LAB_DIR`). Sem ele, os testes **não rodam** e ficam como "não verificado". Não há fallback para o PC.
+
+Decisões da seção 2 até aqui: R1 conferir o PID antes de matar; R2 validar o caminho do Chrome de teste; R4 lançador e kill falsos; R5 o teste deixa de ler `win.ini`; R7 pasta temporária própria. **R8 (testes que apagam a própria pasta temporária) passa a rodar só no Sandbox, pela regra acima.** A seção 4 ("seguro rodar nesta máquina") fica substituída pelo item 3 da regra.
+
 ## 1. BLOQUEIA: corrigir antes de qualquer execução
 
 | # | Onde | O que acontece | Correção |
