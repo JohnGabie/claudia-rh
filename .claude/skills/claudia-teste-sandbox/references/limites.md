@@ -2,25 +2,25 @@
 
 Cada item traz o comando que demonstra o comportamento. **Não verificado** quer dizer que o comando ainda não foi rodado contra um Sandbox de verdade para reproduzi-lo (2026-10-05: itens 1, 2, 3, 5, 6 e 8 verificados num Sandbox real); a fonte indica onde o laboratório documenta o comportamento. Quem reproduzir um item atualiza a linha com data, comando e resultado.
 
-Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
+Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout principal); `<id>` vem de `wsb list`.
 
 ## 1. winapp não alcança o guest com `networking: Disable`
 
 - **Comportamento:** no perfil `lab.config.app.json` (sem rede), `winapp ... --on sandbox` não chega ao guest. Controle e prints só por `wsb exec` + `C:\labsandbox\app\guest-observe.ps1` / `guest-click.ps1`.
 - **Demonstra:** `scripts\test-up.ps1 -Config lab.config.app.json` e depois `winapp ui list-windows --on sandbox`.
-- **Fonte:** `$comment` de `lab.config.app.json` e tabela de perfis em `.claude\skills\sandbox-lab\SKILL.md`.
+- **Fonte:** `$comment` de `lab.config.app.json` e tabela de perfis em `references/laboratorio.md`.
 - **Situação:** verificado (2026-10-05). Com `lab.config.app.json` de pé, `winapp ui list-windows --on sandbox` saiu com 70 em ~7 s ("A Windows Sandbox is already running but did not respond") e não criou um segundo Sandbox.
 
 ## 2. App iniciado por `winapp target exec` termina quando o comando termina
 
 - **Comportamento:** o processo filho morre junto com o `winapp target exec`. Para o app continuar aberto, inicie com `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1"` (ou `cdp-guest.mjs --iniciar`, que já faz isso).
 - **Demonstra:** `winapp target exec sandbox -- powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1` e, depois que o comando volta, `winapp ui list-windows --on sandbox` sem a janela do app.
-- **Fonte:** cabeçalho de `sandbox\app\guest-run.ps1` e seção de perfis `app*` do `sandbox-lab\SKILL.md`.
+- **Fonte:** cabeçalho de `sandbox\app\guest-run.ps1` e seção de perfis `app*` do `references/laboratorio.md`.
 - **Situação:** verificado (2026-10-05). `winapp target exec sandbox -- powershell ... guest-run.ps1` voltou com 0 e, depois, `winapp ui list-windows --on sandbox` não listou o app. Contraprova: iniciado por `wsb exec`, o app seguiu aberto minutos depois. Observação: o `winapp target exec` **devolve** o stdout (alternativa para comandos curtos que não deixam app aberto).
 
 ## 3. `wsb exec` não devolve a saída do processo
 
-- **Comportamento:** o stdout do comando executado no guest não volta ao host. Scripts do guest gravam o resultado em `C:\labwork\...` (ex.: `C:\labwork\run\guest-run.json`), lido no host em `<work-dir>\guest-rw\...`. `cdp-guest.mjs` e `banco-guest.mjs` seguem esse padrão. O host recebe apenas uma linha localizada com o código de saída do guest (item 8).
+- **Comportamento:** o stdout do comando executado no guest não volta ao host. Scripts do guest gravam o resultado em `C:\labwork\...` (ex.: `C:\labwork\run\guest-run.json`), lido no host em `.sandbox-work\guest-rw\...`. `cdp-guest.mjs` e `banco-guest.mjs` seguem esse padrão. O host recebe apenas uma linha localizada com o código de saída do guest (item 8).
 - **Demonstra:** `wsb exec --id <id> -r ExistingLogin -c "cmd /c echo marcador"`: o host não imprime `marcador`, só a linha do código de saída.
 - **Fonte:** interface do laboratório na spec do repositório; `wsb exec --help` não menciona saída do processo.
 - **Situação:** verificado (2026-10-05) com o comando acima.
@@ -36,7 +36,7 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 
 - **Comportamento:** o Windows só mantém uma instância do Windows Sandbox. Antes de `test-up.ps1`, confira `wsb list`; se já houver um de outro teste, não o derrube sem falar com o usuário. Sem Sandbox de pé, `winapp ... --on sandbox` cria um novo **sem** os mapeamentos do laboratório.
 - **Demonstra:** com um Sandbox de pé, `wsb start` falha ou não cria uma segunda instância (`wsb list` continua com um id).
-- **Fonte:** seção "Ciclo de vida" do `sandbox-lab\SKILL.md`.
+- **Fonte:** seção "Ciclo de vida" do `references/laboratorio.md`.
 - **Situação:** verificado (2026-10-05): `wsb start` com um Sandbox de pé falhou com `CO_E_APPSINGLEUSE` (0x800401F6) e `wsb list` manteve um id só.
 
 ## 6. `.exe` de `tauri build --no-bundle` não instala pré-requisitos
@@ -68,7 +68,7 @@ Comandos de host a partir de `%SANDBOX_LAB_DIR%`; `<id>` vem de `wsb list`.
 
 ## 10. Espaço livre no C: do host
 
-- **Comportamento:** o disco virtual do Windows Sandbox fica no C: do host, mesmo quando a pasta de trabalho (`SANDBOX_LAB_DIR`) está em outro disco. Com pouco espaço livre no C:, a instalação silenciosa do app (`/S`) pode esgotar o disco. Confira o espaço livre antes de `test-up` e mantenha uma folga de vários GB. Derrube o Sandbox entre etapas pesadas para liberar espaço.
+- **Comportamento:** o disco virtual do Windows Sandbox fica no C: do host, mesmo quando o repositório (e a pasta de trabalho `.sandbox-work/`) está em outro disco. Com pouco espaço livre no C:, a instalação silenciosa do app (`/S`) pode esgotar o disco. Confira o espaço livre antes de `test-up` e mantenha uma folga de vários GB. Derrube o Sandbox entre etapas pesadas para liberar espaço.
 - **Demonstra:** a conferência do espaço, não a lentidão: rode `Get-PSDrive C` no host (coluna `Free`) antes de `test-up.ps1` e confirme a folga.
 - **Situação:** verificado ao vivo (2026-10-05): com a pasta de trabalho em outro disco, o C: chegou a 0 bytes durante a instalação silenciosa.
 

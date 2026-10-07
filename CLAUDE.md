@@ -60,7 +60,7 @@ Isto é sugestão, como o resto desta seção. Se o usuário quiser ir direto ao
 - **Nenhum passo de instalação novo para o usuário.** O que o app não conseguir empacotar, baixar ou configurar sozinho, não entra. Isso vale para extensões de browser, runtimes (Node, Python), binários externos e servidores que precisam ser instalados à parte.
 - **Spec driven development, estritamente.** Sem spec aprovada pelo usuário, não se escreve código. Ver "Processo de desenvolvimento" abaixo.
 - Se uma decisão não está na arquitectura nem no design, pare e pergunte.
-- **Nada de caminho absoluto de máquina** (`C:Users<nome>...`, a pasta do usuário, o caminho do laboratório) em código, testes, scripts, skills, planos ou docs. Use variáveis de ambiente (`SANDBOX_LAB_DIR`, `CARGO_TARGET_DIR`, `USERPROFILE`), caminhos relativos ao repositório ou as APIs (`temp_dir()`, `os.tmpdir()`, `app_data_dir()`). Os que já existem estão numa issue do Linear para ajustar.
+- **Nada de caminho absoluto de máquina** (`C:Users<nome>...`, a pasta do usuário, o caminho do laboratório) em código, testes, scripts, skills, planos ou docs. Use variáveis de ambiente (`CARGO_TARGET_DIR`, `USERPROFILE`), caminhos relativos ao repositório ou as APIs (`temp_dir()`, `os.tmpdir()`, `app_data_dir()`). Os que já existem estão numa issue do Linear para ajustar.
 - **Nunca usar o Chrome pessoal do usuário** (nem o perfil dele, nem cópia dele) em teste, script ou agente. Só o Chrome do Claudia-RH (o que o app baixa) ou o Chrome de teste com perfil temporário.
 - **Teste nunca usa caminho real** (`C:\`, o repositório, `AppData`, arquivo do sistema), nem para ler, nem para provar que a recusa funciona: a recusa se testa na função de validação pura. **Todo teste que apaga qualquer arquivo roda só no Windows Sandbox** (skill `claudia-teste-sandbox`). No PC do usuário: só compilar, clippy, `tsc`, build e testes de front que não tocam o disco. Motivo: em 2026-10-05 um teste que passava `C:\` para uma função de apagar destruiu o disco do usuário.
 
@@ -193,7 +193,9 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 | ver, clicar ou conferir o app rodando, tirar print, reproduzir bug | `claudia-teste-e2e` (local ou no Sandbox) |
 | montar um Windows limpo, escolher os dados, publicar ou instalar o app, ligar o CDP no guest | `claudia-teste-sandbox` |
 
-A `claudia-teste-sandbox` usa um laboratório Windows Sandbox mantido fora do repositório, localizado pela variável `SANDBOX_LAB_DIR`. Cenários de dados: `novo`, `mock` e `copia` (este só com autorização do usuário na rodada). Falha do app num Windows limpo é resultado do teste: registre no Linear, não contorne no laboratório.
+A `claudia-teste-sandbox` usa o laboratório Windows Sandbox em `sandbox-lab/`, na raiz do repositório. Scripts e perfis são versionados; as ferramentas (`sandbox-lab/shared/tools/`, conferidas por `sandbox-lab/shared/tools.sha256`), a chave do MCP (`sandbox-lab/shared/secrets/`), as saídas e a pasta de trabalho (`.sandbox-work/`) ficam fora do git. De uma worktree, a skill usa o laboratório e a pasta de trabalho do checkout principal e testa o projeto da worktree. Nenhuma variável de ambiente de caminho.
+
+Cenários de dados: `novo`, `mock` e `copia` (este só com autorização do usuário na rodada). Falha do app num Windows limpo é resultado do teste: registre no Linear, não contorne no laboratório.
 
 ## Dívida conhecida
 
