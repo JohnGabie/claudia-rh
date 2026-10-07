@@ -142,3 +142,35 @@ O teste "a source that is a drive root is refused" passa `Q:\` ao `app-stage.ps1
 - Se o MSVC for lento demais a cada boot, alternativa a decidir: instalar o MSVC no guest uma vez e guardar a pasta instalada no cache. Isso é diferente de emprestar a do host e é **não verificado** para o MSVC.
 - Versão exata de Node e de Claude Code a fixar.
 - **Enquanto isto não existe:** posso subir o Sandbox hoje no perfil atual para os testes de Node e PowerShell, que não precisam de Rust, e deixar os de Rust para depois desta spec.
+
+## 8. Adendo de 2026-10-07 (plano) — AGUARDANDO APROVAÇÃO DO USUÁRIO DO TRECHO ALTERADO
+
+Origem: ao escrever o plano, apareceu um ponto em que a spec, ao pé da letra, quebrava o uso normal (D1), e o usuário decidiu também como montar o cache do MSVC. Decisões do usuário em 2026-10-07: D1 = "Cenários só no Sandbox"; MSVC = layout montado dentro de um Sandbox; D2 = todas aprovadas. Este adendo descreve **como** isso fica. O texto abaixo só vale depois de o usuário aprovar este trecho.
+
+### 8.1 D1: cenários só no Sandbox (substitui a parte de `novoCenarioDir()` da A6)
+
+- `cenario-novo.mjs`, `cenario-mock.mjs` e `cenario-copia.mjs` passam a rodar **só dentro do guest**: `novoCenarioDir()` recusa fora do Sandbox (os mesmos dois fatores de `exigirSandbox()`) e grava em `Z:\claudia-teste-sandbox\<cenario>`, com o caminho real começando em `Z:\`. Nada de cenário no PC.
+- O host dispara um cenário com `node .claude/skills/claudia-teste-sandbox/scripts/cenario-no-guest.mjs --cenario novo|mock|copia [--autorizado] [--manter-automacao]`, que roda no guest `C:\labsandbox\app\guest-cenario.ps1` pelo `wsb exec`. O resultado volta por `C:\labwork\run\cenario.json`. O Node usado é o que o guest instalou, então os ambientes `app` e `app-winapp` passam a instalar `node`.
+- **`copia` com os dados reais:** o `test-up.ps1` só monta os dados reais com a chave `-DadosReais`. Ela é passada **só com autorização do usuário naquela rodada**. A pasta é achada em tempo de execução: `[Environment]::GetFolderPath('ApplicationData')` + `io.github.johngabie.claudia-rh`. Nunca fica escrita num arquivo versionado, e nunca é `%LOCALAPPDATA%`.
+  - A pasta é montada **só leitura** em `C:\labdadosreais`.
+  - Uma função pura recusa qualquer outra pasta, links no caminho e nomes 8.3.
+  - Dentro do guest, o `cenario-copia.mjs` usa `C:\labdadosreais` como origem e continua exigindo `--autorizado`.
+  - A cópia dos dados reais fica só no `Z:` do guest e some no `test-down`.
+- **Publicar:** o `publicar.mjs --app <exe|instalador|pasta>` publica só o app (sem `--cenario`). O `app-stage.ps1` perde `-AppData` e `-LocalAppData`. No guest, `guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\<cenario>` copia `appdata` e `localappdata` do cenário para o perfil do guest; ele só aceita uma pasta debaixo de `Z:\claudia-teste-sandbox\`.
+
+### 8.2 MSVC: layout offline montado dentro de um Sandbox
+
+- O PC não instala nem executa nada do Visual Studio. No host, o `cache-up.ps1` só **baixa** o bootstrapper de versão fixa (`vs_buildtools-<versão>.exe`, SHA-256 do `compose.json`), como os outros pacotes.
+- Um ambiente novo, `cache-msvc` (rede ligada), monta só leitura o cache (via `shared\` → `C:\lab\cache`) e, gravável, `.sandbox-work\cache-saida\` em `C:\labcachesaida`. O passo dentro do guest é feito pelo `sandbox\layout-msvc.ps1`, rodado como System:
+  - confere o SHA-256 do bootstrapper;
+  - monta o layout em `C:\labdata\msvc-layout` (disco do guest);
+  - grava a lista de arquivos com tamanho e SHA-256 (`layout.sha256`);
+  - copia tudo para uma pasta nova `C:\labcachesaida\<id>\msvc-<versão>\`;
+  - grava o resultado em `C:\lab\out\layout-msvc.json`.
+- No host, o `cache-up.ps1 -ImportarMsvc <id>`:
+  - recusa uma origem que não seja exatamente `.sandbox-work\cache-saida\<id>\msvc-<versão>` ou que tenha link;
+  - confere **no host** o SHA-256 e o tamanho de cada arquivo contra o `layout.sha256` (falta, sobra ou diferença → para sem copiar);
+  - copia arquivo por arquivo para uma pasta nova `.tmp` em `shared\cache\`, sem sobrescrever;
+  - confere de novo e só então renomeia para `msvc-<versão>`.
+- Regra de disco no host: o `cache-up.ps1` continua **só criando**. Nunca apaga nem sobrescreve, nem no `shared\cache\`, nem no `.sandbox-work\cache-saida\`. Limpar a `cache-saida` é tarefa manual do usuário.
+- **Não verificado:** se o layout montado no guest depende de algo da máquina; quanto tempo leva e quanto ocupa; se o `--layout` precisa de administrador (por isso o passo roda como System).

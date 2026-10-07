@@ -35,13 +35,14 @@ Origem: em 2026-10-05 um teste passou `C:\` para uma função de apagar e destru
 - A3: `sandbox\instalar.ps1` instala no guest, nesta ordem, MSVC → Rust → Node → Claude Code a partir do cache, grava `C:\lab\out\instalar.json` (versão, tempo, código de saída de cada pacote); `test-up.ps1` espera esse arquivo. Target do cargo continua no disco do guest. `guest-build.ps1` sem `C:\hosttools`. Mapeamentos de toolchain do host saem.
 - A4: conta = **a logada no PC na hora do `test-up`** (sem `-Conta`, sem `contas.json`). Copia **só** o arquivo de credencial, achado em tempo de execução pela API (`[Environment]::GetFolderPath('UserProfile')`), para `.sandbox-work/`, montado só leitura; apagado no `test-down` (só aquele arquivo) por função de recusa pura. Nunca em log, `status.json` nem `guest.config.json`. O risco da renovação do token é **não verificado** e é o primeiro teste no Sandbox.
 - A5: `Get-LabComposeRefusal` pura recusa caminho do host, variável de ambiente e nome desconhecido; `conferir-repo.mjs` detecta padrão de token; `shared/cache/` no `.gitignore` e no `proibidos.mjs`.
-- A6: VHD montado como `Z:` no guest (diskpart como admin, seleciona o vdisk pelo arquivo e confere a letra antes de formatar; ~7 s); raiz fixa `Z:\claudia-teste-sandbox` em `util.mjs tempDir()`, `comum.mjs novoCenarioDir()` (ver D1) e `travas.sandbox.ps1`; recusa se o `realpathSync.native` não começa com `Z:\`; `testes-no-guest.mjs` passa `TEMP=Z:\tmp`; `cenario-copia.mjs:87` revisado; `test-up.ps1` recusa se o host tiver `Z:`. A trava de dois fatores (`exigirSandbox()`) continua.
+- A6: VHD montado como `Z:` no guest (diskpart como admin, seleciona o vdisk pelo arquivo e confere a letra antes de formatar; ~7 s); raiz fixa `Z:\claudia-teste-sandbox` em `util.mjs tempDir()`, `comum.mjs novoCenarioDir()` e `travas.sandbox.ps1`; recusa se o `realpathSync.native` não começa com `Z:\`; `testes-no-guest.mjs` passa `TEMP=Z:\tmp`; `cenario-copia.mjs:87` revisado; `test-up.ps1` recusa se o host tiver `Z:`. A trava de dois fatores (`exigirSandbox()`) continua.
+- **Adendo 2026-10-07 (spec §8), aguardando aprovação do trecho:** D1 = cenários **só no guest** (`novoCenarioDir` recusa fora do Sandbox; host dispara por `cenario-no-guest.mjs`; dados reais do `copia` só com `test-up -DadosReais`, pasta Roaming do app achada pela API, montada só leitura em `C:\labdadosreais`, nunca `%LOCALAPPDATA%`; `publicar.mjs` publica só o app; `guest-run.ps1 -Cenario`). MSVC = layout montado **dentro de um Sandbox** (ambiente `cache-msvc`, saída gravável `.sandbox-work\cache-saida` → `C:\labcachesaida`), conferido por SHA-256 no host e importado por `cache-up.ps1 -ImportarMsvc <id>` só criando. O PC não executa nada do Visual Studio. D2: todas aprovadas.
 - A7: sai o caso `Q:\` do `travas.sandbox.ps1`; raiz de disco coberta só no `travas.test.ps1` puro.
 - Versões fixadas (pesquisa de 2026-10-07, fontes oficiais, hashes conferidos por download dos arquivos oficiais de checksum):
   - Rust `1.95.0`: `https://static.rust-lang.org/dist/rust-1.95.0-x86_64-pc-windows-msvc.msi`, SHA-256 `08d228850565cfe421da6faeac029fb1f0c8341219d0dd9490d42a8355aa0703` (do `.msi.sha256` oficial), 303775340 bytes.
   - Node `22.23.3` (último 22.x LTS em `latest-v22.x`): `https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip`, SHA-256 `2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71` (do `SHASUMS256.txt`), 35574076 bytes.
   - Claude Code `2.1.285` (canal `stable` em 2026-10-07): `https://downloads.claude.ai/claude-code-releases/2.1.285/win32-x64/claude.exe`, SHA-256 `121fc8151ed40bd9c144d68aa1cea23427803628ffab65e23da1cceda155697e` (do `manifest.json` da versão), 243751072 bytes.
-  - MSVC: Visual Studio 2022 Build Tools, componentes `Microsoft.VisualStudio.Workload.VCTools`, `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`, `Microsoft.VisualStudio.Component.Windows11SDK.26100`, idioma `en-US`. Versão exata e bootstrapper de versão fixa: a fixar na Tarefa 1 (Passo 1).
+  - MSVC: Visual Studio 2022 Build Tools, componentes `Microsoft.VisualStudio.Workload.VCTools`, `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`, `Microsoft.VisualStudio.Component.Windows11SDK.26100`, idioma `en-US`. Versão exata e bootstrapper de versão fixa: a fixar na Tarefa 1 (Passo 1). O bootstrapper **nunca é executado no PC**.
 - Docs em pt-BR; código, comentários e commits em inglês. Mensagens de commit terminam com:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -55,20 +56,23 @@ Origem: em 2026-10-05 um teste passou `C:\` para uma função de apagar e destru
 1. **Cópia da credencial fica no PC quando o `test-up` falha depois de copiar** (o `wsb start` erra, o id não aparece): espera-se que o `test-up` apague a cópia antes de sair. Teste: `Invoke-LabStartWithCredential` com `Start` que lança (Tarefa 1, teste "start with credential").
 2. **`CLAUDE_CONFIG_DIR` definido no PC** (o usuário usa outra pasta de configuração): espera-se recusa clara antes de copiar qualquer coisa, sem adivinhar a outra pasta. Teste: `Get-LabCredentialSourceRefusal` com `-ConfigDir` (Tarefa 2).
 3. **O PC tem uma unidade `Z:`** (pendrive, unidade de rede): espera-se que o `test-up` recuse antes de gerar arquivos ou subir o Sandbox, porque `Z:` passaria a existir nos dois lados. Teste: `Get-LabHostDriveRefusal` (Tarefa 2).
-4. **Arquivo do cache com hash diferente** (download antigo, corrompido ou outra versão com o mesmo nome): espera-se que o `cache-up.ps1` pare sem baixar nada, sem sobrescrever e sem apagar. Teste: `Get-LabCachePlan` → `conflito` (Tarefa 2) e teste estático "cache-up has no delete or overwrite command" (Tarefa 9).
-5. **LogonCommand sem privilégio de administrador** (não verificado) ou `Z:` que não monta: espera-se que o `test-up` rode `disco-z.ps1` e `instalar.ps1` como System pelo `wsb exec` e, se `Z:` ainda falhar, saia com código 1 dizendo o motivo. Teste: `Get-LabUpVerdict` (Tarefa 1) e `Get-LabZStartAction`/`Get-LabZFormatRefusal` (Tarefa 6).
+4. **Cache com conteúdo diferente do esperado**: arquivo com hash diferente (download antigo ou corrompido) ou layout do MSVC vindo do guest com arquivo faltando, sobrando ou alterado na cópia. Espera-se que o `cache-up.ps1` pare sem baixar, sem importar, sem sobrescrever e sem apagar. Testes: `Get-LabCachePlan` → `conflito` e `Get-LabLayoutManifestProblems` (Tarefa 2), teste estático "cache-up has no delete or overwrite command" (Tarefa 9).
+5. **Dados reais do app no `copia`** (D1): espera-se que só a pasta Roaming do app (`io.github.johngabie.claudia-rh`) seja montada, só leitura, só com `-DadosReais`; nunca `%LOCALAPPDATA%`, nunca outra pasta, nunca com link no caminho; sem `-DadosReais`, o `copia` no guest para com mensagem clara. Testes: `Get-LabRealDataSourceRefusal` (Tarefa 2) e `comandoDeCenarioNoGuest` (Tarefa 5).
+
+LogonCommand sem privilégio de administrador (não verificado) e `Z:` que não monta continuam cobertos por `Get-LabUpVerdict` (Tarefa 1) e `Get-LabZStartAction`/`Get-LabZFormatRefusal` (Tarefa 6).
 
 ## Contrato entre as tarefas (nomes que não mudam)
 
 | Onde | Nome | Forma |
 |---|---|---|
 | `sandbox-lab/scripts/lib/compose.ps1` | `$script:LabInstallOrder` | `@('msvc','rust','node','claude-code')` |
-| idem | `$script:LabMountTargets` | `projeto`→`C:\labproject` ro, `trabalho`→`C:\labwork` rw, `deploy`→`C:\appdeploy` ro |
+| idem | `$script:LabMountTargets` | `projeto`→`C:\labproject` ro, `trabalho`→`C:\labwork` rw, `deploy`→`C:\appdeploy` ro, `cache-saida`→`C:\labcachesaida` rw |
+| idem | `ConvertTo-LabGuestMsvcLayout -Compose` | `[ordered]@{versao;bootstrapper;sha256;componentes;saida}` (caminhos do guest) para o `layout-msvc.ps1` |
 | idem | `$script:LabPackageTypes` | `msvc`=`vs-layout`, `rust`=`msi`, `node`=`zip`, `claude-code`=`exe` |
 | idem | `$script:LabCacheGuestDir` | `C:\lab\cache` (o `shared\` já é montado em `C:\lab`) |
 | idem | `Get-LabComposeRefusal -Compose <obj> -Ambiente <string>` | `$null` ou motivo |
 | idem | `Get-LabPackageRefusal -Nome <string> -Pacote <obj>` | `$null` ou motivo |
-| idem | `ConvertTo-LabGuestInstall -Compose -Ambiente` | array ordenado de `[ordered]@{nome;versao;tipo;arquivo;sha256;bytes;componentes}` (`arquivo` = caminho no guest) |
+| idem | `ConvertTo-LabGuestInstall -Compose -Ambiente` | array ordenado de `[ordered]@{nome;versao;tipo;arquivo;sha256;bytes;componentes;bootstrapper}` (`arquivo` e `bootstrapper` = caminhos no guest; `bootstrapper` vazio fora do `msvc`) |
 | idem | `Get-LabComposeMounts -Compose -Ambiente` | array de `[ordered]@{nome;sandbox;readOnly}` sem `projeto` |
 | idem | `Get-LabUpVerdict -Status -DiscoZ -Instalar -PrecisaInstalar` | `[ordered]@{exit;motivo}` |
 | idem | `Invoke-LabStartWithCredential -Conta -Copy -Start -Cleanup` | devolve a saída de `Start` |
@@ -80,26 +84,36 @@ Origem: em 2026-10-05 um teste passou `C:\` para uma função de apagar e destru
 | idem | `Get-LabCredentialCleanRefusal -File -RepoRoot -Links` | `$null` ou motivo |
 | idem | `Get-LabCacheDirRefusal -CacheDir -LabDir -Links` | `$null` ou motivo |
 | idem | `Get-LabCachePlan -Pacotes -Existentes` | array de `[ordered]@{nome;arquivo;acao;motivo}`, `acao` ∈ `baixar`,`ok`,`conflito` |
+| idem | `Get-LabRealDataSourceRefusal -Source -RoamingAppData -Links` | `$null` ou motivo (só `<Roaming>\io.github.johngabie.claudia-rh`) |
+| idem | `Get-LabLayoutImportRefusal -Source -RepoRoot -Versao -Links` | `$null` ou motivo (só `<repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>`) |
+| idem | `Get-LabLayoutManifestProblems -ManifestText -Found` | array de problemas (vazio = igual); `Found`: caminho relativo com `/` → `"<sha256> <bytes>"` |
+| `sandbox-lab/scripts/cache-up.ps1` | `-SoPlano`, `-ImportarMsvc <id>` | só cria |
+| `sandbox-lab/sandbox/layout-msvc.ps1` | guest, System | grava `C:\labcachesaida\<id>\msvc-<v>\{layout\,layout.sha256}` e `C:\lab\out\layout-msvc.json` `{ok,id,versao,arquivos,bytes,segundos,erro}` |
+| `test-up.ps1` | `-DadosReais` | monta só leitura a pasta Roaming do app em `C:\labdadosreais`; `guest.config.json` só ganha `dadosReais: true` |
+| `cenario-no-guest.mjs` | `comandoDeCenarioNoGuest({cenario, autorizado, manterAutomacao, nonce})` (pura) | linha PowerShell para `C:\labsandbox\app\guest-cenario.ps1`; resultado em `C:\labwork\run\cenario.json` `{nonce,cenario,exit,saida,resumo}` |
+| `guest-run.ps1` | `-Cenario Z:\claudia-teste-sandbox\<nome>` | copia `appdata`/`localappdata` do cenário; recusa fora dessa raiz |
 | `sandbox-lab/scripts/lib/disco.ps1` | `Copy-LabCredential -RepoRoot -UserProfile -ConfigDir`, `Remove-LabCredentialFile -File -RepoRoot`, `Remove-LabCredential -RepoRoot` | efeito em disco |
 | `sandbox-lab/sandbox/guest-z.lib.ps1` | `Get-LabZFormatRefusal`, `Get-LabZStartAction` | puras |
 | `sandbox-lab/sandbox/guest-install.lib.ps1` | `ConvertTo-LabInstallExit`, `Test-LabInstallOk`, `Get-LabGuestToolEnv` | puras |
-| `caminhos-lab.mjs` | `RAIZ_TESTE_GUEST`, `motivoRecusaRaizTeste(real)`, `raizDeCenarios({noSandbox,tmpReal})` | puras |
+| `caminhos-lab.mjs` | `RAIZ_TESTE_GUEST`, `motivoRecusaRaizTeste(real)`, `raizDeCenarios({noSandbox})` → `"Z:\\"` ou `null` | puras |
 | `proibidos.mjs` | `achaToken(texto)` → `[{linha}]` (nunca o texto) | pura |
-| `comum.mjs` (D1) | `raizCenariosAtual()`, `saidaPadraoCenario(nome, tempRoot)` | |
-| `guest.config.json` | novos campos `ambiente`, `conta` (bool), `instalar` (array acima) | sem caminho do host, sem segredo |
+| `comum.mjs` (D1) | `raizCenariosAtual()` (lança fora do guest), `saidaPadraoCenario(nome, tempRoot)` | |
+| `guest.config.json` | novos campos `ambiente`, `conta` (bool), `dadosReais` (bool), `instalar` (array acima), `msvc` (de `ConvertTo-LabGuestMsvcLayout`, só quando o ambiente monta `cache-saida`) | sem caminho do host, sem segredo |
 | `C:\lab\out\status.json` | novos campos `elevated` (bool), `discoZ` (`ok`/`failed`/`needs-system`), `conta` (`presente`/`ausente`/`falhou`/`nao-pedida`), `instalar` (`nada`/`iniciado`/`needs-system`) | |
 | `C:\lab\out\disco-z.json` | `{ok, letra, imagem, segundos, erro}` | |
 | `C:\lab\out\instalar.json` | `{inicio, fim, ok, elevado, erro, pacotes:[{nome,versao,exit,segundos,binDir,vcvars,versaoVista,erro}]}` | |
-| Guest | `C:\labcred` (credencial, RO), `C:\labtools\{msvc,node,claude}`, `C:\labdata\z.vhdx`, `Z:\tmp`, `Z:\claudia-teste-sandbox` | |
+| Guest | `C:\labcred` (credencial, RO), `C:\labdadosreais` (dados reais do app, RO, só com `-DadosReais`), `C:\labcachesaida` (saída do layout, RW, só no `cache-msvc`), `C:\labtools\{msvc,node,claude}`, `C:\labdata\z.vhdx`, `Z:\tmp`, `Z:\claudia-teste-sandbox` | |
 
 ## Ondas de execução
 
 | Onda | Tarefas (paralelas só em arquivos diferentes) |
 |---|---|
-| 0 | Tarefa 0 (gate de decisões com o usuário) |
+| 0 | Tarefa 0 (decisões registradas; adendo da spec aguardando aprovação do trecho) |
 | 1 | 1, 2, 3, 4, 6, 7 em paralelo |
-| 2 | 5 (depende de 4 e de D1 aprovada), 8 (depende de 1, 2, 6, 7), 9 (depende de 1, 2) |
+| 2 | 5 (depende de 4), 5b (depende de 7), 8 (depende de 1, 2, 6, 7), 9 (depende de 1, 2, 7) |
 | 3 | 10 (docs e CI), depois 11 (revisão Opus), depois 12 (Sandbox, com autorização) |
+
+As tarefas que dependem do adendo (§8 da spec) — 5, 5b, 9 e as partes `-DadosReais`/`cache-msvc` da 1, 2 e 8 — só começam depois de o usuário aprovar o trecho alterado.
 
 Cada agente: worktree própria a partir de `feat/sandbox-ambiente`; antes de começar, `git log -1 --oneline` e alinhar com a ponta da branch da feature. Sem `cargo` nestas tarefas (nenhuma mexe em Rust); se precisar, `CARGO_TARGET_DIR` próprio fora do `target/` do repositório.
 
@@ -115,22 +129,25 @@ Os dois PowerShell (7 e 5.1) porque `scripts/lib` roda no host em qualquer um de
 
 ---
 
-### Tarefa 0: Gate de decisões (orquestrador, sem código)
+### Tarefa 0: Decisões do usuário e adendo da spec (orquestrador, sem código)
 
-**Modelo:** Opus (orquestrador). **Arquivos:** nenhum até a aprovação; depois `docs/superpowers/specs/2026-10-07-sandbox-ambiente-declarativo-design.md` (só o adendo aprovado).
+**Modelo:** Opus (orquestrador). **Arquivos:** `docs/superpowers/specs/2026-10-07-sandbox-ambiente-declarativo-design.md` (§8, já escrito no mesmo commit deste plano revisado).
 
-A spec está aprovada, mas a leitura do código mostrou pontos que ela não decide ou em que ela, ao pé da letra, quebra o uso normal. Pela regra do repositório ("se a implementação descobrir que a spec está errada ou incompleta, para, atualiza a spec com a data e pede nova aprovação do trecho alterado"), apresentar ao usuário **antes** da onda 2:
+Decisões do usuário em 2026-10-07 (AskUserQuestion), registradas aqui e na spec §8:
 
-- [ ] **Passo 1: Apresentar D1 (contradição na spec, bloqueia a Tarefa 5).** A spec manda `novoCenarioDir()` usar a raiz fixa `Z:\claudia-teste-sandbox`. Mas os scripts de cenário (`cenario-novo/mock/copia.mjs`) rodam **no PC** (o `cenario-copia` lê o `%APPDATA%` do PC; o `publicar.mjs` publica a partir do PC), onde `Z:` não existe: o fluxo normal de publicar quebraria. Proposta recomendada: no guest (dois fatores verdadeiros), a raiz dos cenários é `Z:\claudia-teste-sandbox` e o caminho real tem de começar com `Z:\`; no PC, continua `<temp real>\claudia-teste-sandbox` (como hoje). `tempDir()` (só testes) e `travas.sandbox.ps1` usam só `Z:`.
-- [ ] **Passo 2: Apresentar as decisões menores tomadas no plano (D2), para confirmar ou trocar:**
-  - D2a: o ambiente `testes` fica com internet aberta (o `cargo test` e o `npm ci` precisam dos registros); a lista "só a API da Anthropic" da proposta A4 antiga não se aplica. O ambiente `app-winapp` continua com o bloqueio manual por `guest-firewall.ps1`.
-  - D2b: o nome `cache` não é montagem: o cache já aparece em `C:\lab\cache` porque `shared\` é montado em `C:\lab`. Nomes de montagem: `projeto` (obrigatório, ro), `trabalho` (rw), `deploy` (ro).
-  - D2c: ambientes `exemplo` (antigo `lab.config.json`), `app`, `app-winapp` e `testes` (substitui `app-build`). Campo `conta: true` só no `testes`.
-  - D2d: `CLAUDE_CONFIG_DIR` definido no PC → o `test-up` recusa (não tenta achar outra pasta).
-  - D2e: o Claude Code é instalado no guest copiando o `claude.exe` verificado para `C:\labtools\claude` (sem `claude install`, que pode buscar na rede) e com `DISABLE_AUTOUPDATER=1`.
-  - D2f: o `test-up` passa a exigir o `wsb` CLI (o caminho por `WindowsSandbox.exe` sai), porque o recuo "rodar como System" usa `wsb exec`.
-  - D2g: o `test-up` confere que o cache existe (tamanho) antes de subir e para com "rode `scripts\cache-up.ps1`".
-- [ ] **Passo 3: Registrar a resposta.** Com aprovação, acrescentar à spec uma seção "Adendo 2026-10-07 (plano)" com D1 e D2 exatamente como aprovados, commit só desse arquivo (`docs(spec): addendum D1/D2 approved by the user`). Sem aprovação de D1, a Tarefa 5 não começa; as outras seguem.
+- **D1 = "Cenários só no Sandbox".** `cenario-novo/mock/copia.mjs` rodam só dentro do guest, em `Z:\claudia-teste-sandbox\<cenario>`; nada de cenário no PC. O host dispara por `cenario-no-guest.mjs`. Os dados reais do `copia` vêm de uma montagem só leitura da pasta Roaming do app (`test-up -DadosReais`, só com autorização naquela rodada, pasta achada pela API, nunca `%LOCALAPPDATA%`). `publicar.mjs` publica só o app; `guest-run.ps1 -Cenario` instala os dados do cenário no perfil do guest. Tarefas 4, 5, 5b, 8.
+- **MSVC = layout montado dentro de um Sandbox.** O PC só baixa o bootstrapper (hash conferido) e nunca o executa. O ambiente `cache-msvc` roda `sandbox\layout-msvc.ps1` como System e grava o layout e o `layout.sha256` numa pasta nova de `.sandbox-work\cache-saida` (montada gravável em `C:\labcachesaida`). O host confere SHA-256 e tamanho de cada arquivo e importa com `cache-up.ps1 -ImportarMsvc <id>`, só criando. Tarefas 1, 2, 8, 9.
+- **D2 (a–g): todas aprovadas** como estão na lista abaixo.
+  - D2a: ambiente `testes` com internet aberta; `app-winapp` continua com `guest-firewall.ps1` manual.
+  - D2b: `cache` não é montagem (o cache aparece em `C:\lab\cache`).
+  - D2c: ambientes `exemplo`, `app`, `app-winapp`, `testes` (e agora `cache-msvc`); `conta: true` só no `testes`.
+  - D2d: `CLAUDE_CONFIG_DIR` definido no PC → `test-up` recusa.
+  - D2e: Claude Code instalado copiando o `claude.exe` verificado, com `DISABLE_AUTOUPDATER=1`.
+  - D2f: `test-up` exige o `wsb` CLI.
+  - D2g: `test-up` confere o cache antes de subir.
+
+- [ ] **Passo 1:** Mostrar ao usuário o §8 da spec ("Adendo de 2026-10-07 (plano) — AGUARDANDO APROVAÇÃO DO USUÁRIO DO TRECHO ALTERADO") e pedir a aprovação **desse trecho** (regra do CLAUDE.md: spec mudou → reaprovação do trecho alterado).
+- [ ] **Passo 2:** Com a aprovação, trocar o título do §8 para "Adendo de 2026-10-07 (plano) — APROVADO em <data>" e fazer commit só da spec: `docs(spec): addendum 8 approved by the user` + rodapé. Sem aprovação, as Tarefas 5, 5b e 9 e as partes `-DadosReais`/`cache-msvc` das Tarefas 1, 2 e 8 não começam; o resto segue.
 
 ---
 
@@ -179,7 +196,7 @@ function New-Compose {
     "app":    { "rede": false, "memoriaMB": 6144, "conta": false, "instalar": [], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"] }
   },
   "pacotes": {
-    "msvc": { "tipo": "vs-layout", "versao": "17.14.1", "arquivo": "msvc-17.14.1", "componentes": ["Microsoft.VisualStudio.Workload.VCTools"], "bootstrapper": { "url": "https://example.invalid/vs_buildtools.exe", "sha256": "$H", "bytes": 10 } },
+    "msvc": { "tipo": "vs-layout", "versao": "17.14.1", "arquivo": "msvc-17.14.1", "componentes": ["Microsoft.VisualStudio.Workload.VCTools"], "bootstrapper": { "arquivo": "vs_buildtools-17.14.1.exe", "url": "https://example.invalid/vs_buildtools.exe", "sha256": "$H", "bytes": 10 } },
     "rust": { "tipo": "msi", "versao": "1.95.0", "arquivo": "rust.msi", "url": "https://example.invalid/rust.msi", "sha256": "$H", "bytes": 10 },
     "node": { "tipo": "zip", "versao": "22.23.3", "arquivo": "node.zip", "url": "https://example.invalid/node.zip", "sha256": "$H", "bytes": 10 },
     "claude-code": { "tipo": "exe", "versao": "2.1.285", "arquivo": "claude.exe", "url": "https://example.invalid/claude.exe", "sha256": "$H", "bytes": 10 }
@@ -258,6 +275,10 @@ Check 'msvc: bootstrapper and componentes are required and checked' {
   Should-Match (Get-LabPackageRefusal -Nome 'msvc' -Pacote $c.pacotes.msvc) 'componentes'
   $c = New-Compose; $c.pacotes.msvc.bootstrapper.sha256 = 'x'
   Should-Match (Get-LabPackageRefusal -Nome 'msvc' -Pacote $c.pacotes.msvc) 'sha256'
+  foreach ($a in @('vs\b.exe', 'vs_buildtools', '')) {
+    $c = New-Compose; $c.pacotes.msvc.bootstrapper.arquivo = $a
+    Should-Match (Get-LabPackageRefusal -Nome 'msvc' -Pacote $c.pacotes.msvc) 'bootstrapper.arquivo'
+  }
 }
 Check 'install order is fixed (msvc, rust, node, claude-code) whatever the compose order, with guest cache paths' {
   $c = New-Compose
@@ -274,6 +295,21 @@ Check 'mounts: extras only (projeto is in the template), compose order, guest fo
   if ($m.Count -ne 2) { throw "count $($m.Count)" }
   if ($m[0].nome -ne 'deploy' -or $m[0].sandbox -cne 'C:\appdeploy' -or $m[0].readOnly -ne $true) { throw 'deploy' }
   if ($m[1].nome -ne 'trabalho' -or $m[1].sandbox -cne 'C:\labwork' -or $m[1].readOnly -ne $false) { throw 'trabalho' }
+}
+Check 'cache-saida: rw mount for the MSVC layout ambiente; ro is refused' {
+  $c = New-Compose; $c.ambientes.app.montar = @('projeto:ro', 'cache-saida:rw')
+  Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente 'app')
+  $m = @(Get-LabComposeMounts -Compose $c -Ambiente 'app')
+  if ($m[0].nome -ne 'cache-saida' -or $m[0].sandbox -cne 'C:\labcachesaida' -or $m[0].readOnly -ne $false) { throw 'cache-saida mount' }
+  $c.ambientes.app.montar = @('projeto:ro', 'cache-saida:ro')
+  Should-Match (Get-LabComposeRefusal -Compose $c -Ambiente 'app') 'cache-saida'
+}
+Check 'msvc layout entry for the guest: version, bootstrapper guest path, hash, components, output folder' {
+  $l = ConvertTo-LabGuestMsvcLayout -Compose (New-Compose)
+  if ($l.versao -ne '17.14.1' -or $l.bootstrapper -cne 'C:\lab\cache\vs_buildtools-17.14.1.exe' -or $l.sha256 -ne $H -or $l.saida -cne 'C:\labcachesaida') { throw "got $($l | ConvertTo-Json -Compress)" }
+  if ($l.componentes[0] -ne 'Microsoft.VisualStudio.Workload.VCTools') { throw 'componentes' }
+  $i = @(ConvertTo-LabGuestInstall -Compose (New-Compose) -Ambiente 'testes')
+  if ($i[0].bootstrapper -cne 'C:\lab\cache\vs_buildtools-17.14.1.exe' -or $i[1].bootstrapper -ne '') { throw 'install bootstrapper field' }
 }
 Check 'up verdict: status, Z: drive and install decide the exit code' {
   $ok = [pscustomobject]@{ bootstrap = 'ok' }
@@ -308,7 +344,9 @@ Check 'start with credential: cleanup runs when the start throws, never when con
 Check 'the versioned compose.json passes for every ambiente and pins the researched versions' {
   $c = Get-Content -LiteralPath "$PSScriptRoot/../../compose.json" -Raw | ConvertFrom-Json
   $names = @($c.ambientes.PSObject.Properties | ForEach-Object { $_.Name })
-  foreach ($n in @('exemplo', 'app', 'app-winapp', 'testes')) { if ($names -notcontains $n) { throw "missing ambiente $n" } }
+  foreach ($n in @('exemplo', 'app', 'app-winapp', 'testes', 'cache-msvc')) { if ($names -notcontains $n) { throw "missing ambiente $n" } }
+  foreach ($n in @('app', 'app-winapp')) { if ((@($c.ambientes.$n.instalar) -join ',') -ne 'node') { throw "$n must install node (scenarios run in the guest)" } }
+  if ((@($c.ambientes.'cache-msvc'.montar) -join ',') -ne 'projeto:ro,cache-saida:rw' -or @($c.ambientes.'cache-msvc'.instalar).Count) { throw 'cache-msvc ambiente' }
   foreach ($n in $names) { Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente $n) }
   if ($c.pacotes.rust.versao -ne '1.95.0' -or $c.pacotes.rust.sha256 -ne '08d228850565cfe421da6faeac029fb1f0c8341219d0dd9490d42a8355aa0703') { throw 'rust pin' }
   if ($c.pacotes.node.versao -ne '22.23.3' -or $c.pacotes.node.sha256 -ne '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71') { throw 'node pin' }
@@ -334,6 +372,8 @@ $script:LabMountTargets = [ordered]@{
   projeto  = @{ sandbox = 'C:\labproject'; modo = 'ro' }
   trabalho = @{ sandbox = 'C:\labwork'; modo = 'rw' }
   deploy   = @{ sandbox = 'C:\appdeploy'; modo = 'ro' }
+  # Output of the MSVC layout built in the guest (ambiente cache-msvc, spec addendum 8.2).
+  'cache-saida' = @{ sandbox = 'C:\labcachesaida'; modo = 'rw' }
 }
 $script:LabPackageTypes = @{ 'msvc' = 'vs-layout'; 'rust' = 'msi'; 'node' = 'zip'; 'claude-code' = 'exe' }
 # shared\ is mapped to C:\lab in the guest, so the cache needs no mount of its own.
@@ -399,6 +439,7 @@ function Get-LabPackageRefusal {
   if ($tipo -eq 'vs-layout') {
     $src = Get-LabProp $Pacote 'bootstrapper'
     if ($null -eq $src) { return "package '$Nome': bootstrapper is required" }
+    if ("$(Get-LabProp $src 'arquivo')" -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*\.exe$') { return "package '$Nome': bootstrapper.arquivo must be a plain .exe file name" }
     $comp = Get-LabList (Get-LabProp $Pacote 'componentes')
     if (-not $comp.Count) { return "package '$Nome': componentes is empty" }
     foreach ($c in $comp) { if ("$c" -notmatch '^Microsoft\.VisualStudio\.[A-Za-z0-9.]+$') { return "package '$Nome': bad componentes entry '$c'" } }
@@ -429,7 +470,7 @@ function Get-LabComposeRefusal {
   if ($null -ne $conta -and $conta -isnot [bool]) { return "ambiente ${Ambiente}: conta must be true or false" }
   $seen = @{}
   foreach ($m in (Get-LabList (Get-LabProp $a 'montar'))) {
-    if ($m -isnot [string] -or $m -notmatch '^([a-z]+):(ro|rw)$') { return "ambiente ${Ambiente}: montar entry '$m' must be <name>:ro or <name>:rw" }
+    if ($m -isnot [string] -or $m -notmatch '^([a-z][a-z-]*):(ro|rw)$') { return "ambiente ${Ambiente}: montar entry '$m' must be <name>:ro or <name>:rw" }
     $n = $Matches[1].ToLowerInvariant(); $modo = $Matches[2].ToLowerInvariant()
     if (-not $script:LabMountTargets.Contains($n)) { return "ambiente ${Ambiente}: unknown mount name '$n' (one of: $(@($script:LabMountTargets.Keys) -join ', '))" }
     if ($script:LabMountTargets[$n].modo -ne $modo) { return "ambiente ${Ambiente}: mount '$n' must be :$($script:LabMountTargets[$n].modo)" }
@@ -465,9 +506,25 @@ function ConvertTo-LabGuestInstall {
       sha256      = $(if ($tipo -eq 'vs-layout') { '' } else { [string](Get-LabProp $p 'sha256') })
       bytes       = $(if ($tipo -eq 'vs-layout') { 0 } else { [long](Get-LabProp $p 'bytes') })
       componentes = @(Get-LabList (Get-LabProp $p 'componentes'))
+      bootstrapper = $(if ($tipo -eq 'vs-layout') { $script:LabCacheGuestDir + '\' + (Get-LabProp (Get-LabProp $p 'bootstrapper') 'arquivo') } else { '' })
     }
   }
   return ,$list
+}
+
+function ConvertTo-LabGuestMsvcLayout {
+  # guest.config.json "msvc" entry for sandbox\layout-msvc.ps1 (ambiente cache-msvc, spec addendum 8.2). Guest paths only.
+  param($Compose)
+  $p = Get-LabProp (Get-LabProp $Compose 'pacotes') 'msvc'
+  if ($null -eq $p) { return $null }
+  $b = Get-LabProp $p 'bootstrapper'
+  return [ordered]@{
+    versao       = [string](Get-LabProp $p 'versao')
+    bootstrapper = $script:LabCacheGuestDir + '\' + (Get-LabProp $b 'arquivo')
+    sha256       = [string](Get-LabProp $b 'sha256')
+    componentes  = @(Get-LabList (Get-LabProp $p 'componentes'))
+    saida        = $script:LabMountTargets['cache-saida'].sandbox
+  }
 }
 
 function Get-LabComposeMounts {
@@ -545,14 +602,19 @@ function Invoke-LabStartWithCredential {
       "instalar": [], "montar": ["projeto:ro"]
     },
     "app": {
-      "$comment": "App desktop SEM rede; controle so por wsb exec. Antes: publicar.mjs.",
-      "rede": false, "memoriaMB": 6144, "bootTimeoutSec": 300, "conta": false,
-      "instalar": [], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
+      "$comment": "App desktop SEM rede; controle so por wsb exec. Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs (Node do guest) + guest-run.ps1 -Cenario.",
+      "rede": false, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
+      "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
     },
     "app-winapp": {
-      "$comment": "App desktop controlado pelo winapp; rede ligada, internet bloqueada por sandbox\\app\\guest-firewall.ps1 (wsb exec -r System). Antes: publicar.mjs.",
+      "$comment": "App desktop controlado pelo winapp; rede ligada, internet bloqueada por sandbox\\app\\guest-firewall.ps1 (wsb exec -r System). Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs + guest-run.ps1 -Cenario.",
+      "rede": true, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
+      "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
+    },
+    "cache-msvc": {
+      "$comment": "So para montar o layout offline do MSVC (adendo 8.2): wsb exec -r System C:\\labsandbox\\layout-msvc.ps1; depois scripts\\cache-up.ps1 -ImportarMsvc <id>. Rede ligada (baixa do servidor da Microsoft).",
       "rede": true, "memoriaMB": 6144, "bootTimeoutSec": 300, "conta": false,
-      "instalar": [], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
+      "instalar": [], "montar": ["projeto:ro", "cache-saida:rw"]
     },
     "testes": {
       "$comment": "Testes de Sandbox (testes-no-guest.mjs), cargo test e Claude Code com a conta logada no PC. Internet aberta (cargo e npm).",
@@ -570,7 +632,7 @@ function Invoke-LabStartWithCredential {
         "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
         "Microsoft.VisualStudio.Component.Windows11SDK.26100"
       ],
-      "bootstrapper": { "url": "<link de versão fixa do Passo 1>", "sha256": "<sha256 do Passo 1>", "bytes": 0 }
+      "bootstrapper": { "arquivo": "vs_buildtools-<17.14.N do Passo 1>.exe", "url": "<link de versão fixa do Passo 1>", "sha256": "<sha256 do Passo 1>", "bytes": 0 }
     },
     "rust": {
       "tipo": "msi", "versao": "1.95.0",
@@ -714,6 +776,40 @@ Check 'cache plan: missing -> baixar, same hash -> ok, other hash or wrong kind 
   $plan2 = @(Get-LabCachePlan -Pacotes @($pk[3], $pk[0]) -Existentes @{ 'msvc-17' = $h1; 'rust.msi' = 'dir' })
   if ((@($plan2 | ForEach-Object { $_.acao }) -join ',') -ne 'conflito,conflito') { throw 'wrong kind must be conflito' }
 }
+$RO = 'Y:\Perfis\fulano\AppData\Roaming'
+Check 'real data: only the app folder under Roaming (spec addendum 8.1)' {
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source "$RO\io.github.johngabie.claudia-rh" -RoamingAppData $RO)
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source "$RO\IO.GITHUB.JOHNGABIE.CLAUDIA-RH" -RoamingAppData "$RO\")
+}
+Check 'real data: LOCALAPPDATA, other folders, the Roaming root, empty, 8.3 and links are refused' {
+  foreach ($s in @('Y:\Perfis\fulano\AppData\Local\io.github.johngabie.claudia-rh', $RO, "$RO\outro", "$RO\io.github.johngabie.claudia-rh\x", "$RO\io.github.johngabie.claudia-rh2", '')) {
+    if (-not (Get-LabRealDataSourceRefusal -Source $s -RoamingAppData $RO)) { throw "must refuse '$s'" }
+  }
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\P\AppData\Local\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\P\AppData\Local') 'LOCALAPPDATA'
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\') 'roaming'
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\PERFIS~1\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\PERFIS~1') '8\.3'
+  Should-Match (Get-LabRealDataSourceRefusal -Source "$RO\io.github.johngabie.claudia-rh" -RoamingAppData $RO -Links @($RO)) 'link'
+}
+Check 'layout import: only <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>' {
+  $ok = "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1"
+  Should-BeNull (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1')
+  foreach ($s in @("$RR\.sandbox-work\cache-saida\0a1b2c3d", "$RR\.sandbox-work\cache-saida\0A1B2C3X\msvc-17.14.1", "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.2",
+                   "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1\layout", "$RR\sandbox-lab\shared\cache\msvc-17.14.1", 'Y:\', '')) {
+    if (-not (Get-LabLayoutImportRefusal -Source $s -RepoRoot $RR -Versao '17.14.1')) { throw "must refuse '$s'" }
+  }
+  Should-Match (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao 'latest') 'versao'
+  Should-Match (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1' -Links @("$RR\.sandbox-work")) 'link'
+}
+Check 'layout manifest: same files, sizes and hashes pass; missing, extra, different or malformed fail' {
+  $a = 'a' * 64; $b = 'b' * 64
+  $man = "$a 10 vs_setup.exe`n$b 20 Archives/x.cab`n"
+  if (@(Get-LabLayoutManifestProblems -ManifestText $man -Found @{ 'vs_setup.exe' = "$a 10"; 'archives/X.cab' = "$b 20" }).Count) { throw 'identical must pass' }
+  $p = @(Get-LabLayoutManifestProblems -ManifestText $man -Found @{ 'vs_setup.exe' = "$a 11"; 'extra.txt' = "$a 1" })
+  $txt = $p -join ';'
+  if ($txt -notmatch 'differs: vs_setup\.exe' -or $txt -notmatch 'missing: Archives/x\.cab' -or $txt -notmatch 'not in the manifest: extra\.txt') { throw "got $txt" }
+  Should-Match ((Get-LabLayoutManifestProblems -ManifestText '' -Found @{}) -join ';') 'empty'
+  Should-Match ((Get-LabLayoutManifestProblems -ManifestText "lixo`n" -Found @{}) -join ';') 'malformed'
+}
 ```
 
 E, no teste existente `'source: drive roots, empty and relative values are refused'`, acrescentar `'Q:\'` à lista (A7: a raiz de disco fica coberta aqui, na função pura).
@@ -817,6 +913,60 @@ function Get-LabCachePlan {
     $plan += [ordered]@{ nome = $p.nome; arquivo = $p.arquivo; acao = $acao; motivo = $motivo }
   }
   return ,$plan
+}
+
+$script:LabAppId = 'io.github.johngabie.claudia-rh'
+
+function Get-LabRealDataSourceRefusal {
+  # test-up -DadosReais (spec addendum 8.1): only the app's folder under Roaming, read-only, never %LOCALAPPDATA%.
+  # Callers pass [Environment]::GetFolderPath('ApplicationData') and the reparse points above the source.
+  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @())
+  if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($RoamingAppData)) { return 'source and roaming folder are required' }
+  $r = $RoamingAppData.TrimEnd('\')
+  $why = Get-LabRootProblem $r
+  if ($why) { return "roaming folder $why" }
+  if ($r -match '\\Local$' -or $Source -match '\\AppData\\Local(\\|$)') { return 'never %LOCALAPPDATA% (browser profile, cookies)' }
+  if (Test-LabShortNameSegment $Source) { return 'source has an 8.3 short name segment' }
+  if ((ConvertTo-LabPathKey $Source) -ne (ConvertTo-LabPathKey "$r\$script:LabAppId")) { return "source is not exactly %APPDATA%\$script:LabAppId" }
+  $l = @($Links | Where-Object { $_ })
+  if ($l.Count) { return 'link (symlink/junction) in the path of the app data folder' }
+  return $null
+}
+
+function Get-LabLayoutImportRefusal {
+  # cache-up.ps1 -ImportarMsvc reads only the folder layout-msvc.ps1 wrote: <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>.
+  param([string]$Source, [string]$RepoRoot, [string]$Versao, [string[]]$Links = @())
+  if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($RepoRoot)) { return 'source and repo root are required' }
+  $root = $RepoRoot.TrimEnd('\')
+  $why = Get-LabRootProblem $root
+  if ($why) { return "repo root $why" }
+  if ("$Versao" -notmatch '^\d+(\.\d+){1,3}$') { return 'versao must be digits and dots' }
+  $pattern = '^' + [regex]::Escape((ConvertTo-LabPathKey "$root\.sandbox-work\cache-saida")) + '\\[0-9a-f]{8}\\' + [regex]::Escape("msvc-$Versao".ToLowerInvariant()) + '$'
+  if ((ConvertTo-LabPathKey $Source) -cnotmatch $pattern) { return "source is not <repo>\.sandbox-work\cache-saida\<id>\msvc-$Versao" }
+  $l = @($Links | Where-Object { $_ })
+  if ($l.Count) { return "link (symlink/junction) in or under the path: $($l[0])" }
+  return $null
+}
+
+function Get-LabLayoutManifestProblems {
+  # layout.sha256 (written in the guest) against files on disk: every listed file present with the same size and SHA-256,
+  # and nothing extra. $Found: relative path with '/' -> "<sha256> <bytes>". Empty array = identical.
+  param([string]$ManifestText, [hashtable]$Found)
+  $problems = New-Object System.Collections.Generic.List[string]
+  $foundLc = @{}
+  foreach ($k in $Found.Keys) { $foundLc[$k.ToLowerInvariant()] = @($k, [string]$Found[$k]) }
+  $listed = @{}
+  foreach ($line in ($ManifestText -split "`r?`n")) {
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    if ($line -notmatch '^([0-9a-f]{64}) (\d+) (.+)$') { $problems.Add("malformed manifest line: $line"); continue }
+    $rel = $Matches[3]; $want = "$($Matches[1]) $($Matches[2])"
+    $listed[$rel.ToLowerInvariant()] = $true
+    $hit = $foundLc[$rel.ToLowerInvariant()]
+    if ($null -eq $hit) { $problems.Add("missing: $rel") } elseif ($hit[1] -ne $want) { $problems.Add("differs: $rel") }
+  }
+  if ($listed.Count -eq 0 -and $problems.Count -eq 0) { $problems.Add('manifest is empty') }
+  foreach ($k in $foundLc.Keys) { if (-not $listed.ContainsKey($k)) { $problems.Add("not in the manifest: $($foundLc[$k][0])") } }
+  return ,$problems.ToArray()
 }
 ```
 
@@ -959,11 +1109,14 @@ function Copy-LabCredential {
   3. `Get-LabCredentialSourceRefusal`: apagar a linha do `ConfigDir` → `FAILED - credential source: CLAUDE_CONFIG_DIR set is refused`.
   4. `Get-LabCredentialCleanRefusal`: trocar `{32}` por `+` → `FAILED - credential clean: ...` (`.abc.tmp` aceito).
   5. `Get-LabCachePlan`: trocar o `else { 'conflito' ... }` final por `$acao = 'baixar'` → `FAILED - cache plan: ...`.
+  6. `Get-LabRealDataSourceRefusal`: apagar a linha do `LOCALAPPDATA` → `FAILED - real data: LOCALAPPDATA, ...`.
+  7. `Get-LabLayoutImportRefusal`: trocar `{8}` por `+` → `FAILED - layout import: ...`.
+  8. `Get-LabLayoutManifestProblems`: apagar o laço do `not in the manifest` → `FAILED - layout manifest: ...`.
 
 - [ ] **Passo 8: Commit.**
 ```bash
 git add sandbox-lab/scripts/lib/travas.ps1 sandbox-lab/scripts/lib/disco.ps1 sandbox-lab/scripts/test/travas.test.ps1 sandbox-lab/scripts/test/travas.sandbox.ps1
-git commit -m "feat(lab): pure guards for the Z: test root, host Z: drive, Claude credential copy and cache dir
+git commit -m "feat(lab): pure guards for the Z: test root, host Z: drive, Claude credential copy, cache dir, real app data mount and MSVC layout import
 
 Drops the Q:\ case from travas.sandbox.ps1: drive roots are covered by the pure test only.
 
@@ -1125,7 +1278,7 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 
 **Interfaces:**
 - Consumes: `estaNoSandbox`, `MARCADOR_GUEST` (existentes).
-- Produces: `RAIZ_TESTE_GUEST = "Z:\\claudia-teste-sandbox"`, `motivoRecusaRaizTeste(real): string|null`, `raizDeCenarios({ noSandbox, tmpReal }): string` (usada pela Tarefa 5).
+- Produces: `RAIZ_TESTE_GUEST = "Z:\\claudia-teste-sandbox"`, `motivoRecusaRaizTeste(real): string|null`, `raizDeCenarios({ noSandbox }): "Z:\\" | null` (usada pela Tarefa 5).
 
 - [ ] **Passo 1: Testes que falham.** Em `caminhos-lab.test.mjs`, acrescentar ao import `RAIZ_TESTE_GUEST, motivoRecusaRaizTeste, raizDeCenarios` e:
 
@@ -1147,9 +1300,10 @@ test("motivoRecusaRaizTeste: C:, other folders on Z:, siblings, dotted, relative
   }
 });
 
-test("raizDeCenarios: Z:\\ in the guest, the real temp folder on the host", () => {
-  assert.equal(raizDeCenarios({ noSandbox: true, tmpReal: "Y:\\tmp" }), "Z:\\");
-  assert.equal(raizDeCenarios({ noSandbox: false, tmpReal: "Y:\\tmp" }), "Y:\\tmp");
+test("raizDeCenarios: Z:\\ in the guest, nothing on the PC (D1: scenarios only in the Sandbox)", () => {
+  assert.equal(raizDeCenarios({ noSandbox: true }), "Z:\\");
+  assert.equal(raizDeCenarios({ noSandbox: false }), null);
+  assert.equal(raizDeCenarios({}), null);
 });
 ```
 
@@ -1184,9 +1338,9 @@ export function motivoRecusaRaizTeste(real) {
   return `real path is not under ${RAIZ_TESTE_GUEST}`;
 }
 
-/** PURE. tempRoot for scenario folders (decision D1): Z:\ inside the guest, the real OS temp folder on the host. */
-export function raizDeCenarios({ noSandbox, tmpReal }) {
-  return noSandbox ? "Z:\\" : tmpReal;
+/** PURE. tempRoot for scenario folders (D1, spec addendum 8.1): Z:\ inside the guest; null on the PC, where scenarios never run. */
+export function raizDeCenarios({ noSandbox } = {}) {
+  return noSandbox === true ? "Z:\\" : null;
 }
 ```
 
@@ -1222,6 +1376,7 @@ e o comentário do topo: o comando roda pelo `guest-build.ps1` do ambiente `test
 - [ ] **Passo 7: Provas de mutação:**
   1. `motivoRecusaRaizTeste`: trocar `raiz + "\\"` por `raiz` → `FAILED` em `... siblings ...`.
   2. `testes-no-guest.mjs`: voltar `TEMP=C:\\labdata\\tmp` → `FAILED` no teste do comando.
+  3. `raizDeCenarios`: trocar `: null` por `: "C:\\"` → `FAILED - raizDeCenarios: ...`.
 
 - [ ] **Passo 8: Commit.**
 ```bash
@@ -1234,74 +1389,309 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 
 ---
 
-### Tarefa 5: `novoCenarioDir` e `cenario-copia.mjs` com a raiz de D1 (só depois de D1 aprovada)
+### Tarefa 5: Cenários só no guest — lado Node (`novoCenarioDir`, `cenario-copia`, `cenario-no-guest.mjs`)
 
-**Modelo:** Sonnet. **Bloqueada** até a Tarefa 0 registrar D1 aprovada. Se o usuário escolher outra coisa, o orquestrador reescreve esta tarefa antes de despachar.
+**Modelo:** Sonnet. Depende da Tarefa 4 e da aprovação do §8 da spec (Tarefa 0).
 
 **Files:**
 - Modify: `.claude/skills/claudia-teste-sandbox/scripts/comum.mjs`
-- Modify: `.claude/skills/claudia-teste-sandbox/scripts/cenario-copia.mjs:86-87`
-- Test: `.claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs` (puro)
+- Modify: `.claude/skills/claudia-teste-sandbox/scripts/cenario-copia.mjs` (cabeçalho e linhas 82-87), comentários de uso em `cenario-novo.mjs` e `cenario-mock.mjs`
+- Create: `.claude/skills/claudia-teste-sandbox/scripts/cenario-no-guest.mjs`
+- Test: `.claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs` (puro, entra no CI na Tarefa 10), `.claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs` (puro)
 
 **Interfaces:**
-- Consumes: `raizDeCenarios`, `motivoRecusaRaizTeste`, `estaNoSandbox`, `MARCADOR_GUEST` (Tarefa 4).
-- Produces: `raizCenariosAtual(): string` e `saidaPadraoCenario(nome, tempRoot): string` em `comum.mjs`.
+- Consumes: `raizDeCenarios({ noSandbox })` → `"Z:\\"` ou `null`, `motivoRecusaRaizTeste`, `estaNoSandbox`, `MARCADOR_GUEST` (Tarefa 4); `onde`, `sandboxId`, `noGuest`, `validarInt`, `falhaDe` (existentes).
+- Produces: `raizCenariosAtual()` (lança no PC), `saidaPadraoCenario(nome, tempRoot)`, `ORIGEM_DADOS_REAIS = "C:\\labdadosreais"` (em `comum.mjs`); `comandoDeCenarioNoGuest({ cenario, autorizado, manterAutomacao, nonce })` (pura, em `cenario-no-guest.mjs`). O script do guest `guest-cenario.ps1` é da Tarefa 5b e recebe exatamente `-Cenario <novo|mock|copia> -Nonce <hex> [-Autorizado] [-ManterAutomacao]`.
 
-- [ ] **Passo 1: Teste puro que falha** — em `motivo-recusa.test.mjs`, importar `saidaPadraoCenario` e:
+- [ ] **Passo 1: Testes puros que falham.**
+
+`cenario-no-guest.test.mjs`:
+
+```js
+// Pure tests of the guest command builder for scenarios (D1): strings only, no disk, no wsb.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { comandoDeCenarioNoGuest } from "../cenario-no-guest.mjs";
+
+const NONCE = "0123abcd0123abcd";
+
+test("novo and mock: fixed guest script, nonce, nothing else", () => {
+  assert.equal(comandoDeCenarioNoGuest({ cenario: "novo", nonce: NONCE }), `& C:\\labsandbox\\app\\guest-cenario.ps1 -Cenario novo -Nonce ${NONCE}`);
+  assert.equal(comandoDeCenarioNoGuest({ cenario: "mock", nonce: NONCE }), `& C:\\labsandbox\\app\\guest-cenario.ps1 -Cenario mock -Nonce ${NONCE}`);
+});
+
+test("copia: needs --autorizado; --manter-automacao passes through", () => {
+  assert.throws(() => comandoDeCenarioNoGuest({ cenario: "copia", nonce: NONCE }), /autorizado/);
+  assert.equal(comandoDeCenarioNoGuest({ cenario: "copia", autorizado: true, nonce: NONCE }), `& C:\\labsandbox\\app\\guest-cenario.ps1 -Cenario copia -Nonce ${NONCE} -Autorizado`);
+  assert.equal(comandoDeCenarioNoGuest({ cenario: "copia", autorizado: true, manterAutomacao: true, nonce: NONCE }), `& C:\\labsandbox\\app\\guest-cenario.ps1 -Cenario copia -Nonce ${NONCE} -Autorizado -ManterAutomacao`);
+});
+
+test("refuses unknown scenarios, injected text, flags on the wrong scenario and a bad nonce", () => {
+  for (const c of ["", "Novo", "copia; del x", "../copia", "outro"]) assert.throws(() => comandoDeCenarioNoGuest({ cenario: c, nonce: NONCE }), /unknown scenario/, c);
+  assert.throws(() => comandoDeCenarioNoGuest({ cenario: "novo", autorizado: true, nonce: NONCE }), /only apply to copia/);
+  assert.throws(() => comandoDeCenarioNoGuest({ cenario: "mock", manterAutomacao: true, nonce: NONCE }), /only apply to copia/);
+  assert.throws(() => comandoDeCenarioNoGuest({ cenario: "novo", nonce: "x&del" }), /nonce/);
+});
+```
+
+Em `motivo-recusa.test.mjs` (puro; importar `saidaPadraoCenario`):
 
 ```js
 test("saidaPadraoCenario: same default folder novoCenarioDir uses, under <tempRoot>\\claudia-teste-sandbox", () => {
   assert.equal(saidaPadraoCenario("copia", "Z:\\"), "Z:\\claudia-teste-sandbox\\copia");
-  assert.equal(saidaPadraoCenario("novo", TEMP), `${BASE}\\novo`);
   assert.equal(motivoRecusa(saidaPadraoCenario("mock", "Z:\\"), { repoRoot: REPO, tempRoot: "Z:\\" }), null);
 });
 ```
 
-(Estes asserts usam separador `\`: rodar no Windows; o arquivo já é puro e não está no CI Linux.)
+(Usa separador `\`: rodar no Windows; o arquivo é puro e não está no CI Linux.)
 
-- [ ] **Passo 2: Rodar e ver falhar.** `node --test .claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs` → `saidaPadraoCenario` não exportado.
+- [ ] **Passo 2: Rodar e ver falhar.** `node --test .claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs .claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs` → módulo/export inexistente.
 
-- [ ] **Passo 3: Implementar em `comum.mjs`:**
+- [ ] **Passo 3: `comum.mjs`.**
 
 ```js
 import { raizPrincipalDe, caminhosDoLab, ambienteGitLimpo, estaNoSandbox, MARCADOR_GUEST, raizDeCenarios, motivoRecusaRaizTeste } from "./caminhos-lab.mjs";
+
+/** Guest folder where test-up -DadosReais mounts the app's Roaming data folder, read-only (spec addendum 8.1). */
+export const ORIGEM_DADOS_REAIS = "C:\\labdadosreais";
 
 /** PURE. Default scenario folder for a given tempRoot. cenario-copia uses it for its overlap check. */
 export function saidaPadraoCenario(nome, tempRoot) {
   return path.join(tempRoot, NOME_BASE, nome);
 }
 
-/** tempRoot for scenario folders now: Z:\ in the guest (two factors), the real OS temp folder on the host (D1). */
+/** Z:\ inside the guest (two factors). On the PC it throws: scenarios run only in the Sandbox (D1). */
 export function raizCenariosAtual() {
   const noSandbox = estaNoSandbox({ identidade: os.userInfo().username, temBootstrap: fs.existsSync(MARCADOR_GUEST) });
-  return raizDeCenarios({ noSandbox, tmpReal: noSandbox ? null : fs.realpathSync.native(os.tmpdir()) });
+  const raiz = raizDeCenarios({ noSandbox });
+  if (!raiz) throw new Error("scenarios run only inside Windows Sandbox (D1): from the PC use cenario-no-guest.mjs --cenario <novo|mock|copia>");
+  return raiz;
 }
 ```
 
-e em `novoCenarioDir`:
-  - `const tempRoot = raizCenariosAtual();` e `const noGuest = tempRoot === "Z:\\";`
+Em `novoCenarioDir`:
+  - primeira linha: `const tempRoot = raizCenariosAtual();` (no PC, lança antes de qualquer acesso a disco);
   - `const dir = path.resolve(saida || saidaPadraoCenario(nome, tempRoot));`
-  - logo depois do `motivoRecusa`: `if (noGuest && motivoRecusaRaizTeste(dir)) throw new Error(\`novoCenarioDir: refused (${motivoRecusaRaizTeste(dir)}): ${dir}\`);`
-  - no bloco `if (st)`, depois de calcular `real`: `if (noGuest && motivoRecusaRaizTeste(real)) throw new Error(\`novoCenarioDir: refused (real path not on Z:: ${real}): ${dir}\`);`
-  - depois do `mkdirSync`, conferir de novo: `if (noGuest && motivoRecusaRaizTeste(fs.realpathSync.native(dir))) throw ...` (antes de gravar `.cenario`).
+  - logo depois do `motivoRecusa`: `const mz = motivoRecusaRaizTeste(dir); if (mz) throw new Error(\`novoCenarioDir: refused (${mz}): ${dir}\`);`
+  - no bloco `if (st)`, depois de calcular `real`: `if (motivoRecusaRaizTeste(real)) throw new Error(\`novoCenarioDir: refused (real path not on Z:: ${real}): ${dir}\`);`
+  - depois do `mkdirSync`, antes de gravar `.cenario`: `if (motivoRecusaRaizTeste(fs.realpathSync.native(dir))) throw new Error(\`novoCenarioDir: refused (real path not on Z: after create): ${dir}\`);`
 
-- [ ] **Passo 4: `cenario-copia.mjs`** — trocar as linhas 86-87 por:
+- [ ] **Passo 4: `cenario-copia.mjs`.** Cabeçalho: "roda só no guest (D1); `--origem` padrão `C:\labdadosreais` (montado só leitura por `test-up -DadosReais`)". No `try`, nesta ordem:
 
 ```js
-  // Same default folder novoCenarioDir uses (Z:\ in the guest, the real temp folder on the host).
-  const saidaPath = path.resolve(values.saida || saidaPadraoCenario("copia", raizCenariosAtual()));
+  const tempRoot = raizCenariosAtual(); // throws on the PC before anything is read (D1)
+  const origem = path.resolve(values.origem || ORIGEM_DADOS_REAIS);
+  if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) {
+    throw new Error(`Source data not found: ${origem}. The real data is mounted only by test-up -DadosReais, with the user's authorization for this round.`);
+  }
+  // Same default folder novoCenarioDir uses.
+  const saidaPath = path.resolve(values.saida || saidaPadraoCenario("copia", tempRoot));
 ```
 
-importando `saidaPadraoCenario, raizCenariosAtual` de `./comum.mjs`; remover `os` do import se ficar sem uso.
+importando `ORIGEM_DADOS_REAIS, raizCenariosAtual, saidaPadraoCenario` de `./comum.mjs`; remover `os` e `process.env.APPDATA`/`TEMP` (não são mais usados). O teste do `--autorizado` antes de tudo continua igual. Em `cenario-novo.mjs` e `cenario-mock.mjs`, trocar no comentário de uso `%TEMP%\claudia-teste-sandbox\<x>` por `Z:\claudia-teste-sandbox\<x> (only inside the guest; from the PC use cenario-no-guest.mjs)`.
 
-- [ ] **Passo 5: Rodar e ver passar** `motivo-recusa.test.mjs`, `caminhos-lab.test.mjs`, `onde.test.mjs` (lista explícita) → exit 0. Os testes de Sandbox (`comum`, `novo`, `mock`, `copia`, `publicar`) **não** rodam aqui: Tarefa 12.
+- [ ] **Passo 5: `cenario-no-guest.mjs`.**
 
-- [ ] **Passo 6: Prova de mutação:** fazer `saidaPadraoCenario` devolver `path.join(tempRoot, nome)` → `FAILED - saidaPadraoCenario: ...`.
+```js
+// Creates a data scenario INSIDE the guest (D1: never on the PC) through C:\labsandbox\app\guest-cenario.ps1, then waits
+// for C:\labwork\run\cenario.json (= <work folder>\guest-rw\run\cenario.json on the host) carrying this run's nonce.
+// Usage: node cenario-no-guest.mjs --cenario novo|mock|copia [--autorizado] [--manter-automacao] [--id <id>] [--timeout 600]
+// copia needs --autorizado (ask the user in this round) and a lab started with test-up -DadosReais.
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { parseArgs } from "node:util";
+import { pathToFileURL } from "node:url";
+import { onde, sandboxId, noGuest, validarInt, falhaDe } from "./comum.mjs";
 
-- [ ] **Passo 7: Commit.**
+const CENARIOS = ["novo", "mock", "copia"];
+const uso = (msg) => Object.assign(new Error(msg), { code: "ERR_PARSE_ARGS_USAGE" });
+
+/** PURE. The PowerShell line run in the guest. The scenario comes only from a fixed list, so nothing needs quoting. */
+export function comandoDeCenarioNoGuest({ cenario, autorizado = false, manterAutomacao = false, nonce }) {
+  if (!/^[a-f0-9]{8,64}$/.test(String(nonce))) throw new Error("nonce must be 8-64 hex characters");
+  if (!CENARIOS.includes(cenario)) throw uso(`unknown scenario: ${cenario} (novo, mock, copia)`);
+  if (cenario !== "copia" && (autorizado || manterAutomacao)) throw uso("--autorizado and --manter-automacao only apply to copia");
+  if (cenario === "copia" && !autorizado) throw uso("copia needs --autorizado (ask the user in this round)");
+  return `& C:\\labsandbox\\app\\guest-cenario.ps1 -Cenario ${cenario} -Nonce ${nonce}${autorizado ? " -Autorizado" : ""}${manterAutomacao ? " -ManterAutomacao" : ""}`;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  try {
+    const { values } = parseArgs({ options: {
+      cenario: { type: "string" }, autorizado: { type: "boolean" }, "manter-automacao": { type: "boolean" },
+      id: { type: "string" }, timeout: { type: "string", default: "600" },
+    } });
+    const timeout = validarInt(values.timeout, 1, 7200, "--timeout");
+    const nonce = crypto.randomBytes(8).toString("hex");
+    const cmd = comandoDeCenarioNoGuest({ cenario: values.cenario, autorizado: Boolean(values.autorizado), manterAutomacao: Boolean(values["manter-automacao"]), nonce });
+    const id = sandboxId(values.id);
+    const result = path.join(onde().guestRw, "run", "cenario.json");
+    noGuest(id, "ExistingLogin", cmd);
+    const fim = Date.now() + timeout * 1000;
+    let j = null;
+    while (Date.now() < fim) {
+      try { const t = JSON.parse(fs.readFileSync(result, "utf8")); if (t.nonce === nonce && t.exit !== null && t.exit !== undefined) { j = t; break; } } catch { /* not written yet */ }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (!j) throw new Error(`no result for this run in ${result} after ${timeout}s`);
+    console.log(JSON.stringify({ exit: j.exit, cenario: j.cenario, saida: j.saida, erro: j.erro ?? null }));
+    process.exit(j.exit === 0 ? 0 : 1);
+  } catch (e) { falhaDe(e); }
+}
+```
+
+- [ ] **Passo 6: Rodar e ver passar** (lista do Passo 2 + `caminhos-lab.test.mjs`, `onde.test.mjs`) → exit 0. Os testes de Sandbox (`comum`, `novo`, `mock`, `copia`) não rodam aqui: Tarefa 12. Conferir que nenhum deles depende de rodar no PC: todos já usam `tempDir()`.
+
+- [ ] **Passo 7: Provas de mutação:**
+  1. `comandoDeCenarioNoGuest`: apagar a linha do `copia && !autorizado` → `FAILED - copia: needs --autorizado ...`.
+  2. Trocar `CENARIOS.includes(cenario)` por `typeof cenario === "string"` → `FAILED - refuses unknown scenarios ...`.
+  3. `saidaPadraoCenario`: devolver `path.join(tempRoot, nome)` → `FAILED - saidaPadraoCenario: ...`.
+
+- [ ] **Passo 8: Commit.**
 ```bash
-git add .claude/skills/claudia-teste-sandbox/scripts/comum.mjs .claude/skills/claudia-teste-sandbox/scripts/cenario-copia.mjs .claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs
-git commit -m "feat(sandbox-skill): scenario folders on Z: inside the guest; cenario-copia uses the same default folder
+git add .claude/skills/claudia-teste-sandbox/scripts/comum.mjs .claude/skills/claudia-teste-sandbox/scripts/cenario-copia.mjs .claude/skills/claudia-teste-sandbox/scripts/cenario-novo.mjs .claude/skills/claudia-teste-sandbox/scripts/cenario-mock.mjs .claude/skills/claudia-teste-sandbox/scripts/cenario-no-guest.mjs .claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs .claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs
+git commit -m "feat(sandbox-skill): data scenarios run only inside the guest, on Z:; host triggers them with cenario-no-guest.mjs
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
+```
+
+---
+
+### Tarefa 5b: Cenários só no guest — publicar só o app, `guest-cenario.ps1`, `guest-run.ps1 -Cenario`
+
+**Modelo:** Sonnet. Depende da Tarefa 7 (acrescenta uma função a `guest-install.lib.ps1`) e da aprovação do §8.
+
+**Files:**
+- Modify: `.claude/skills/claudia-teste-sandbox/scripts/publicar.mjs`
+- Modify: `.claude/skills/claudia-teste-sandbox/scripts/test/publicar.test.mjs` (teste de Sandbox)
+- Modify: `sandbox-lab/scripts/app-stage.ps1` (tira `-AppData` e `-LocalAppData`)
+- Modify: `sandbox-lab/sandbox/app/guest-run.ps1`
+- Create: `sandbox-lab/sandbox/app/guest-cenario.ps1`
+- Modify: `sandbox-lab/sandbox/guest-install.lib.ps1` (acrescentar `Get-LabGuestScenarioRefusal`)
+- Test: `sandbox-lab/scripts/test/guest-install.test.ps1` (acrescentar)
+
+**Interfaces:**
+- Consumes: `Get-LabGuestToolEnv` (Tarefa 7); comando de `comandoDeCenarioNoGuest` (Tarefa 5).
+- Produces: `publicar({ app }, { raizPrincipal, rodarStage })`; `app-stage.ps1 -App <p> [-WorkDir] [-Clean]`; `guest-run.ps1 [-Exe] [-Cenario <Z:\claudia-teste-sandbox\nome>] [-NoStart]`; `guest-cenario.ps1 -Cenario -Nonce [-Autorizado] [-ManterAutomacao]` → `C:\labwork\run\cenario.json`.
+
+- [ ] **Passo 1: Teste puro que falha** — em `guest-install.test.ps1`, antes do resumo:
+
+```powershell
+Check 'scenario folder for guest-run: only a direct child of Z:\claudia-teste-sandbox' {
+  foreach ($ok in @('Z:\claudia-teste-sandbox\novo', 'z:\CLAUDIA-TESTE-SANDBOX\mock', 'Z:\claudia-teste-sandbox\cs test x 1')) {
+    if (Get-LabGuestScenarioRefusal $ok) { throw "must allow '$ok'" }
+  }
+  foreach ($bad in @('', 'Z:\claudia-teste-sandbox', 'Z:\claudia-teste-sandbox\a\b', 'Z:\claudia-teste-sandbox\..\x', 'C:\labdata\novo', 'Z:\tmp\novo', 'Z:\claudia-teste-sandbox-irmao\novo', 'novo', '\\srv\s\novo')) {
+    if (-not (Get-LabGuestScenarioRefusal $bad)) { throw "must refuse '$bad'" }
+  }
+}
+```
+
+- [ ] **Passo 2: Rodar e ver falhar.**
+
+- [ ] **Passo 3: `guest-install.lib.ps1`** — acrescentar:
+
+```powershell
+function Get-LabGuestScenarioRefusal([string]$Path) {
+  # guest-run.ps1 -Cenario: a scenario folder created by the scenario scripts in the guest (D1), nothing else.
+  if ([string]::IsNullOrWhiteSpace($Path)) { return 'scenario folder is required' }
+  if ($Path -notmatch '^[Zz]:\\[Cc][Ll][Aa][Uu][Dd][Ii][Aa]-[Tt][Ee][Ss][Tt][Ee]-[Ss][Aa][Nn][Dd][Bb][Oo][Xx]\\[^\\.][^\\]*$') { return 'scenario folder must be Z:\claudia-teste-sandbox\<name>' }
+  return $null
+}
+```
+
+- [ ] **Passo 4: `guest-cenario.ps1`** (5.1, ASCII):
+
+```powershell
+# guest-cenario.ps1 - runs INSIDE the Sandbox (wsb exec -r ExistingLogin). Creates a data scenario on Z: with the Node the
+# guest installed (spec addendum 8.1: scenarios never run on the PC). copia reads only C:\labdadosreais (read-only mount,
+# present only when test-up ran with -DadosReais). Output: C:\labwork\run\cenario.json {nonce, cenario, exit, saida, erro}
+param(
+  [ValidateSet('novo', 'mock', 'copia')][string]$Cenario,
+  [ValidatePattern('^[a-f0-9]{8,64}$')][string]$Nonce,
+  [switch]$Autorizado,
+  [switch]$ManterAutomacao
+)
+$ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
+$Out = 'C:\labwork\run'
+New-Item -ItemType Directory -Force $Out | Out-Null
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$res = [ordered]@{ nonce = $Nonce; cenario = $Cenario; exit = $null; saida = "Z:\claudia-teste-sandbox\$Cenario"; erro = $null }
+function Save-Result { [IO.File]::WriteAllText((Join-Path $Out 'cenario.json'), ($res | ConvertTo-Json), $utf8) }
+function Stop-With([int]$Code, [string]$Why) { $res.exit = $Code; $res.erro = $Why; Save-Result; exit $Code }
+
+$inst = $null
+try { $inst = Get-Content -LiteralPath 'C:\lab\out\instalar.json' -Raw | ConvertFrom-Json } catch { }
+$toolEnv = Get-LabGuestToolEnv $inst
+if (-not $toolEnv) { Stop-With 1 'instalar.json missing or not ok: this ambiente must install node (compose.json)' }
+$node = @(@($toolEnv.paths) | ForEach-Object { Join-Path $_ 'node.exe' } | Where-Object { Test-Path -LiteralPath $_ }) | Select-Object -First 1
+if (-not $node) { Stop-With 1 'node.exe not found in the installed tools' }
+$script = "C:\labproject\.claude\skills\claudia-teste-sandbox\scripts\cenario-$Cenario.mjs"
+$argv = @($script, '--saida', $res.saida)
+if ($Cenario -eq 'copia') {
+  if (-not (Test-Path -LiteralPath 'C:\labdadosreais' -PathType Container)) { Stop-With 2 'real data not mounted: start the lab with test-up -DadosReais (only with the user authorization for this round)' }
+  $argv += @('--origem', 'C:\labdadosreais')
+  if ($Autorizado) { $argv += '--autorizado' }
+  if ($ManterAutomacao) { $argv += '--manter-automacao' }
+}
+$lines = @(& $node @argv 2>&1 | ForEach-Object { "$_" })
+$res.exit = $LASTEXITCODE
+if ($res.exit -ne 0) { $res.erro = ($lines | Select-Object -Last 3) -join ' | ' }
+Save-Result
+exit $res.exit
+```
+
+- [ ] **Passo 5: `guest-run.ps1`.** Parâmetro novo `[string]$Cenario = ''`; dot-source `Join-Path $PSScriptRoot '..\guest-install.lib.ps1'`; a seção "2. dados do app" passa a ler do cenário, não do deploy:
+
+```powershell
+# 2. app data from a scenario created in the guest (D1); the deploy carries only the app
+$r.dataFiles = [ordered]@{}
+if ($Cenario) {
+  $why = Get-LabGuestScenarioRefusal $Cenario
+  $item = Get-Item -LiteralPath $Cenario -Force -ErrorAction SilentlyContinue
+  if (-not $why -and -not $item) { $why = 'scenario folder not found' }
+  if (-not $why -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $why = 'scenario folder is a link' }
+  if (-not $why) { $why = Get-LabGuestScenarioRefusal $item.FullName }   # the real path, too
+  if ($why) { $r.errors += "cenario: $why" }
+  else {
+    foreach ($pair in @(@('appdata', $env:APPDATA), @('localappdata', $env:LOCALAPPDATA))) {
+      $src = Join-Path $item.FullName $pair[0]
+      if (-not (Test-Path -LiteralPath $src)) { continue }
+      try {
+        robocopy $src $pair[1] /E /XJ /NFL /NDL /NP /R:1 /W:1 | Out-Null
+        $files = @(Get-ChildItem -LiteralPath $src -Recurse -File)
+        foreach ($f in $files) { $t = Join-Path $pair[1] $f.FullName.Substring($src.Length + 1); if (Test-Path -LiteralPath $t) { (Get-Item -LiteralPath $t).IsReadOnly = $false } }
+        $r.dataFiles[$pair[0]] = $files.Count
+      } catch { $r.errors += "$($pair[0]): $_" }
+    }
+  }
+}
+```
+
+Atualizar o comentário do topo (passo 2: `-Cenario`, não `C:\appdeploy\appdata`; uso `-Cenario Z:\claudia-teste-sandbox\<nome>`).
+
+- [ ] **Passo 6: `app-stage.ps1`.** Tirar os parâmetros `-AppData`/`-LocalAppData`, as duas linhas `Resolve-Source` deles, o laço que copia `appdata`/`localappdata` e as pastas `appdata`/`localappdata` do `New-Item` (o deploy passa a ter só `app\` e o marcador). `.SYNOPSIS`: "Publica só o app; os dados do app vêm de um cenário criado no guest (D1)."
+
+- [ ] **Passo 7: `publicar.mjs`.** `publicar({ app }, { raizPrincipal, rodarStage })`: tirar a leitura de `cenario.json`; `rodarStage(c.appStage, ["-App", app, "-WorkDir", c.trabalho, "-Clean"])`; devolver `{ workDir, deploy }`. CLI: só `--app` (sem `--app` → exit 2); `--cenario` deixa de existir (o `parseArgs` estrito já sai com 2). Comentário do topo: "publishes only the app; data comes from a scenario created in the guest (cenario-no-guest.mjs) and installed by guest-run.ps1 -Cenario".
+
+- [ ] **Passo 8: `publicar.test.mjs`** (teste de Sandbox; aqui só editar):
+  - em `montar`: tirar a criação do cenário (linhas 18-20) e `cen` do retorno;
+  - trocar todo `publicar({ app: m.app, cenario: m.cen }, m.deps)` por `publicar({ app: m.app }, m.deps)`;
+  - no primeiro teste, trocar as asserções das linhas 33 e 35 por `assert.deepEqual(m.chamadas[0].args, ["-App", m.app, "-WorkDir", path.join(m.raiz, ".sandbox-work"), "-Clean"]);` e o título por `"first publish: app-stage gets only -App, -WorkDir <root>\\.sandbox-work and -Clean; marker written"`;
+  - trocar o teste `"a folder without cenario.json is refused"` por `test("the old --cenario option is gone", () => { assert.equal(rodar(path.join(SCRIPTS, "publicar.mjs"), ["--app", "x", "--cenario", "y"]).code, 2); });`
+  - no último teste, a segunda linha passa a ser `assert.equal(rodar(script, []).code, 2);` e o título `"CLI: --work-dir and --cenario no longer exist and a missing --app exits 2"`.
+
+- [ ] **Passo 9: Rodar e ver passar** `guest-install.test.ps1` (dois PowerShell); parser sem erros em `guest-cenario.ps1`, `guest-run.ps1`, `app-stage.ps1`; ASCII nos `.ps1` de `sandbox/`; `node --check .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs`. `git grep -n "AppData\|cenario" -- sandbox-lab/scripts/app-stage.ps1` → nada. **Não rodar** `publicar.test.mjs`, `guest-cenario.ps1` nem `guest-run.ps1` no PC (Tarefa 12).
+
+- [ ] **Passo 10: Prova de mutação:** em `Get-LabGuestScenarioRefusal`, trocar `[^\\]*$` por `.*$` → `FAILED - scenario folder for guest-run: ...` (o `a\b` passa).
+
+- [ ] **Passo 11: Commit.**
+```bash
+git add .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs .claude/skills/claudia-teste-sandbox/scripts/test/publicar.test.mjs sandbox-lab/scripts/app-stage.ps1 sandbox-lab/sandbox/app/guest-run.ps1 sandbox-lab/sandbox/app/guest-cenario.ps1 sandbox-lab/sandbox/guest-install.lib.ps1 sandbox-lab/scripts/test/guest-install.test.ps1
+git commit -m "feat(lab): publish only the app; scenario data is created and installed inside the guest
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
@@ -1629,8 +2019,10 @@ function Invoke-Package($p) {
     switch ($p.tipo) {
       'vs-layout' {
         # Install from the offline layout without network (--noWeb); exe inside the layout, as Microsoft documents.
+        # The layout came from the cache-msvc guest (spec addendum 8.2); the pinned bootstrapper is the fallback.
         $exe = Join-Path $p.arquivo 'layout\vs_buildtools.exe'
-        if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $p.arquivo 'vs_buildtools.exe' }
+        if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $p.arquivo 'layout\vs_setup.exe' }
+        if (-not (Test-Path -LiteralPath $exe)) { $exe = $p.bootstrapper }
         $argv = @('--noWeb', '--quiet', '--wait', '--norestart', '--nocache', '--installPath', "$Tools\msvc") + @($p.componentes | ForEach-Object { '--add'; $_ })
         $proc = Start-Process -FilePath $exe -ArgumentList $argv -Wait -PassThru
         $r.exit = ConvertTo-LabInstallExit $proc.ExitCode
@@ -1749,7 +2141,8 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 
 **Interfaces:**
 - Consumes: todo o contrato de `compose.ps1`, `travas.ps1`, `disco.ps1`; scripts do guest `disco-z.ps1`, `instalar.ps1`.
-- Produces: `test-up.ps1 -Ambiente <nome> [-Project <p>] [-GenerateOnly] [-Force] [-NoWait] [-WaitForMcp] [-TimeoutSec n]` com exit 0/1/2 de `Get-LabUpVerdict`; `-Config` deixa de existir.
+- Produces: `test-up.ps1 -Ambiente <nome> [-Project <p>] [-DadosReais] [-GenerateOnly] [-Force] [-NoWait] [-WaitForMcp] [-TimeoutSec n]` com exit 0/1/2 de `Get-LabUpVerdict`; `-Config` deixa de existir. A parte `-DadosReais` e o campo `msvc` só entram com o §8 da spec aprovado.
+- Regra de disco: o `test-up` só **cria** pastas (`guest-rw`, `cache-saida`, `credencial`); os dados reais são só montados, só leitura, e nunca copiados para o PC.
 
 - [ ] **Passo 1: Reescrever `test-up.ps1`** mantendo o que não muda (projeto com `Resolve-LabRealPath`/`Get-LabProjectRefusal`, checagem de ferramentas, detecção de Sandbox rodando, `-Force` com `Get-LabDownRefusal`, `Clear-LabOut`, laço de espera do `status.json`). Estrutura final, nesta ordem:
 
@@ -1766,9 +2159,12 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 .PARAMETER Force        Se ja houver um Sandbox rodando, derruba antes (test-down.ps1).
 .PARAMETER NoWait       Nao espera nada depois de iniciar.
 .PARAMETER WaitForMcp   Espera tambem a fase MCP terminar.
+.PARAMETER DadosReais   Monta SO LEITURA a pasta de dados do app no PC (%APPDATA%\io.github.johngabie.claudia-rh, achada
+                        pela API) em C:\labdadosreais, para o cenario copia no guest. So com autorizacao do usuario NAQUELA
+                        rodada. Nunca %LOCALAPPDATA%.
 #>
 [CmdletBinding()]
-param([int]$TimeoutSec = 0, [switch]$GenerateOnly, [switch]$Force, [switch]$NoWait, [switch]$WaitForMcp, [string]$Ambiente = 'exemplo', [string]$Project)
+param([int]$TimeoutSec = 0, [switch]$GenerateOnly, [switch]$Force, [switch]$NoWait, [switch]$WaitForMcp, [string]$Ambiente = 'exemplo', [string]$Project, [switch]$DadosReais)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\travas.ps1')
 . (Join-Path $PSScriptRoot 'lib\compose.ps1')
@@ -1802,17 +2198,34 @@ function Resolve-LabPath([string]$p) {
 
 # --- host folders behind the mount names (never written in compose.json) ---
 $Work = Join-Path $RepoRoot '.sandbox-work'
-$HostOf = @{ trabalho = (Join-Path $Work 'guest-rw'); deploy = (Join-Path $Work 'deploy') }
+$HostOf = @{ trabalho = (Join-Path $Work 'guest-rw'); deploy = (Join-Path $Work 'deploy'); 'cache-saida' = (Join-Path $Work 'cache-saida') }
 foreach ($m in $mounts) {
   $h = $HostOf[$m.nome]
-  if ($m.nome -eq 'trabalho' -and -not $GenerateOnly) { New-Item -ItemType Directory -Force -Path $h | Out-Null }   # creates only
+  if ($m.nome -in @('trabalho', 'cache-saida') -and -not $GenerateOnly) { New-Item -ItemType Directory -Force -Path $h | Out-Null }   # creates only
   $links = @(Get-LabLinksInPath $h $RepoRoot)
   if ($links.Count) { throw "[test-up] link (junction/symlink) in the path of mount '$($m.nome)': $($links[0])" }
   if (-not (Test-Path -LiteralPath $h -PathType Container)) { throw "[test-up] folder for mount '$($m.nome)' not found$(if ($m.nome -eq 'deploy') { ': publish first (publicar.mjs)' })" }
 }
 $cred = Get-LabCredentialPaths $RepoRoot
 
+# --- real app data for the copia scenario (spec addendum 8.1): read-only, found by the API, only with -DadosReais ---
+$RealData = $null
+if ($DadosReais) {
+  $roaming = [Environment]::GetFolderPath('ApplicationData')
+  $src = Join-Path $roaming $script:LabAppId
+  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src)
+  if ($why) { throw "[test-up] -DadosReais refused: $why" }
+  if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
+  $RealData = $src
+  Write-Host '[test-up] dados reais do app: montados SO LEITURA em C:\labdadosreais (so com autorizacao do usuario nesta rodada)'
+}
+$msvcLayout = $(if (@($mounts | Where-Object { $_.nome -eq 'cache-saida' }).Count) { ConvertTo-LabGuestMsvcLayout -Compose $compose } else { $null })
+
 if (-not $GenerateOnly) {
+  if ($msvcLayout) {
+    $boot = Join-Path $SharedDir ('cache\' + $msvcLayout.bootstrapper.Substring(($script:LabCacheGuestDir + '\').Length))
+    if (-not (Test-Path -LiteralPath $boot -PathType Leaf)) { throw '[test-up] the MSVC bootstrapper is not in shared\cache: run scripts\cache-up.ps1 first. No Sandbox was started.' }
+  }
   # (checagem de ferramentas Test-LabTools como hoje)
   # --- cache present (size only; the guest checks SHA-256) ---
   $missing = @()
@@ -1832,7 +2245,7 @@ $guest = [ordered]@{
   startUrl = $cfg.chrome.startUrl; testServerPort = [int]$cfg.chrome.testServerPort; remoteDebuggingPort = [int]$cfg.chrome.remoteDebuggingPort
   chromeExe = To-Guest $cfg.chrome.exe; extensions = $extList; dbBackup = To-Guest $cfg.dbBackup; workDb = 'C:\labdata\app.sqlite'
   mcpPort = [int]$cfg.mcp.port; mcpAuthKeyEnv = $cfg.mcp.authKeyEnv; mcpAuthKeyFile = $(if ($cfg.mcp.authKeyFile) { To-Guest $cfg.mcp.authKeyFile } else { $null })
-  outDir = 'C:\lab\out'; conta = $conta; instalar = $install
+  outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; instalar = $install; msvc = $msvcLayout
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $SandboxDir 'guest.config.json'), ($guest | ConvertTo-Json -Depth 6), $utf8)
@@ -1852,6 +2265,7 @@ function New-LabMappedFolderXml([string]$HostDir, [string]$Sandbox, [bool]$ReadO
 $extra = ''
 foreach ($m in $mounts) { $extra += New-LabMappedFolderXml $HostOf[$m.nome] $m.sandbox $m.readOnly }
 if ($conta) { $extra += New-LabMappedFolderXml $cred.Dir 'C:\labcred' $true }
+if ($RealData) { $extra += New-LabMappedFolderXml $RealData 'C:\labdadosreais' $true }   # always read-only
 if ($extra) { $tpl = $tpl.Replace('  </MappedFolders>', $extra + '  </MappedFolders>') }
 $null = [xml]$tpl
 $WsbPath = Join-Path $SandboxDir 'sandbox.generated.wsb'
@@ -1956,76 +2370,152 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 
 ---
 
-### Tarefa 9: `cache-up.ps1`
+### Tarefa 9: `cache-up.ps1` (downloads e importação do layout) e `layout-msvc.ps1` (layout montado no guest)
 
-**Modelo:** Sonnet. Depende das Tarefas 1 e 2.
+**Modelo:** Sonnet. Depende das Tarefas 1 e 2 e da aprovação do §8.
 
 **Files:**
 - Create: `sandbox-lab/scripts/cache-up.ps1`
-- Test: `sandbox-lab/scripts/test/cache-up.test.ps1`
+- Create: `sandbox-lab/sandbox/layout-msvc.ps1`
+- Test: `sandbox-lab/scripts/test/cache-up.test.ps1` (estático e puro: lê o texto dos dois scripts)
 
 **Interfaces:**
-- Consumes: `Get-LabPackageRefusal`, `$script:LabInstallOrder` (Tarefa 1); `Get-LabCacheDirRefusal`, `Get-LabCachePlan` (Tarefa 2); `Get-LabLinksInPath` (existente).
-- Produces: `scripts\cache-up.ps1 [-SoPlano]`; arquivos `shared\cache\<arquivo>` e `shared\cache\msvc-<versao>\{vs_buildtools.exe,layout\}`; um `shared\cache\cache-up-<data>.json` novo por execução.
+- Consumes: `Get-LabPackageRefusal`, `$script:LabInstallOrder` (Tarefa 1); `Get-LabCacheDirRefusal`, `Get-LabCachePlan`, `Get-LabLayoutImportRefusal`, `Get-LabLayoutManifestProblems` (Tarefa 2); `Get-LabLinksInPath`, `Get-LabReparsePoints` (existentes); `guest.config.json` campo `msvc` (Tarefa 8, de `ConvertTo-LabGuestMsvcLayout`).
+- Produces:
+  - `scripts\cache-up.ps1 [-SoPlano]`: baixa Rust, Node, Claude Code e o **bootstrapper** do MSVC (`shared\cache\vs_buildtools-<v>.exe`, nunca executado no PC).
+  - `scripts\cache-up.ps1 -ImportarMsvc <id>`: importa `.sandbox-work\cache-saida\<id>\msvc-<v>` para `shared\cache\msvc-<v>\{layout\,layout.sha256}`.
+  - `sandbox\layout-msvc.ps1`: roda no guest como System no ambiente `cache-msvc` e grava `C:\lab\out\layout-msvc.json` `{ok,id,versao,arquivos,bytes,segundos,erro}`.
+  - Em todos: um `shared\cache\cache-up-<data>.json` novo por execução.
+
+Regra de disco no host (vale para o script inteiro): **só cria**. Nada é apagado nem sobrescrito, nem em `shared\cache\` nem em `.sandbox-work\cache-saida\` (o usuário limpa a `cache-saida` à mão quando quiser).
 
 - [ ] **Passo 1: Teste estático que falha** — `sandbox-lab/scripts/test/cache-up.test.ps1`:
 
 ```powershell
-# Pure test: reads the text of cache-up.ps1 (this repository) and checks it never deletes, moves over or overwrites.
+# Pure test: reads the text of cache-up.ps1 and layout-msvc.ps1 (this repository). cache-up must never delete, move over,
+# overwrite, or run anything of Visual Studio on the PC (spec A2 and addendum 8.2).
 #   pwsh -NoProfile -File sandbox-lab/scripts/test/cache-up.test.ps1
 $ErrorActionPreference = 'Stop'
 $script:failed = 0
 function Check([string]$Name, [scriptblock]$Body) { try { & $Body; Write-Host "ok - $Name" } catch { $script:failed++; Write-Host "FAILED - ${Name}: $($_.Exception.Message)" } }
 $text = Get-Content -LiteralPath "$PSScriptRoot/../cache-up.ps1" -Raw
+$guest = Get-Content -LiteralPath "$PSScriptRoot/../../sandbox/layout-msvc.ps1" -Raw
 
 Check 'cache-up has no delete or overwrite command' {
-  $bad = '(?im)\b(Remove-Item|rmdir|rd|del|erase|Clear-Content|Clear-Item|Move-Item|robocopy|Set-Content|Out-File)\b|\.Delete\(|\]::Replace\(|Copy-Item'
+  $bad = '(?im)\b(Remove-Item|rmdir|rd|del|erase|Clear-Content|Clear-Item|Move-Item|Copy-Item|robocopy|Set-Content|Out-File)\b|\.Delete\(|\]::Replace\('
   $m = [regex]::Matches($text, $bad)
   if ($m.Count) { throw "found: $(@($m | ForEach-Object { $_.Value }) -join ', ')" }
+  foreach ($c in [regex]::Matches($text, '\[IO\.File\]::Copy\([^)]*\)')) { if ($c.Value -notmatch ',\s*\$false\)$') { throw "File.Copy without overwrite=`$false: $($c.Value)" } }
 }
-Check 'cache-up checks the folder with the pure guard before writing and renames only new files' {
-  foreach ($must in @('Get-LabCacheDirRefusal', 'Get-LabCachePlan', '.tmp', '[IO.File]::Move(', '[IO.Directory]::Move(')) {
+Check 'cache-up never runs the Visual Studio bootstrapper on the PC' {
+  $m = [regex]::Matches($text, '(?im)Start-Process|Invoke-Item|--layout|--add\b|--noWeb')
+  if ($m.Count) { throw "found: $(@($m | ForEach-Object { $_.Value }) -join ', ')" }
+}
+Check 'cache-up checks with the pure guards and renames only new files and folders' {
+  foreach ($must in @('Get-LabCacheDirRefusal', 'Get-LabCachePlan', 'Get-LabLayoutImportRefusal', 'Get-LabLayoutManifestProblems', 'Get-LabReparsePoints', '.tmp', '[IO.File]::Move(', '[IO.Directory]::Move(')) {
     if (-not $text.Contains($must)) { throw "missing: $must" }
   }
+}
+Check 'layout-msvc copies into a new folder and never mirrors' {
+  if ($guest -match '(?i)/MIR|/PURGE|/MOV|Remove-Item') { throw 'mirror or delete in layout-msvc.ps1' }
+  foreach ($must in @('C:\labcachesaida', 'layout.sha256', '--layout')) { if (-not $guest.Contains($must)) { throw "missing: $must" } }
 }
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0
 ```
 
-- [ ] **Passo 2: Rodar e ver falhar** (arquivo não existe).
+- [ ] **Passo 2: Rodar e ver falhar** (arquivos não existem).
 
 - [ ] **Passo 3: `sandbox-lab/scripts/cache-up.ps1`:**
 
 ```powershell
 <#
 .SYNOPSIS
-  Baixa para sandbox-lab\shared\cache\ (fora do git) os pacotes fixados em compose.json e confere o SHA-256 (spec A2).
-  So cria: o download vai para <nome>.<id>.tmp e so depois e renomeado para o nome final, que nunca e sobrescrito.
-  Um arquivo que ja existe com outro hash e um conflito: nada e baixado e o usuario decide o que fazer com ele.
-  O MSVC vira a pasta msvc-<versao>\ com o bootstrapper de versao fixa e o layout offline (vs_buildtools --layout).
-.PARAMETER SoPlano  Mostra o plano (baixar / ok / conflito) e sai sem baixar nada.
+  Cache de instaladores do guest em sandbox-lab\shared\cache\ (fora do git; spec A2 e adendo 8.2). So cria: nunca
+  apaga, nunca sobrescreve. Um arquivo existente com outro hash e um conflito: nada e baixado.
+  Sem parametros: baixa Rust, Node, Claude Code e o bootstrapper do MSVC. O bootstrapper NUNCA roda no PC: o layout do
+  MSVC e montado num Sandbox (test-up -Ambiente cache-msvc + sandbox\layout-msvc.ps1 como System) e trazido com
+  -ImportarMsvc, que confere SHA-256 e tamanho de cada arquivo no PC antes e depois de copiar.
+.PARAMETER SoPlano       Mostra o plano e sai sem baixar nada.
+.PARAMETER ImportarMsvc  Id (8 hex) gravado pelo layout-msvc.ps1 em shared\out\layout-msvc.json.
 #>
 [CmdletBinding()]
-param([switch]$SoPlano)
+param([switch]$SoPlano, [string]$ImportarMsvc)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'lib\travas.ps1')
 . (Join-Path $PSScriptRoot 'lib\compose.ps1')
 . (Join-Path $PSScriptRoot 'lib\disco.ps1')
 $Lab = Split-Path $PSScriptRoot -Parent
+$RepoRoot = Split-Path $Lab -Parent
 $Cache = Join-Path $Lab 'shared\cache'
 $refusal = Get-LabCacheDirRefusal -CacheDir $Cache -LabDir $Lab -Links @(Get-LabLinksInPath $Cache $Lab)
 if ($refusal) { throw "[cache-up] refusing to write in ${Cache}: $refusal" }
 $compose = Get-Content -LiteralPath (Join-Path $Lab 'compose.json') -Raw | ConvertFrom-Json
+$msvc = $compose.pacotes.PSObject.Properties['msvc'].Value
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+New-Item -ItemType Directory -Force -Path $Cache | Out-Null
+$log = [ordered]@{ inicio = (Get-Date).ToString('o'); acao = $(if ($ImportarMsvc) { 'importar-msvc' } else { 'baixar' }); itens = @() }
+function Save-RunLog { $log.fim = (Get-Date).ToString('o'); [IO.File]::WriteAllText((Join-Path $Cache ('cache-up-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))), ($log | ConvertTo-Json -Depth 4), $utf8) }
+function Get-LabShortId { return [guid]::NewGuid().ToString('N').Substring(0, 8) }
+function Get-LabFileStamp([string]$File) { return "$((Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash.ToLowerInvariant()) $((Get-Item -LiteralPath $File).Length)" }
+function Get-LabTreeStamps([string]$Dir) {
+  # relative path with '/' -> "<sha256> <bytes>" for every file under $Dir (links were refused before)
+  $base = (Get-Item -LiteralPath $Dir).FullName.TrimEnd('\') + '\'
+  $found = @{}
+  foreach ($f in Get-ChildItem -LiteralPath $Dir -Recurse -File -Force) { $found[$f.FullName.Substring($base.Length).Replace('\', '/')] = Get-LabFileStamp $f.FullName }
+  return $found
+}
+
+if ($ImportarMsvc) {
+  # --- import the layout built in the guest (adendo 8.2) ---
+  if ($ImportarMsvc -notmatch '^[0-9a-f]{8}$') { throw '[cache-up] -ImportarMsvc takes the 8-hex id from shared\out\layout-msvc.json' }
+  $why = Get-LabPackageRefusal -Nome 'msvc' -Pacote $msvc
+  if ($why) { throw "[cache-up] compose.json: $why" }
+  $src = Join-Path $RepoRoot ".sandbox-work\cache-saida\$ImportarMsvc\msvc-$($msvc.versao)"
+  $links = @(Get-LabLinksInPath $src $RepoRoot) + @(Get-LabReparsePoints $src)
+  $why = Get-LabLayoutImportRefusal -Source $src -RepoRoot $RepoRoot -Versao $msvc.versao -Links $links
+  if ($why) { throw "[cache-up] refusing to import ${src}: $why" }
+  if (-not (Test-Path -LiteralPath (Join-Path $src 'layout.sha256') -PathType Leaf)) { throw "[cache-up] $src has no layout.sha256: run layout-msvc.ps1 again" }
+  $final = Join-Path $Cache $msvc.arquivo
+  if (Test-Path -LiteralPath $final) { throw "[cache-up] $($msvc.arquivo) is already in the cache: nothing imported (nothing is ever overwritten)" }
+  $manifest = Get-Content -LiteralPath (Join-Path $src 'layout.sha256') -Raw
+  Write-Host '[cache-up] conferindo o layout vindo do guest (SHA-256 de cada arquivo)...'
+  $problems = @(Get-LabLayoutManifestProblems -ManifestText $manifest -Found (Get-LabTreeStamps (Join-Path $src 'layout')))
+  if ($problems.Count) { throw "[cache-up] the layout in cache-saida does not match its layout.sha256 ($($problems.Count)): $(($problems | Select-Object -First 5) -join '; '). Nothing copied." }
+  $tmp = "$final.$(Get-LabShortId).tmp"
+  [IO.Directory]::CreateDirectory($tmp) | Out-Null
+  $srcLayout = (Get-Item -LiteralPath (Join-Path $src 'layout')).FullName.TrimEnd('\') + '\'
+  foreach ($f in Get-ChildItem -LiteralPath $srcLayout -Recurse -File -Force) {
+    $dst = Join-Path $tmp ('layout\' + $f.FullName.Substring($srcLayout.Length))
+    [IO.Directory]::CreateDirectory((Split-Path $dst -Parent)) | Out-Null
+    [IO.File]::Copy($f.FullName, $dst, $false)
+  }
+  [IO.File]::Copy((Join-Path $src 'layout.sha256'), (Join-Path $tmp 'layout.sha256'), $false)
+  $problems = @(Get-LabLayoutManifestProblems -ManifestText $manifest -Found (Get-LabTreeStamps (Join-Path $tmp 'layout')))
+  if ($problems.Count) { throw "[cache-up] the copy differs from layout.sha256 ($($problems.Count)); partial folder kept as $(Split-Path $tmp -Leaf), nothing renamed" }
+  [IO.Directory]::Move($tmp, $final)   # throws if $final exists
+  $log.itens += [ordered]@{ nome = 'msvc'; versao = $msvc.versao; id = $ImportarMsvc }
+  Save-RunLog
+  Write-Host "[cache-up] layout do MSVC $($msvc.versao) importado para shared\cache\$($msvc.arquivo)." -ForegroundColor Green
+  exit 0
+}
+
+# --- downloads (Rust, Node, Claude Code, MSVC bootstrapper); the MSVC layout folder is only reported ---
 $pkgs = @()
 foreach ($nome in $script:LabInstallOrder) {
   $prop = $compose.pacotes.PSObject.Properties[$nome]
   if (-not $prop) { continue }
-  $why = Get-LabPackageRefusal -Nome $nome -Pacote $prop.Value
+  $p = $prop.Value
+  $why = Get-LabPackageRefusal -Nome $nome -Pacote $p
   if ($why) { throw "[cache-up] compose.json: $why" }
-  $pkgs += [pscustomobject]@{ nome = $nome; arquivo = $prop.Value.arquivo; sha256 = $(if ($prop.Value.tipo -eq 'vs-layout') { '' } else { $prop.Value.sha256 }); pacote = $prop.Value }
+  if ($p.tipo -eq 'vs-layout') {
+    $pkgs += [pscustomobject]@{ nome = 'msvc-bootstrapper'; arquivo = $p.bootstrapper.arquivo; sha256 = $p.bootstrapper.sha256; url = $p.bootstrapper.url }
+    $pkgs += [pscustomobject]@{ nome = 'msvc'; arquivo = $p.arquivo; sha256 = ''; url = $null }
+  } else {
+    $pkgs += [pscustomobject]@{ nome = $nome; arquivo = $p.arquivo; sha256 = $p.sha256; url = $p.url }
+  }
 }
-New-Item -ItemType Directory -Force -Path $Cache | Out-Null
 $existentes = @{}
 foreach ($k in $pkgs) {
   $path = Join-Path $Cache $k.arquivo
@@ -2033,12 +2523,11 @@ foreach ($k in $pkgs) {
   elseif (Test-Path -LiteralPath $path -PathType Leaf) { $existentes[$k.arquivo] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
 $plan = @(Get-LabCachePlan -Pacotes $pkgs -Existentes $existentes)
-foreach ($p in $plan) { Write-Host ("[cache-up] {0,-12} {1,-9} {2}" -f $p.nome, $p.acao, $p.motivo) }
+foreach ($p in $plan) { Write-Host ("[cache-up] {0,-18} {1,-9} {2}" -f $p.nome, $p.acao, $p.motivo) }
 $conflicts = @($plan | Where-Object { $_.acao -eq 'conflito' })
 if ($conflicts.Count) { throw "[cache-up] $($conflicts.Count) conflict(s): nothing was downloaded and the existing files were kept. Decide by hand what to do with them." }
 if ($SoPlano) { exit 0 }
 
-function Get-LabShortId { return [guid]::NewGuid().ToString('N').Substring(0, 8) }
 function Save-LabDownload([string]$Url, [string]$Final, [string]$Sha) {
   # curl.exe ships with Windows 10+. New .tmp next to the final name; rename only after the hash matches.
   $tmp = "$Final.$(Get-LabShortId).tmp"
@@ -2048,45 +2537,83 @@ function Save-LabDownload([string]$Url, [string]$Final, [string]$Sha) {
   if ($got -ne $Sha) { throw "sha256 differs for ${Url}: expected $Sha, got $got (file kept as $(Split-Path $tmp -Leaf); nothing renamed)" }
   [IO.File]::Move($tmp, $Final)   # throws if $Final exists: never overwrites
 }
-function ConvertTo-LabArgLine([string[]]$Argv) { return (@($Argv | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' ') }
-
-$log = [ordered]@{ inicio = (Get-Date).ToString('o'); baixados = @() }
-foreach ($item in @($plan | Where-Object { $_.acao -eq 'baixar' })) {
-  $p = ($pkgs | Where-Object { $_.nome -eq $item.nome }).pacote
-  $final = Join-Path $Cache $p.arquivo
+foreach ($item in @($plan | Where-Object { $_.acao -eq 'baixar' -and $_.nome -ne 'msvc' })) {
+  $k = $pkgs | Where-Object { $_.nome -eq $item.nome }
   $sw = [Diagnostics.Stopwatch]::StartNew()
-  Write-Host "[cache-up] baixando $($item.nome) $($p.versao)..."
-  if ($p.tipo -eq 'vs-layout') {
-    $tmpDir = "$final.$(Get-LabShortId).tmp"   # short: the layout path should stay under 80 characters (not verified)
-    New-Item -ItemType Directory -Path $tmpDir | Out-Null
-    $boot = Join-Path $tmpDir 'vs_buildtools.exe'
-    Save-LabDownload -Url $p.bootstrapper.url -Final $boot -Sha $p.bootstrapper.sha256
-    $argv = @('--layout', (Join-Path $tmpDir 'layout'), '--lang', 'en-US', '--quiet', '--wait') + @($p.componentes | ForEach-Object { '--add'; $_ })
-    $proc = Start-Process -FilePath $boot -ArgumentList (ConvertTo-LabArgLine $argv) -Wait -PassThru
-    if ($proc.ExitCode -ne 0) { throw "vs_buildtools --layout failed (exit $($proc.ExitCode)); partial folder kept as $(Split-Path $tmpDir -Leaf)" }
-    [IO.Directory]::Move($tmpDir, $final)   # throws if $final exists
-  } else {
-    Save-LabDownload -Url $p.url -Final $final -Sha $p.sha256
-  }
-  $log.baixados += [ordered]@{ nome = $item.nome; versao = $p.versao; arquivo = $p.arquivo; segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1) }
+  Write-Host "[cache-up] baixando $($k.nome)..."
+  Save-LabDownload -Url $k.url -Final (Join-Path $Cache $k.arquivo) -Sha $k.sha256
+  $log.itens += [ordered]@{ nome = $k.nome; arquivo = $k.arquivo; segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1) }
 }
-$log.fim = (Get-Date).ToString('o')
-# A new log per run (creation only).
-[IO.File]::WriteAllText((Join-Path $Cache ('cache-up-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))), ($log | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "[cache-up] pronto: $(@($log.baixados).Count) baixado(s)."
+Save-RunLog
+if (@($plan | Where-Object { $_.nome -eq 'msvc' -and $_.acao -eq 'baixar' }).Count) {
+  Write-Host '[cache-up] falta o layout do MSVC. Ele e montado num Sandbox (o PC nao executa o Visual Studio):' -ForegroundColor Yellow
+  Write-Host '  1) scripts\test-up.ps1 -Ambiente cache-msvc -Project <projeto>   2) wsb exec --id <id> -r System -c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\labsandbox\layout-msvc.ps1"'
+  Write-Host '  3) ler o id em shared\out\layout-msvc.json   4) scripts\test-down.ps1   5) scripts\cache-up.ps1 -ImportarMsvc <id>'
+}
 exit 0
 ```
 
-Nota: `[IO.File]::WriteAllText` cria arquivo novo (nome com data e hora); o teste estático não proíbe `WriteAllText`.
+- [ ] **Passo 4: `sandbox-lab/sandbox/layout-msvc.ps1`** (5.1, ASCII):
 
-- [ ] **Passo 4: Rodar e ver passar** `cache-up.test.ps1` (dois PowerShell); parser sem erros em `cache-up.ps1`. **Não executar `cache-up.ps1`** (baixa vários GB; é a Tarefa 12, com autorização).
+```powershell
+# layout-msvc.ps1 - runs INSIDE the Sandbox as System (wsb exec -r System), ambiente cache-msvc (spec addendum 8.2).
+# Builds the offline layout of the VS Build Tools on the guest disk, lists every file with size and SHA-256
+# (layout.sha256), and copies it into a NEW folder C:\labcachesaida\<id>\msvc-<version> (= <repo>\.sandbox-work\cache-saida
+# on the host). The host checks and imports it with cache-up.ps1 -ImportarMsvc <id>. Output: C:\lab\out\layout-msvc.json
+$ErrorActionPreference = 'Continue'   # PS 5.1: native stderr must not become a terminating error
+$OutFile = 'C:\lab\out\layout-msvc.json'
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$res = [ordered]@{ ok = $false; id = $null; versao = $null; arquivos = 0; bytes = 0; segundos = $null; erro = $null }
+function Save-Result { $res.segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1); [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json), $utf8) }
+function Stop-With([string]$Why) { $res.erro = $Why; Save-Result; exit 1 }
 
-- [ ] **Passo 5: Prova de mutação:** acrescentar `Remove-Item -LiteralPath $tmp` dentro de `Save-LabDownload` → `FAILED - cache-up has no delete or overwrite command`; restaurar.
+if (-not (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf)) { Stop-With 'not inside the lab guest' }
+$cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw | ConvertFrom-Json
+$m = $cfg.msvc
+if (-not $m) { Stop-With 'guest.config.json has no msvc entry: start the lab with -Ambiente cache-msvc' }
+if (-not (Test-Path -LiteralPath 'C:\labcachesaida' -PathType Container)) { Stop-With 'C:\labcachesaida is not mounted' }
+$res.versao = $m.versao
+Save-Result
+if ((Get-FileHash -LiteralPath $m.bootstrapper -Algorithm SHA256).Hash -ine $m.sha256) { Stop-With 'bootstrapper sha256 differs from compose.json' }
+$work = 'C:\labdata\msvc-layout'   # short path on the guest disk (Microsoft asks for less than 80 characters)
+if (Test-Path -LiteralPath $work) { Stop-With "$work already exists: run on a fresh guest" }
+New-Item -ItemType Directory -Force 'C:\labdata' | Out-Null
+$boot = 'C:\labdata\vs_buildtools.exe'
+[IO.File]::Copy($m.bootstrapper, $boot, $false)
+$argv = @('--layout', $work, '--lang', 'en-US', '--quiet', '--wait') + @($m.componentes | ForEach-Object { '--add'; $_ })
+$p = Start-Process -FilePath $boot -ArgumentList $argv -Wait -PassThru
+if ($p.ExitCode -ne 0) { Stop-With "vs_buildtools --layout exit $($p.ExitCode)" }
+# '<sha256> <bytes> <relative/path>' per file, same shape as shared/tools.sha256.
+$base = (Get-Item -LiteralPath $work).FullName.TrimEnd('\') + '\'
+$lines = New-Object System.Collections.Generic.List[string]
+foreach ($f in Get-ChildItem -LiteralPath $work -Recurse -File -Force) {
+  $lines.Add(('{0} {1} {2}' -f (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $f.Length, $f.FullName.Substring($base.Length).Replace('\', '/')))
+  $res.arquivos++; $res.bytes += $f.Length
+}
+$id = [guid]::NewGuid().ToString('N').Substring(0, 8)
+$dest = "C:\labcachesaida\$id\msvc-$($m.versao)"
+New-Item -ItemType Directory -Path "$dest\layout" | Out-Null
+robocopy $work "$dest\layout" /E /XJ /NFL /NDL /NP /R:1 /W:1 | Out-Null   # new folder: /E only, never a mirror
+if ($LASTEXITCODE -ge 8) { Stop-With "robocopy exit $LASTEXITCODE" }
+[IO.File]::WriteAllLines("$dest\layout.sha256", $lines.ToArray())
+$res.id = $id
+$res.ok = $true
+Save-Result
+exit 0
+```
 
-- [ ] **Passo 6: Commit.**
+- [ ] **Passo 5: Rodar e ver passar** `cache-up.test.ps1` (dois PowerShell); parser sem erros em `cache-up.ps1` e `layout-msvc.ps1`; ASCII em `layout-msvc.ps1`. **Não executar** `cache-up.ps1` (baixa vários GB) nem `layout-msvc.ps1` (Tarefa 12).
+
+- [ ] **Passo 6: Provas de mutação** (colar `FAILED`, restaurar):
+  1. Acrescentar `Remove-Item -LiteralPath $tmp` dentro de `Save-LabDownload` → `FAILED - cache-up has no delete or overwrite command`.
+  2. Trocar um `[IO.File]::Copy(..., $false)` por `..., $true)` → mesmo teste falha.
+  3. Acrescentar `Start-Process -FilePath (Join-Path $Cache $msvc.bootstrapper.arquivo)` → `FAILED - cache-up never runs the Visual Studio bootstrapper on the PC`.
+
+- [ ] **Passo 7: Commit.**
 ```bash
-git add sandbox-lab/scripts/cache-up.ps1 sandbox-lab/scripts/test/cache-up.test.ps1
-git commit -m "feat(lab): cache-up.ps1 downloads pinned installers to shared/cache (create-only, hash-checked)
+git add sandbox-lab/scripts/cache-up.ps1 sandbox-lab/sandbox/layout-msvc.ps1 sandbox-lab/scripts/test/cache-up.test.ps1
+git commit -m "feat(lab): cache-up downloads pinned installers and imports the MSVC layout built in the Sandbox (create-only, hash-checked)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
@@ -2112,16 +2639,18 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
           ./sandbox-lab/scripts/test/guest-z.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./sandbox-lab/scripts/test/guest-install.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
 ```
-(Cada script sai com 1 em falha; o `if ($LASTEXITCODE)` garante que o passo falha no primeiro script que falhar, em vez de seguir com o código do último.)
+(Cada script sai com 1 em falha; o `if ($LASTEXITCODE)` garante que o passo falha no primeiro script que falhar, em vez de seguir com o código do último.) No passo `pure guard tests (node)`, acrescentar à lista explícita `.claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs`.
 
 - [ ] **Passo 2: SKILL.md.**
   - Seção 1: acrescentar "Instaladores do guest (`sandbox-lab/shared/cache/`) ficam fora do git; se o `test-up.ps1` disser que o cache está incompleto, **pare e diga ao usuário** para rodar `sandbox-lab\scripts\cache-up.ps1` (baixa alguns GB; só cria, nunca apaga)."
   - Seção 2: trocar as linhas de perfis por: `scripts\test-up.ps1 -Ambiente <nome> -Project <projeto>`; tabela de ambientes do `compose.json`: `app` (sem rede, `wsb exec`), `app-winapp` (rede, internet bloqueada por `guest-firewall.ps1`), `testes` (MSVC, Rust 1.95.0, Node 22.23.3 e Claude Code 2.1.285 instalados no guest a partir do cache; conta Claude logada no PC; resultado em `C:\lab\out\instalar.json`), `exemplo`. Pastas do guest: acrescentar `Z:\claudia-teste-sandbox` e `Z:\tmp` (disco só do guest) e `C:\labcred` (login copiado, RO, só no `testes`).
-  - Seção 5: "Build dentro do guest: ambiente `testes`".
+  - Seção 4 (cenários, D1): os cenários rodam **só no guest**, em `Z:\claudia-teste-sandbox\<cenario>`. Do PC: `node .claude/skills/claudia-teste-sandbox/scripts/cenario-no-guest.mjs --cenario novo|mock|copia [--autorizado] [--manter-automacao]` (Sandbox de pé num ambiente que instala `node`: `app`, `app-winapp` ou `testes`). O `copia` exige **duas** autorizações do usuário naquela rodada: subir com `test-up.ps1 -DadosReais` (monta só leitura a pasta Roaming do app em `C:\labdadosreais`; nunca `%LOCALAPPDATA%`) e passar `--autorizado`. A cópia dos dados reais existe só no `Z:` do guest e some no `test-down`. Tirar o texto antigo sobre `%TEMP%` e `--saida` no PC.
+  - Seção 5: `publicar.mjs --app <exe|instalador|pasta>` publica **só o app** (sem `--cenario`); os dados entram no guest com `guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\<cenario> [-NoStart]`. "Build dentro do guest: ambiente `testes`". Fluxo típico: `publicar.mjs` → `test-up.ps1 -Ambiente app-winapp` → `guest-firewall.ps1` → `cenario-no-guest.mjs` → `guest-run.ps1 -Cenario ...` → observar → `test-down.ps1`.
+  - Seção 1 (cache): o layout do MSVC é montado num Sandbox: `test-up.ps1 -Ambiente cache-msvc`, depois `wsb exec --id <id> -r System -c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\labsandbox\layout-msvc.ps1"`, ler o `id` em `shared\out\layout-msvc.json`, `test-down.ps1` e `cache-up.ps1 -ImportarMsvc <id>`. O PC nunca executa o instalador do Visual Studio; `.sandbox-work\cache-saida\` fica para o usuário limpar à mão.
   - Seção 7: trocar "não faça login em contas reais no guest" por "não faça login manual no guest; a conta do Claude só entra pelo ambiente `testes` (o `test-up` copia o login do PC e o `test-down` apaga a cópia). Cada sessão do Claude no guest gasta a cota do usuário."
   - Seção 9: Sandbox → `test-up.ps1 -Ambiente testes -Project <projeto>`; os testes criam pastas só em `Z:\claudia-teste-sandbox`; puros: acrescentar `compose.test.ps1`, `cache-up.test.ps1`, `guest-z.test.ps1`, `guest-install.test.ps1` e dizer que o CI roda os cinco `.test.ps1`.
 - [ ] **Passo 3: `references/laboratorio.md`:** seção "Perfis (`-Config`)" vira "Ambientes (`-Ambiente`, `compose.json`)" com a mesma tabela da SKILL; tirar a frase sobre `%USERPROFILE%`/`%ProgramFiles%`; tabela "Pastas no guest" ganha `Z:`, `C:\labcred`, `C:\labtools`.
-- [ ] **Passo 4: `references/limites.md`:** item 1 → ambiente `app`; item 4 → ambiente `testes`.
+- [ ] **Passo 4: `references/limites.md`:** item 1 → ambiente `app`; item 4 → ambiente `testes`. `references/pastas-de-dados.md`: dizer que a cópia dos dados reais acontece só dentro do guest (`C:\labdadosreais` só leitura → `Z:`).
 - [ ] **Passo 5: `sandbox-lab/README.md`:** tabela "versionado / fora do git": `compose.json` no lugar de `lab.config*.json`; `shared/cache/` nos ignorados; nova seção curta "Cache de instaladores" (`scripts\cache-up.ps1 [-SoPlano]`, só cria, conflito para tudo, tamanho aproximado: Rust 304 MB, Node 36 MB, Claude Code 244 MB, MSVC **não verificado**). `OBJECTIVES.md` e `sample-project/README.md`: trocar menções a `lab.config*.json` por `compose.json`/ambiente `exemplo`. `app-stage.ps1`: o `.SYNOPSIS` cita "ambientes `app` e `app-winapp` do `compose.json`".
 - [ ] **Passo 6: Conferências:** `git grep -n "lab\.config\|hosttools\|-Config " -- sandbox-lab .claude/skills` → só em `docs/` históricos (nada em `sandbox-lab/` e `.claude/skills/`); `node .claude/skills/claudia-teste-sandbox/scripts/conferir-repo.mjs` → exit 0; parser em `app-stage.ps1`.
 - [ ] **Passo 7: Commit** (lista explícita dos arquivos tocados), mensagem `docs(lab): compose.json environments, installer cache, Z: drive and login copy in the skill and README; CI runs the new pure tests` + rodapé.
@@ -2137,7 +2666,8 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
   - Todo caminho que apaga (`Remove-LabCredentialFile`, `Clear-LabOut`, `novoCenarioDir`, `disco-z.ps1` formatando) passa antes pela função pura certa e não aceita raiz de disco, repositório, pasta do usuário nem link.
   - A credencial nunca aparece em log, `status.json`, `guest.config.json`, mensagem de erro (incluindo exceções repassadas) nem no `.wsb` (o `.wsb` só tem a **pasta** `.sandbox-work\credencial`).
   - `compose.json` sem caminho do host; `Get-LabComposeRefusal` roda antes de qualquer escrita no `test-up`.
-  - `cache-up.ps1` sem deleção nem sobrescrita.
+  - `cache-up.ps1` sem deleção nem sobrescrita, e sem executar nada do Visual Studio no PC; a importação confere SHA-256 antes **e** depois de copiar e só renomeia no fim.
+  - Dados reais (D1): só a pasta Roaming do app, só leitura, só com `-DadosReais`; nenhum script de cenário roda no PC (`raizCenariosAtual` lança antes de qualquer acesso a disco); `cenario-copia` com `fs.cpSync(..., dereference: true)` a partir de `C:\labdadosreais`: conferir que um link dentro da origem não leva a cópia para fora do que está montado.
   - Os cinco itens do Review Focus têm teste e o teste falha se a regra quebrar (refazer uma mutação de amostra).
   - Compatibilidade PowerShell 5.1 nos arquivos de `sandbox/` (sem `??`, `?.`, ternário, `-Parallel`) e ASCII.
   - Nenhum caminho absoluto de máquina (`conferir-repo.mjs`).
@@ -2148,12 +2678,15 @@ Claude-Session: https://claude.ai/code/session_019iZMxAmFGsgenP4pjSBmb6"
 
 ### Tarefa 12: Verificação no Sandbox (roteiro)
 
-**Modelo:** Opus. **Só com autorização explícita do usuário nesta rodada** para: (a) rodar `cache-up.ps1` (baixa alguns GB), (b) derrubar um Sandbox que esteja rodando e subir o do laboratório, (c) usar a conta Claude logada no PC (gasta cota). Sem uma delas, parar e relatar o que ficou não verificado.
+**Modelo:** Opus. **Só com autorização explícita do usuário nesta rodada** para: (a) rodar `cache-up.ps1` (baixa alguns GB) e montar o layout do MSVC num Sandbox, (b) derrubar um Sandbox que esteja rodando e subir os do laboratório (são três subidas: `cache-msvc`, `testes`, `app-winapp`), (c) usar a conta Claude logada no PC (gasta cota), (d) opcional: `-DadosReais` + `copia --autorizado` com os dados reais do app. Sem uma delas, pular os passos que dependem dela e relatar como não verificado.
 
 Comandos a partir da raiz do checkout principal (`onde.mjs` → `lab`, `projeto`). Toda saída do guest é lida em `sandbox-lab\shared\out\` e `.sandbox-work\guest-rw\` (o `wsb exec` não devolve saída). Nunca abrir nem imprimir `.credentials.json`.
 
-- [ ] **Passo 1: Cache.** `pwsh -NoProfile -File sandbox-lab\scripts\cache-up.ps1 -SoPlano` (plano) → `cache-up.ps1` (exit 0). Listagem antes e depois da **segunda** execução, gravada no scratchpad:
-  `Get-ChildItem sandbox-lab\shared\cache -Recurse -File | Select-Object FullName, Length, LastWriteTimeUtc | ConvertTo-Json > <scratch>\cache-antes.json` e o mesmo para `cache-depois.json` após rodar `cache-up.ps1` de novo; esperado: a segunda execução imprime só `ok`, e as listagens são iguais exceto o novo `cache-up-<data>.json`. Anotar o tamanho real do layout do MSVC e o tempo.
+- [ ] **Passo 1a: Downloads no PC.** `pwsh -NoProfile -File sandbox-lab\scripts\cache-up.ps1 -SoPlano` (plano) → `cache-up.ps1` (exit 0; baixa Rust, Node, Claude Code e o bootstrapper; avisa que falta o layout do MSVC). Conferir no Gerenciador de Tarefas/`Get-Process` que nenhum `vs_buildtools`/`vs_setup` rodou no PC.
+- [ ] **Passo 1b: Layout do MSVC num Sandbox.** `test-up.ps1 -Ambiente cache-msvc -Project <projeto>` (exit 0) → `wsb exec --id <id> -r System -c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\labsandbox\layout-msvc.ps1"` → esperar `shared\out\layout-msvc.json` com `ok: true`; anotar `id`, `arquivos`, `bytes`, `segundos` → `test-down.ps1` (exit 0).
+- [ ] **Passo 1c: Importar no PC.** `cache-up.ps1 -ImportarMsvc <id>` → exit 0, `shared\cache\msvc-<versão>\layout\` e `layout.sha256` presentes. Prova de recusa sem apagar nada: rodar `-ImportarMsvc <id>` de novo → recusa com "already in the cache", nada muda. `.sandbox-work\cache-saida\<id>\` continua lá (não é limpo pelo script).
+- [ ] **Passo 1d: Idempotência.** Listagem antes e depois de **mais uma** execução sem parâmetros, gravada no scratchpad:
+  `Get-ChildItem sandbox-lab\shared\cache -Recurse -File | Select-Object FullName, Length, LastWriteTimeUtc | ConvertTo-Json > <scratch>\cache-antes.json` e o mesmo para `cache-depois.json`; esperado: o plano imprime só `ok`, e as listagens são iguais exceto o novo `cache-up-<data>.json`.
 - [ ] **Passo 2: Validação estática.** `pwsh -NoProfile -File sandbox-lab\scripts\validate-config.ps1` → `O1: OK`.
 - [ ] **Passo 3: Estado da conta no PC, só metadados.** `Get-Item "$env:USERPROFILE\.claude\.credentials.json" | Select-Object Length, LastWriteTimeUtc` (anotar) e `claude -p "diga ok"` no PC → responde.
 - [ ] **Passo 4: Subir.** `pwsh -NoProfile -File sandbox-lab\scripts\test-up.ps1 -Ambiente testes -Project <projeto do onde.mjs>` → exit 0. Ler `shared\out\status.json` (`bootstrap: ok`, `elevated`, `discoZ`, `conta: presente`), `shared\out\disco-z.json` (`ok: true`, `segundos`), `shared\out\instalar.json` (`ok: true`, cada pacote `exit: 0`, tempos). Anotar se o LogonCommand era elevado (fecha o "não verificado" do admin).
@@ -2179,6 +2712,8 @@ Comandos a partir da raiz do checkout principal (`onde.mjs` → `lab`, `projeto`
 - [ ] **Passo 9: Busca do token.** `node .claude/skills/claudia-teste-sandbox/scripts/conferir-token.mjs --pasta sandbox-lab/shared/out --pasta .sandbox-work/guest-rw` → `"achados":[]`, exit 0.
 - [ ] **Passo 10: Risco da renovação (A4).** No PC: `claude -p "diga ok"` → ainda responde; metadados do login do PC de novo (Passo 3). Registrar: se o guest renovou (Passo 8) e o PC continua funcionando → risco descartado nesta rodada; se o guest **não** renovou → continua **não verificado** (a sessão curta não forçou renovação); se o PC pedir login → **parar**, relatar e propor o recuo da spec (token de longa duração, opção 2).
 - [ ] **Passo 11: Derrubar.** `pwsh -NoProfile -File sandbox-lab\scripts\test-down.ps1` → exit 0; `Test-Path .sandbox-work\credencial\.credentials.json` → `False`; nenhum `.credentials.json.*.tmp` na pasta.
+- [ ] **Passo 11b: Cenários no guest e publicar só o app (D1).** Publicar um build do app: `node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe ou instalador>` (exit 0; `.sandbox-work\deploy` só com `app\` e o marcador). `test-up.ps1 -Ambiente app-winapp -Project <projeto>` (exit 0; `instalar.json` só com `node` em exit 0) → `guest-firewall.ps1` como System → `cenario-no-guest.mjs --cenario mock` (exit 0, `saida` = `Z:\claudia-teste-sandbox\mock`) → `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\mock -NoStart"` → `guest-run.json` com `dataFiles.appdata` > 0 e sem `errors`. Recusas: `cenario-no-guest.mjs --cenario copia` sem `--autorizado` → exit 2; com `--autorizado` mas sem `-DadosReais` → `cenario.json` com `exit: 2` e a mensagem do `-DadosReais`. **Não** rodar `cenario-*.mjs` no PC para "provar a recusa": eles apagam a pasta de saída, e a recusa fora do guest já é provada pelo teste puro de `raizDeCenarios` (Tarefa 4) e pela leitura de `raizCenariosAtual` (primeira linha de `novoCenarioDir` e do `try` do `cenario-copia`).
+- [ ] **Passo 11c (só com a autorização (d)): `copia` com dados reais.** `test-down.ps1`; `test-up.ps1 -Ambiente app-winapp -Project <projeto> -DadosReais` → `cenario-no-guest.mjs --cenario copia --autorizado` → exit 0. Conferir no guest que `C:\labdadosreais` é só leitura (uma tentativa de escrita grava erro em `C:\labwork\run\`), e no PC que a pasta de dados do app não mudou (listagem de nomes, tamanhos e datas antes e depois, sem abrir arquivos). `test-down.ps1`.
 - [ ] **Passo 12: Fechamento.** `node .claude/skills/claudia-teste-sandbox/scripts/conferir-repo.mjs` → exit 0. Relatório com comandos, números e caminhos relativos ao repositório; tudo o que não rodou vai como "não verificado". Atualizar `references/limites.md` com o que foi verificado (data, comando, resultado) num commit de docs.
 
 ---
@@ -2187,7 +2722,10 @@ Comandos a partir da raiz do checkout principal (`onde.mjs` → `lab`, `projeto`
 
 - Se o `LogonCommand` do Sandbox roda com privilégio de administrador (o plano trata os dois casos; a Tarefa 12, Passo 4, responde).
 - Se `Get-DiskImage`/`Get-Partition`/`Format-Volume` funcionam no guest como o `diskpart` funcionou na investigação (a investigação provou só o `diskpart` com a letra V:).
-- Versão exata e bootstrapper de versão fixa do VS 2022 Build Tools (a fixar na Tarefa 1, Passo 1); tamanho do layout offline (VCTools + Windows 11 SDK 26100); se `--layout` exige administrador no PC e se o limite de 80 caracteres vale para o caminho do layout; se o `--layout` instala ou atualiza o "Visual Studio Installer" no PC.
+- Versão exata e bootstrapper de versão fixa do VS 2022 Build Tools (a fixar na Tarefa 1, Passo 1); tamanho do layout offline (VCTools + Windows 11 SDK 26100) e tempo para montá-lo no guest `cache-msvc`; se o `--layout` precisa de administrador (por isso roda como System); se o layout montado no guest depende de algo daquela máquina; se a cópia de alguns GB para a pasta mapeada gravável (`C:\labcachesaida`) é lenta ou falha; nome do executável dentro do layout (`vs_buildtools.exe` ou `vs_setup.exe`; o `instalar.ps1` tenta os dois e cai no bootstrapper fixado).
+- Adendo §8 da spec (cenários só no guest, `-DadosReais`, layout do MSVC no Sandbox): **aguardando aprovação do usuário do trecho alterado**.
+- Se o banco do app montado só leitura em `C:\labdadosreais`, com o app aberto no PC, copia de forma consistente (o `copia` consolida o WAL na cópia e tenta até 3 vezes, como antes; o comportamento por pasta mapeada não foi testado).
+- Se `guest-run.ps1 -Cenario` com `robocopy /E /XJ` reproduz o que o deploy `appdata` fazia antes (contagem de arquivos e atributos).
 - Se a instalação `--noWeb` a partir do layout num **pasta montada só leitura** funciona no guest, e se precisa importar os certificados da pasta `Certificates` do layout; tempo de instalação do MSVC e do Rust a cada boot.
 - Pasta onde o MSI do Rust instala por padrão (o plano procura `rustc.exe` em `C:\Program Files\Rust*`).
 - Se o `claude.exe` copiado (sem `claude install`) roda no guest como `WDAGUtilityAccount`, e se `claude -p` precisa de algo além de `.credentials.json` (ex.: `.claude.json` de onboarding).
