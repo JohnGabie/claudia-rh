@@ -216,6 +216,13 @@ Check 'real data: LOCALAPPDATA, other folders, the Roaming root, empty, 8.3 and 
   Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\PERFIS~1\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\PERFIS~1') '8\.3'
   Should-Match (Get-LabRealDataSourceRefusal -Source "$RO\io.github.johngabie.claudia-rh" -RoamingAppData $RO -Links @($RO)) 'link'
 }
+Check 'real data: a link INSIDE the app folder refuses (no link inside is fine)' {
+  $src = "$RO\io.github.johngabie.claudia-rh"
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @())
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @($null, ''))
+  Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @("$src\diagnostics\latest")) 'inside the app data folder'
+  Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -Links @() -LinksInside @("$src\x", "$src\y")) 'link'
+}
 Check 'layout import: only <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>' {
   $ok = "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1"
   Should-BeNull (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1')

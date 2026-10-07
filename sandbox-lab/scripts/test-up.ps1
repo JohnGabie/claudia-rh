@@ -12,7 +12,8 @@
 .PARAMETER WaitForMcp   Espera tambem a fase MCP terminar.
 .PARAMETER DadosReais   Monta SO LEITURA a pasta de dados do app no PC (%APPDATA%\io.github.johngabie.claudia-rh, achada
                         pela API) em C:\labdadosreais, para o cenario copia no guest. So com autorizacao do usuario NAQUELA
-                        rodada. Nunca %LOCALAPPDATA%.
+                        rodada. Nunca %LOCALAPPDATA%. So nos ambientes app e app-winapp; qualquer link dentro da
+                        pasta de origem recusa.
 #>
 [CmdletBinding()]
 param([int]$TimeoutSec = 0, [switch]$GenerateOnly, [switch]$Force, [switch]$NoWait, [switch]$WaitForMcp, [string]$Ambiente = 'exemplo', [string]$Project, [switch]$DadosReais)
@@ -29,6 +30,11 @@ if ($rootProblem) { throw "[test-up] repo root $rootProblem" }
 $compose = Get-Content -LiteralPath (Join-Path $Root 'compose.json') -Raw | ConvertFrom-Json
 $refusal = Get-LabComposeRefusal -Compose $compose -Ambiente $Ambiente
 if ($refusal) { throw "[test-up] compose.json refused: $refusal" }
+if ($DadosReais) {
+  # Before anything is generated, mounted or copied: the real data is only for the ambientes that run the app.
+  $ambRefusal = Get-LabRealDataAmbienteRefusal $Ambiente
+  if ($ambRefusal) { throw "[test-up] $ambRefusal" }
+}
 $driveRefusal = Get-LabHostDriveRefusal -DriveNames @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name })
 if ($driveRefusal) { throw "[test-up] $driveRefusal" }
 $amb = $compose.ambientes.PSObject.Properties[$Ambiente].Value
@@ -83,7 +89,8 @@ $RealData = $null
 if ($DadosReais) {
   $roaming = [Environment]::GetFolderPath('ApplicationData')
   $src = Join-Path $roaming $script:LabAppId
-  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src)
+  # Links above the source AND any link inside it: a link in the data folder refuses the whole mount.
+  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside @(Get-LabReparsePoints $src)
   if ($why) { throw "[test-up] -DadosReais refused: $why" }
   if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
   $RealData = $src
@@ -192,11 +199,19 @@ if ($NoWait) { return }
 if ($TimeoutSec -le 0) { $TimeoutSec = [int]$(if ($amb.bootTimeoutSec) { $amb.bootTimeoutSec } else { 240 }) }
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $st = $null
+$credGone = $false
 Write-Host "[test-up] aguardando $StatusFile (ate ${TimeoutSec}s)..."
 while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 3
   if (Test-Path -LiteralPath $StatusFile) {
     try { $st = Get-Content -LiteralPath $StatusFile -Raw | ConvertFrom-Json } catch { continue }
+    # The guest copied the login into its own profile (bootstrap.ps1 reads C:\labcred only once, at step 2c): the copy on
+    # this PC is not needed any more, so it goes now and not only at test-down.
+    if ($conta -and -not $credGone -and "$($st.conta)" -eq 'presente') {
+      Remove-LabCredential -RepoRoot $RepoRoot
+      $credGone = $true
+      Write-Host '[test-up] conta: o guest ja tem o login; a copia no PC foi apagada'
+    }
     $done = $(if ($WaitForMcp) { $st.phase -eq 'complete' } else { $st.bootstrap -ne 'running' })
     if ($done) { break }
   }
@@ -227,7 +242,7 @@ if ($install.Count) {
   Write-Host "[test-up] aguardando instalar.json (ate ${instTimeout}s)..."
   $inst = Wait-LabJson (Join-Path $OutDir 'instalar.json') $instTimeout { param($j) [bool]$j.fim }
 }
-$v = Get-LabUpVerdict -Status $st -DiscoZ $dz -Instalar $inst -PrecisaInstalar ($install.Count -gt 0)
+$v = Get-LabUpVerdict -Status $st -DiscoZ $dz -Instalar $inst -PrecisaInstalar ($install.Count -gt 0) -PrecisaConta $conta
 if ($st) { $st | ConvertTo-Json -Depth 8 }
 foreach ($p in @($inst.pacotes | Where-Object { $_ })) { Write-Host ("[test-up] instalar {0} {1}: exit={2} {3}s" -f $p.nome, $p.versao, $p.exit, $p.segundos) }
 if ($v.exit -eq 0) { Write-Host "[test-up] OK: $($v.motivo)" -ForegroundColor Green } else { Write-Host "[test-up] $($v.motivo)" -ForegroundColor Yellow }

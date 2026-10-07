@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
+import { filtroSemLinks } from "./copia-filtro.mjs";
 import { APP_ID, ORIGEM_DADOS_REAIS, raizCenariosAtual, saidaPadraoCenario, novoCenarioDir, escreverCenario, desligarAutomacao, dentroDe, falhaDe, sair } from "./comum.mjs";
 
 let values;
@@ -30,7 +31,8 @@ function dbCorrompido(err) {
 // Returns { ok: true } on success, or { ok: false, db: <path> } if integrity check fails (does not throw).
 // Throws on cpSync errors, database open errors, etc. — those propagate to top-level catch.
 function copiarUmaVez(origem, dados) {
-  fs.cpSync(origem, dados, { recursive: true, dereference: true });
+  // Never follow a link and never reproduce one: the filter throws on a symlink or junction anywhere in the source.
+  fs.cpSync(origem, dados, { recursive: true, dereference: false, filter: filtroSemLinks(origem, fs.lstatSync) });
 
   // Fold each copied database: checkpoint WAL, change journal mode.
   for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {

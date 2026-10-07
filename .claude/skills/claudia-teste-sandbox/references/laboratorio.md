@@ -97,7 +97,7 @@ Dados no guest:
 
 Pastas no guest (além de `C:\lab`, `C:\labsandbox`, `C:\appdeploy`, `C:\labwork`):
 - `C:\labcred` - login do Claude copiado do PC (read-only, só no ambiente `testes`).
-- `C:\labdadosreais` - pasta Roaming do app copiada (read-only, só com `-DadosReais`, só no ambiente que pede conta).
+- `C:\labdadosreais` - pasta Roaming do app copiada (read-only, só com `-DadosReais`, só nos ambientes `app` e `app-winapp`; link dentro da pasta recusa).
 - `C:\labtools` - ferramentas instaladas (`msvc`, `node`, `claude`).
 - `C:\labdata` - workspace do guest (disco C).
 - `Z:\claudia-teste-sandbox` - cenários de dados (disco Z, só para testes).

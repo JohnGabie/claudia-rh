@@ -14,7 +14,7 @@ $res = [ordered]@{ inicio = (Get-Date).ToString('o'); fim = $null; ok = $false; 
 function Save-Result { [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json -Depth 5), $utf8) }
 function Stop-With([string]$Why) { $res.erro = $Why; $res.fim = (Get-Date).ToString('o'); Save-Result; exit 1 }
 
-if (-not (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf)) { Stop-With 'not inside the lab guest' }
+if (-not (Test-LabInGuest)) { Stop-With 'not inside the lab guest (needs the guest identity and the bootstrap marker)' }
 if (-not $elevated) { Stop-With 'not elevated' }
 $cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw | ConvertFrom-Json
 $wanted = @(@($cfg.instalar) | Where-Object { $_ })
@@ -79,10 +79,12 @@ foreach ($p in $wanted) {
   $r = Invoke-Package $p
   $res.pacotes += $r
   Save-Result
-  if ($r.exit -ne 0) { break }   # later packages depend on earlier ones (Rust links with MSVC)
+  # No 'break' on purpose (decision 2026-10-07): a failed package is recorded and the next ones still run, so Node can be
+  # used for the Sandbox tests even when MSVC fails. Test-LabInstallOk stays false and Get-LabGuestToolEnv -Precisa
+  # decides, per use, which packages the run needs.
 }
 # Interactive shells in the guest also find the tools.
-$dirs = @($res.pacotes | Where-Object { $_.binDir } | ForEach-Object { $_.binDir })
+$dirs = @($res.pacotes | Where-Object { $_.binDir -and $_.exit -eq 0 } | ForEach-Object { $_.binDir })
 if ($dirs.Count) { [Environment]::SetEnvironmentVariable('Path', (($dirs + [Environment]::GetEnvironmentVariable('Path', 'Machine')) -join ';'), 'Machine') }
 $res.ok = Test-LabInstallOk -Expected @($wanted | ForEach-Object { $_.nome }) -Results $res.pacotes
 $res.fim = (Get-Date).ToString('o')

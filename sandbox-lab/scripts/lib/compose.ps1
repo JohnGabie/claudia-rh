@@ -175,18 +175,33 @@ function Get-LabComposeMounts {
   return $out
 }
 
+$script:LabRealDataAmbientes = @('app', 'app-winapp')
+
+function Get-LabRealDataAmbienteRefusal([string]$Ambiente) {
+  # test-up -DadosReais: the real app data is only for the ambientes that run the app (scenario copia). Anything else
+  # is refused before a folder is mounted or copied.
+  if ([string]::IsNullOrWhiteSpace($Ambiente)) { return '-DadosReais needs an ambiente' }
+  if ($script:LabRealDataAmbientes -notcontains $Ambiente) { return "-DadosReais is only for the ambientes $($script:LabRealDataAmbientes -join ', '), not '$Ambiente'" }
+  return $null
+}
+
 function Get-LabUpVerdict {
   # Final exit code of test-up.ps1: 0 ok, 1 something in the guest failed, 2 the guest never reported.
-  param($Status, $DiscoZ, $Instalar, [bool]$PrecisaInstalar)
+  # A failed package is never hidden (exit 1 with the reason), but the reason also says which packages did install, so
+  # a Node-only use of the guest (Sandbox tests, scenarios) still works: guest scripts decide with -Precisa.
+  param($Status, $DiscoZ, $Instalar, [bool]$PrecisaInstalar, [bool]$PrecisaConta = $false)
   if ($null -eq $Status) { return [ordered]@{ exit = 2; motivo = 'status.json did not appear' } }
   if ($Status.bootstrap -ne 'ok') { return [ordered]@{ exit = 1; motivo = "bootstrap=$($Status.bootstrap)" } }
+  if ($PrecisaConta -and "$($Status.conta)" -ne 'presente') { return [ordered]@{ exit = 1; motivo = "Claude login not in the guest: conta=$($Status.conta)" } }
   if ($null -eq $DiscoZ) { return [ordered]@{ exit = 1; motivo = 'Z: drive not ready in the guest: disco-z.json missing' } }
   if (-not $DiscoZ.ok) { return [ordered]@{ exit = 1; motivo = "Z: drive not ready in the guest: $($DiscoZ.erro)" } }
   if ($PrecisaInstalar) {
     if ($null -eq $Instalar -or -not $Instalar.fim) { return [ordered]@{ exit = 1; motivo = 'instalar.json did not finish in time' } }
     if (-not $Instalar.ok) {
       $bad = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -ne 0 } | ForEach-Object { "$($_.nome) (exit $($_.exit))" })
-      return [ordered]@{ exit = 1; motivo = "instalar failed: $(if ($bad.Count) { $bad -join ', ' } else { $Instalar.erro })" }
+      $good = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -eq 0 } | ForEach-Object { [string]$_.nome })
+      $why = $(if ($bad.Count) { $bad -join ', ' } else { $Instalar.erro })
+      return [ordered]@{ exit = 1; motivo = "instalar failed: $why; installed ok: $(if ($good.Count) { $good -join ', ' } else { 'none' })" }
     }
   }
   return [ordered]@{ exit = 0; motivo = 'bootstrap ok, Z: ready' + $(if ($PrecisaInstalar) { ', packages installed' } else { '' }) }

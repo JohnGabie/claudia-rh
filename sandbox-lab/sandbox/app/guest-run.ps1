@@ -9,6 +9,7 @@
 param([string]$Exe = '', [string]$Cenario = '', [string]$Deploy = 'C:\appdeploy', [int]$WaitSec = 8, [switch]$NoStart)
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $Out = 'C:\labwork\run'; New-Item -ItemType Directory -Force $Out | Out-Null
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $r = [ordered]@{ at = (Get-Date).ToString('o'); user = $env:USERNAME; appdata = $env:APPDATA; localappdata = $env:LOCALAPPDATA; errors = @() }

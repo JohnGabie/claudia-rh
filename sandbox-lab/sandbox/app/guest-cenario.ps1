@@ -9,6 +9,7 @@ param(
 )
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $Out = 'C:\labwork\run'
 New-Item -ItemType Directory -Force $Out | Out-Null
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -18,8 +19,8 @@ function Stop-With([int]$Code, [string]$Why) { $res.exit = $Code; $res.erro = $W
 
 $inst = $null
 try { $inst = Get-Content -LiteralPath 'C:\lab\out\instalar.json' -Raw | ConvertFrom-Json } catch { }
-$toolEnv = Get-LabGuestToolEnv $inst
-if (-not $toolEnv) { Stop-With 1 'instalar.json missing or not ok: this ambiente must install node (compose.json)' }
+$toolEnv = Get-LabGuestToolEnv $inst -Precisa node   # only Node is needed: a failed MSVC/Rust does not block scenarios
+if (-not $toolEnv) { Stop-With 1 'instalar.json missing, not finished, or node did not install ok: this ambiente must install node (compose.json)' }
 $node = @(@($toolEnv.paths) | ForEach-Object { Join-Path $_ 'node.exe' } | Where-Object { Test-Path -LiteralPath $_ }) | Select-Object -First 1
 if (-not $node) { Stop-With 1 'node.exe not found in the installed tools' }
 $script = "C:\labproject\.claude\skills\claudia-teste-sandbox\scripts\cenario-$Cenario.mjs"

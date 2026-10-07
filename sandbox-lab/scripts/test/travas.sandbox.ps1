@@ -124,12 +124,12 @@ Check 'Get-LabReparsePoints: an absent root is fine and a plain tree has no link
   if (@(Get-LabReparsePoints $plain).Count) { throw 'plain tree should have no links' }
 }
 Check 'a source reached through a junction ancestor is refused, nothing is published' {
-  $r = New-FakeRepo 'k'
-  $realDir = Join-Path $Base 'real-k'; New-Item -ItemType Directory -Path $realDir | Out-Null
-  [IO.File]::WriteAllText((Join-Path $realDir 'app k.exe'), 'x')
-  New-Item -ItemType Junction -Path (Join-Path $Base 'link-k') -Target $realDir | Out-Null
-  if ((Invoke-Stage $r @('-Clean') (Join-Path $Base 'link-k\app k.exe')) -eq 0) { throw 'expected refusal' }
-  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app\app k.exe')) { throw 'app was published through the link' }
+  $r = New-FakeRepo 'k2'
+  $realDir = Join-Path $Base 'real-k2'; New-Item -ItemType Directory -Path $realDir | Out-Null
+  [IO.File]::WriteAllText((Join-Path $realDir 'app k2.exe'), 'x')
+  New-Item -ItemType Junction -Path (Join-Path $Base 'link-k2') -Target $realDir | Out-Null
+  if ((Invoke-Stage $r @('-Clean') (Join-Path $Base 'link-k2\app k2.exe')) -eq 0) { throw 'expected refusal' }
+  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app\app k2.exe')) { throw 'app was published through the link' }
 }
 Check 'Resolve-LabRealPath and Get-LabLinksAboveRoot see a junction ancestor' {
   $realDir = Join-Path $Base 'real-l'; New-Item -ItemType Directory -Path $realDir | Out-Null
