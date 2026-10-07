@@ -173,6 +173,10 @@ As caixas `- [ ]` dos planos nunca foram marcadas: o estado real vem dos ledgers
 | D3 | **Sim, uma rodada** de upload em `the-internet.herokuapp.com/upload`, sem enviar candidatura nenhuma. |
 | D4 | **Sim, antes do merge:** candidatura real no LinkedIn, com o usuário presente para o login e dizendo "pode enviar" na hora. Usa o Chrome do Claudia-RH, nunca o pessoal. |
 | D5 | **Corte confirmado:** fica só a caixa padrão do instalador. Código de limpeza só com spec própria e teste no Sandbox. |
+| D6 | **Antes do merge, rápido e sem perder qualidade:** guarda de envio (CLA-37), spec curta, tudo em agentes numa worktree, com revisor Opus no fim. |
+| D7 | **Fazer agora, nesta branch:** eventos do próprio browser no Activity log (download, lançamento, queda, crash de aba, diálogo), com spec curta, agentes e revisor. |
+| D8 | **Antes do merge:** tratar diálogos nativos (`alert`/`confirm`, `Page.javascriptDialogOpening`), com spec curta, agentes e revisor. |
+| D9 | **Sim, nesta branch se for pequeno:** desligar o JavaScript na janela invisível do PDF, com teste; se não for pequeno, Linear. |
 
 ### Task 0: Auditoria de deleção (só leitura, Opus)
 
