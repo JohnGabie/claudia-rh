@@ -177,7 +177,7 @@ fn save_cover_letter(cfg: &McpConfig, args: &serde_json::Value) -> Result<String
     let (base, aviso) = tools::guardar_pendente(&cfg.data_dir, texto, args["vaga_id"].as_i64(), idioma, args["variante_id"].as_str())?;
     notify(cfg, "documentos");
     let espera = if cfg.notify_port.is_some() { std::time::Duration::from_secs(20) } else { std::time::Duration::ZERO };
-    Ok(tools::juntar_aviso(tools::aguardar_documento(&cfg.data_dir, &base, espera), aviso.as_deref()))
+    Ok(tools::juntar_aviso(tools::aguardar_documento(&cfg.data_dir, &base, espera), aviso))
 }
 
 #[cfg(test)]

@@ -50,7 +50,7 @@ const MAX_CARTA: usize = 20_000;
 /// The only names written are built here, so nothing the agent sends can reach another folder.
 /// Returns the queue's base name (internal: it never goes back to the agent) and, when the profile
 /// has no e-mail, a warning for the agent's answer. A profile without a name is refused (CLA-40).
-pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idioma: &str, variante_id: Option<&str>) -> Result<(String, Option<String>), String> {
+pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idioma: &str, variante_id: Option<&str>) -> Result<(String, Option<&'static str>), String> {
     if idioma != "pt" && idioma != "en" {
         return Err(format!("idioma inválido: {idioma} (use pt ou en)"));
     }
@@ -65,7 +65,7 @@ pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idio
     }
     let raw = std::fs::read_to_string(data_dir.join("candidate_base.yaml")).map_err(|e| format!("erro ao ler candidate_base.yaml: {e}"))?;
     let perfil = crate::commands::perfil::parse_candidato_base_str(&raw)?;
-    let aviso = crate::commands::cover_letter::validar_perfil_para_carta(&perfil.dados_pessoais)?;
+    let aviso = crate::commands::cover_letter::validar_perfil_para_carta(&perfil.dados_pessoais, crate::commands::cover_letter::Destino::Agente)?;
     let (empresa, cargo) = match vaga_id {
         Some(id) => super::open_db(data_dir)?
             .query_row("SELECT empresa, titulo FROM vagas WHERE id = ?1", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -109,7 +109,7 @@ pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idio
 /// The answer the agent reads: the wait's result, plus the warning when there is one.
 pub fn juntar_aviso(resposta: String, aviso: Option<&str>) -> String {
     match aviso {
-        Some(a) => format!("{resposta} Aviso: {a}"),
+        Some(a) => format!("{resposta} Aviso: {}", crate::commands::cover_letter::texto_aviso(a)),
         None => resposta,
     }
 }
@@ -188,8 +188,8 @@ mod tests {
     #[test]
     fn juntar_aviso_so_acrescenta_quando_ha_aviso() {
         assert_eq!(juntar_aviso("Carta salva.".into(), None), "Carta salva.");
-        let r = juntar_aviso("Carta salva.".into(), Some("sem e-mail."));
-        assert_eq!(r, "Carta salva. Aviso: sem e-mail.");
+        let r = juntar_aviso("Carta salva.".into(), Some("sem_email"));
+        assert!(r.starts_with("Carta salva. Aviso: ") && r.contains("não tem e-mail"), "{r}");
     }
 
     // Pendente de Sandbox: grava em temp_dir.
@@ -211,7 +211,7 @@ mod tests {
         std::fs::write(d.join("candidate_base.yaml"), "dados_pessoais:\n  nome_completo: Ana Lima\n").unwrap();
         crate::db::apply(&biblioteca::open_conn(&d).unwrap()).unwrap();
         let (base, aviso) = guardar_pendente(&d, "Texto.", None, "pt", None).unwrap();
-        assert!(aviso.unwrap().contains("e-mail"));
+        assert_eq!(aviso, Some("sem_email"));
         assert!(documentos::docs_dir(&d).join("pendentes").join(format!("{base}.json")).exists());
     }
 

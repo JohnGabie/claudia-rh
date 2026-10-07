@@ -37,6 +37,9 @@ export const Gerar: React.FC<{
   const streamEndRef = useRef<HTMLDivElement>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const avisoRef = useRef<string | null>(null);
+  // The backend sends a warning code (e.g. "sem_email"); the text is translated here.
+  const avisoTexto = (codigo: string) =>
+    codigo === "sem_email" ? t.documents.coverLetterWarningNoEmail : codigo;
   const onFeitoRef = useRef(onFeito);
   useEffect(() => { onFeitoRef.current = onFeito; }, [onFeito]);
 
@@ -133,8 +136,8 @@ export const Gerar: React.FC<{
 
       {aviso && (
         <div style={{ border: "1px solid var(--warning, var(--border))", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertCircle size={14} /> {t.documents.coverLetterSavedWarning} {aviso}
-          <button onClick={() => onFeito()} style={{ marginLeft: "auto", fontSize: 13 }}>OK</button>
+          <AlertCircle size={14} /> {t.documents.coverLetterSavedWarning} {avisoTexto(aviso)}
+          <button onClick={() => onFeito()} style={{ marginLeft: "auto", fontSize: 13 }}>{t.documents.coverLetterWarningOk}</button>
         </div>
       )}
 

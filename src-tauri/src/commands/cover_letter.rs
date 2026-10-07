@@ -164,14 +164,37 @@ fn juntar_partes(partes: &[&str]) -> String {
 
 /// Checks the profile before writing a letter. No name: refuses (Err, nothing is written or asked
 /// of the AI). No e-mail: Ok(Some(warning)), the letter is made without the contact line.
-pub(crate) fn validar_perfil_para_carta(dp: &crate::commands::perfil::DadosPessoais) -> Result<Option<String>, String> {
-    if dp.nome_completo.trim().is_empty() {
-        return Err("a carta não foi salva: o perfil não tem nome (dados_pessoais.nome_completo). Preencha o nome no Perfil.".into());
+pub(crate) fn validar_perfil_para_carta(dp: &crate::commands::perfil::DadosPessoais, para: Destino) -> Result<Option<&'static str>, String> {
+    if !texto_visivel(&dp.nome_completo) {
+        return Err(match para {
+            Destino::Agente => "a carta não foi salva: o perfil não tem nome (dados_pessoais.nome_completo). Registre uma pendência pedindo ao usuário para preencher o nome no Perfil.",
+            Destino::Tela => "A carta não foi salva: o perfil não tem nome. Preencha o nome no Perfil.",
+        }.into());
     }
-    if dp.email.trim().is_empty() {
-        return Ok(Some("o perfil não tem e-mail; a carta saiu sem contato.".into()));
+    if !texto_visivel(&dp.email) {
+        return Ok(Some(AVISO_SEM_EMAIL));
     }
     Ok(None)
+}
+
+/// Warning code (the screen translates it; the agent gets the text from `texto_aviso`).
+pub(crate) const AVISO_SEM_EMAIL: &str = "sem_email";
+
+pub(crate) fn texto_aviso(codigo: &str) -> &'static str {
+    match codigo {
+        AVISO_SEM_EMAIL => "o perfil não tem e-mail; a carta saiu sem contato.",
+        _ => "aviso desconhecido.",
+    }
+}
+
+/// Who reads the refusal: the agent (MCP) or the user (screen).
+#[derive(Clone, Copy)]
+pub(crate) enum Destino { Agente, Tela }
+
+/// True when the text has at least one visible character: zero-width space, BOM, word joiner and
+/// soft hyphen are not alphanumeric, so a value made only of them does not count.
+fn texto_visivel(s: &str) -> bool {
+    s.chars().any(char::is_alphanumeric)
 }
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
@@ -197,8 +220,8 @@ fn build_cover_letter_html(
 
     // Contact line — visible URLs for PDF ATS parsing
     let mut contact_parts: Vec<String> = Vec::new();
-    if !dp.email.is_empty() {
-        contact_parts.push(format!(r#"<a href="mailto:{0}">{0}</a>"#, esc(&dp.email)));
+    if texto_visivel(&dp.email) {
+        contact_parts.push(format!(r#"<a href="mailto:{0}">{0}</a>"#, esc(dp.email.trim())));
     }
     if !dp.localizacao_atual.is_empty() {
         contact_parts.push(esc(&dp.localizacao_atual));
@@ -342,7 +365,7 @@ fn spawn_cover_letter_claude(
         };
 
         // CLA-40: no name, no letter; the AI is not even called.
-        let aviso = match validar_perfil_para_carta(&data.dados_pessoais) {
+        let aviso = match validar_perfil_para_carta(&data.dados_pessoais, Destino::Tela) {
             Ok(a) => a,
             Err(e) => {
                 let _ = app.emit("cover-letter-error", e);
@@ -457,7 +480,7 @@ fn spawn_cover_letter_claude(
         match view {
             Ok(doc) => {
                 if let Some(a) = aviso {
-                    let _ = app.emit("cover-letter-warning", a);
+                    let _ = app.emit("cover-letter-warning", a.to_string());
                 }
                 let _ = app.emit("cover-letter-done", doc);
             }
@@ -508,21 +531,39 @@ mod carta_tests {
 
     #[test]
     fn sem_nome_recusa() {
-        for nome in ["", "   "] {
-            let e = validar_perfil_para_carta(&perfil(nome, "ana@example.invalid").dados_pessoais).unwrap_err();
-            assert!(e.contains("não tem nome") && e.contains("nome_completo"), "{e}");
+        for nome in ["", "   ", "\u{200B}", "\u{FEFF}", "\u{2060}", "\u{00AD}", " \u{200B}\u{FEFF}\u{2060}\u{00AD} "] {
+            let e = validar_perfil_para_carta(&perfil(nome, "ana@example.invalid").dados_pessoais, Destino::Tela).unwrap_err();
+            assert!(e.contains("não tem nome"), "{e}");
         }
     }
 
     #[test]
+    fn recusa_fala_com_cada_destinatario() {
+        let dp = perfil("", "").dados_pessoais;
+        let agente = validar_perfil_para_carta(&dp, Destino::Agente).unwrap_err();
+        assert!(agente.contains("Registre uma pendência pedindo ao usuário para preencher o nome no Perfil"), "{agente}");
+        let tela = validar_perfil_para_carta(&dp, Destino::Tela).unwrap_err();
+        assert!(tela.contains("Preencha o nome no Perfil") && !tela.contains("pendência"), "{tela}");
+    }
+
+    #[test]
     fn sem_email_salva_e_avisa() {
-        let a = validar_perfil_para_carta(&perfil("Ana Lima", "").dados_pessoais).unwrap();
-        assert!(a.unwrap().contains("e-mail"));
+        for email in ["", "   ", "\u{200B}"] {
+            let a = validar_perfil_para_carta(&perfil("Ana Lima", email).dados_pessoais, Destino::Tela).unwrap();
+            assert_eq!(a, Some("sem_email"));
+        }
+        assert!(texto_aviso("sem_email").contains("e-mail"));
+    }
+
+    #[test]
+    fn email_so_de_espacos_nao_gera_mailto() {
+        let h = render_carta("Corpo.", &perfil("Ana Lima", "   "), "ACME", "Dev", "pt");
+        assert!(!h.contains("mailto:") && !h.contains(r#"<div class="contact-line">"#), "{h}");
     }
 
     #[test]
     fn perfil_completo_sem_aviso() {
-        assert_eq!(validar_perfil_para_carta(&perfil("Ana Lima", "ana@example.invalid").dados_pessoais).unwrap(), None);
+        assert_eq!(validar_perfil_para_carta(&perfil("Ana Lima", "ana@example.invalid").dados_pessoais, Destino::Tela).unwrap(), None);
     }
 
     #[test]
