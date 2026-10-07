@@ -25,3 +25,10 @@ function Get-LabGuestToolEnv {
   $vc = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.vcvars } | ForEach-Object { [string]$_.vcvars }) | Select-Object -First 1
   return [ordered]@{ paths = $paths; vcvars = $vc }
 }
+
+function Get-LabGuestScenarioRefusal([string]$Path) {
+  # guest-run.ps1 -Cenario: a scenario folder created by the scenario scripts in the guest (D1), nothing else.
+  if ([string]::IsNullOrWhiteSpace($Path)) { return 'scenario folder is required' }
+  if ($Path -notmatch '^[Zz]:\\[Cc][Ll][Aa][Uu][Dd][Ii][Aa]-[Tt][Ee][Ss][Tt][Ee]-[Ss][Aa][Nn][Dd][Bb][Oo][Xx]\\[^\\.][^\\]*$') { return 'scenario folder must be Z:\claudia-teste-sandbox\<name>' }
+  return $null
+}

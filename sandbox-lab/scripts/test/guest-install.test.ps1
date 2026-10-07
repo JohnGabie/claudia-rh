@@ -29,5 +29,13 @@ Check 'tool env: PATH folders and vcvars from instalar.json; nothing when not ok
   if ($null -ne (Get-LabGuestToolEnv ([pscustomobject]@{ ok = $false; pacotes = @() }))) { throw 'not ok -> null' }
   if ($null -ne (Get-LabGuestToolEnv $null)) { throw 'missing -> null' }
 }
+Check 'scenario folder for guest-run: only a direct child of Z:\claudia-teste-sandbox' {
+  foreach ($ok in @('Z:\claudia-teste-sandbox\novo', 'z:\CLAUDIA-TESTE-SANDBOX\mock', 'Z:\claudia-teste-sandbox\cs test x 1')) {
+    if (Get-LabGuestScenarioRefusal $ok) { throw "must allow '$ok'" }
+  }
+  foreach ($bad in @('', 'Z:\claudia-teste-sandbox', 'Z:\claudia-teste-sandbox\a\b', 'Z:\claudia-teste-sandbox\..\x', 'C:\labdata\novo', 'Z:\tmp\novo', 'Z:\claudia-teste-sandbox-irmao\novo', 'novo', '\\srv\s\novo')) {
+    if (-not (Get-LabGuestScenarioRefusal $bad)) { throw "must refuse '$bad'" }
+  }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0
