@@ -23,7 +23,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\travas.ps1')
 . (Join-Path $PSScriptRoot 'lib\disco.ps1')
 function Copy-Tree([string]$from, [string]$to) {
-  robocopy $from $to /MIR /NFL /NDL /NP /R:1 /W:1 | Out-Null
+  # /XJ: never follow junctions inside the source (they could lead /MIR copying anywhere).
+  robocopy $from $to /MIR /XJ /NFL /NDL /NP /R:1 /W:1 | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "robocopy falhou ($LASTEXITCODE): $from -> $to" }
 }
 # The lab always lives in <repo root>\sandbox-lab, so the repo root is two levels above this script.
@@ -40,6 +41,12 @@ $links = @(Get-LabLinksInPath $Deploy $RepoRoot) + @(Get-LabReparsePoints $Deplo
 $refusal = Get-LabCleanRefusal -Deploy $Deploy -RepoRoot $RepoRoot -Exists $exists `
   -HasMarker ($exists -and (Test-Path -LiteralPath (Join-Path $Deploy $script:LabDeployMarker))) -Links $links
 if ($refusal) { throw "Refusing to touch ${Deploy}: $refusal" }
+# Every source is checked before anything is deleted or copied.
+foreach ($src in (@($App) + @($AppData) + @($LocalAppData))) {
+  if (-not $src) { continue }
+  $srcRefusal = Get-LabSourceRefusal -Source ([IO.Path]::GetFullPath($src)) -Deploy $Deploy
+  if ($srcRefusal) { throw "Refusing source ${src}: $srcRefusal" }
+}
 if ($Clean -and $exists) { Remove-Item -LiteralPath $Deploy -Recurse -Force }
 New-Item -ItemType Directory -Force "$Deploy\app", "$Deploy\appdata", "$Deploy\localappdata", (Join-Path $WorkDir 'guest-rw') | Out-Null
 [IO.File]::WriteAllText((Join-Path $Deploy $script:LabDeployMarker), '')

@@ -1,5 +1,12 @@
 # Disk helpers for the lab guards. Reading attributes only, except Clear-LabOut, which deletes inside shared\out after
 # the pure guard (travas.ps1) said yes. Dot-source travas.ps1 first.
+# Defining these functions touches nothing; calling them is what reads the disk.
+
+function Test-LabInSandbox {
+  # Reads the OS identity and one guest-only file; the decision itself is the pure Test-LabSandboxDecision.
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  return Test-LabSandboxDecision -Identity $id -HasBootstrap (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf)
+}
 
 function Get-LabLinksInPath([string]$Dir, [string]$StopAt) {
   # Reparse points from $Dir up to, not including, $StopAt. Missing folders are not links.
@@ -24,6 +31,8 @@ function Get-LabReparsePoints([string]$Dir) {
   while ($stack.Count) {
     $d = $stack.Pop()
     $item = Get-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+    # Only the starting folder may be absent; a child that cannot be read refuses (it could hide a link).
+    if (-not (Test-LabScanEntryOk -IsRoot ($d -eq $Dir) -Found ([bool]$item))) { throw "cannot read $d while looking for links under ${Dir}: refusing" }
     if (-not $item) { continue }
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $found += $d; continue }
     if (-not $item.PSIsContainer) { continue }

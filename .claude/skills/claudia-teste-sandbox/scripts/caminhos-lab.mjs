@@ -72,6 +72,28 @@ export function motivoRecusaLimparDeploy({ deploy, raizPrincipal, existe, temMar
   return podeLimparDeploy({ existe, temMarcador, ehLink: false });
 }
 
-export function estaNoSandbox(usuario) {
-  return String(usuario ?? "").toLowerCase() === USUARIO_SANDBOX.toLowerCase();
+/**
+ * PURE. Copy of `env` without the variables that redirect git to another repository (git sets them inside hooks and
+ * worktree commands). Used for the child process of every read-only git call, so `-C <dir>` is what decides the repo.
+ */
+export function ambienteGitLimpo(env) {
+  const limpo = {};
+  for (const [k, v] of Object.entries(env ?? {})) {
+    if (!/^GIT_(DIR|COMMON_DIR|WORK_TREE)$/i.test(k)) limpo[k] = v;
+  }
+  return limpo;
+}
+
+/** Only exists inside the guest: the lab's sandbox\ folder is mapped there (sandbox.template.wsb). */
+export const MARCADOR_GUEST = "C:\\labsandbox\\bootstrap.ps1";
+
+/**
+ * PURE. True only with BOTH factors: the process identity ends in WDAGUtilityAccount (DOMAIN\user or bare user) and the
+ * guest-only marker file exists. Inputs are injected (identity from the OS, `temBootstrap` from a disk check made by
+ * the caller); an environment variable is never read.
+ */
+export function estaNoSandbox({ identidade, temBootstrap } = {}) {
+  const partes = String(identidade ?? "").split("\\");
+  const usuario = partes[partes.length - 1];
+  return usuario.toLowerCase() === USUARIO_SANDBOX.toLowerCase() && temBootstrap === true;
 }

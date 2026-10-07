@@ -2,12 +2,13 @@
 # checkouts there. Refuses to run anywhere else. Nothing is cleaned up: the guest is discarded by test-down.
 # Run through: node testes-no-guest.mjs --ps sandbox-lab/scripts/test/travas.sandbox.ps1
 $ErrorActionPreference = 'Stop'
-if ($env:USERNAME -ne 'WDAGUtilityAccount') { Write-Host 'REFUSED: this test runs only inside Windows Sandbox'; exit 3 }
+$Lib = Join-Path $PSScriptRoot '..\lib'
+. (Join-Path $Lib 'travas.ps1')   # only defines functions
+. (Join-Path $Lib 'disco.ps1')    # only defines functions
+# Two factors, never $env:USERNAME: the WDAGUtilityAccount identity AND the guest-only C:\labsandbox\bootstrap.ps1.
+if (-not (Test-LabInSandbox)) { Write-Host 'REFUSED: this test runs only inside Windows Sandbox'; exit 3 }
 $Base = Join-Path 'C:\labdata' ('travas-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Base | Out-Null
-$Lib = Join-Path $PSScriptRoot '..\lib'
-. (Join-Path $Lib 'travas.ps1')
-. (Join-Path $Lib 'disco.ps1')
 $script:failed = 0
 function Check([string]$Name, [scriptblock]$Body) {
   try { & $Body; Write-Host "ok - $Name" } catch { $script:failed++; Write-Host "FAILED - ${Name}: $($_.Exception.Message)" }
@@ -86,6 +87,48 @@ Check 'a different -WorkDir is refused' {
   $keep = New-Sentinel (Join-Path $Base 'outro-work\deploy')
   if ((Invoke-Stage $r @('-WorkDir', (Join-Path $Base 'outro-work'), '-Clean')) -eq 0) { throw 'expected refusal' }
   if (-not (Test-Path -LiteralPath $keep)) { throw 'file deleted' }
+}
+Check 'a source that is the repo (parent of the deploy) is refused, nothing copied' {
+  $r = New-FakeRepo 'k'
+  $ErrorActionPreference = 'Continue'
+  $stage = Join-Path $r 'sandbox-lab\scripts\app-stage.ps1'
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App $r 2>&1
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = 'Stop'
+  if ($code -eq 0) { throw 'expected refusal' }
+  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app')) { throw 'deploy was populated' }
+}
+Check 'a source that is a drive root is refused, nothing copied' {
+  $r = New-FakeRepo 'l'
+  $ErrorActionPreference = 'Continue'
+  $stage = Join-Path $r 'sandbox-lab\scripts\app-stage.ps1'
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App 'Q:\' 2>&1
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = 'Stop'
+  if ($code -eq 0) { throw 'expected refusal' }
+  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app')) { throw 'deploy was populated' }
+}
+Check 'robocopy /XJ: a junction inside the app source is not followed' {
+  $r = New-FakeRepo 'm'
+  $src = Join-Path $Base 'fonte-m'; New-Item -ItemType Directory -Path $src | Out-Null
+  [IO.File]::WriteAllText((Join-Path $src 'ok.txt'), 'ok')
+  $target = Join-Path $Base 'alvo-m'; $null = New-Sentinel $target
+  New-Item -ItemType Junction -Path (Join-Path $src 'link') -Target $target | Out-Null
+  $ErrorActionPreference = 'Continue'
+  $stage = Join-Path $r 'sandbox-lab\scripts\app-stage.ps1'
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App $src 2>&1
+  $ErrorActionPreference = 'Stop'
+  if (-not (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app\ok.txt'))) { throw 'regular file not copied' }
+  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app\link')) { throw 'junction was followed/copied' }
+  if (-not (Test-Path -LiteralPath (Join-Path $target 'keep.txt'))) { throw 'target changed' }
+}
+Check 'Get-LabReparsePoints: an absent root is fine and a plain tree has no links' {
+  if (@(Get-LabReparsePoints (Join-Path $Base 'nao-existe')).Count) { throw 'absent root should give no links' }
+  $plain = Join-Path $Base 'plain-n'; $null = New-Sentinel (Join-Path $plain 'a\b')
+  if (@(Get-LabReparsePoints $plain).Count) { throw 'plain tree should have no links' }
+}
+Check 'Test-LabInSandbox is true here (identity + guest bootstrap)' {
+  if (-not (Test-LabInSandbox)) { throw 'expected true inside the guest' }
 }
 Check 'Clear-LabOut empties shared\out but keeps .gitkeep' {
   $lab = Join-Path $Base 'lab-h'; $out = Join-Path $lab 'shared\out'

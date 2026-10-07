@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { raizPrincipalDe, caminhosDoLab } from "./caminhos-lab.mjs";
+import { raizPrincipalDe, caminhosDoLab, ambienteGitLimpo } from "./caminhos-lab.mjs";
 
 export const APP_ID = "io.github.johngabie.claudia-rh";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
@@ -25,7 +25,8 @@ export function falhaDe(err) {
 }
 
 function gitLer(args, cwd) {
-  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  // GIT_DIR & co. would override -C when this runs inside a git hook or worktree command.
+  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: ambienteGitLimpo(process.env) });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(r.stderr || r.error?.message || "").trim()}`);
   return r.stdout.trim();
 }

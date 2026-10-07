@@ -1,14 +1,15 @@
 // Read-only repo guard for CI and local use. Lists versioned files with `git ls-files -z` and fails when
 // (1) a file that must never be versioned is there, or (2) a versioned text file under sandbox-lab/ or .claude/skills/
-// holds a machine path. Never writes, moves or deletes anything.
+// holds a machine path (also docs/ and CLAUDE.md). Never writes, moves or deletes anything.
 // Usage (from any folder of the checkout): node .claude/skills/claudia-teste-sandbox/scripts/conferir-repo.mjs
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { arquivosProibidos, achaCaminhoPessoal } from "./proibidos.mjs";
+import { arquivosProibidos, achaCaminhoPessoal, textoParaConferir } from "./proibidos.mjs";
+import { ambienteGitLimpo } from "./caminhos-lab.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
-const r = spawnSync("git", ["-C", RAIZ, "ls-files", "-z"], { encoding: "utf8" });
+const r = spawnSync("git", ["-C", RAIZ, "ls-files", "-z"], { encoding: "utf8", env: ambienteGitLimpo(process.env) });
 if (r.status !== 0) {
   console.error(`git ls-files failed: ${(r.stderr || "").trim()}`);
   process.exit(1);
@@ -17,7 +18,7 @@ const arquivos = r.stdout.split("\0").filter(Boolean);
 const proibidos = arquivosProibidos(arquivos);
 const caminhos = [];
 for (const a of arquivos) {
-  if (!/^(sandbox-lab|\.claude\/skills)\//i.test(a)) continue;
+  if (!textoParaConferir(a)) continue;
   const abs = path.join(RAIZ, a);
   if (!fs.existsSync(abs)) continue; // staged deletion
   const buf = fs.readFileSync(abs);

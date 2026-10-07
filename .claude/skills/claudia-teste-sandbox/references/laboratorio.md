@@ -101,5 +101,5 @@ Perfis `lab.config.app*.json`:
 ## Evidencias
 
 - Host: `sandbox-lab/evidence/` (ignorada pelo git; screenshots, relatorios) - nome `O<n>-<descricao>.png|md`.
-- Guest: so `C:\lab\out` sobrevive (aparece em `shared\out\`). Copie o que importar antes do `test-down`.
+- Guest: sobrevivem `C:\lab\out` (aparece em `shared\out\`, que o `test-up.ps1` limpa a cada subida) e `C:\labwork` (= `.sandbox-work\guest-rw\` no host, que o `test-up.ps1` **não** limpa). O resto do guest some no `test-down`; copie o que importar antes.
 - Valide resultados lendo os arquivos/screenshots, nao apenas em relatorios anteriores (O9).

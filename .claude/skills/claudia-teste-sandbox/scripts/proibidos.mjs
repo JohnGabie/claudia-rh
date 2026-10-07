@@ -32,11 +32,19 @@ export function arquivosProibidos(arquivos) {
   return achados;
 }
 
+/** Versioned files whose text conferir-repo scans for machine paths (`arquivo` as `git ls-files` prints it). */
+export function textoParaConferir(arquivo) {
+  return /^(sandbox-lab\/|\.claude\/skills\/|docs\/)/i.test(arquivo) || /^CLAUDE\.md$/i.test(arquivo);
+}
+
 // Machine paths that must not appear in versioned text. Placeholders (<nome>), variables (%USERNAME%, $env:) and the
 // Windows Sandbox user are not names, so they do not match.
 const PADROES_CAMINHO = [
-  /[a-z]:(?:\\{1,2}|\/)users(?:\\{1,2}|\/)(?!(?:public|default|wdagutilityaccount)(?![a-z0-9]))[^\\/\s"'<>%$]+/i,
+  // 1-4 backslashes: plain, JSON-escaped and doubly JSON-escaped.
+  /[a-z]:(?:\\{1,4}|\/)users(?:\\{1,4}|\/)(?!(?:public|default|wdagutilityaccount)(?![a-z0-9]))[^\\/\s"'<>%$]+/i,
   /(?:^|[\s"'(=])\/(?:users|home)\/[^/\s"'<>$]+/i,
+  // Git Bash (/c/Users/<name>) and WSL (/mnt/c/Users/<name>).
+  /(?:^|[\s"'(=])\/(?:mnt\/)?[a-z]\/users\/(?!(?:public|default|wdagutilityaccount)(?![a-z0-9]))[^/\s"'<>%$]+/i,
   // "[p]" keeps this source line from matching itself when conferir-repo scans the skill.
   /pycharm[p]rojects|idea[p]rojects|source(?:\\{1,2}|\/)repos/i,
 ];

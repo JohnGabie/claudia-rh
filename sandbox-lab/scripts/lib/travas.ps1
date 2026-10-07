@@ -42,6 +42,58 @@ function Get-LabOutCleanRefusal {
   return $null
 }
 
+function Test-LabSandboxDecision {
+  # True only with BOTH factors: the process identity (DOMAIN\user, from WindowsIdentity) is WDAGUtilityAccount and the
+  # bootstrap folder mapped only in the guest exists. Never decided by $env:USERNAME. Inputs are injected by disco.ps1.
+  param([string]$Identity, [bool]$HasBootstrap)
+  return ([bool]($Identity -match '\\WDAGUtilityAccount$')) -and $HasBootstrap
+}
+
+function Test-LabScanEntryOk {
+  # Decision for one entry met while searching for reparse points: only the starting folder may be absent.
+  # Any child that cannot be read makes the guard refuse (it could be a link we cannot see).
+  param([bool]$IsRoot, [bool]$Found)
+  return $Found -or $IsRoot
+}
+
+function Get-LabSourceRefusal {
+  # Source of a copy into the deploy (-App, -AppData, -LocalAppData): full path, below a drive root, and unrelated to
+  # the deploy (not the deploy, not inside it, not a parent of it: robocopy /MIR would copy the deploy into itself).
+  param([string]$Source, [string]$Deploy)
+  if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($Deploy)) { return 'source and deploy are required' }
+  $s = $Source.TrimEnd('\')
+  $why = Get-LabRootProblem $s
+  if ($why) { return "source $why" }
+  if ([string]::IsNullOrWhiteSpace($s.Substring($s.LastIndexOf('\') + 1))) { return 'source has an empty final name' }
+  $sk = ConvertTo-LabPathKey $s
+  $dk = ConvertTo-LabPathKey $Deploy
+  if ($sk -eq $dk -or $sk.StartsWith("$dk\", [StringComparison]::Ordinal)) { return 'source is the deploy or inside it' }
+  if ($dk.StartsWith("$sk\", [StringComparison]::Ordinal)) { return 'source contains the deploy' }
+  return $null
+}
+
+function Get-LabProjectRefusal {
+  # Project folder mapped read-only into the guest: never a drive root, the user folder, or a folder holding it.
+  param([string]$Project, [string]$UserProfile)
+  if ([string]::IsNullOrWhiteSpace($Project)) { return 'project is required' }
+  $p = $Project.TrimEnd('\')
+  $why = Get-LabRootProblem $p
+  if ($why) { return "project $why" }
+  if ([string]::IsNullOrWhiteSpace($UserProfile)) { return 'user folder is unknown' }
+  $pk = ConvertTo-LabPathKey $p
+  $uk = ConvertTo-LabPathKey $UserProfile
+  if ($pk -eq $uk) { return 'project is the user folder' }
+  if ($uk.StartsWith("$pk\", [StringComparison]::Ordinal)) { return 'project contains the user folder' }
+  return $null
+}
+
+function Get-LabDownRefusal {
+  # test-down.ps1 must report success before shared\out is cleaned.
+  param($ExitCode)
+  if ($null -eq $ExitCode -or "$ExitCode" -ne '0') { return "test-down did not finish cleanly (exit code '$ExitCode'); shared\out was not cleaned" }
+  return $null
+}
+
 function Get-LabMissingTools {
   # Compares shared\tools.sha256 with the files found (relative path with '/', size). Size only: hashing ~600 MB on
   # every test-up is too slow; validate-config and the copy check use the hash. Extra files are not a problem.

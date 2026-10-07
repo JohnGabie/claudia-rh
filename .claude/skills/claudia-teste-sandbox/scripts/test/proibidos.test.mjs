@@ -1,7 +1,7 @@
 // Pure tests: lists of strings only, no disk, no git.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { arquivosProibidos, achaCaminhoPessoal } from "../proibidos.mjs";
+import { arquivosProibidos, achaCaminhoPessoal, textoParaConferir } from "../proibidos.mjs";
 
 const nomes = (lista) => arquivosProibidos(lista).map((a) => a.arquivo);
 
@@ -87,6 +87,32 @@ test("achaCaminhoPessoal: placeholders, variables, the Sandbox user and guest pa
   naoAcha("%USERPROFILE%\\.rustup\\toolchains");
   naoAcha("C:\\lab\\tools\\sqlite\\sqlite3.exe and C:\\labwork\\db");
   naoAcha("https://example.com/ho" + "me/x");
+});
+
+test("achaCaminhoPessoal: Git Bash, WSL and doubly JSON-escaped Windows user folders", () => {
+  acha(`cd ${"/" + ["c", "Users", "fulano", "x"].join("/")}`);
+  acha(`"${"/" + ["mnt", "c", "Users", "fulano"].join("/")}"`);
+  acha(`${"/" + ["mnt", "d", "users", "fulano"].join("/")}`);
+  acha(["C:", "Users", "fulano", "x"].join(B + B + B + B)); // 4 backslashes = JSON inside a JSON string
+  acha(["C:", "Users", "fulano"].join(B + B + B));
+});
+
+test("achaCaminhoPessoal: Git Bash, WSL and escaped forms keep the same exceptions", () => {
+  naoAcha(`cd ${"/" + ["c", "Users", "WDAGUtilityAccount", "x"].join("/")}`);
+  naoAcha(`${"/" + ["mnt", "c", "Users", "Public"].join("/")}`);
+  naoAcha(["C:", "Users", "<nome>"].join(B + B + B + B));
+  naoAcha(["C:", "Users", "WDAGUtilityAccount"].join(B + B + B + B));
+  naoAcha("https://example.com/c/Users/fulano");
+  naoAcha("see /c/Userspace/x");
+});
+
+test("textoParaConferir: sandbox-lab, skills, docs and CLAUDE.md only", () => {
+  for (const a of ["sandbox-lab/README.md", ".claude/skills/x/SKILL.md", "docs/a.md", "docs/superpowers/plans/p.md", "CLAUDE.md", "Docs/B.md"]) {
+    assert.equal(textoParaConferir(a), true, a);
+  }
+  for (const a of ["src/App.tsx", "README.md", "docs", "notdocs/a.md", "sub/CLAUDE.md", "CLAUDE.md.bak", ""]) {
+    assert.equal(textoParaConferir(a), false, a);
+  }
 });
 
 test("achaCaminhoPessoal: Public-like names are still flagged", () => {

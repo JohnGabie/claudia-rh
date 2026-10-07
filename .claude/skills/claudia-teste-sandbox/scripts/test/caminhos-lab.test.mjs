@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  raizPrincipalDe, caminhosDoLab, linksAte, podeLimparDeploy, motivoRecusaLimparDeploy, estaNoSandbox, MARCADOR_DEPLOY,
+  raizPrincipalDe, caminhosDoLab, linksAte, podeLimparDeploy, motivoRecusaLimparDeploy, estaNoSandbox, MARCADOR_DEPLOY, MARCADOR_GUEST, ambienteGitLimpo,
 } from "../caminhos-lab.mjs";
 
 const RAIZ = "Z:\\proj x\\claudia-rh";
@@ -77,8 +77,31 @@ test("podeLimparDeploy keeps its old contract", () => {
   assert.match(podeLimparDeploy({ existe: true, temMarcador: false, ehLink: false }), /marker/);
 });
 
-test("estaNoSandbox is true only for the Sandbox user", () => {
-  assert.equal(estaNoSandbox("WDAGUtilityAccount"), true);
-  assert.equal(estaNoSandbox("wdagutilityaccount"), true);
-  for (const u of ["", undefined, null, "fulano", "WDAGUtilityAccount2", "Administrator"]) assert.equal(estaNoSandbox(u), false, String(u));
+test("estaNoSandbox needs BOTH the Sandbox identity and the guest-only folder", () => {
+  const WD = "WDAGUtilityAccount";
+  assert.equal(estaNoSandbox({ identidade: WD, temBootstrap: true }), true);
+  assert.equal(estaNoSandbox({ identidade: `PC-NOME\\${WD}`, temBootstrap: true }), true);
+  assert.equal(estaNoSandbox({ identidade: "wdagutilityaccount", temBootstrap: true }), true);
+  // identity alone (a spoofed user name) is not enough
+  assert.equal(estaNoSandbox({ identidade: WD, temBootstrap: false }), false);
+  // the guest folder alone is not enough
+  assert.equal(estaNoSandbox({ identidade: "PC-NOME\\fulano", temBootstrap: true }), false);
+  for (const u of ["", undefined, null, "fulano", `${WD}2`, `x${WD}`, "Administrator", `${WD}\\fulano`]) {
+    assert.equal(estaNoSandbox({ identidade: u, temBootstrap: true }), false, String(u));
+  }
+  assert.equal(estaNoSandbox({ identidade: WD }), false);
+  assert.equal(estaNoSandbox(), false);
+  assert.equal(estaNoSandbox(WD), false);
+});
+
+test("ambienteGitLimpo drops GIT_DIR, GIT_COMMON_DIR and GIT_WORK_TREE and keeps the rest", () => {
+  const env = { PATH: "p", GIT_DIR: "x", git_common_dir: "y", GIT_WORK_TREE: "z", GIT_INDEX_FILE: "i", HOME: "h" };
+  const limpo = ambienteGitLimpo(env);
+  assert.deepEqual(Object.keys(limpo).sort(), ["GIT_INDEX_FILE", "HOME", "PATH"]);
+  assert.equal(env.GIT_DIR, "x", "input is not mutated");
+  assert.deepEqual(ambienteGitLimpo(undefined), {});
+});
+
+test("MARCADOR_GUEST is the bootstrap mapped by the .wsb template", () => {
+  assert.equal(MARCADOR_GUEST, "C:\\labsandbox\\bootstrap.ps1");
 });

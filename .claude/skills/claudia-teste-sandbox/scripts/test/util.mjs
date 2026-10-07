@@ -3,14 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { estaNoSandbox } from "../caminhos-lab.mjs";
+import { estaNoSandbox, MARCADOR_GUEST } from "../caminhos-lab.mjs";
 
 export const SCRIPTS = path.join(import.meta.dirname, "..");
 
 /** Tests that create or delete folders run only inside Windows Sandbox (CLAUDE.md, hard rules). Throws elsewhere. */
 export function exigirSandbox() {
-  const usuario = os.userInfo().username;
-  if (!estaNoSandbox(usuario)) {
+  const usuario = os.userInfo().username; // OS call, not an environment variable
+  if (!estaNoSandbox({ identidade: usuario, temBootstrap: fs.existsSync(MARCADOR_GUEST) })) {
     throw new Error(`SANDBOX ONLY: this test creates and deletes folders; it runs only inside Windows Sandbox (user is ${usuario}).`);
   }
 }

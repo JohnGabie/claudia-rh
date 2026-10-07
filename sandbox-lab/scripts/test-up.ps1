@@ -54,6 +54,8 @@ $ProjectDir = $(if ($Project) {
   if (-not [IO.Path]::IsPathRooted($Project)) { throw "-Project must be an absolute path: $Project" }
   [IO.Path]::GetFullPath($Project)
 } else { Resolve-LabPath $cfg.projectPath })
+$projectRefusal = Get-LabProjectRefusal -Project $ProjectDir -UserProfile ([Environment]::GetFolderPath('UserProfile'))
+if ($projectRefusal) { throw "[test-up] project folder refused ($ProjectDir): $projectRefusal" }
 $ExtDir     = Resolve-LabPath $cfg.extensionsDir
 foreach ($d in @($SharedDir, $SandboxDir, $ProjectDir, $ExtDir)) { if (-not (Test-Path $d -PathType Container)) { throw "Pasta nao encontrada: $d" } }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
@@ -126,7 +128,10 @@ if (-not $running -and $wsbCmd) {
 }
 if ($running) {
   if (-not $Force) { throw "Ja existe um Windows Sandbox rodando ($($running.Name -join ', ')). Rode scripts\test-down.ps1 ou use -Force." }
+  $global:LASTEXITCODE = $null
   & (Join-Path $PSScriptRoot 'test-down.ps1')
+  $downRefusal = Get-LabDownRefusal -ExitCode $global:LASTEXITCODE
+  if ($downRefusal) { throw "[test-up] $downRefusal" }
 }
 
 # --- limpa shared\out (only the exact <lab>\shared\out, no link in it or under it) ---
