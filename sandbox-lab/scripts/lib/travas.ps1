@@ -232,6 +232,28 @@ function Get-LabCachePlan {
 
 $script:LabAppId = 'io.github.johngabie.claudia-rh'
 
+function Get-LabLinkTargetOf($LinkTargets, [string]$LinkPath) {
+  # Looks the target of one link up in the table made by Get-LabLinkTargets (case and slash insensitive keys). $null if absent.
+  if ($null -eq $LinkTargets -or $LinkTargets -isnot [System.Collections.IDictionary]) { return $null }
+  $want = ConvertTo-LabPathKey ($LinkPath -replace '/', '\')
+  foreach ($key in @($LinkTargets.Keys)) {
+    if ((ConvertTo-LabPathKey (([string]$key) -replace '/', '\')) -eq $want) { return $LinkTargets[$key] }
+  }
+  return $null
+}
+
+function Test-LabLatestLinkTargetOk {
+  # The target of diagnostics\latest read without following it: exactly 'claude-startup.log' (relative) or exactly
+  # <Source>\diagnostics\claude-startup.log, ignoring case and with '/' read as '\'. Nothing else: no '..', no 8.3 '~', no UNC,
+  # no other drive, no extra '.', no trailing space or dot, nothing empty or unreadable (an array is not a single target).
+  param($Target, [string]$Source)
+  if ($null -eq $Target -or $Target -isnot [string]) { return $false }
+  if ([string]::IsNullOrWhiteSpace($Target) -or [string]::IsNullOrWhiteSpace($Source)) { return $false }
+  $t = ($Target -replace '/', '\').ToLowerInvariant()   # no TrimEnd: a trailing backslash is not the exact target
+  if ($t -eq 'claude-startup.log') { return $true }
+  return ($t -eq (ConvertTo-LabPathKey ($Source.TrimEnd('\') + '\diagnostics\claude-startup.log')))
+}
+
 function Get-LabRealDataSourceRefusal {
   # test-up -DadosReais (spec addendum 8.1): only the app's folder under Roaming, read-only, never %LOCALAPPDATA%.
   # Callers pass [Environment]::GetFolderPath('ApplicationData'), the reparse points above the source ($Links) and the ones
@@ -239,7 +261,9 @@ function Get-LabRealDataSourceRefusal {
   # One exception, nothing else: the FILE link <Source>\diagnostics\latest (made by the Claude Code debug logger) is skipped,
   # never followed. $FileLinksInside lists which of the $LinksInside are links to a FILE (not a folder or junction); the same
   # name as a folder link or junction, at another level, or any other link still refuses.
-  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @(), [string[]]$LinksInside = @(), [string[]]$FileLinksInside = @())
+  # $LinkTargets (hashtable: link path -> the target text read WITHOUT following the link, Get-LabLinkTargets) is required for
+  # the exception: the target must be exactly claude-startup.log or <Source>\diagnostics\claude-startup.log (Test-LabLatestLinkTargetOk).
+  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @(), [string[]]$LinksInside = @(), [string[]]$FileLinksInside = @(), $LinkTargets = $null)
   if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($RoamingAppData)) { return 'source and roaming folder are required' }
   $r = $RoamingAppData.TrimEnd('\')
   $why = Get-LabRootProblem $r
@@ -253,7 +277,7 @@ function Get-LabRealDataSourceRefusal {
   $fileKeys = @(@($FileLinksInside) | Where-Object { $_ } | ForEach-Object { ConvertTo-LabPathKey ($_ -replace '/', '\') })
   $blocking = @(@($LinksInside) | Where-Object { $_ } | Where-Object {
     $k = ConvertTo-LabPathKey ($_ -replace '/', '\')
-    -not ($k -eq $skipKey -and $fileKeys -contains $k)
+    -not ($k -eq $skipKey -and $fileKeys -contains $k -and (Test-LabLatestLinkTargetOk -Target (Get-LabLinkTargetOf $LinkTargets $_) -Source $Source))
   })
   if ($blocking.Count) { return 'link (symlink/junction) inside the app data folder: the copy scenario refuses links' }
   return $null

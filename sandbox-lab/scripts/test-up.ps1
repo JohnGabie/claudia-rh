@@ -92,7 +92,7 @@ if ($DadosReais) {
   # Links above the source AND any link inside it: a link in the data folder refuses the whole mount.
   $inside = Get-LabReparsePoints $src
   # Only the file link diagnostics\latest (Claude Code's debug logger) is tolerated: skipped, never followed.
-  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside $inside -FileLinksInside (Get-LabFileLinks $inside)
+  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside $inside -FileLinksInside (Get-LabFileLinks $inside) -LinkTargets (Get-LabLinkTargets $inside)
   if ($why) { throw "[test-up] -DadosReais refused: $why" }
   if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
   $RealData = $src
@@ -127,7 +127,7 @@ $guest = [ordered]@{
   startUrl = $cfg.chrome.startUrl; testServerPort = [int]$cfg.chrome.testServerPort; remoteDebuggingPort = [int]$cfg.chrome.remoteDebuggingPort
   chromeExe = To-Guest $cfg.chrome.exe; extensions = $extList; dbBackup = To-Guest $cfg.dbBackup; workDb = 'C:\labdata\app.sqlite'
   mcpPort = [int]$cfg.mcp.port; mcpAuthKeyEnv = $cfg.mcp.authKeyEnv; mcpAuthKeyFile = $(if ($cfg.mcp.authKeyFile) { To-Guest $cfg.mcp.authKeyFile } else { $null })
-  outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; instalar = $install; msvc = $msvcLayout
+  outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; internetBloqueada = [bool](Test-LabAmbienteInternetBlocked -Compose $compose -Ambiente $Ambiente); instalar = $install; msvc = $msvcLayout
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $SandboxDir 'guest.config.json'), ($guest | ConvertTo-Json -Depth 6), $utf8)
