@@ -143,7 +143,7 @@ O teste "a source that is a drive root is refused" passa `Q:\` ao `app-stage.ps1
 - Versão exata de Node e de Claude Code a fixar.
 - **Enquanto isto não existe:** posso subir o Sandbox hoje no perfil atual para os testes de Node e PowerShell, que não precisam de Rust, e deixar os de Rust para depois desta spec.
 
-## 8. Adendo de 2026-10-07 (plano) — AGUARDANDO APROVAÇÃO DO USUÁRIO DO TRECHO ALTERADO
+## 8. Adendo de 2026-10-07 (plano) — APROVADO pelo usuário em 2026-10-07 ("Aprovo")
 
 Origem: ao escrever o plano, apareceu um ponto em que a spec, ao pé da letra, quebrava o uso normal (D1), e o usuário decidiu também como montar o cache do MSVC. Decisões do usuário em 2026-10-07: D1 = "Cenários só no Sandbox"; MSVC = layout montado dentro de um Sandbox; D2 = todas aprovadas. Este adendo descreve **como** isso fica. O texto abaixo só vale depois de o usuário aprovar este trecho.
 
