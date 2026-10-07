@@ -395,3 +395,109 @@ Contratos: `BrowserEvent` e `LogSink::browser_event` (§5.3), que F2 entrega e F
 - Se algum HTML da biblioteca do usuário usa JavaScript.
 - Comportamento da regra C no LinkedIn real (botão de upload, botão final) — depende da rodada real (D4).
 - Nada desta spec foi compilado nem executado: é só leitura do código em `56ced76`.
+
+---
+
+## 12. D10 — CLA-35 e CLA-40 (antes do merge)
+
+> **Status desta seção: RASCUNHO, aguardando aprovação do usuário.** Lido em `87ddf08`.
+
+### 12.1 Pedido do usuário (palavras dele)
+
+- "CLA-40 bloqueia, CLA-35 bloqueia, Worthree e agent"
+- Antes: "rápido, sem perder qualidade. Pra não enrolar mais essa branch"
+
+### 12.2 Leitura
+
+- As duas correções entram nesta branch, antes do merge, feitas por agentes em worktree. Rápido, mas com teste de regressão e mutação, como o resto.
+- **CLA-35:** vagas ficam presas em `candidatando` (sessão que morre no meio, checkpoint, sessão substituída). Com duas ou mais, a guarda recusa todo envio e o `browser_upload` recusa todo anexo.
+- **CLA-40:** a carta salva pelo agente (`save_cover_letter`) sai sem nome, contato e assinatura quando o perfil não tem `dados_pessoais`, sem avisar; o título fica "Cover Letter —  — …" em inglês; o texto fixo de `pt` está em pt-PT.
+
+### 12.3 CLA-35 — causa no código
+
+- `mcp/tools/vagas.rs:88-91`: `update_vaga_status(..., "candidatando")` faz um `UPDATE` simples. Nada impede uma segunda vaga em `candidatando`; a regra "no máximo uma" existe só no prompt (`prompt_sistema_runtime.md:105`), ou seja, depende do agente.
+- Ninguém tira uma vaga de `candidatando` quando a sessão acaba: `pty_manager.rs:209-215` (fim do processo), `commands/sessao.rs:140-143` (sessão substituída) e `db/mod.rs:39-42` (sessões fantasmas no arranque do app) só fecham a linha de `sessoes`. Não há ligação entre vaga e sessão no schema (`db/schema.sql:1-14` e `46-53`).
+- `mcp/tools/browser.rs:1443-1450` (`DbGuardContext::active_vaga`): com 0 ou 2+ vagas em `candidatando`, devolve `None`. Daí `browser/guard.rs:140-142` recusa ("não há exatamente uma vaga em candidatando") e `mcp/tools/browser.rs:1043-1046` recusa o upload.
+- A tela mostra só uma: `db/queries.rs:273-276` (`vaga_candidatando`, `LIMIT 1`, a mais recente). A outra fica fora do card da vaga atual; aparece só na lista de vagas como "A candidatar".
+
+### 12.4 CLA-35 — propostas (NÃO DECIDIDAS)
+
+| Opção | O que é | Prós | Contras |
+|---|---|---|---|
+| **A** | Ao marcar uma vaga como `candidatando`, na mesma transação, toda **outra** vaga em `candidatando` passa a `pendente_revisao` com `motivo_status` explicando | Garante "no máximo uma" no código, no único ponto de escrita; um arquivo; não toca na guarda | A vaga presa continua em `candidatando` até o agente começar a próxima |
+| **B** | No arranque do app (`db/mod.rs`, junto das sessões fantasmas), toda vaga em `candidatando` passa a `pendente_revisao` | Limpa o que já está preso no banco do usuário (as vagas 197 e 334 citadas no Linear); no arranque não existe sessão viva (`db::init` só roda no setup do app, `lib.rs:208`) | Sozinha não cobre queda de sessão com o app aberto |
+| C | Ao fim de cada sessão (`pty_manager.rs`), a vaga em `candidatando` vai para `pendente_revisao` | Estado sempre honesto | O checkpoint também termina a sessão: uma vaga no meio do formulário perderia a retomada pela sessão seguinte |
+| D | Guarda usa a vaga **da sessão atual** (coluna nova `vagas.sessao_id` ou tabela), não "a única global" | Mais preciso | Mudança de schema; mexe em `guard.rs` e `mcp/tools/browser.rs` (conflito com a onda 2); maior |
+| E | Botão na UI para liberar a vaga | Usuário no controle | Passo manual; não resolve o modo autônomo sem usuário |
+
+**Recomendação: A + B.** É a mais simples e segura: a regra "no máximo uma" passa a valer no código (A) e o que já está preso sai no próximo arranque (B). A guarda **não muda**: continua exigindo exatamente uma, que segue sendo o lado seguro. C fica de fora por causa do checkpoint; D e E vão para o Linear se A + B não bastarem.
+
+Detalhes propostos:
+- Estado de destino: `pendente_revisao` (já existe, já tem cor e filtro na tela, e o prompt já trata como estado final). Não volta para `analisada`, porque a vaga pode ter sido enviada.
+- `motivo_status`: "Candidatura interrompida (outra vaga começou)" (A) ou "Candidatura interrompida (o app fechou)" (B). Se existir `submit_claims` daquela vaga **sem** linha em `candidaturas`, o motivo acrescenta: "o envio pode ter sido feito; confira no site antes de tentar de novo". `submit_claims` é criada em uso (dívida conhecida): a consulta tolera a tabela ausente.
+- Ponto em aberto 12.10-1: criar também uma linha em `pendencias` (categoria nova `sessao_interrompida`) para a vaga aparecer na tela de Pendências. Recomendação: **sim, só quando há envio autorizado sem registro** (é o caso que exige o usuário); no resto, só o status.
+- A resposta de `update_vaga_status` diz ao agente quais vagas foram fechadas ("Vaga 7 → candidatando. Vaga 3 saiu de candidatando para pendente_revisao."). Sem mudança no `prompt_sistema_runtime.md`.
+
+### 12.5 CLA-40 — causa no código
+
+- `mcp/tools/documentos.rs:65-66`: lê e parseia o `candidate_base.yaml`, mas não confere se há nome. `DadosPessoais` tem `#[serde(default)]` em tudo (`commands/perfil.rs:61-67` e `148`): perfil sem `dados_pessoais` vira tudo vazio, sem erro.
+- `commands/cover_letter.rs:157`: `nome` vazio vai para o cabeçalho (`246`), o assunto (`202`, vira "Assunto: cargo — ") e a assinatura (`266`). Linha de contato vazia (`160-180`). Nada avisa.
+- `commands/cover_letter.rs:222`: `<title>Cover Letter — {nome} — {cargo}</title>` fixo em inglês, sem omitir partes vazias.
+- `commands/cover_letter.rs:194-200`: o texto fixo de `pt` é pt-PT ("Exmo./Exma. Responsável de Recrutamento,", "Com os melhores cumprimentos,", "Responsável de Recrutamento").
+- O mesmo template serve a geração pela tela (`spawn_cover_letter_claude`, `cover_letter.rs:301-371`): o defeito vale nos dois caminhos.
+
+### 12.6 CLA-40 — propostas (NÃO DECIDIDAS)
+
+1. **Sem nome: recusar.** Nova função pura em `cover_letter.rs`, `faltas_do_perfil(&DadosPessoais) -> Vec<&'static str>`. Sem `nome_completo`, `save_cover_letter` recusa sem escrever nada: "a carta não foi salva: o perfil não tem nome (dados_pessoais.nome_completo). Registre uma pendência." O prompt já manda registrar pendência `sem_carta` quando não há carta (`prompt_sistema_runtime.md:100`): sem edição do prompt. Na tela, `spawn_cover_letter_claude` confere **antes** de chamar o Claude e emite `cover-letter-error` com o mesmo motivo.
+   **Sem e-mail (com nome): salvar e avisar** na resposta ("Carta salva... Aviso: o perfil não tem e-mail; a carta saiu sem contato."). Alternativa: recusar também. Recomendação: avisar (nome é o mínimo). Ponto em aberto 12.10-2.
+2. **Título no idioma da carta:** `pt` → "Carta de apresentação — {nome} — {cargo}"; `en` → "Cover Letter — {nome} — {cargo}". Partes vazias saem (nunca "—  —"). O assunto também omite parte vazia.
+3. **Texto fixo pt-BR para `pt`** (o usuário pode trocar): destinatário "Equipe de Recrutamento"; saudação "Prezada equipe de recrutamento,"; fecho "Atenciosamente,". "Assunto:" e a data ("7 de outubro de 2026") já servem. O `en` não muda.
+
+Fora: o prompt `cover_letter_pt` (`commands/prompts.rs`), que gera o corpo pela tela e só cita "Exmo." como exemplo do que **não** escrever. A linha de contato não mostra `telefone` hoje; incluir fica fora (não pedido).
+
+### 12.7 Arquivos por frente
+
+| Frente | Bug | Arquivos (só estes) | Modelo |
+|---|---|---|---|
+| F5 | CLA-35 | `src-tauri/src/mcp/tools/vagas.rs` (A e testes), `src-tauri/src/db/mod.rs` (B e testes) | Sonnet |
+| F6 | CLA-40 | `src-tauri/src/commands/cover_letter.rs`, `src-tauri/src/mcp/tools/documentos.rs` | Sonnet |
+
+**Conflito com a onda 2 (F4): nenhum.** F5 e F6 não tocam em `browser/page_events.rs`, `browser/mod.rs`, `mcp/tools/browser.rs`, `activity_log/sink.rs` nem `tests/browser_live.rs`, e são disjuntas entre si: F4, F5 e F6 podem rodar em paralelo. A recomendação A + B **não precisa** de `guard.rs` nem de `mcp/tools/browser.rs`. Se o usuário escolher D, F5 passa a tocar nesses dois e roda **depois** de F4 integrada.
+
+O teste `two_vagas_in_candidatando_block_every_submit` (`mcp/tools/browser.rs`, insere duas vagas direto no banco) continua válido e não é editado.
+
+### 12.8 Testes
+
+**Puros (sem disco; podem rodar no PC, filtrados pelo nome):**
+- `db/mod.rs` (conexão em memória, como `ghost_sessions_closed_on_startup`): duas vagas em `candidatando` → depois do `apply`, nenhuma; ambas em `pendente_revisao` com o motivo; vaga com `submit_claims` sem candidatura ganha o motivo "envio pode ter sido feito"; vaga em outro status não muda.
+- `cover_letter.rs`: `render_carta` com `pt` não contém "Exmo", "cumprimentos" nem "Cover Letter"; contém "Atenciosamente" e "Carta de apresentação"; com `en`, "Cover Letter" e "Best regards"; título sem "—  —" quando falta cargo; `faltas_do_perfil` com perfil vazio aponta o nome.
+
+**Gravam banco ou pasta temporária (só no Sandbox):**
+- `vagas.rs` (usam `temp_dir`): marcar a vaga 2 como `candidatando` com a 1 já nela → a 1 vai para `pendente_revisao`, a 2 fica; a resposta cita a 1; marcar a mesma vaga de novo não a fecha; falha no meio da transação não deixa zero nem duas.
+- `documentos.rs` (usam `temp_dir`): `candidate_base.yaml` sem `dados_pessoais` → `guardar_pendente` recusa e a árvore da pasta não muda (mesmo padrão de `save_cover_letter_refuses_bad_input_and_writes_nothing`); sem e-mail → salva e a resposta tem o aviso.
+- Regressão CLA-35 de ponta a ponta: duas vagas presas → `update_vaga_status(3, "candidatando")` → `DbGuardContext::active_vaga() == Some(3)` (o teste fica em `vagas.rs` e só chama `browser.rs`, sem editá-lo).
+
+**Mutação (obrigatória):** tirar o `UPDATE` das outras vagas em A → o teste de `vagas.rs` falha; tirar a limpeza do `apply` → o teste de `db/mod.rs` falha; tirar a checagem de nome → o teste de recusa de `documentos.rs` falha; voltar "Com os melhores cumprimentos" → o teste de pt-BR falha. Colar as linhas `FAILED`.
+
+**Smoke** (`/claudia-teste-e2e`, Sandbox, cenário `mock`): banco com duas vagas em `candidatando` → abrir o app → as duas aparecem como "Pendente revisão"; carta salva pelo MCP com perfil completo sai em pt-BR com nome e assinatura.
+
+### 12.9 Riscos
+
+1. **A fecha uma vaga que o agente ainda queria:** só se ele começa outra antes de terminar a primeira, o que o prompt já proíbe. A vaga não se perde: fica em `pendente_revisao` com o motivo.
+2. **B com envio feito e não registrado:** a vaga sai de `candidatando` sem `aplicada`. Mitigado pelo motivo "envio pode ter sido feito" (e pela pendência, se aprovada).
+3. **Vaga presa única continua ativa** até a próxima `candidatando` ou o próximo arranque; a guarda aceitaria `confirm_submit` dela. Igual a hoje; a guarda nunca entrega esse id ao agente.
+4. **CLA-40, recusa nova:** perfil sem nome passa a não ter carta. É o que o Linear pede ("pior do que nenhuma").
+5. O texto pt-BR proposto é escolha do assistente.
+
+### 12.10 Pontos em aberto (precisam do usuário)
+
+1. CLA-35: confirmar **A + B**; criar pendência `sessao_interrompida` só quando há envio autorizado sem registro.
+2. CLA-40: sem nome **recusa**; sem e-mail **salva com aviso** (ou recusa também?).
+3. CLA-40: os textos pt-BR de 12.6-3.
+
+### 12.11 Não verificado
+
+- Se a sessão substituída (`commands/sessao.rs:140-143`) mata o processo antigo ou o deixa terminar sozinho; A cobre os dois casos, mas não foi conferido.
+- Se a tela de Pendências mostra uma categoria nova sem mudança no front.
+- Se alguma tela depende de haver vaga em `candidatando` logo depois do arranque.
+- Nada desta seção foi compilado nem executado: é leitura do código em `87ddf08` e das descrições da CLA-35 e da CLA-40 no Linear.
