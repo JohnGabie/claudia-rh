@@ -59,3 +59,15 @@ workspace/
 # Windows
 Thumbs.db
 desktop.ini
+
+# Windows Sandbox lab (sandbox-lab/): tools, the MCP key, guest output, evidence and generated files never go to git.
+# sandbox-lab/.gitignore repeats these on purpose (two layers).
+sandbox-lab/shared/tools/
+sandbox-lab/shared/secrets/
+sandbox-lab/shared/out/
+sandbox-lab/evidence/
+sandbox-lab/sandbox/sandbox.generated.wsb
+sandbox-lab/sandbox/guest.config.json
+sandbox-lab/.mcp.json
+# Sandbox work folder (deploy + guest-rw). Always the one in the main checkout.
+.sandbox-work/
