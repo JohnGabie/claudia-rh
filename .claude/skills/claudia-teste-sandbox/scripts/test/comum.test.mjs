@@ -119,19 +119,9 @@ test("novoCenarioDir: refuses non-empty dir without cenario.json", () => {
   }
 });
 
-test("novoCenarioDir: refuses if target is REPO_ROOT", () => {
-  assert.throws(() => novoCenarioDir(REPO_ROOT, "t"), /REPO_ROOT/);
-});
-
-test("novoCenarioDir: refuses if target is ancestor of REPO_ROOT", () => {
-  const parent = path.dirname(REPO_ROOT);
-  assert.throws(() => novoCenarioDir(parent, "t"), /ancestor of REPO_ROOT/);
-});
-
-test("novoCenarioDir: refuses if target is filesystem root", () => {
-  const root = path.parse(REPO_ROOT).root;
-  assert.throws(() => novoCenarioDir(root, "t"), /filesystem root/);
-});
+// Refusal of the repo, its ancestors and disk roots is tested ONLY on the pure
+// validation function, with invented strings: see motivo-recusa.test.mjs.
+// Never pass a real path to novoCenarioDir in a test (it deletes recursively).
 
 test("novoCenarioDir: recreates existing scenario folder", () => {
   const temp = tempDir("comum");

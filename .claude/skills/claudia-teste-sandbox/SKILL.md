@@ -21,9 +21,9 @@ Origem: incidente de 2026-10-05 (um teste passou `C:\` a uma função de apagar)
 - **Nunca o Chrome pessoal do usuário** (nem perfil, nem cópia). O Chrome do Claudia-RH pode.
 - `node --test` **sempre com a lista de arquivos explícita**, nunca glob nem pasta.
 - **Até a Tarefa 0b do plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md` entrar** (o código ainda não foi corrigido):
-  - **NÃO rodar `scripts/test/comum.test.mjs`** (B1: passa `C:\`, o repositório e a pasta acima dele para a função que apaga);
+  - **NÃO rodar `scripts/test/comum.test.mjs`** fora do Sandbox (apaga pastas; as recusas de B1 agora são testadas só em `scripts/test/motivo-recusa.test.mjs`, função pura, sem disco);
   - **NÃO rodar `evals/rodar-evals.mjs`** (CLA-56);
-  - `--saida` dos cenários **só dentro do `%TEMP%`**;
+  - `--saida` dos cenários **só dentro de `<tmp>\claudia-teste-sandbox\`** (lista branca em `motivoRecusa`; fora disso o script recusa);
   - `publicar.mjs` **só com pasta de trabalho dedicada** (B3), nunca uma pasta com outros dados.
 
 ## 1. Pré-requisitos
@@ -56,7 +56,7 @@ Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\l
 
 Em andamento: o cenário de dados falsos completos está em spec (CLA-53, branch `feat/dados-falsos-teste`) e a decisão de trazer o laboratório para dentro do claudia-rh aguarda spec.
 
-Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; `--saida` só dentro do `%TEMP%`, nunca outro disco nem pasta real) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
+Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; `--saida` só dentro de `<tmp>\claudia-teste-sandbox\`, nunca a própria pasta base, outro disco, link ou pasta real) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
 
 | Cenário | Comando | Quando faz sentido |
 |---|---|---|
@@ -75,7 +75,7 @@ Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes
 
 ## 5. O que publicar
 
-`node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-teste-sandbox\work`; a pasta de trabalho tem de ser **dedicada**, B3). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
+`node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-teste-sandbox\work`; a pasta de trabalho tem de ser **dedicada**, B3: `-Clean` só roda se `<work-dir>\deploy` não existir ou tiver o marcador `.lab-deploy` e não for link). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
 
 - **exe de `tauri build --no-bundle`**: rápido, mas não instala pré-requisitos; sem WebView2 no guest o app não abre.
 - **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart` (com o instalador publicado, o `guest-run.json` registra o instalador como `exe`: inofensivo).

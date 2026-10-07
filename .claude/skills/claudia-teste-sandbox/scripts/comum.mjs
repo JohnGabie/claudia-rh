@@ -31,23 +31,66 @@ export function labDir() {
   return path.resolve(d);
 }
 
+const NOME_BASE = "claudia-teste-sandbox";
+const minusculas = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
+
+/** Same as dentroDe, but case-insensitive on Windows. */
+function dentroDeCI(a, b) {
+  return dentroDe(minusculas(a), minusculas(b));
+}
+
+/**
+ * PURE (never touches the disk). Allow-list for deletable scenario folders.
+ * Returns null when `dir` may be deleted, otherwise the reason it is refused.
+ * Only accepts an absolute, normalized path with no "..", strictly inside <tempRoot>/claudia-teste-sandbox.
+ */
+export function motivoRecusa(dir, { repoRoot, tempRoot }) {
+  if (typeof dir !== "string" || dir.trim() === "") return "empty path";
+  if (dir.startsWith("\\\\") || dir.startsWith("//")) return "UNC or extended-length path";
+  if (!path.isAbsolute(dir)) return "relative path";
+  if (dir.split(/[\\/]+/).includes("..")) return "path contains '..'";
+  if (path.normalize(dir) !== dir) return "path is not normalized";
+  if (path.parse(dir).root === dir) return "path is a filesystem root";
+  if (typeof repoRoot !== "string" || repoRoot === "" || typeof tempRoot !== "string" || tempRoot === "") {
+    return "repoRoot and tempRoot are required";
+  }
+  if (dentroDeCI(dir, repoRoot)) return "path is the repository or an ancestor of it";
+  if (dentroDeCI(repoRoot, dir)) return "path is inside the repository";
+  const base = path.join(tempRoot, NOME_BASE);
+  if (minusculas(dir) === minusculas(base)) return "path is the sandbox base folder itself";
+  if (!dentroDeCI(base, dir)) return `path is outside the sandbox base folder (${base})`;
+  return null;
+}
+
+export const MARCADOR_DEPLOY = ".lab-deploy";
+
+/**
+ * PURE. Decides whether `<work-dir>/deploy` may be wiped by app-stage.ps1 -Clean.
+ * Returns null when allowed, otherwise the reason.
+ */
+export function podeLimparDeploy({ existe, temMarcador, ehLink }) {
+  if (!existe) return null;
+  if (ehLink) return "deploy is a link (symlink/junction/reparse point)";
+  if (!temMarcador) return `deploy exists without the ${MARCADOR_DEPLOY} marker (not created by this script)`;
+  return null;
+}
+
 export function novoCenarioDir(saida, nome) {
-  const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-teste-sandbox", nome));
+  const tempRoot = fs.realpathSync.native(os.tmpdir());
+  const dir = path.resolve(saida || path.join(tempRoot, NOME_BASE, nome));
 
-  // Safety checks before deletion
-  const parsed = path.parse(dir);
-  if (parsed.root === dir) {
-    throw new Error("novoCenarioDir: target is a filesystem root");
-  }
-  if (dir === REPO_ROOT) {
-    throw new Error("novoCenarioDir: target is REPO_ROOT");
-  }
-  if (dentroDe(dir, REPO_ROOT)) {
-    throw new Error("novoCenarioDir: target is an ancestor of REPO_ROOT");
-  }
+  const motivo = motivoRecusa(dir, { repoRoot: REPO_ROOT, tempRoot });
+  if (motivo) throw new Error(`novoCenarioDir: refused (${motivo}): ${dir}`);
 
-  // Check if non-empty directory exists without cenario.json or .cenario marker
-  if (fs.existsSync(dir)) {
+  // Symlink/junction guard: never delete through a link.
+  let st = null;
+  try { st = fs.lstatSync(dir); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  if (st) {
+    if (st.isSymbolicLink()) throw new Error(`novoCenarioDir: refused (target is a symlink/junction): ${dir}`);
+    const real = fs.realpathSync.native(dir);
+    if (minusculas(real) !== minusculas(dir) || motivoRecusa(real, { repoRoot: REPO_ROOT, tempRoot })) {
+      throw new Error(`novoCenarioDir: refused (real path differs: ${real}): ${dir}`);
+    }
     const entries = fs.readdirSync(dir);
     const hasCenarioJson = fs.existsSync(path.join(dir, "cenario.json"));
     const hasMarker = fs.existsSync(path.join(dir, ".cenario"));
@@ -56,6 +99,7 @@ export function novoCenarioDir(saida, nome) {
     }
   }
 
+  // Only now (marker rule passed) delete.
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
   fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });

@@ -8,7 +8,10 @@ export const SCRIPTS = path.join(import.meta.dirname, "..");
 
 /** Temp folder with a space in its name, so every test also covers paths with spaces. */
 export function tempDir(prefixo) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `cs test ${prefixo} `));
+  // Must live under <tmp>/claudia-teste-sandbox: the scenario scripts refuse anything else (allow-list).
+  const base = path.join(fs.realpathSync.native(os.tmpdir()), "claudia-teste-sandbox");
+  fs.mkdirSync(base, { recursive: true });
+  return fs.mkdtempSync(path.join(base, `cs test ${prefixo} `));
 }
 
 export function rodar(script, args = [], env = {}) {
