@@ -84,7 +84,13 @@ export function ambienteGitLimpo(env) {
   return limpo;
 }
 
-/** Only exists inside the guest: the lab's sandbox\ folder is mapped there (sandbox.template.wsb). */
+/**
+ * Only exists inside the guest: the lab's sandbox\ folder is mapped there (sandbox.template.wsb). The same literal lives in
+ * travas.ps1 ($script:LabGuestMarker); a pure test on each side pins it.
+ * Why the guards differ: PowerShell reads the full DOMAIN\user from WindowsIdentity and requires "\WDAGUtilityAccount".
+ * Node gets the identity from os.userInfo(), which may come without a domain, so estaNoSandbox also accepts the bare user
+ * name; both need this marker file as the second factor.
+ */
 export const MARCADOR_GUEST = "C:\\labsandbox\\bootstrap.ps1";
 
 /**

@@ -54,7 +54,9 @@ $ProjectDir = $(if ($Project) {
   if (-not [IO.Path]::IsPathRooted($Project)) { throw "-Project must be an absolute path: $Project" }
   [IO.Path]::GetFullPath($Project)
 } else { Resolve-LabPath $cfg.projectPath })
-$projectRefusal = Get-LabProjectRefusal -Project $ProjectDir -UserProfile ([Environment]::GetFolderPath('UserProfile'))
+# Real path first, then the reparse points in it and above it (junction, symlink, subst), then the pure decision.
+$ProjectDir = Resolve-LabRealPath $ProjectDir
+$projectRefusal = Get-LabProjectRefusal -Project $ProjectDir -UserProfile ([Environment]::GetFolderPath('UserProfile')) -Links (Get-LabLinksAboveRoot $ProjectDir)
 if ($projectRefusal) { throw "[test-up] project folder refused ($ProjectDir): $projectRefusal" }
 $ExtDir     = Resolve-LabPath $cfg.extensionsDir
 foreach ($d in @($SharedDir, $SandboxDir, $ProjectDir, $ExtDir)) { if (-not (Test-Path $d -PathType Container)) { throw "Pasta nao encontrada: $d" } }

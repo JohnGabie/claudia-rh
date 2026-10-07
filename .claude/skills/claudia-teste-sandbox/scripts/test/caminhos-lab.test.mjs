@@ -77,6 +77,10 @@ test("podeLimparDeploy keeps its old contract", () => {
   assert.match(podeLimparDeploy({ existe: true, temMarcador: false, ehLink: false }), /marker/);
 });
 
+test("MARCADOR_GUEST keeps the literal that travas.ps1 pins ($script:LabGuestMarker)", () => {
+  assert.equal(MARCADOR_GUEST, "C:\\labsandbox\\bootstrap.ps1");
+});
+
 test("estaNoSandbox needs BOTH the Sandbox identity and the guest-only folder", () => {
   const WD = "WDAGUtilityAccount";
   assert.equal(estaNoSandbox({ identidade: WD, temBootstrap: true }), true);

@@ -106,6 +106,13 @@ test("achaCaminhoPessoal: Git Bash, WSL and escaped forms keep the same exceptio
   naoAcha("see /c/Userspace/x");
 });
 
+test("achaCaminhoPessoal: paths wrapped in Markdown backticks are flagged", () => {
+  acha("`" + "/" + ["c", "Users", "fulano", "x"].join("/") + "`");
+  acha("`" + "/" + ["Users", "fulano", "x"].join("/") + "`");
+  acha("`" + ["C:", "Users", "fulano", "x"].join(B) + "`");
+  naoAcha("`" + "/" + ["c", "Users", "WDAGUtilityAccount"].join("/") + "`");
+});
+
 test("textoParaConferir: sandbox-lab, skills, docs and CLAUDE.md only", () => {
   for (const a of ["sandbox-lab/README.md", ".claude/skills/x/SKILL.md", "docs/a.md", "docs/superpowers/plans/p.md", "CLAUDE.md", "Docs/B.md"]) {
     assert.equal(textoParaConferir(a), true, a);

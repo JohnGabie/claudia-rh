@@ -105,6 +105,22 @@ Check 'project: empty, relative project and unknown user folder are refused' {
   foreach ($p in @('', 'proj', 'Z:\a\..\b')) { if (-not (Get-LabProjectRefusal -Project $p -UserProfile 'Z:\Perfis\fulano')) { throw "must refuse '$p'" } }
   Should-Match (Get-LabProjectRefusal -Project $R -UserProfile '') 'user'
 }
+Check 'source: a link anywhere in the path is refused' {
+  Should-Match (Get-LabSourceRefusal -Source 'Z:\build\app x.exe' -Deploy $D -Links @('Z:\build')) 'link'
+}
+Check 'source: 8.3 short name segments are refused' {
+  foreach ($p in @('Z:\PROGRA~1\app', 'Z:\build\APP~2.exe', 'Z:\a~1')) { Should-Match (Get-LabSourceRefusal -Source $p -Deploy $D) '8\.3' }
+  Should-BeNull (Get-LabSourceRefusal -Source 'Z:\build\app~beta.exe' -Deploy $D)
+}
+Check 'project: a link anywhere in the path is refused' {
+  Should-Match (Get-LabProjectRefusal -Project $R -UserProfile 'Z:\Perfis\fulano' -Links @('Z:\proj x')) 'link'
+}
+Check 'project: 8.3 short name segments are refused' {
+  Should-Match (Get-LabProjectRefusal -Project 'Z:\JOAOGA~1\proj' -UserProfile 'Z:\Perfis\fulano') '8\.3'
+}
+Check 'guest marker literal is pinned (the Node side pins the same literal)' {
+  if ($script:LabGuestMarker -cne 'C:\labsandbox\bootstrap.ps1') { throw "marker changed: '$script:LabGuestMarker'" }
+}
 Check 'down: only exit code 0 lets Clear-LabOut run' {
   Should-BeNull (Get-LabDownRefusal -ExitCode 0)
   foreach ($c in @(1, 2, -1, $null, '')) { if (-not (Get-LabDownRefusal -ExitCode $c)) { throw "must refuse for '$c'" } }

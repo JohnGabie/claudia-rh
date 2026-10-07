@@ -2,6 +2,12 @@
 # Dot-source this file. A guard returns $null when the action is allowed, otherwise the reason.
 
 $script:LabDeployMarker = '.lab-deploy'
+# File that exists only inside the guest (sandbox\ is mapped to C:\labsandbox there). The Node side keeps the same literal
+# (MARCADOR_GUEST in caminhos-lab.mjs); each side has a pure test pinning the literal, so a change in one fails the tests.
+# Why the two guards differ: this PowerShell guard reads the full DOMAIN\user from WindowsIdentity and requires
+# '\WDAGUtilityAccount'. The Node guard gets the identity from os.userInfo(), which may come without a domain, so it also
+# accepts the bare user name; both still need this marker file as the second factor.
+$script:LabGuestMarker = 'C:\labsandbox\bootstrap.ps1'
 
 function ConvertTo-LabPathKey([string]$Path) {
   # Windows paths compare case-insensitively. No separator rewriting: '/' never matches the exact expected path.
@@ -56,14 +62,23 @@ function Test-LabScanEntryOk {
   return $Found -or $IsRoot
 }
 
+function Test-LabShortNameSegment([string]$Path) {
+  # 8.3 short names (PROGRA~1, JOAOGA~1) hide the real folder from a text comparison.
+  return [bool]($Path -match '(^|\\)[^\\]*~\d[^\\]*(\\|$)')
+}
+
 function Get-LabSourceRefusal {
   # Source of a copy into the deploy (-App, -AppData, -LocalAppData): full path, below a drive root, and unrelated to
   # the deploy (not the deploy, not inside it, not a parent of it: robocopy /MIR would copy the deploy into itself).
-  param([string]$Source, [string]$Deploy)
+  # Callers pass the REAL path (disco.ps1: Resolve-LabRealPath) and the reparse points found in it (Get-LabLinksAboveRoot).
+  param([string]$Source, [string]$Deploy, [string[]]$Links = @())
   if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($Deploy)) { return 'source and deploy are required' }
   $s = $Source.TrimEnd('\')
   $why = Get-LabRootProblem $s
   if ($why) { return "source $why" }
+  if (Test-LabShortNameSegment $s) { return 'source has an 8.3 short name segment (use the long path)' }
+  $l = @($Links | Where-Object { $_ })
+  if ($l.Count) { return "link (symlink/junction/subst) in or under the path: $($l[0])" }
   if ([string]::IsNullOrWhiteSpace($s.Substring($s.LastIndexOf('\') + 1))) { return 'source has an empty final name' }
   $sk = ConvertTo-LabPathKey $s
   $dk = ConvertTo-LabPathKey $Deploy
@@ -74,11 +89,15 @@ function Get-LabSourceRefusal {
 
 function Get-LabProjectRefusal {
   # Project folder mapped read-only into the guest: never a drive root, the user folder, or a folder holding it.
-  param([string]$Project, [string]$UserProfile)
+  # Callers pass the REAL path and the reparse points found in it, same as Get-LabSourceRefusal.
+  param([string]$Project, [string]$UserProfile, [string[]]$Links = @())
   if ([string]::IsNullOrWhiteSpace($Project)) { return 'project is required' }
   $p = $Project.TrimEnd('\')
   $why = Get-LabRootProblem $p
   if ($why) { return "project $why" }
+  if (Test-LabShortNameSegment $p) { return 'project has an 8.3 short name segment (use the long path)' }
+  $l = @($Links | Where-Object { $_ })
+  if ($l.Count) { return "link (symlink/junction/subst) in or under the path: $($l[0])" }
   if ([string]::IsNullOrWhiteSpace($UserProfile)) { return 'user folder is unknown' }
   $pk = ConvertTo-LabPathKey $p
   $uk = ConvertTo-LabPathKey $UserProfile

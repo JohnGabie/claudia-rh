@@ -24,10 +24,10 @@ function New-FakeRepo([string]$Name) {
 }
 $App = Join-Path $Base 'app x.exe'
 [IO.File]::WriteAllText($App, 'x')
-function Invoke-Stage([string]$Repo, [string[]]$Extra = @()) {
+function Invoke-Stage([string]$Repo, [string[]]$Extra = @(), [string]$AppPath = $App) {
   $ErrorActionPreference = 'Continue'   # native stderr must not throw here
   $stage = Join-Path $Repo 'sandbox-lab\scripts\app-stage.ps1'
-  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App $App @Extra 2>&1
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App $AppPath @Extra 2>&1
   return $LASTEXITCODE
 }
 function Should-Refuse([scriptblock]$Body) { $threw = $false; try { & $Body } catch { $threw = $true }; if (-not $threw) { throw 'expected a refusal' } }
@@ -126,6 +126,21 @@ Check 'Get-LabReparsePoints: an absent root is fine and a plain tree has no link
   if (@(Get-LabReparsePoints (Join-Path $Base 'nao-existe')).Count) { throw 'absent root should give no links' }
   $plain = Join-Path $Base 'plain-n'; $null = New-Sentinel (Join-Path $plain 'a\b')
   if (@(Get-LabReparsePoints $plain).Count) { throw 'plain tree should have no links' }
+}
+Check 'a source reached through a junction ancestor is refused, nothing is published' {
+  $r = New-FakeRepo 'k'
+  $realDir = Join-Path $Base 'real-k'; New-Item -ItemType Directory -Path $realDir | Out-Null
+  [IO.File]::WriteAllText((Join-Path $realDir 'app k.exe'), 'x')
+  New-Item -ItemType Junction -Path (Join-Path $Base 'link-k') -Target $realDir | Out-Null
+  if ((Invoke-Stage $r @('-Clean') (Join-Path $Base 'link-k\app k.exe')) -eq 0) { throw 'expected refusal' }
+  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app\app k.exe')) { throw 'app was published through the link' }
+}
+Check 'Resolve-LabRealPath and Get-LabLinksAboveRoot see a junction ancestor' {
+  $realDir = Join-Path $Base 'real-l'; New-Item -ItemType Directory -Path $realDir | Out-Null
+  $link = Join-Path $Base 'link-l'; New-Item -ItemType Junction -Path $link -Target $realDir | Out-Null
+  if ((Resolve-LabRealPath $realDir) -ne $realDir) { throw 'real path changed' }
+  if (@(Get-LabLinksAboveRoot (Join-Path $link 'x')).Count -ne 1) { throw 'junction not found above a missing child' }
+  if (@(Get-LabLinksAboveRoot $realDir).Count -ne 0) { throw 'false positive on a real folder' }
 }
 Check 'Test-LabInSandbox is true here (identity + guest bootstrap)' {
   if (-not (Test-LabInSandbox)) { throw 'expected true inside the guest' }

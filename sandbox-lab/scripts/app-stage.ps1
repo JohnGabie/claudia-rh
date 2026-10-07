@@ -41,26 +41,32 @@ $links = @(Get-LabLinksInPath $Deploy $RepoRoot) + @(Get-LabReparsePoints $Deplo
 $refusal = Get-LabCleanRefusal -Deploy $Deploy -RepoRoot $RepoRoot -Exists $exists `
   -HasMarker ($exists -and (Test-Path -LiteralPath (Join-Path $Deploy $script:LabDeployMarker))) -Links $links
 if ($refusal) { throw "Refusing to touch ${Deploy}: $refusal" }
-# Every source is checked before anything is deleted or copied.
-foreach ($src in (@($App) + @($AppData) + @($LocalAppData))) {
-  if (-not $src) { continue }
-  $srcRefusal = Get-LabSourceRefusal -Source ([IO.Path]::GetFullPath($src)) -Deploy $Deploy
+# Every source is normalized ONCE (explicit base = repo root, never the CWD) and resolved to its real path; that same
+# value is what the guard checks and what Test-Path / Copy-Tree / Copy-Item use below. Links anywhere in the path refuse.
+function Resolve-Source([string]$src) {
+  $full = Resolve-LabRealPath (ConvertTo-LabFullPath $src $RepoRoot)
+  $srcRefusal = Get-LabSourceRefusal -Source $full -Deploy $Deploy -Links (Get-LabLinksAboveRoot $full)
   if ($srcRefusal) { throw "Refusing source ${src}: $srcRefusal" }
+  return $full
 }
+# Every source is checked before anything is deleted or copied.
+$App = Resolve-Source $App
+$AppData = @(@($AppData) | Where-Object { $_ } | ForEach-Object { Resolve-Source $_ })
+$LocalAppData = @(@($LocalAppData) | Where-Object { $_ } | ForEach-Object { Resolve-Source $_ })
 if ($Clean -and $exists) { Remove-Item -LiteralPath $Deploy -Recurse -Force }
 New-Item -ItemType Directory -Force "$Deploy\app", "$Deploy\appdata", "$Deploy\localappdata", (Join-Path $WorkDir 'guest-rw') | Out-Null
 [IO.File]::WriteAllText((Join-Path $Deploy $script:LabDeployMarker), '')
 
-if (Test-Path $App -PathType Container) {
+if (Test-Path -LiteralPath $App -PathType Container) {
   Copy-Tree $App "$Deploy\app"
-} elseif (Test-Path $App -PathType Leaf) {
-  Copy-Item $App "$Deploy\app\" -Force
+} elseif (Test-Path -LiteralPath $App -PathType Leaf) {
+  Copy-Item -LiteralPath $App "$Deploy\app\" -Force
 } else { throw "App nao encontrado: $App" }
 
 foreach ($pair in @(@($AppData, 'appdata'), @($LocalAppData, 'localappdata'))) {
   foreach ($src in @($pair[0])) {
     if (-not $src) { continue }
-    if (-not (Test-Path $src -PathType Container)) { throw "Pasta nao encontrada: $src" }
+    if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw "Pasta nao encontrada: $src" }
     Copy-Tree $src (Join-Path "$Deploy\$($pair[1])" (Split-Path $src -Leaf))
   }
 }
