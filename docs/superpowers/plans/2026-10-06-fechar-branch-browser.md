@@ -164,6 +164,16 @@ As caixas `- [ ]` dos planos nunca foram marcadas: o estado real vem dos ledgers
 
 ---
 
+### Respostas do usuário às decisões (2026-10-07)
+
+| # | Decisão |
+|---|---|
+| D1 | A auditoria achou `BLOQUEIA`; as correções (Tarefa 0b) foram decididas item a item e **integradas** em `04de093` (frentes a, b, c; duas revisões Opus). |
+| D2 | **CLA-36 e CLA-38 impedem o merge: corrigir com agentes e um agente revisor.** Os testes live criam e apagam a pasta do perfil temporário, então rodam **só no Sandbox**: a correção depende do laboratório dentro do repo. |
+| D3 | **Sim, uma rodada** de upload em `the-internet.herokuapp.com/upload`, sem enviar candidatura nenhuma. |
+| D4 | **Sim, antes do merge:** candidatura real no LinkedIn, com o usuário presente para o login e dizendo "pode enviar" na hora. Usa o Chrome do Claudia-RH, nunca o pessoal. |
+| D5 | **Corte confirmado:** fica só a caixa padrão do instalador. Código de limpeza só com spec própria e teste no Sandbox. |
+
 ### Task 0: Auditoria de deleção (só leitura, Opus)
 
 **Files:**
