@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { HOST, alvos, ligar, sleep } from "./cdp.mjs";
-import { rotuloPerigoso, destinoPrintValido } from "./regras.mjs";
+import { rotuloPerigoso, destinoPrintValido, pastaPrintsSegura } from "./regras.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
 
@@ -38,8 +38,17 @@ if (cmd === "arvore") {
   const alvoPrint = arg ?? `debug-logs/prints/tela-${Date.now()}.png`;
   const v = destinoPrintValido(alvoPrint, RAIZ, (d) => fs.existsSync(d));
   if (!v.ok) { console.error(`recusado: ${v.motivo}`); sair(2); await new Promise(() => {}); }
+  // M4: debug-logs and debug-logs/prints must be real directories (no symlink/junction) inside the real repo root.
+  const dLogs = path.join(RAIZ, "debug-logs");
+  const ehLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+  if (ehLink(dLogs)) { console.error("recusado: debug-logs é link/junction"); sair(2); await new Promise(() => {}); }
+  const pastaPrints = path.dirname(v.destino);
+  fs.mkdirSync(pastaPrints, { recursive: true });
+  const seg = pastaPrintsSegura({
+    raizReal: fs.realpathSync(RAIZ), pastaReal: fs.realpathSync(pastaPrints), ehLink: ehLink(pastaPrints) || ehLink(dLogs),
+  });
+  if (!seg.ok) { console.error(`recusado: ${seg.motivo}`); sair(2); await new Promise(() => {}); }
   const dados = (await cdp("Page.captureScreenshot", { format: "png" })).result.data;
-  fs.mkdirSync(path.dirname(v.destino), { recursive: true });
   fs.writeFileSync(v.destino, Buffer.from(dados, "base64"), { flag: "wx" });
   console.log(path.relative(RAIZ, v.destino));
 } else if (cmd === "clicar") {

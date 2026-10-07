@@ -81,11 +81,28 @@ export function ambienteSubida(base, porta) {
   };
 }
 
-const LISTA_NEGRA = /^(apagar_|excluir_|remover_|limpar_|desinstalar|instalar_|iniciar_|disparar_|enviar_|guardar_|configurar_|escrever_|resolver_|marcar_|renomear_|importar_|exportar_)/;
+const LISTA_NEGRA = /^(apagar_|excluir_|remover_|limpar_|desinstalar|instalar_|iniciar_|disparar_|enviar_|guardar_|configurar_|escrever_|resolver_|marcar_|renomear_|importar_|exportar_|abrir_|gerar_|sugerir_)|^(browser_abrir|browser_retry)$/;
 
-/** B5: decides whether invocar.mjs may call a command. flags = { escrever, confirmo }. */
-export function classificarInvocacao(comando, flags = {}) {
+/** All string values inside a JSON-ish argument, at any depth. */
+function textos(v, acc = []) {
+  if (typeof v === "string") acc.push(v);
+  else if (Array.isArray(v)) v.forEach((x) => textos(x, acc));
+  else if (v && typeof v === "object") Object.values(v).forEach((x) => textos(x, acc));
+  return acc;
+}
+
+/** A URL/UNC/scheme handed to abrir_* would open the user's default (personal) browser or a network share. */
+function naoEhCaminhoLocal(s) {
+  const t = s.trim();
+  return /^(\\\\|\/\/)/.test(t) || /:\/\//.test(t) || /^[a-z][a-z0-9+.-]+:/i.test(t);
+}
+
+/** B5: decides whether invocar.mjs may call a command. flags = { escrever, confirmo }; args = parsed JSON argument. */
+export function classificarInvocacao(comando, flags = {}, args = undefined) {
   const c = String(comando ?? "");
+  if (c.startsWith("abrir_") &&textos(args).some(naoEhCaminhoLocal)) {
+    return { ok: false, motivo: `"${c}" só aceita caminho de pasta local; URL, UNC ou esquema é sempre recusado` };
+  }
   if (c === "obter_credencial") return { ok: false, motivo: "obter_credencial devolve a senha em texto puro: sempre recusado" };
   // plugin:* (e.g. plugin:opener|open_url opens the user's default, personal browser): never, even confirmed.
   if (/^plugin:/i.test(c)) return { ok: false, motivo: "comandos plugin:* são sempre recusados (ex.: plugin:opener|open_url abriria o navegador pessoal do usuário)" };
@@ -112,4 +129,22 @@ export function destinoPrintValido(arq, raizRepo, existe) {
   if (!destino.startsWith(pasta + path.sep)) return { ok: false, motivo: "só dentro de debug-logs/prints/" };
   if (existe(destino)) return { ok: false, motivo: "o arquivo já existe; não sobrescrevo" };
   return { ok: true, motivo: "ok", destino };
+}
+
+/** Reuse an already-running dev app only if this skill started it (state file) and that process is still alive. */
+export function decidirReutilizacao({ estado, portaApp, pidVivo }) {
+  const gravado = estado && typeof estado === "object" && Number.isInteger(estado.pid) && estado.porta === portaApp;
+  if (gravado && pidVivo) return { acao: "reutilizar", motivo: "app de dev iniciado por subir.mjs, ainda vivo" };
+  return { acao: "perguntar", motivo: "app de dev já aberto sem garantia de automação desligada" };
+}
+
+/** M4: the prints folder must be a real directory (not a link) whose real path is inside the real repo root. */
+export function pastaPrintsSegura({ raizReal, pastaReal, ehLink }) {
+  if (!raizReal || !pastaReal) return { ok: false, motivo: "caminho real indisponível" };
+  if (ehLink) return { ok: false, motivo: "debug-logs/prints é link/junction; recusado" };
+  const base = raizReal.replace(/[\\/]+$/, "");
+  if (!pastaReal.startsWith(base + "/") && !pastaReal.startsWith(base + "\\")) {
+    return { ok: false, motivo: "o caminho real de debug-logs/prints está fora da raiz do repositório" };
+  }
+  return { ok: true, motivo: "ok" };
 }

@@ -3,11 +3,12 @@
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { validarVersaoApp, decidirSubida, hostRemoto, decidirComAppInstalado, ambienteSubida } from "./regras.mjs";
+import { validarVersaoApp, decidirSubida, hostRemoto, decidirComAppInstalado, ambienteSubida, decidirReutilizacao } from "./regras.mjs";
 import { HOST } from "./cdp.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
 const CANDIDATAS = [9333, 9334, 9335, 9336];
+const ARQ_ESTADO = path.join(RAIZ, "debug-logs", "subir-estado.json");
 
 async function ler(url) {
   try { return await (await fetch(url, { signal: AbortSignal.timeout(2000) })).json(); }
@@ -60,7 +61,17 @@ if (instalado.acao === "perguntar") {
 
 const decisao = decidirSubida({ appRodando, appTemCdp: portaApp !== null });
 
-if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", porta: portaApp })); process.exit(0); }
+if (decisao === "reutilizar") {
+  // Only reuse a dev app this script started (so CLAUDIA_SEM_AUTOMACAO=1 is guaranteed) and that is still alive.
+  let estado = null;
+  try { estado = JSON.parse(fs.readFileSync(ARQ_ESTADO, "utf8")); } catch { /* no state: not ours */ }
+  let pidVivo = false;
+  if (estado && Number.isInteger(estado.pid)) { try { process.kill(estado.pid, 0); pidVivo = true; } catch { pidVivo = false; } }
+  const r = decidirReutilizacao({ estado, portaApp, pidVivo });
+  if (r.acao === "perguntar") { console.log(JSON.stringify({ acao: "perguntar", motivo: r.motivo })); process.exit(2); }
+  console.log(JSON.stringify({ acao: "reutilizar", porta: portaApp, automacao: "desligada nesta execução" }));
+  process.exit(0);
+}
 if (decisao === "perguntar") {
   console.log(JSON.stringify({ acao: "perguntar", motivo: "o app já roda sem CDP; reiniciar fecha a sessão do usuário" }));
   process.exit(2);
@@ -78,6 +89,11 @@ const filho = spawn("npm", ["run", "tauri", "dev"], {
   env: ambienteSubida(process.env, porta),
 });
 filho.unref();
+// State file (debug-logs/ is ignored by git and is not user data): lets a later run prove this app was started here.
+try {
+  fs.mkdirSync(path.dirname(ARQ_ESTADO), { recursive: true });
+  fs.writeFileSync(ARQ_ESTADO, JSON.stringify({ pid: filho.pid, porta }));
+} catch { /* without the file a later run will ask instead of reusing */ }
 
 for (let i = 0; i < 60; i++) {
   await new Promise((r) => setTimeout(r, 3000));
