@@ -1,4 +1,4 @@
 # sample-project
 
 Projeto placeholder montado no Sandbox em `C:\labproject` (somente leitura).
-Troque `projectPath` em `lab.config.json` pelo caminho do seu app Windows real.
+Para testar seu app real, use `scripts\test-up.ps1 -Ambiente <nome> -Project <caminho>` com o caminho do seu aplicativo.

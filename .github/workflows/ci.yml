@@ -63,10 +63,16 @@ jobs:
           .claude/skills/claudia-teste-sandbox/scripts/test/manifesto.test.mjs
           .claude/skills/claudia-teste-sandbox/scripts/test/caminhos-lab.test.mjs
           .claude/skills/claudia-teste-sandbox/scripts/test/testes-no-guest.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs
 
       - name: pure guard tests (PowerShell)
         shell: pwsh
-        run: ./sandbox-lab/scripts/test/travas.test.ps1
+        run: |
+          ./sandbox-lab/scripts/test/travas.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./sandbox-lab/scripts/test/compose.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./sandbox-lab/scripts/test/cache-up.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./sandbox-lab/scripts/test/guest-z.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./sandbox-lab/scripts/test/guest-install.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
   cargo-test:
     name: cargo test

@@ -7,23 +7,26 @@ controlado por IA (winapp CLI + Windows-MCP). Nada toca o sistema/banco reais.
 
 ```
 win-sandbox-lab/
-├─ lab.config.json        ← perfil padrão: projeto, extensões, backup do banco, porta MCP
-├─ lab.config.app*.json   ← perfis para um app desktop real (rodar, rodar com winapp, build no guest)
+├─ compose.json           ← ambientes nomeados (exemplo, app, app-winapp, cache-msvc, testes) com suas dependências e montagens
 ├─ OBJECTIVES.md          ← este arquivo
 ├─ scripts/
-│  ├─ test-up.ps1         ← lê lab.config.json → gera sandbox/sandbox.generated.wsb → sobe o Sandbox
-│  ├─ test-down.ps1       ← derruba o Sandbox
-│  ├─ app-stage.ps1       ← publica exe + dados de teste para os perfis lab.config.app*.json
+│  ├─ test-up.ps1         ← lê compose.json → gera sandbox/sandbox.generated.wsb → sobe o Sandbox
+│  ├─ test-down.ps1       ← derruba o Sandbox e apaga a cópia da credencial do Claude
+│  ├─ cache-up.ps1        ← baixa instaladores para shared/cache (só cria, nunca apaga)
+│  ├─ app-stage.ps1       ← publica exe para os ambientes app e app-winapp
 │  ├─ mcp-sync.ps1        ← atualiza o IP do guest no .mcp.json
-│  └─ validate-config.ps1 ← valida arquivos de config sem subir o Sandbox (estático)
+│  └─ validate-config.ps1 ← valida compose.json sem subir o Sandbox (estático)
 ├─ sandbox/
 │  ├─ sandbox.template.wsb
 │  ├─ bootstrap.ps1       ← roda no LogonCommand dentro do Sandbox
 │  ├─ bootstrap-mcp.ps1   ← sobe o Windows-MCP no guest
-│  └─ app/                ← scripts do guest para os perfis lab.config.app*.json
+│  ├─ instalar.ps1        ← instala MSVC, Rust, Node, Claude Code no guest (ambiente testes)
+│  ├─ layout-msvc.ps1     ← monta o layout offline do MSVC (ambiente cache-msvc)
+│  └─ app/                ← scripts do guest para os ambientes
 ├─ shared/                ← mapeado no Sandbox em C:\lab (somente leitura, exceto out/)
 │  ├─ extensions/lab-ext/ ← extensão MV3 de exemplo (marcador visível na página)
 │  ├─ db/backup.sqlite    ← backup SQLite de exemplo (hash conhecido)
+│  ├─ cache/              ← instaladores baixados uma vez (Rust, Node, Claude Code, MSVC bootstrapper)
 │  ├─ tools/              ← Chrome for Testing portátil, Python/uv + windows-mcp pré-baixados
 │  └─ out/                ← ÚNICA pasta gravável: logs, status.json, evidências do guest
 ├─ .mcp.json              ← Claude Code → Windows-MCP (HTTP) dentro do Sandbox
@@ -32,8 +35,7 @@ win-sandbox-lab/
 ```
 
 Dentro do Sandbox: `C:\lab` = `shared\` (read-only), `C:\lab\out` = `shared\out` (gravável),
-`C:\labproject` = projeto do `lab.config.json` (read-only). Banco de trabalho: `C:\labdata\app.sqlite`
-(cópia do backup — o original nunca é aberto para escrita).
+`C:\labproject` = projeto montado (read-only). Disco Z do guest: `Z:\claudia-teste-sandbox\<cenario>` para dados de teste, `Z:\tmp` para temporário.
 
 ## Objetivos
 

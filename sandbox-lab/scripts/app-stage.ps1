@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Publica so o app em <raiz do repo>\.sandbox-work\deploy (mapeado read-only no guest em C:\appdeploy):
+  Publica so o app em <raiz do repo>\.sandbox-work\deploy (mapeado read-only no guest em C:\appdeploy) para ambientes app e app-winapp do compose.json:
     app\           <- exe (ou pasta inteira do build)
   App data never goes through here (D1): it is created in the guest and installed by guest-run.ps1.
   Copia apenas; nunca grava nas origens.

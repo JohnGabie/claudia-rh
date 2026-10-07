@@ -6,10 +6,10 @@ Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout pri
 
 ## 1. winapp não alcança o guest com `networking: Disable`
 
-- **Comportamento:** no perfil `lab.config.app.json` (sem rede), `winapp ... --on sandbox` não chega ao guest. Controle e prints só por `wsb exec` + `C:\labsandbox\app\guest-observe.ps1` / `guest-click.ps1`.
-- **Demonstra:** `scripts\test-up.ps1 -Config lab.config.app.json` e depois `winapp ui list-windows --on sandbox`.
-- **Fonte:** `$comment` de `lab.config.app.json` e tabela de perfis em `references/laboratorio.md`.
-- **Situação:** verificado (2026-10-05). Com `lab.config.app.json` de pé, `winapp ui list-windows --on sandbox` saiu com 70 em ~7 s ("A Windows Sandbox is already running but did not respond") e não criou um segundo Sandbox.
+- **Comportamento:** no ambiente `app` (sem rede), `winapp ... --on sandbox` não chega ao guest. Controle e prints só por `wsb exec` + `C:\labsandbox\app\guest-observe.ps1` / `guest-click.ps1`.
+- **Demonstra:** `scripts\test-up.ps1 -Ambiente app -Project <projeto>` e depois `winapp ui list-windows --on sandbox`.
+- **Fonte:** `$comment` de `app` no `compose.json` e tabela de ambientes em `references/laboratorio.md`.
+- **Situação:** verificado (2026-10-05). Com `app` de pé, `winapp ui list-windows --on sandbox` saiu com 70 em ~7 s ("A Windows Sandbox is already running but did not respond") e não criou um segundo Sandbox.
 
 ## 2. App iniciado por `winapp target exec` termina quando o comando termina
 
@@ -27,8 +27,8 @@ Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout pri
 
 ## 4. Target do cargo em pasta mapeada falha com `os error 1392`
 
-- **Comportamento:** build dentro do guest (`lab.config.app-build.json`) com o target do cargo numa pasta mapeada quebra os build scripts. Use o disco do guest (`C:\labdata\cargo-target`, padrão do `guest-build.ps1`).
-- **Demonstra:** `winapp target exec sandbox -- powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-build.ps1` com `CARGO_TARGET_DIR` apontando para `C:\labwork\target`; o log em `C:\labwork\build\guest-build.log` mostra `os error 1392`.
+- **Comportamento:** build dentro do guest (ambiente `testes`) com o target do cargo numa pasta mapeada quebra os build scripts. Use o disco do guest (`C:\labdata\cargo-target`, padrão).
+- **Demonstra:** `scripts\test-up.ps1 -Ambiente testes -Project <projeto>` e depois `wsb exec --id <id> -r ExistingLogin -c "cd <projeto> && CARGO_TARGET_DIR=C:\labwork\target cargo test --lib"` (quando o target fica fora do disco do guest); o log em `C:\labwork\` mostra `os error 1392`.
 - **Fonte:** cabeçalho de `sandbox\app\guest-build.ps1`.
 - **Situação:** não verificado.
 
