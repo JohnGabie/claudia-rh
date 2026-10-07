@@ -84,3 +84,50 @@ function Test-LabTools([string]$LabDir) {
   }
   return ,(Get-LabMissingTools -ManifestText (Get-Content -LiteralPath $manifest -Raw) -FoundSizes $found)
 }
+
+function Remove-LabCredentialFile {
+  # Deletes ONE file, only after Get-LabCredentialCleanRefusal says yes. Never -Recurse.
+  param([string]$File, [string]$RepoRoot)
+  $p = Get-LabCredentialPaths $RepoRoot
+  $links = @(Get-LabLinksInPath $p.Dir $RepoRoot)
+  $item = Get-Item -LiteralPath $File -Force -ErrorAction SilentlyContinue
+  if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $links += $File }
+  if ($item -and $item.PSIsContainer) { throw "[credential] refusing to delete a folder: $File" }
+  $refusal = Get-LabCredentialCleanRefusal -File $File -RepoRoot $RepoRoot -Links $links
+  if ($refusal) { throw "[credential] refusing to delete ${File}: $refusal" }
+  if ($item) { Remove-Item -LiteralPath $File -Force }
+}
+
+function Remove-LabCredential {
+  # test-down / failed test-up: the copy and any .tmp left by an interrupted copy. Nothing else in the folder.
+  param([string]$RepoRoot)
+  $p = Get-LabCredentialPaths $RepoRoot
+  if (-not (Test-Path -LiteralPath $p.Dir -PathType Container)) { return }
+  Remove-LabCredentialFile -File $p.File -RepoRoot $RepoRoot
+  foreach ($f in @(Get-ChildItem -LiteralPath $p.Dir -Force -File -Filter '.credentials.json.*.tmp')) {
+    Remove-LabCredentialFile -File $f.FullName -RepoRoot $RepoRoot
+  }
+}
+
+function Copy-LabCredential {
+  # Copies the login of the account signed in on this PC (spec A4) into .sandbox-work\credencial. The bytes are never
+  # read into a variable, printed or logged; errors never carry the user folder.
+  param([string]$RepoRoot, [string]$UserProfile, [string]$ConfigDir)
+  $src = Join-Path $UserProfile '.claude\.credentials.json'
+  $refusal = Get-LabCredentialSourceRefusal -Source $src -UserProfile $UserProfile -ConfigDir $ConfigDir -Links (Get-LabLinksAboveRoot $src)
+  if ($refusal) { throw "[credential] refused: $refusal" }
+  if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw '[credential] no account is signed in on this PC (%USERPROFILE%\.claude\.credentials.json is missing): run claude and /login, then test-up again' }
+  $p = Get-LabCredentialPaths $RepoRoot
+  New-Item -ItemType Directory -Force -Path $p.Dir | Out-Null
+  $links = @(Get-LabLinksInPath $p.Dir $RepoRoot)
+  if ($links.Count) { throw "[credential] refused: link (symlink/junction) in $($links[0])" }
+  $tmp = "$($p.Dir)\.credentials.json.$([guid]::NewGuid().ToString('N')).tmp"
+  try {
+    try {
+      [IO.File]::Copy($src, $tmp)
+      if (Test-Path -LiteralPath $p.File) { [IO.File]::Replace($tmp, $p.File, $null) } else { [IO.File]::Move($tmp, $p.File) }
+    } catch { throw '[credential] copy failed (the login file could not be read or written)' }
+  } finally {
+    if (Test-Path -LiteralPath $tmp) { Remove-LabCredentialFile -File $tmp -RepoRoot $RepoRoot }
+  }
+}
