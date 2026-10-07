@@ -23,3 +23,24 @@ envoyer ma candidature
 =senden
 send now
 confirm and submit
+revisar e enviar
+!avancar
+!proximo
+!continuar
+!seguinte
+!revisar
+!voltar
+!anterior
+!next
+!continue
+!review
+!back
+!previous
+!naeste
+!videre
+!fortsaet
+!tilbage
+!weiter
+!zuruck
+!suivant
+!retour
