@@ -1,6 +1,5 @@
-# guest-build.ps1 - roda DENTRO do Sandbox (PowerShell 5.1). Perfil: lab.config.app-build.json.
-# Build do projeto dentro do guest, usando toolchains do host montados read-only (os que existirem):
-#   C:\hosttools\nodejs  C:\hosttools\rust (toolchain msvc)  C:\hosttools\msvc (<versao>\...)  C:\hosttools\winkits
+# guest-build.ps1 - runs INSIDE the Sandbox (PowerShell 5.1). Environment "testes" of compose.json.
+# Builds the project inside the guest with what instalar.ps1 installed (C:\lab\out\instalar.json): MSVC, Rust, Node.
 # Fonte: C:\labproject (RO, projectPath do perfil) -> copiada para C:\labdata\project.
 # Saida: C:\labwork\build\ (pasta gravavel mapeada pelo perfil): guest-build.log, result.json.
 # O target do cargo fica no disco do guest (C:\labdata\cargo-target): em pasta mapeada os build scripts falham (os error 1392).
@@ -12,6 +11,7 @@ param(
   [string]$Artifacts = 'C:\labdata\cargo-target\release\*.exe'
 )
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
 $Out = 'C:\labwork\build'
 New-Item -ItemType Directory -Force $Out | Out-Null
 $Log = Join-Path $Out 'guest-build.log'
@@ -32,28 +32,28 @@ function Step([string]$name, [string]$cmd) {
   return ($ec -eq 0)
 }
 
-# --- ambiente: toolchains do host (sem instalar nada no guest) ---
-$paths = @()
-if (Test-Path 'C:\hosttools\nodejs') { $paths += 'C:\hosttools\nodejs' }
-if (Test-Path 'C:\hosttools\rust\bin') { $paths += 'C:\hosttools\rust\bin' }
-$msvcVer = Get-ChildItem 'C:\hosttools\msvc' -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
-$Kits = 'C:\hosttools\winkits'
-$sdk = (Get-ChildItem "$Kits\Include" -Directory -ErrorAction SilentlyContinue | Where-Object Name -like '10.*' | Sort-Object Name | Select-Object -Last 1).Name
-if ($msvcVer -and $sdk) {
-  $Msvc = $msvcVer.FullName
-  $paths += "$Msvc\bin\Hostx64\x64", "$Kits\bin\$sdk\x64"
-  $env:INCLUDE = "$Msvc\include;$Kits\Include\$sdk\ucrt;$Kits\Include\$sdk\um;$Kits\Include\$sdk\shared;$Kits\Include\$sdk\winrt;$Kits\Include\$sdk\cppwinrt"
-  $env:LIB = "$Msvc\lib\x64;$Kits\Lib\$sdk\ucrt\x64;$Kits\Lib\$sdk\um\x64"
-  $env:VCINSTALLDIR = 'C:\hosttools\'   # cc-rs/rustc: usa o ambiente (PATH/INCLUDE/LIB) em vez de procurar o VS no registro
-  $env:VSCMD_ARG_TGT_ARCH = 'x64'
-  $env:WindowsSdkDir = "$Kits\"; $env:WindowsSDKVersion = "$sdk\"
+# --- environment: what instalar.ps1 installed in this guest (C:\lab\out\instalar.json, ambiente 'testes') ---
+$inst = $null
+try { $inst = Get-Content -LiteralPath 'C:\lab\out\instalar.json' -Raw | ConvertFrom-Json } catch { }
+$toolEnv = Get-LabGuestToolEnv $inst
+if (-not $toolEnv) {
+  Log 'instalar.json missing or not ok: start the lab with -Ambiente testes and wait for test-up to finish'
+  # The host waits for a "build" step carrying its nonce: report the failure there instead of letting it time out.
+  $res.steps['build'] = [ordered]@{ cmd = $Build; exit = 1; seconds = 0 }
+  $res.end = (Get-Date).ToString('o'); Save
+  exit 1
 }
-$env:PATH = (($paths + $env:PATH) -join ';')
+if ($toolEnv.vcvars) {
+  # Import the MSVC environment (PATH, INCLUDE, LIB) the way a developer prompt does.
+  foreach ($line in (cmd.exe /d /c "`"$($toolEnv.vcvars)`" >nul 2>&1 && set")) { if ($line -match '^([^=]+)=(.*)$') { Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2] } }
+}
+$env:PATH = ((@($toolEnv.paths) + $env:PATH) -join ';')
+$env:DISABLE_AUTOUPDATER = '1'
 $env:CARGO_HOME = 'C:\labdata\cargo-home'
 $env:CARGO_TARGET_DIR = 'C:\labdata\cargo-target'
 $env:npm_config_cache = 'C:\labdata\npm-cache'
-$res.env = [ordered]@{ msvc = $(if ($msvcVer) { $msvcVer.Name }); sdk = $sdk; cargoTarget = $env:CARGO_TARGET_DIR }
-Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) msvc=$($res.env.msvc) sdk=$sdk"
+$res.env = [ordered]@{ pacotes = @(@($inst.pacotes) | ForEach-Object { "$($_.nome) $($_.versao)" }); cargoTarget = $env:CARGO_TARGET_DIR }
+Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) cl=$(cmd /c where cl.exe 2>&1 | Select-Object -First 1)"
 Save
 
 $Src = 'C:\labdata\project'
