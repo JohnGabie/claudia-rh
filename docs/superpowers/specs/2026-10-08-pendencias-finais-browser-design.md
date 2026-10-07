@@ -398,6 +398,11 @@ Contratos: `BrowserEvent` e `LogSink::browser_event` (§5.3), que F2 entrega e F
 
 ---
 
+### Decisões do usuário sobre o D10 (2026-10-08)
+
+- **CLA-35: ignorar nesta branch.** "Isso é um bug que eu tenho que resolver... mas ambas as vagas já são datadas. Eu gostaria de somente ignorar." A frente F5 não roda; a issue continua aberta no Linear. O usuário resolve as vagas antigas à mão.
+- **CLA-40: aprovado.** Sem nome, recusa (MCP e tela, antes de chamar a IA). Sem e-mail, **salva e avisa**. Título no idioma da carta. Textos pt-BR aprovados: "Equipe de Recrutamento", "Prezada equipe de recrutamento,", "Atenciosamente,".
+
 ## 12. D10 — CLA-35 e CLA-40 (antes do merge)
 
 > **Status desta seção: RASCUNHO, aguardando aprovação do usuário.** Lido em `87ddf08`.
