@@ -23,8 +23,12 @@ Origem: incidente de 2026-10-05. Detalhes, decisões B1 a B7 e tabela R1 a R12: 
 - `node --test` **sempre com a lista de arquivos explícita**. Não rodar `evals/rodar-evals.mjs` até a Tarefa 0b (CLA-56).
 - **Até a Tarefa 0b do plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md` entrar** (o código ainda não foi corrigido):
   - antes de `subir.mjs`, a **automação (disparo por ociosidade e modo autônomo) tem de estar desligada pelo usuário na tela** (B4; depois o app de teste subirá sem automação por variável de dev). Se o app instalado estiver aberto, **pare e pergunte** (R12);
-  - `invocar.mjs --escrever`: **nunca** `apagar_*`, `excluir_*`, `remover_*`, `limpar_*`, `desinstalar*`, `instalar_*`, `iniciar_*`, `disparar_*`, `enviar_*`, e **nunca `obter_credencial`** (devolve senha) (B5);
-  - prints **só em `debug-logs/prints/`, nunca sobrescrevendo** arquivo existente (R9);
+  - o `subir.mjs` já passa `CLAUDIA_SEM_AUTOMACAO=1` ao `tauri dev` e informa `"automacao":"desligada nesta execução"`; **o efeito depende do app suportar CLAUDIA_SEM_AUTOMACAO (Tarefa 0b, frente c)**. Se não conseguir listar os processos, `subir.mjs` devolve `perguntar` ("não consegui verificar se o app instalado está aberto");
+  - `invocar.mjs` (já aplicado no script): o argumento JSON é validado com `JSON.parse`. Comando fora do prefixo de leitura exige `--escrever`. Os prefixos `apagar_`, `excluir_`, `remover_`, `limpar_`, `desinstalar`, `instalar_`, `iniciar_`, `disparar_`, `enviar_`, `guardar_`, `configurar_`, `escrever_`, `resolver_`, `marcar_`, `renomear_`, `importar_`, `exportar_`, `abrir_`, `gerar_`, `sugerir_` e os comandos `browser_abrir`/`browser_retry` exigem também `--escrever --confirmo=<mesmo comando>`, só com autorização do usuário. **Sempre recusados:** `obter_credencial` (devolve senha) e qualquer `plugin:*` (ex.: `plugin:opener|open_url` abre o navegador pessoal) (B5);
+  - `abrir_*` com argumento que seja URL, UNC (`\\`), `mailto:` ou outro esquema é sempre recusado, mesmo confirmado (abriria o navegador pessoal);
+  - `subir.mjs` só reutiliza um app de dev já aberto se ele próprio o iniciou (estado em `debug-logs/subir-estado.json`, PID ainda vivo); senão devolve `perguntar` ("app de dev já aberto sem garantia de automação desligada");
+  - `ver.mjs tela` recusa se `debug-logs` ou `debug-logs/prints` for link/junction ou se o caminho real sair da raiz do repo;
+  - `ver.mjs tela <arq>` (já aplicado): só grava `.png` novo dentro de `debug-logs/prints/` (ex.: `debug-logs/prints/tela.png`), sem `..`, sem caminho absoluto, e recusa arquivo existente; sem argumento gera `tela-<timestamp>.png` ali (R9);
   - botões arriscados ("Iniciar procura", "Desinstalar", "Limpar", "Instalar atualização", "Gerar", "Sair") **só no Sandbox** (R10);
   - fechar o app **pela janela ou pelo PID que o próprio `subir.mjs` gravou**; nunca `taskkill /IM claudia-rh.exe`, `/IM node.exe` nem `Stop-Process -Name`.
 
