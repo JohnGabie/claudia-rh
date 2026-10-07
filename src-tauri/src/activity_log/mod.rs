@@ -39,6 +39,119 @@ pub struct NewEvent {
     pub extra: Option<String>,
 }
 
+/// Longest text kept from an error or a page dialog message. The log is a debug aid, not an archive.
+pub const MAX_EVENT_TEXT: usize = 200;
+
+/// Cuts `s` to at most `max` characters (never in the middle of a character), adding an ellipsis when cut.
+pub fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push('\u{2026}');
+    out
+}
+
+/// What the browser itself did (not the agent): the 11 events of the spec (D7). Written with
+/// `LogSink::browser_event` as `kind = "browser"`, `tool` = [`BrowserEvent::name`].
+/// Nothing here carries typed text or a password. The app process emits the first nine
+/// (`service.rs`); the MCP process emits `TabCrashed` and `Dialog` (page events, wave 2).
+/// Free text (errors, a dialog message) is clipped to [`MAX_EVENT_TEXT`] characters when converted.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BrowserEvent {
+    /// A real download of the browser began (not emitted when it was already installed).
+    DownloadStarted { version: String, total_bytes: Option<u64> },
+    /// The download finished and the browser is installed.
+    Installed { version: String },
+    InstallFailed { version: String, error: String },
+    Launched { version: String, port: u16 },
+    LaunchFailed { error: String },
+    /// The browser stopped answering (two checks in a row failed).
+    Gone,
+    Relaunched { version: String, port: u16 },
+    /// Gone, but no agent session needs it: a window the user closed stays closed.
+    NotRelaunched,
+    /// It closed several times in a row; the watcher stopped relaunching it.
+    GaveUp,
+    /// The agent's tab crashed (CDP `Inspector.targetCrashed`).
+    TabCrashed { url: Option<String> },
+    /// A JavaScript dialog opened (`alert`, `confirm`, `prompt`, `beforeunload`). The default value of a
+    /// `prompt()` is deliberately not part of the event.
+    Dialog { dialog_type: String, message: String, url: Option<String> },
+}
+
+impl BrowserEvent {
+    /// The event name stored in `tool`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::DownloadStarted { .. } => "download_started",
+            Self::Installed { .. } => "installed",
+            Self::InstallFailed { .. } => "install_failed",
+            Self::Launched { .. } => "launched",
+            Self::LaunchFailed { .. } => "launch_failed",
+            Self::Gone => "gone",
+            Self::Relaunched { .. } => "relaunched",
+            Self::NotRelaunched => "not_relaunched",
+            Self::GaveUp => "gave_up",
+            Self::TabCrashed { .. } => "tab_crashed",
+            Self::Dialog { .. } => "dialog",
+        }
+    }
+
+    /// Pure conversion to a log row. Session and vaga are filled in by the sink.
+    pub fn to_new_event(&self) -> NewEvent {
+        let mut url = None;
+        let mut error = None;
+        let mut ok = true;
+        let (target, extra) = match self {
+            Self::DownloadStarted { version, total_bytes } => (Some(version.clone()), Some(serde_json::json!({ "version": version, "total_bytes": total_bytes }))),
+            Self::Installed { version } => (Some(version.clone()), Some(serde_json::json!({ "version": version }))),
+            Self::InstallFailed { version, error: e } => {
+                ok = false;
+                error = Some(clip(e, MAX_EVENT_TEXT));
+                (Some(version.clone()), Some(serde_json::json!({ "version": version })))
+            }
+            Self::Launched { version, port } | Self::Relaunched { version, port } => {
+                (Some(format!("{version} port {port}")), Some(serde_json::json!({ "version": version, "port": port })))
+            }
+            Self::LaunchFailed { error: e } => {
+                ok = false;
+                error = Some(clip(e, MAX_EVENT_TEXT));
+                (None, None)
+            }
+            Self::Gone => {
+                ok = false;
+                (Some("stopped answering".to_string()), None)
+            }
+            Self::NotRelaunched => (Some("no active session".to_string()), None),
+            Self::GaveUp => {
+                ok = false;
+                (Some("closed several times in a row".to_string()), None)
+            }
+            Self::TabCrashed { url: u } => {
+                ok = false;
+                url = u.clone();
+                (Some("agent tab crashed".to_string()), None)
+            }
+            Self::Dialog { dialog_type, message, url: u } => {
+                url = u.clone();
+                let message = clip(message, MAX_EVENT_TEXT);
+                (Some(format!("{dialog_type}: {message}")), Some(serde_json::json!({ "dialog_type": dialog_type, "message": message })))
+            }
+        };
+        NewEvent {
+            kind: "browser".into(),
+            tool: Some(self.name().into()),
+            target,
+            url,
+            result: Some(if ok { "ok" } else { "error" }.into()),
+            error,
+            extra: extra.map(|v| v.to_string()),
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct EventRow {
     pub id: i64,
@@ -223,6 +336,67 @@ mod tests {
 
     fn ev(kind: &str, tool: &str) -> NewEvent {
         NewEvent { kind: kind.into(), tool: Some(tool.into()), ..Default::default() }
+    }
+
+    // ── BrowserEvent: pure conversion (touches no disk) ───────────────────
+
+    fn all_events() -> Vec<BrowserEvent> {
+        let v = || "154.0.1.2".to_string();
+        vec![
+            BrowserEvent::DownloadStarted { version: v(), total_bytes: Some(150) },
+            BrowserEvent::Installed { version: v() },
+            BrowserEvent::InstallFailed { version: v(), error: "sem rede".into() },
+            BrowserEvent::Launched { version: v(), port: 9222 },
+            BrowserEvent::LaunchFailed { error: "não abriu".into() },
+            BrowserEvent::Gone,
+            BrowserEvent::Relaunched { version: v(), port: 9223 },
+            BrowserEvent::NotRelaunched,
+            BrowserEvent::GaveUp,
+            BrowserEvent::TabCrashed { url: Some("https://x/y".into()) },
+            BrowserEvent::Dialog { dialog_type: "alert".into(), message: "oi".into(), url: Some("https://x/".into()) },
+        ]
+    }
+
+    #[test]
+    fn browser_events_map_to_the_eleven_names_and_the_browser_kind() {
+        let names: Vec<&str> = all_events().iter().map(|e| e.name()).collect();
+        assert_eq!(
+            names,
+            ["download_started", "installed", "install_failed", "launched", "launch_failed", "gone", "relaunched", "not_relaunched", "gave_up", "tab_crashed", "dialog"]
+        );
+        for e in all_events() {
+            let row = e.to_new_event();
+            assert_eq!(row.kind, "browser");
+            assert_eq!(row.tool.as_deref(), Some(e.name()));
+            assert!(row.session_id.is_none() && row.text.is_none(), "no typed text, and context is the sink's job");
+        }
+    }
+
+    #[test]
+    fn browser_event_results_say_ok_or_error_and_failures_carry_the_error() {
+        let by_name = |n: &str| all_events().into_iter().find(|e| e.name() == n).unwrap().to_new_event();
+        for ok in ["download_started", "installed", "launched", "relaunched", "not_relaunched", "dialog"] {
+            assert_eq!(by_name(ok).result.as_deref(), Some("ok"), "{ok}");
+        }
+        for bad in ["install_failed", "launch_failed", "gone", "gave_up", "tab_crashed"] {
+            assert_eq!(by_name(bad).result.as_deref(), Some("error"), "{bad}");
+        }
+        assert_eq!(by_name("install_failed").error.as_deref(), Some("sem rede"));
+        assert_eq!(by_name("launch_failed").error.as_deref(), Some("não abriu"));
+        assert_eq!(by_name("launched").target.as_deref(), Some("154.0.1.2 port 9222"));
+        assert_eq!(by_name("tab_crashed").url.as_deref(), Some("https://x/y"));
+        assert_eq!(by_name("dialog").target.as_deref(), Some("alert: oi"));
+    }
+
+    #[test]
+    fn browser_event_text_is_clipped_to_200_characters_without_splitting_one() {
+        let long = "ã".repeat(500);
+        let row = BrowserEvent::LaunchFailed { error: long.clone() }.to_new_event();
+        assert_eq!(row.error.as_ref().unwrap().chars().count(), MAX_EVENT_TEXT + 1, "200 characters plus the ellipsis");
+        let row = BrowserEvent::Dialog { dialog_type: "prompt".into(), message: long, url: None }.to_new_event();
+        let extra: serde_json::Value = serde_json::from_str(row.extra.as_deref().unwrap()).unwrap();
+        assert_eq!(extra["message"].as_str().unwrap().chars().count(), MAX_EVENT_TEXT + 1);
+        assert_eq!(clip("curto", 200), "curto", "short text is untouched");
     }
 
     #[test]
