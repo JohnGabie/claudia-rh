@@ -23,6 +23,8 @@ param(
   [string]$Config = 'lab.config.json'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib\travas.ps1')
+. (Join-Path $PSScriptRoot 'lib\disco.ps1')
 $Root = Split-Path $PSScriptRoot -Parent
 $cfgPath = $(if ([IO.Path]::IsPathRooted($Config)) { $Config } else { Join-Path $Root $Config })
 if (-not (Test-Path $cfgPath -PathType Leaf)) { throw "Perfil nao encontrado: $cfgPath" }
@@ -115,8 +117,8 @@ if ($running) {
   & (Join-Path $PSScriptRoot 'test-down.ps1')
 }
 
-# --- limpa shared\out ---
-Get-ChildItem $OutDir -Force | Where-Object { $_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force
+# --- limpa shared\out (only the exact <lab>\shared\out, no link in it or under it) ---
+Clear-LabOut -OutDir $OutDir -LabDir $Root
 $StatusFile = Join-Path $OutDir 'status.json'
 
 # --- inicia ---

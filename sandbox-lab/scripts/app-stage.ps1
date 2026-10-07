@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Publica o app em %LAB_WORK_DIR%\deploy (mapeado read-only no guest em C:\appdeploy pelos perfis lab.config.app*.json):
+  Publica o app em <raiz do repo>\.sandbox-work\deploy (mapeado read-only no guest em C:\appdeploy pelos perfis lab.config.app*.json):
     app\           <- exe (ou pasta inteira do build)
     appdata\       <- pastas copiadas para %APPDATA% do guest (uma subpasta por pasta informada)
     localappdata\  <- pastas copiadas para %LOCALAPPDATA% do guest
@@ -9,25 +9,40 @@
 .PARAMETER App           exe ou pasta do build
 .PARAMETER AppData       pastas a publicar em appdata\ (o nome da pasta e mantido)
 .PARAMETER LocalAppData  pastas a publicar em localappdata\
-.PARAMETER WorkDir       padrao: $env:LAB_WORK_DIR
-.PARAMETER Clean         apaga o deploy anterior antes de publicar
+.PARAMETER WorkDir       optional; must be exactly <repo root>\.sandbox-work (the default)
+.PARAMETER Clean         wipes the previous deploy before publishing (only a deploy carrying the .lab-deploy marker)
 #>
 param(
   [Parameter(Mandatory)][string]$App,
   [string[]]$AppData = @(),
   [string[]]$LocalAppData = @(),
-  [string]$WorkDir = $env:LAB_WORK_DIR,
+  [string]$WorkDir,
   [switch]$Clean
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib\travas.ps1')
+. (Join-Path $PSScriptRoot 'lib\disco.ps1')
 function Copy-Tree([string]$from, [string]$to) {
   robocopy $from $to /MIR /NFL /NDL /NP /R:1 /W:1 | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "robocopy falhou ($LASTEXITCODE): $from -> $to" }
 }
-if (-not $WorkDir) { throw 'Defina LAB_WORK_DIR ou passe -WorkDir.' }
-$Deploy = Join-Path ([IO.Path]::GetFullPath($WorkDir)) 'deploy'
-if ($Clean -and (Test-Path $Deploy)) { Remove-Item $Deploy -Recurse -Force }
+# The lab always lives in <repo root>\sandbox-lab, so the repo root is two levels above this script.
+$RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$Expected = Join-Path $RepoRoot '.sandbox-work'
+if ($WorkDir -and ((ConvertTo-LabPathKey ([IO.Path]::GetFullPath($WorkDir))) -ne (ConvertTo-LabPathKey $Expected))) {
+  throw "WorkDir must be exactly $Expected (got $WorkDir)."
+}
+$WorkDir = $Expected
+$Deploy = Join-Path $WorkDir 'deploy'
+# robocopy /MIR below also deletes inside deploy, so the guard runs with or without -Clean.
+$exists = Test-Path -LiteralPath $Deploy
+$links = @(Get-LabLinksInPath $Deploy $RepoRoot) + @(Get-LabReparsePoints $Deploy)
+$refusal = Get-LabCleanRefusal -Deploy $Deploy -RepoRoot $RepoRoot -Exists $exists `
+  -HasMarker ($exists -and (Test-Path -LiteralPath (Join-Path $Deploy $script:LabDeployMarker))) -Links $links
+if ($refusal) { throw "Refusing to touch ${Deploy}: $refusal" }
+if ($Clean -and $exists) { Remove-Item -LiteralPath $Deploy -Recurse -Force }
 New-Item -ItemType Directory -Force "$Deploy\app", "$Deploy\appdata", "$Deploy\localappdata", (Join-Path $WorkDir 'guest-rw') | Out-Null
+[IO.File]::WriteAllText((Join-Path $Deploy $script:LabDeployMarker), '')
 
 if (Test-Path $App -PathType Container) {
   Copy-Tree $App "$Deploy\app"
