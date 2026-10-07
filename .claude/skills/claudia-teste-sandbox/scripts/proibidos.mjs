@@ -4,6 +4,7 @@ const PASTAS_PROIBIDAS = [
   ["sandbox-lab/shared/secrets/", "lab secret (MCP key)"],
   ["sandbox-lab/shared/tools/", "heavy lab tools (ignored; checked by shared/tools.sha256)"],
   ["sandbox-lab/shared/out/", "generated guest output"],
+  ["sandbox-lab/shared/cache/", "lab installer cache (ignored; downloaded by cache-up.ps1)"],
   ["sandbox-lab/evidence/", "generated evidence"],
   [".sandbox-work/", "sandbox work folder"],
 ];
@@ -27,6 +28,7 @@ export function arquivosProibidos(arquivos) {
     for (const [prefixo, m] of PASTAS_PROIBIDAS) if (a.startsWith(prefixo)) { motivo = m; break; }
     if (!motivo) for (const [exato, m] of ARQUIVOS_PROIBIDOS) if (a === exato) { motivo = m; break; }
     if (!motivo && (a.endsWith(".key") || a.endsWith(".key.pub"))) motivo = "key file";
+    if (!motivo && (a === ".credentials.json" || a.endsWith("/.credentials.json"))) motivo = "Claude Code login file";
     if (motivo) achados.push({ arquivo: original, motivo });
   }
   return achados;
@@ -57,6 +59,22 @@ export function achaCaminhoPessoal(texto) {
       const m = l.match(p);
       if (m) { achados.push({ linha: i + 1, trecho: m[0].trim() }); break; }
     }
+  });
+  return achados;
+}
+
+// Anthropic token shapes (OAuth access "oat", refresh "ort", API key "api") and a credential JSON with a long token.
+// Findings carry only the line number: the matched text is a secret and must never be printed.
+const PADROES_TOKEN = [
+  /sk-ant-[a-z]{2,8}\d{2}-[A-Za-z0-9_-]{20,}/,
+  /"(?:accessToken|refreshToken)"\s*:\s*"[^"\s]{20,}"/,
+];
+
+/** One finding per line that holds a token: { linha } (1-based). Never returns the text. */
+export function achaToken(texto) {
+  const achados = [];
+  String(texto ?? "").split(/\r?\n/).forEach((l, i) => {
+    if (PADROES_TOKEN.some((p) => p.test(l))) achados.push({ linha: i + 1 });
   });
   return achados;
 }

@@ -65,6 +65,7 @@ desktop.ini
 sandbox-lab/shared/tools/
 sandbox-lab/shared/secrets/
 sandbox-lab/shared/out/
+sandbox-lab/shared/cache/
 sandbox-lab/evidence/
 sandbox-lab/sandbox/sandbox.generated.wsb
 sandbox-lab/sandbox/guest.config.json
