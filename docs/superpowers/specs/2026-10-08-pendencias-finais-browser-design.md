@@ -8,6 +8,17 @@ Specs relacionadas: `2026-10-02-browser-cdp-motor-design.md` (§5.5 guarda de en
 
 ---
 
+## Decisões do usuário (2026-10-08)
+
+| # | Ponto | Decisão |
+|---|---|---|
+| G1 | Regra da guarda (D6) | **Opção C**, implementada e **validada no Sandbox** contra as páginas de teste antes de ser dada por decidida ("Tenta resolver com na sandbox"). |
+| G2 | Submit de nome desconhecido gasta o envio do dia? | O usuário delegou ("o que for melhor para sair dessa branch com o browser tinindo"). Escolha: **não gasta**: exige confirmação, mas o envio real continua liberado. |
+| G3 | Lista de navegação | **Aprovada** (pt, en, da, de, fr; "Salvar"/"Save" fora). |
+| G4 | Eventos do browser no Activity log (D7) | **Aprovados os 11 eventos**, sem progresso de download nem "aba ativada". |
+| G5 | Diálogos nativos (D8) | **Política P2 aprovada.** |
+| G6 | JavaScript na janela do PDF (D9) | **Deixar como está.** A janela não tem acesso ao app; fica registrado como risco aceito. |
+
 ## 1. Pedido do usuário (palavras dele)
 
 - **D6:** "Cara isso pra ser antes precisa ser rápido, sem perder qualidade. Pra nao enrolar mais essa branch. Entao fax Tudo em agentes em uma workthree. Com revisor no final"
