@@ -2,10 +2,11 @@
 // Usage: node publicar.mjs --app <exe|installer|folder> --cenario <scenario folder> [--work-dir <folder>]
 //   --work-dir  default $env:LAB_WORK_DIR, else %TEMP%\claudia-teste-sandbox\work
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
-import { APP_ID, labDir, falhaDe, podeLimparDeploy, MARCADOR_DEPLOY } from "./comum.mjs";
+import { APP_ID, REPO_ROOT, labDir, falhaDe, podeLimparDeploy, MARCADOR_DEPLOY, motivoRecusa, ancestoresComGit } from "./comum.mjs";
 
 try {
   const { values } = parseArgs({ options: { app: { type: "string" }, cenario: { type: "string" }, "work-dir": { type: "string" } } });
@@ -15,7 +16,14 @@ try {
   const lab = labDir();
   const meta = path.join(values.cenario, "cenario.json");
   if (!fs.existsSync(meta)) throw new Error(`Not a scenario folder (cenario.json missing): ${values.cenario}`);
-  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR || path.join(process.env.TEMP, "claudia-teste-sandbox", "work");
+  const tempRoot = fs.realpathSync.native(os.tmpdir());
+  const workDir = path.resolve(values["work-dir"] || process.env.LAB_WORK_DIR || path.join(tempRoot, "claudia-teste-sandbox", "work"));
+  // Same allow-list as the scenario folders: the work dir must live under <tmp>/claudia-teste-sandbox.
+  for (const alvo of [workDir, fs.existsSync(workDir) ? fs.realpathSync.native(workDir) : null]) {
+    if (alvo === null) continue;
+    const motivoWork = motivoRecusa(alvo, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(alvo) });
+    if (motivoWork) throw new Error(`Refusing work-dir (${motivoWork}): ${alvo}`);
+  }
   // -Clean wipes <work-dir>/deploy: only allow it when deploy is absent or ours (marker) and not a link.
   const deploy = path.join(workDir, "deploy");
   let st = null;
@@ -30,6 +38,7 @@ try {
     "-App", values.app, "-AppData", path.join(values.cenario, "appdata", APP_ID), "-WorkDir", workDir, "-Clean"],
     { stdio: ["ignore", "inherit", "inherit"] });
   if (r.status !== 0) throw new Error(`app-stage.ps1 failed (${r.status ?? r.error?.message})`);
+  fs.mkdirSync(deploy, { recursive: true });
   fs.writeFileSync(path.join(deploy, MARCADOR_DEPLOY), "");
   const cenario = JSON.parse(fs.readFileSync(meta, "utf8")).cenario;
   console.log(JSON.stringify({ workDir, deploy: path.join(workDir, "deploy"), cenario }));

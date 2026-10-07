@@ -1,7 +1,7 @@
 // Pure string tests: no disk access, no folder creation. Windows path syntax (the skill targets Windows).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { motivoRecusa, podeLimparDeploy } from "../comum.mjs";
+import { motivoRecusa, podeLimparDeploy, ancestoresComGit } from "../comum.mjs";
 
 const TEMP = "Z:\\tmp-inventado";
 const BASE = `${TEMP}\\claudia-teste-sandbox`;
@@ -56,7 +56,7 @@ test("refuses UNC and extended-length paths", () => {
 
 test("refuses '..' segments and non-normalized paths", () => {
   assert.match(motivoRecusa(`${BASE}\\a\\..\\..\\..`, ctx), /\.\./);
-  assert.match(motivoRecusa(`${BASE}\\a\\.\\b`, ctx), /not normalized/);
+  assert.match(motivoRecusa(`${BASE}\\a\\.\\b`, ctx), /ending in/);
   assert.match(motivoRecusa(`${BASE}\\\\a`, ctx), /not normalized/);
 });
 
@@ -69,6 +69,32 @@ test("refuses folders outside the sandbox base", () => {
 test("refuses when repoRoot or tempRoot is missing", () => {
   assert.match(motivoRecusa(`${BASE}\\x`, { repoRoot: "", tempRoot: TEMP }), /required/);
   assert.match(motivoRecusa(`${BASE}\\x`, { repoRoot: REPO, tempRoot: "" }), /required/);
+});
+
+test("refuses segments ending in dot or space (Win32 strips them: <base>\\... is <base>)", () => {
+  assert.match(motivoRecusa(`${BASE}\\...`, ctx), /ending in/);
+  assert.match(motivoRecusa(`${BASE}\\x.`, ctx), /ending in/);
+  assert.match(motivoRecusa(`${BASE}\\x `, ctx), /ending in/);
+  assert.match(motivoRecusa(`${BASE}\\a. \\b`, ctx), /ending in/);
+});
+
+test("refuses a target inside a git checkout (ancestors with .git passed in)", () => {
+  assert.match(motivoRecusa(`${BASE}\\novo`, { ...ctx, ancestoresComGit: [TEMP] }), /git checkout/);
+  assert.match(motivoRecusa(`${BASE}\\novo`, { ...ctx, ancestoresComGit: [`${BASE}\\novo`] }), /git checkout/);
+  assert.equal(motivoRecusa(`${BASE}\\novo`, { ...ctx, ancestoresComGit: ["Z:\\outro"] }), null);
+});
+
+test("ancestoresComGit lists dir and ancestors that have .git (injected predicate, no disk)", () => {
+  const tem = new Set([`${TEMP}\\.git`, `${BASE}\\novo\\.git`]);
+  const achados = ancestoresComGit(`${BASE}\\novo`, (p) => tem.has(p));
+  assert.deepEqual(achados, [`${BASE}\\novo`, TEMP]);
+  assert.deepEqual(ancestoresComGit(`${BASE}\\novo`, () => false), []);
+});
+
+test("work-dir uses the same allow-list: roots and outsiders refused, default accepted", () => {
+  assert.match(motivoRecusa("Z:\\", ctx), /root/);
+  assert.match(motivoRecusa("Z:\\qualquer\\work", ctx), /outside/);
+  assert.equal(motivoRecusa(`${BASE}\\work`, ctx), null);
 });
 
 test("podeLimparDeploy: only an absent deploy or one with the marker, never a link", () => {

@@ -44,11 +44,14 @@ function dentroDeCI(a, b) {
  * Returns null when `dir` may be deleted, otherwise the reason it is refused.
  * Only accepts an absolute, normalized path with no "..", strictly inside <tempRoot>/claudia-teste-sandbox.
  */
-export function motivoRecusa(dir, { repoRoot, tempRoot }) {
+export function motivoRecusa(dir, { repoRoot, tempRoot, ancestoresComGit = [] }) {
   if (typeof dir !== "string" || dir.trim() === "") return "empty path";
   if (dir.startsWith("\\\\") || dir.startsWith("//")) return "UNC or extended-length path";
   if (!path.isAbsolute(dir)) return "relative path";
-  if (dir.split(/[\\/]+/).includes("..")) return "path contains '..'";
+  const segmentos = dir.split(/[\\/]+/);
+  if (segmentos.includes("..")) return "path contains '..'";
+  // Win32 strips trailing dots/spaces ("<base>\..." resolves to "<base>"), so a lexical check would be fooled.
+  if (segmentos.some((s) => /[. ]$/.test(s))) return "path has a segment ending in '.' or space";
   if (path.normalize(dir) !== dir) return "path is not normalized";
   if (path.parse(dir).root === dir) return "path is a filesystem root";
   if (typeof repoRoot !== "string" || repoRoot === "" || typeof tempRoot !== "string" || tempRoot === "") {
@@ -56,10 +59,27 @@ export function motivoRecusa(dir, { repoRoot, tempRoot }) {
   }
   if (dentroDeCI(dir, repoRoot)) return "path is the repository or an ancestor of it";
   if (dentroDeCI(repoRoot, dir)) return "path is inside the repository";
+  if (ancestoresComGit.some((g) => dentroDeCI(g, dir))) return "path is inside a git checkout";
   const base = path.join(tempRoot, NOME_BASE);
   if (minusculas(dir) === minusculas(base)) return "path is the sandbox base folder itself";
   if (!dentroDeCI(base, dir)) return `path is outside the sandbox base folder (${base})`;
   return null;
+}
+
+/**
+ * `dir` and each of its ancestors up to the root that contain a ".git" entry.
+ * `existe` is injectable so the logic can be tested without a disk.
+ */
+export function ancestoresComGit(dir, existe = fs.existsSync) {
+  const achados = [];
+  let atual = dir;
+  for (;;) {
+    if (existe(path.join(atual, ".git"))) achados.push(atual);
+    const pai = path.dirname(atual);
+    if (pai === atual) break;
+    atual = pai;
+  }
+  return achados;
 }
 
 export const MARCADOR_DEPLOY = ".lab-deploy";
@@ -79,7 +99,7 @@ export function novoCenarioDir(saida, nome) {
   const tempRoot = fs.realpathSync.native(os.tmpdir());
   const dir = path.resolve(saida || path.join(tempRoot, NOME_BASE, nome));
 
-  const motivo = motivoRecusa(dir, { repoRoot: REPO_ROOT, tempRoot });
+  const motivo = motivoRecusa(dir, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(dir) });
   if (motivo) throw new Error(`novoCenarioDir: refused (${motivo}): ${dir}`);
 
   // Symlink/junction guard: never delete through a link.
@@ -88,7 +108,7 @@ export function novoCenarioDir(saida, nome) {
   if (st) {
     if (st.isSymbolicLink()) throw new Error(`novoCenarioDir: refused (target is a symlink/junction): ${dir}`);
     const real = fs.realpathSync.native(dir);
-    if (minusculas(real) !== minusculas(dir) || motivoRecusa(real, { repoRoot: REPO_ROOT, tempRoot })) {
+    if (minusculas(real) !== minusculas(dir) || motivoRecusa(real, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(real) })) {
       throw new Error(`novoCenarioDir: refused (real path differs: ${real}): ${dir}`);
     }
     const entries = fs.readdirSync(dir);
