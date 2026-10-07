@@ -82,10 +82,15 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
 }
 
 /// A "weak" send name (`^` in `submit-patterns.txt`): "Apply now", "Apply"... Often the button that OPENS the
-/// application form, so it only counts as a send when it submits a form. Whole-name equality.
+/// application form, so it only counts as a send when it submits a form. Whole-name equality; a
+/// multi-word name also matches as a prefix followed by a space ("Apply now to Acme"). Single words
+/// never do, so "Apply filters" stays a plain form submit.
 pub fn looks_like_weak_submit(accessible_name: &str) -> bool {
     let name = fold(accessible_name);
-    !name.is_empty() && PATTERNS.lines().map(str::trim).filter_map(|l| l.strip_prefix('^')).any(|w| w == name)
+    !name.is_empty()
+        && PATTERNS.lines().map(str::trim).filter_map(|l| l.strip_prefix('^')).any(|w| {
+            w == name || (w.contains(' ') && name.strip_prefix(w).is_some_and(|rest| rest.starts_with(' ')))
+        })
 }
 
 /// True when the (folded) name is EXACTLY one of the navigation names listed with a `!` prefix in
@@ -339,14 +344,20 @@ mod tests {
     fn an_apply_button_is_a_send_only_when_it_submits_a_form() {
         let n = |s: &str| vec![s.to_string()];
         // The entry button of an ATS (a link, or a plain button): the form is not open yet. Nothing is spent.
-        assert_eq!(classify_submit(&n("Apply now"), &n("Apply now"), false, false), SubmitDecision::Allow, "<a>Apply now</a>");
-        assert_eq!(classify_submit(&n("Apply now"), &n("Apply now"), false, false), SubmitDecision::Allow, "<button type=button>");
+        // (`<a>` and `<button type=button>` reach here the same way: form_submit = false.)
+        assert_eq!(classify_submit(&n("Apply now"), &n("Apply now"), false, false), SubmitDecision::Allow);
         // The same names on a submit button inside a form: the real send.
         for name in ["Apply now", "Apply", "Candidatar-se", "Bewerben", "Jetzt bewerben"] {
             assert_eq!(classify_submit(&n(name), &n(name), false, true), SubmitDecision::ConfirmAndSpend, "{name}");
         }
-        // Only the exact name: "Apply filters" in a form is just a form submit.
-        assert_eq!(classify_submit(&n("Apply filters"), &n("Apply filters"), false, true), SubmitDecision::ConfirmForm);
+        // Multi-word names also as prefix + space: the send still spends.
+        for name in ["Apply now to Acme", "Jetzt bewerben bei X", "Candidatar-se a vaga"] {
+            assert_eq!(classify_submit(&n(name), &n(name), false, true), SubmitDecision::ConfirmAndSpend, "{name}");
+        }
+        // Single words only as the exact name: "Apply filters" in a form is just a form submit.
+        for name in ["Apply filters", "Bewerbungen filtern", "Apply nowhere"] {
+            assert_eq!(classify_submit(&n(name), &n(name), false, true), SubmitDecision::ConfirmForm, "{name}");
+        }
     }
 
     #[test]
