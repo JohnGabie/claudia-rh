@@ -1581,7 +1581,9 @@ mod tests {
 
     #[test]
     fn sites_are_allowed_until_the_accounts_cycle() {
-        let ctx = DbGuardContext::new(std::env::temp_dir());
+        // PENDING SANDBOX: creates a folder (test_support::temp_dir), so it does not run on the user's PC.
+        let dir = crate::mcp::tools::test_support::temp_dir("sites-allowed");
+        let ctx = DbGuardContext::new(dir);
         assert!(ctx.site_allowed("https://www.linkedin.com/jobs/view/1"));
     }
 

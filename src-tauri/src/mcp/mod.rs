@@ -181,6 +181,31 @@ fn save_cover_letter(cfg: &McpConfig, args: &serde_json::Value) -> Result<String
 }
 
 #[cfg(test)]
+mod data_dir_tests {
+    use super::resolver_data_dir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn data_dir_is_required_and_never_falls_back_to_the_current_dir() {
+        assert!(resolver_data_dir(None).unwrap_err().contains("falta --data-dir"));
+        assert!(resolver_data_dir(Some("")).is_err());
+        assert!(resolver_data_dir(Some("   ")).is_err());
+    }
+
+    #[test]
+    fn data_dir_must_be_absolute() {
+        assert!(resolver_data_dir(Some("dados")).unwrap_err().contains("absoluto"));
+        assert!(resolver_data_dir(Some(r"..\dados")).is_err());
+        assert!(resolver_data_dir(Some(".")).is_err());
+    }
+
+    #[test]
+    fn an_absolute_data_dir_is_accepted_without_touching_the_disk() {
+        assert_eq!(resolver_data_dir(Some(r"Z:\nao-existe\dados")).unwrap(), PathBuf::from(r"Z:\nao-existe\dados"));
+    }
+}
+
+#[cfg(test)]
 mod dispatch_tests {
     use super::*;
     use crate::mcp::tools::test_support::{seed_db, temp_dir};
@@ -345,6 +370,19 @@ fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
 }
 
+/// The data dir must be given and absolute: never fall back to the current directory (it would
+/// write the database and logs wherever the process happened to start). Pure: touches no disk.
+pub(crate) fn resolver_data_dir(arg: Option<&str>) -> Result<PathBuf, String> {
+    let raw = arg
+        .filter(|a| !a.trim().is_empty())
+        .ok_or_else(|| "mcp: falta --data-dir <pasta>; recusado em vez de usar a pasta atual".to_string())?;
+    let p = PathBuf::from(raw);
+    if !p.is_absolute() {
+        return Err(format!("mcp: --data-dir precisa ser um caminho absoluto, recebido {raw:?}"));
+    }
+    Ok(p)
+}
+
 /// Called first thing from main(). Returns true when the process ran in an
 /// MCP mode and the GUI must NOT start.
 pub fn cli_main() -> bool {
@@ -355,9 +393,13 @@ pub fn cli_main() -> bool {
         return false;
     }
 
-    let data_dir = parse_flag_value(&args, "--data-dir")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let data_dir = match resolver_data_dir(parse_flag_value(&args, "--data-dir").as_deref()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
     crate::diagnostics::init_paths(&data_dir, None);
     let notify_port = parse_flag_value(&args, "--notify-port").and_then(|p| p.parse().ok());
     let session = parse_flag_value(&args, "--session-kind")

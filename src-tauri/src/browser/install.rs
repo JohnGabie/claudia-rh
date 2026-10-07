@@ -57,6 +57,17 @@ fn stalled(idle: Duration) -> InstallError {
     InstallError::Network(format!("download parado: sem dados há {idle:?}"))
 }
 
+/// A version is a folder name that may be deleted: exactly 4 numeric parts ("154.0.8037.92"),
+/// none empty, ASCII digits only. Rejects "", "..", "profile", paths and anything else.
+pub(crate) fn versao_valida(v: &str) -> bool {
+    let partes: Vec<&str> = v.split('.').collect();
+    partes.len() == 4 && partes.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn versao_invalida(v: &str) -> InstallError {
+    InstallError::Io(format!("versão do browser inválida ({v:?}): esperado 4 números separados por ponto; nada foi apagado"))
+}
+
 pub fn exe_path(root: &Path, version: &str) -> PathBuf {
     root.join(version).join("chrome-win64").join("chrome.exe")
 }
@@ -92,6 +103,9 @@ fn place_into_dest<F>(extract: &Path, root: &Path, version: &str, delays: &[Dura
 where
     F: FnMut(&Path, &Path) -> std::io::Result<()>,
 {
+    if !versao_valida(version) {
+        return Err(versao_invalida(version));
+    }
     let exe = exe_path(root, version);
     if exe.exists() {
         return Ok(());
@@ -123,6 +137,9 @@ fn is_stale(dir: &Path, now: SystemTime) -> bool {
 }
 
 fn cleanup_stale_temp_folders(root: &Path, version: &str, now: SystemTime) {
+    if !versao_valida(version) {
+        return;
+    }
     let prefix = format!(".tmp-{version}-");
     let Ok(entries) = std::fs::read_dir(root) else { return };
     for entry in entries.flatten() {
@@ -151,6 +168,9 @@ pub(crate) async fn ensure_installed_with(
     on_progress: &(dyn Fn(Progress) + Send + Sync),
     idle_timeout: Duration,
 ) -> Result<PathBuf, InstallError> {
+    if !versao_valida(version) {
+        return Err(versao_invalida(version));
+    }
     let exe = exe_path(root, version);
     if exe.exists() {
         return Ok(exe);
@@ -250,6 +270,16 @@ async fn download(
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn version_must_be_exactly_four_numeric_parts() {
+        for ok in ["154.0.8037.92", "1.2.3.4"] {
+            assert!(versao_valida(ok), "{ok}");
+        }
+        for bad in ["", "profile", "..", "1.2.3", "1.2.3.4.5", "1.2.a.4", "1..3.4", "1.2.3.", "-1.2.3.4"] {
+            assert!(!versao_valida(bad), "{bad}");
+        }
+    }
     use std::sync::Arc;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

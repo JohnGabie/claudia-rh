@@ -63,11 +63,15 @@ mod tests {
     }
 
     fn add(c: &rusqlite::Connection, dir: &Path, arquivo: &str, bytes: &[u8]) -> i64 {
-        let p = crate::documentos::docs_dir(dir).join(arquivo);
-        if !arquivo.contains("..") && !arquivo.contains('/') && !arquivo.contains('\\') && !arquivo.contains(':') {
+        // Only a bare name is ever joined, written or hashed: any other string (absolute path, "..",
+        // separators) is stored as-is and never touches the disk, so no real file can be read here.
+        let sha = if is_bare_name(arquivo) {
+            let p = crate::documentos::docs_dir(dir).join(arquivo);
             std::fs::write(&p, bytes).unwrap();
-        }
-        let sha = if p.exists() { sha256_file(&p).unwrap() } else { "00".into() };
+            sha256_file(&p).unwrap()
+        } else {
+            "00".into()
+        };
         inserir(c, &NovoDocumento { tipo: "curriculo", nome: "CV", origem: "importado", arquivo, arquivo_html: None, formato: "pdf", idioma: None, sha256: &sha, tamanho: bytes.len() as i64, variante_id: None }).unwrap()
     }
 
@@ -84,7 +88,7 @@ mod tests {
     fn a_name_that_escapes_the_folder_is_refused() {
         let (c, dir) = setup("escape");
         std::fs::write(dir.join("segredo.pdf"), b"%PDF-1.7 x").unwrap();
-        for bad in ["..\\segredo.pdf", "../segredo.pdf", "C:\\Windows\\win.ini", "sub/cv.pdf"] {
+        for bad in ["..\\segredo.pdf", "../segredo.pdf", "C:\\pasta-inventada\\arquivo.ini", "sub/cv.pdf"] {
             let id = add(&c, &dir, bad, b"");
             let e = resolve_attachable(&c, &dir, id).unwrap_err();
             assert!(e.contains("fora da pasta"), "{bad}: {e}");
