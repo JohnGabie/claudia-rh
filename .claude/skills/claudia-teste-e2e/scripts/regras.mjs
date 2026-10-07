@@ -59,7 +59,13 @@ export function sqlSomenteLeitura(sql) {
 
 /** R12: an installed/normal claudia-rh.exe without CDP is the user's session; never touch it, ask. */
 export function decidirComAppInstalado({ processos, cdpResponde }) {
-  const rodando = (processos ?? []).some((p) => String(p).toLowerCase() === "claudia-rh.exe");
+  // processos null/undefined = the process list could not be read: fail closed, ask.
+  if (!Array.isArray(processos)) {
+    return cdpResponde
+      ? { acao: "seguir", motivo: "ok (CDP de dev responde)" }
+      : { acao: "perguntar", motivo: "não consegui verificar se o app instalado está aberto" };
+  }
+  const rodando = processos.some((p) => String(p).toLowerCase() === "claudia-rh.exe");
   if (rodando && !cdpResponde) {
     return { acao: "perguntar", motivo: "claudia-rh.exe já está rodando sem CDP de dev (provavelmente o app instalado do usuário); não subir por cima" };
   }
@@ -75,12 +81,14 @@ export function ambienteSubida(base, porta) {
   };
 }
 
-const LISTA_NEGRA = /^(apagar_|excluir_|remover_|limpar_|desinstalar|instalar_|iniciar_|disparar_|enviar_)/;
+const LISTA_NEGRA = /^(apagar_|excluir_|remover_|limpar_|desinstalar|instalar_|iniciar_|disparar_|enviar_|guardar_|configurar_|escrever_|resolver_|marcar_|renomear_|importar_|exportar_)/;
 
 /** B5: decides whether invocar.mjs may call a command. flags = { escrever, confirmo }. */
 export function classificarInvocacao(comando, flags = {}) {
   const c = String(comando ?? "");
   if (c === "obter_credencial") return { ok: false, motivo: "obter_credencial devolve a senha em texto puro: sempre recusado" };
+  // plugin:* (e.g. plugin:opener|open_url opens the user's default, personal browser): never, even confirmed.
+  if (/^plugin:/i.test(c)) return { ok: false, motivo: "comandos plugin:* são sempre recusados (ex.: plugin:opener|open_url abriria o navegador pessoal do usuário)" };
   if (LISTA_NEGRA.test(c)) {
     if (!flags.escrever) return { ok: false, motivo: `"${c}" é destrutivo ou dispara ação real: exige --escrever e --confirmo=${c}` };
     if (flags.confirmo !== c) return { ok: false, motivo: `"${c}" é destrutivo ou dispara ação real: repita com --confirmo=${c}` };

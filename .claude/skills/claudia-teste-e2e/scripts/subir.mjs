@@ -47,11 +47,11 @@ try { await fetch("http://127.0.0.1:1420/", { signal: AbortSignal.timeout(1500) 
 const appRodando = portaApp !== null || vite1420;
 
 // R12: a claudia-rh.exe running without our dev CDP is probably the user's installed app.
-let processos = [];
+let processos = null; // stays null if tasklist fails or times out: the rule then asks (fail closed)
 try {
   const saida = execFileSync("tasklist", ["/FI", "IMAGENAME eq claudia-rh.exe", "/FO", "CSV", "/NH"], { encoding: "utf8", timeout: 5000 });
   processos = saida.split(/\r?\n/).map((l) => l.split('","')[0].replace(/^"/, "")).filter(Boolean);
-} catch { /* tasklist unavailable: fall back to the port checks below */ }
+} catch { processos = null; }
 const instalado = decidirComAppInstalado({ processos, cdpResponde: portaApp !== null });
 if (instalado.acao === "perguntar") {
   console.log(JSON.stringify({ acao: "perguntar", motivo: instalado.motivo }));
