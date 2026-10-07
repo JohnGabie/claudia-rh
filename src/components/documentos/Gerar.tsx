@@ -133,7 +133,7 @@ export const Gerar: React.FC<{
 
       {aviso && (
         <div style={{ border: "1px solid var(--warning, var(--border))", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertCircle size={14} /> Carta salva. Aviso: {aviso}
+          <AlertCircle size={14} /> {t.documents.coverLetterSavedWarning} {aviso}
           <button onClick={() => onFeito()} style={{ marginLeft: "auto", fontSize: 13 }}>OK</button>
         </div>
       )}

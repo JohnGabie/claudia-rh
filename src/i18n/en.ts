@@ -484,6 +484,7 @@ export const en = {
     tabCoverLetters: "Cover letters",
     generate: "Generate",
     generateResume: "Generate résumé",
+    coverLetterSavedWarning: "Cover letter saved. Warning:",
     importMine: "Add mine",
     empty: {
       curriculo: "No résumés yet.",

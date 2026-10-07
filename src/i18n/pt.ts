@@ -487,6 +487,7 @@ export const pt: Strings = {
     tabCoverLetters: "Cover letters",
     generate: "Gerar",
     generateResume: "Gerar currículo",
+    coverLetterSavedWarning: "Carta salva. Aviso:",
     importMine: "Adicionar o meu",
     empty: {
       curriculo: "Nenhum currículo ainda.",
