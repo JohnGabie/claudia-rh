@@ -73,5 +73,20 @@
     <input id="e-ext" type="text" aria-label="Campo C">
   </form>
   <button id="ext-btn" type="submit" form="f-ext">Concluir</button>
+
+  <!-- Shadow DOM: the click lands inside a shadow root; the submit button is in it, the form is outside. -->
+  <form id="f-shadow" onsubmit="return sent('shadow')">
+    <div id="shadow-host"></div>
+  </form>
+  <script>
+    const sr = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+    sr.innerHTML = '<button type="submit" id="shadow-btn"><span id="shadow-in">Concluir</span></button>';
+  </script>
+
+  <!-- A label for a submit button: clicking the label presses the button. -->
+  <form id="f-label" onsubmit="return sent('label')">
+    <button id="label-btn" type="submit" style="width:24px">Concluir</button>
+  </form>
+  <label id="label-for" for="label-btn" style="display:inline-block;width:160px;height:24px">Clique aqui</label>
 </body>
 </html>

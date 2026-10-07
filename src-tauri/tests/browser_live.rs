@@ -1900,3 +1900,27 @@ async fn enter_finds_the_default_button_even_when_it_sits_outside_the_form_tag()
     assert!(e.starts_with("RECUSADO"), "{e}");
     assert!(!sent(&a, "ext").await);
 }
+
+// ───────────── F1 second review: shadow DOM and label. PENDING SANDBOX: written, never run here. ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#shadow-host").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "shadow").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_on_a_label_of_a_submit_button_is_refused() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#label-for").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "label").await);
+}

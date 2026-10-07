@@ -22,11 +22,11 @@ envoyer ma candidature
 =postuler
 =senden
 send now
-apply now
-=apply
-candidatar se
-=bewerben
-jetzt bewerben
+^apply now
+^apply
+^candidatar se
+^bewerben
+^jetzt bewerben
 confirm and submit
 revisar e enviar
 !avancar

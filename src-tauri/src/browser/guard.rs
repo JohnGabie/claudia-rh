@@ -66,7 +66,7 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
 
     PATTERNS.lines()
         .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('!'))
+        .filter(|l| !l.is_empty() && !l.starts_with('!') && !l.starts_with('^'))
         .any(|p| {
             if let Some(exact_pattern) = p.strip_prefix('=') {
                 // Exact match pattern (without the '=' prefix)
@@ -79,6 +79,13 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
                 name.contains(p) || name_no_spaces.contains(&p.replace(" ", ""))
             }
         })
+}
+
+/// A "weak" send name (`^` in `submit-patterns.txt`): "Apply now", "Apply"... Often the button that OPENS the
+/// application form, so it only counts as a send when it submits a form. Whole-name equality.
+pub fn looks_like_weak_submit(accessible_name: &str) -> bool {
+    let name = fold(accessible_name);
+    !name.is_empty() && PATTERNS.lines().map(str::trim).filter_map(|l| l.strip_prefix('^')).any(|w| w == name)
 }
 
 /// True when the (folded) name is EXACTLY one of the navigation names listed with a `!` prefix in
@@ -121,6 +128,9 @@ pub enum SubmitDecision {
 /// them must be navigation for the exception; with none, a form-submit is not navigation (fail closed).
 pub fn classify_submit(names: &[String], target_names: &[String], structural: bool, form_submit: bool) -> SubmitDecision {
     if names.iter().chain(target_names).any(|n| looks_like_submit(n)) {
+        return SubmitDecision::ConfirmAndSpend;
+    }
+    if form_submit && target_names.iter().any(|n| looks_like_weak_submit(n)) {
         return SubmitDecision::ConfirmAndSpend;
     }
     if structural {
@@ -304,7 +314,10 @@ mod tests {
                 continue;
             }
             if !line.is_empty() {
-                if let Some(pattern) = line.strip_prefix('=') {
+                if let Some(weak) = line.strip_prefix('^') {
+                    assert_eq!(weak, fold(weak), "weak pattern '{line}' is not already folded");
+                    assert!(weak.chars().all(|c| c.is_ascii_lowercase() || c == ' '), "{line}");
+                } else if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: check the part after '='
                     assert_eq!(pattern, fold(pattern), "pattern '{}' is not already folded", line);
                     assert!(pattern.chars().all(|c| c.is_ascii_lowercase()),
@@ -323,13 +336,17 @@ mod tests {
     }
 
     #[test]
-    fn real_apply_button_names_are_a_send_that_spends() {
-        // Pure. These used to fall into ConfirmForm (confirm, but no spend).
+    fn an_apply_button_is_a_send_only_when_it_submits_a_form() {
+        let n = |s: &str| vec![s.to_string()];
+        // The entry button of an ATS (a link, or a plain button): the form is not open yet. Nothing is spent.
+        assert_eq!(classify_submit(&n("Apply now"), &n("Apply now"), false, false), SubmitDecision::Allow, "<a>Apply now</a>");
+        assert_eq!(classify_submit(&n("Apply now"), &n("Apply now"), false, false), SubmitDecision::Allow, "<button type=button>");
+        // The same names on a submit button inside a form: the real send.
         for name in ["Apply now", "Apply", "Candidatar-se", "Bewerben", "Jetzt bewerben"] {
-            assert_eq!(classify_submit(&[], &[name.to_string()], false, true), SubmitDecision::ConfirmAndSpend, "{name}");
+            assert_eq!(classify_submit(&n(name), &n(name), false, true), SubmitDecision::ConfirmAndSpend, "{name}");
         }
-        // "Apply filters" is not exactly "apply": only the exact name counts.
-        assert_eq!(classify_submit(&[], &["Apply filters".to_string()], false, true), SubmitDecision::ConfirmForm);
+        // Only the exact name: "Apply filters" in a form is just a form submit.
+        assert_eq!(classify_submit(&n("Apply filters"), &n("Apply filters"), false, true), SubmitDecision::ConfirmForm);
     }
 
     #[test]
@@ -340,7 +357,10 @@ mod tests {
                 continue; // navigation exceptions are not submit patterns
             }
             if !line.is_empty() {
-                if let Some(pattern) = line.strip_prefix('=') {
+                if let Some(weak) = line.strip_prefix('^') {
+                    assert!(looks_like_weak_submit(weak), "{line}");
+                    assert!(!looks_like_submit(weak), "a weak pattern must not be a strong one: {line}");
+                } else if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: test matching the bare name (without the '=' prefix)
                     assert!(looks_like_submit(pattern), "pattern '{}' not recognised by looks_like_submit", line);
                 } else if let Some(word) = line.strip_prefix('~') {

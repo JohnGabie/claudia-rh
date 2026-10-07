@@ -119,12 +119,29 @@ pub fn classify(ev: &Value, ctx: DialogContext, last_url: &mut Option<String>) -
     }
 }
 
+/// `scheme://host[:port]` of a URL, lowercase; None when it has no host part.
+pub fn origin_of(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next()?;
+    if scheme.is_empty() || host.is_empty() {
+        return None;
+    }
+    Some(format!("{}://{}", scheme.to_ascii_lowercase(), host.to_ascii_lowercase()))
+}
+
+/// A send the guard let through. It covers the site's own `confirm()` once, on the page that was clicked.
+struct Approval {
+    origin: Option<String>,
+    /// The approving tool is still running.
+    active: bool,
+    until: Instant,
+}
+
 /// State shared between the tools (which set the flags and read the notes) and the handler task.
 #[derive(Default)]
 pub struct PageState {
-    approved_click: AtomicBool,
-    /// The approval outlives its tool by `APPROVAL_GRACE` (see there); the next `begin` clears it.
-    approved_until: Mutex<Option<Instant>>,
+    /// Single use, same origin, `APPROVAL_GRACE` after its tool ends; the next `begin` clears it.
+    approval: Mutex<Option<Approval>>,
     opening: AtomicBool,
     crashed: AtomicBool,
     tool: Mutex<Option<String>>,
@@ -132,24 +149,24 @@ pub struct PageState {
 }
 
 impl PageState {
-    pub fn context(&self) -> DialogContext {
-        self.context_at(Instant::now())
+    pub fn opening(&self) -> bool {
+        self.opening.load(Ordering::SeqCst)
     }
 
-    /// The context at `now` (the clock is a parameter so the grace window is testable).
-    pub fn context_at(&self, now: Instant) -> DialogContext {
-        let in_grace = self.approved_until.lock().ok().and_then(|u| *u).is_some_and(|until| now < until);
-        DialogContext { approved_click: self.approved_click.load(Ordering::SeqCst) || in_grace, opening: self.opening.load(Ordering::SeqCst) }
+    /// The context for a dialog of `dialog_origin` at `now` (clock and origin are parameters so it is testable).
+    /// An approval only counts for the origin of the page that was clicked; an unknown origin never matches.
+    pub fn context_at(&self, now: Instant, dialog_origin: Option<&str>) -> DialogContext {
+        let approved = self.approval.lock().ok().is_some_and(|g| {
+            g.as_ref().is_some_and(|a| a.origin.is_some() && a.origin.as_deref() == dialog_origin && (a.active || now < a.until))
+        });
+        DialogContext { approved_click: approved, opening: self.opening() }
     }
 
     /// A tool started. `browser_open` is the only one that may leave a page with unsaved changes.
     pub fn begin(&self, tool: &str) {
         self.opening.store(tool == "browser_open", Ordering::SeqCst);
         // A new tool: nothing approved before it carries over.
-        self.approved_click.store(false, Ordering::SeqCst);
-        if let Ok(mut u) = self.approved_until.lock() {
-            *u = None;
-        }
+        self.consume_approval();
         if let Ok(mut t) = self.tool.lock() {
             *t = Some(tool.to_string());
         }
@@ -162,9 +179,10 @@ impl PageState {
     }
 
     pub fn end_at(&self, now: Instant) {
-        if self.approved_click.swap(false, Ordering::SeqCst) {
-            if let Ok(mut u) = self.approved_until.lock() {
-                *u = Some(now + APPROVAL_GRACE);
+        if let Ok(mut g) = self.approval.lock() {
+            if let Some(a) = g.as_mut().filter(|a| a.active) {
+                a.active = false;
+                a.until = now + APPROVAL_GRACE;
             }
         }
         self.opening.store(false, Ordering::SeqCst);
@@ -173,15 +191,21 @@ impl PageState {
         }
     }
 
-    /// The send guard approved the action that is running (a valid `confirm_submit`).
-    pub fn approve_click(&self) {
-        self.approve_click_at(Instant::now());
+    /// The send guard approved the action that is running (a valid `confirm_submit`) on the page at `page_url`.
+    pub fn approve_click(&self, page_url: &str) {
+        self.approve_click_at(Instant::now(), page_url);
     }
 
-    pub fn approve_click_at(&self, now: Instant) {
-        self.approved_click.store(true, Ordering::SeqCst);
-        if let Ok(mut u) = self.approved_until.lock() {
-            *u = Some(now + APPROVAL_GRACE);
+    pub fn approve_click_at(&self, now: Instant, page_url: &str) {
+        if let Ok(mut g) = self.approval.lock() {
+            *g = Some(Approval { origin: origin_of(page_url), active: true, until: now + APPROVAL_GRACE });
+        }
+    }
+
+    /// The approval is spent (a confirm was accepted with it) or must not carry over.
+    pub fn consume_approval(&self) {
+        if let Ok(mut g) = self.approval.lock() {
+            *g = None;
         }
     }
 
@@ -243,7 +267,12 @@ async fn run_handler<A: Answerer>(
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
         };
-        match classify(&ev, state.context(), &mut last_url) {
+        // The client is gone (the tab was replaced): nobody is left to answer or to trust, not even for a crash.
+        if client.strong_count() == 0 {
+            break;
+        }
+        let origin = ev["params"]["url"].as_str().and_then(origin_of);
+        match classify(&ev, state.context_at(Instant::now(), origin.as_deref()), &mut last_url) {
             Some(PageEvent::Dialog { kind, message, url, accept }) => {
                 // No client left (the tab was replaced): there is nobody to answer, so the task ends.
                 let Some(c) = client.upgrade() else { break };
@@ -258,6 +287,10 @@ async fn run_handler<A: Answerer>(
                     Err(_) => crate::diagnostics::emit_event("browser", "dialog_answer_failed", None, "timeout"),
                 }
                 drop(c);
+                // One approval, one accepted confirm.
+                if kind == "confirm" && accept {
+                    state.consume_approval();
+                }
                 emit(&sink, BrowserEvent::Dialog { dialog_type: kind, message: clip_text(&message, MAX_DIALOG_TEXT), url, accepted: accept, during_tool });
             }
             Some(PageEvent::Crashed { url }) => {
@@ -415,22 +448,25 @@ mod tests {
         assert_eq!(s.take_notes(), "", "taken once");
     }
 
+    const SITE: &str = "https://jobs.example/apply/1?x=2";
+    const ORIGIN: &str = "https://jobs.example";
+
     #[test]
     fn only_browser_open_marks_opening_and_end_clears_every_flag() {
         let s = PageState::default();
         s.begin("browser_click");
-        assert!(!s.context().opening);
+        assert!(!s.opening());
         assert_eq!(s.during_tool().as_deref(), Some("browser_click"));
         let t0 = Instant::now();
-        s.approve_click_at(t0);
-        assert!(s.context_at(t0).approved_click);
+        s.approve_click_at(t0, SITE);
+        assert!(s.context_at(t0, Some(ORIGIN)).approved_click);
         s.end_at(t0);
-        assert_eq!(s.context_at(t0 + APPROVAL_GRACE + Duration::from_millis(1)), DialogContext::default(), "an error path must not leave the click approved");
+        assert!(!s.context_at(t0 + APPROVAL_GRACE + Duration::from_millis(1), Some(ORIGIN)).approved_click, "an error path must not leave the click approved");
         assert!(s.during_tool().is_none());
         s.begin("browser_open");
-        assert!(s.context().opening);
+        assert!(s.opening());
         s.end();
-        assert!(!s.context().opening);
+        assert!(!s.opening());
     }
 
     #[test]
@@ -438,24 +474,57 @@ mod tests {
         let s = PageState::default();
         let t0 = Instant::now();
         s.begin("browser_click");
-        s.approve_click_at(t0);
+        s.approve_click_at(t0, SITE);
         s.end_at(t0 + Duration::from_secs(1));
         // An async confirm, opened after an await in the page, within the grace window: still approved.
-        assert!(s.context_at(t0 + Duration::from_millis(2500)).approved_click);
-        assert!(dialog_answer("confirm", s.context_at(t0 + Duration::from_millis(2500))));
+        assert!(dialog_answer("confirm", s.context_at(t0 + Duration::from_millis(2500), Some(ORIGIN))));
         // Past the window: cancelled again.
-        assert!(!s.context_at(t0 + Duration::from_millis(3100)).approved_click);
+        assert!(!s.context_at(t0 + Duration::from_millis(3100), Some(ORIGIN)).approved_click);
         // The next tool clears it even inside the window.
         s.begin("browser_read");
-        assert!(!s.context_at(t0 + Duration::from_millis(1500)).approved_click);
+        assert!(!s.context_at(t0 + Duration::from_millis(1500), Some(ORIGIN)).approved_click);
+    }
+
+    #[test]
+    fn the_approval_is_single_use_and_only_for_the_origin_that_was_clicked() {
+        let s = PageState::default();
+        let t0 = Instant::now();
+        s.begin("browser_click");
+        s.approve_click_at(t0, SITE);
+        s.end_at(t0);
+        let at = t0 + Duration::from_millis(500);
+        assert!(!s.context_at(at, Some("https://ads.example")).approved_click, "another origin");
+        assert!(!s.context_at(at, None).approved_click, "an unknown origin never matches");
+        assert!(s.context_at(at, Some(ORIGIN)).approved_click);
+        s.consume_approval(); // what the handler does after accepting the first confirm
+        assert!(!s.context_at(at, Some(ORIGIN)).approved_click, "single use");
+    }
+
+    #[test]
+    fn an_approval_with_an_unknown_page_origin_covers_nothing() {
+        let s = PageState::default();
+        s.approve_click_at(Instant::now(), "about:blank");
+        assert!(!s.context_at(Instant::now(), None).approved_click, "unknown matches nothing, not even another unknown");
+        assert!(!s.context_at(Instant::now(), Some("about://blank")).approved_click);
+    }
+
+    #[test]
+    fn origins_are_scheme_and_host_only() {
+        assert_eq!(origin_of("HTTPS://Jobs.Example:8443/a?b#c").as_deref(), Some("https://jobs.example:8443"));
+        assert_eq!(origin_of("https://jobs.example").as_deref(), Some("https://jobs.example"));
+        assert_eq!(origin_of("https://jobs.example?x").as_deref(), Some("https://jobs.example"));
+        assert_ne!(origin_of("https://a.example/"), origin_of("http://a.example/"));
+        assert_eq!(origin_of("about:blank"), None);
+        assert_eq!(origin_of(""), None);
     }
 
     #[test]
     fn begin_clears_an_approval_left_by_an_unfinished_tool() {
         let s = PageState::default();
-        s.approve_click();
+        let t0 = Instant::now();
+        s.approve_click_at(t0, SITE);
         s.begin("browser_click");
-        assert!(!s.context().approved_click);
+        assert!(!s.context_at(t0, Some(ORIGIN)).approved_click);
     }
 
     #[test]
@@ -479,6 +548,59 @@ mod tests {
         }
         fn action(&self, _: crate::mcp::tools::browser::ActionRecord) {}
         fn navigation(&self, _: crate::browser::nav::NavRecord) {}
+    }
+
+    struct Rec(Mutex<Vec<BrowserEvent>>);
+    impl ActionSink for Rec {
+        fn enabled(&self) -> bool {
+            false
+        }
+        fn action(&self, _: crate::mcp::tools::browser::ActionRecord) {}
+        fn navigation(&self, _: crate::browser::nav::NavRecord) {}
+        fn browser_event(&self, ev: BrowserEvent) {
+            self.0.lock().unwrap().push(ev);
+        }
+    }
+
+    struct Answers(Mutex<Vec<bool>>);
+    impl Answerer for Answers {
+        fn answer(&self, accept: bool) -> BoxFuture<'_, Result<(), String>> {
+            self.0.lock().unwrap().push(accept);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn one_approval_accepts_one_confirm_and_the_second_is_cancelled() {
+        let client = Arc::new(Answers(Default::default()));
+        let (tx, rx) = tokio::sync::broadcast::channel::<Value>(8);
+        let state = Arc::new(PageState::default());
+        state.begin("browser_click");
+        state.approve_click(SITE);
+        let confirm = |url: &str| json!({ "method": "Page.javascriptDialogOpening", "params": { "type": "confirm", "message": "Enviar?", "url": url } });
+        let task = tokio::spawn(run_handler(Arc::downgrade(&client), rx, Arc::new(Quiet), state.clone()));
+        tx.send(confirm("https://ads.example/x")).unwrap(); // another origin: cancelled, approval kept
+        tx.send(confirm(SITE)).unwrap(); // the clicked page: accepted, approval spent
+        tx.send(confirm(SITE)).unwrap(); // a second one: cancelled
+        drop(tx);
+        tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap();
+        assert_eq!(*client.0.lock().unwrap(), vec![false, true, false]);
+    }
+
+    #[tokio::test]
+    async fn a_crash_after_the_client_is_gone_is_not_reported_by_a_stale_handler() {
+        let client = Arc::new(Stub(Default::default()));
+        let weak = Arc::downgrade(&client);
+        let (tx, rx) = tokio::sync::broadcast::channel::<Value>(8);
+        let rec = Arc::new(Rec(Default::default()));
+        let state = Arc::new(PageState::default());
+        let task = tokio::spawn(run_handler(weak, rx, rec.clone(), state.clone()));
+        drop(client);
+        tx.send(json!({ "method": "Inspector.targetCrashed", "params": {} })).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), task).await.expect("ends").unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(rec.0.lock().unwrap().is_empty(), "no event from a replaced tab");
+        assert!(!state.take_crashed(), "and it must not poison the new tab");
     }
 
     #[tokio::test]

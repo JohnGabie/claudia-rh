@@ -220,6 +220,9 @@ pub(crate) struct Info {
     has_form: bool,
     #[serde(default, rename = "nameEmpty")]
     name_empty: bool,
+    /// The name of the element that was really hit (a span inside the button), for the send-name check only.
+    #[serde(default, rename = "hitName")]
+    hit_name: String,
     /// The info could not be read at all (script failed or returned garbage). Fail closed.
     #[serde(default)]
     unknown: bool,
@@ -259,25 +262,42 @@ const INFO_FN: &str = r#"function(){
   };
   // The element the user would really press: a click on a child of a button (<button><span>Concluir</span></button>)
   // lands on the span, but it is the button that submits. Everything below is read from that button.
-  const b = (el.closest ? el : el.parentElement)?.closest('button,input[type=submit],input[type=image]') || el;
-  const tag = (b.tagName || '').toUpperCase();
-  const type = (b.type || '').toLowerCase();
-  const form = b.form || (b.closest && b.closest('form'));
+  const SEL = 'button,input[type=submit],input[type=image]';
   const isSubmitEl = (e) => {
     const t = (e.tagName || '').toUpperCase();
     const ty = (e.type || '').toLowerCase();
     return (t === 'BUTTON' && ty === 'submit') || (t === 'INPUT' && (ty === 'submit' || ty === 'image'));
   };
+  // Up the COMPOSED tree: out of a shadow root through its host too.
+  const up = (e) => e.parentElement || (e.getRootNode && e.getRootNode().host) || null;
+  let b = null;
+  for (let e = el, n = 0; e && n < 100; e = up(e), n++) {
+    if (e.matches && e.matches(SEL)) { b = e; break; }
+  }
+  if (!b) {
+    // A click on <label for=...> presses its control.
+    const lab = el.closest && el.closest('label');
+    if (lab && lab.control && isSubmitEl(lab.control)) b = lab.control;
+  }
+  if (!b) b = el;
+  const tag = (b.tagName || '').toUpperCase();
+  const type = (b.type || '').toLowerCase();
+  let form = b.form || null;
+  for (let e = b, n = 0; !form && e && n < 100; e = up(e), n++) {
+    if ((e.tagName || '').toUpperCase() === 'FORM') form = e;
+  }
   // The default button is the first submit button in DOCUMENT order, wherever its tag sits (form="id" included).
-  // form.elements leaves out <input type=image>, so those are added and everything is sorted by position.
+  // form.elements leaves out <input type=image>: those of THIS form (also form="id" ones) are added, then sorted.
   let submitBtn = null;
   if (form) {
-    const all = Array.from(form.elements).filter(isSubmitEl).concat(Array.from(form.querySelectorAll('input[type=image]')));
+    const imgs = Array.from(document.querySelectorAll('input[type=image]')).filter((i) => i.form === form);
+    const all = Array.from(form.elements).filter(isSubmitEl).concat(imgs.filter((i) => !Array.from(form.elements).includes(i)));
     all.sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
     submitBtn = all[0] || null;
   }
   return JSON.stringify({
     name: nameOf(b),
+    hitName: nameOf(el),
     tag: tag,
     btype: type,
     hasForm: !!form,
@@ -408,6 +428,11 @@ impl Probe {
 
     fn add_info(&mut self, info: &Info) {
         self.add_name(&info.name);
+        // What the hit element says ("Submit application" in a span inside a type=button) counts for the send-name
+        // check only; it is not the button's own name.
+        if !info.hit_name.trim().is_empty() {
+            self.names.push(info.hit_name.clone());
+        }
         self.structural |= info.structural_submit();
         self.form_submit |= info.form_submit;
     }
@@ -542,7 +567,7 @@ impl BrowserTools {
                 let _ = tokio::time::timeout(Duration::from_secs(1), t.client.call("Page.close", json!({}))).await;
             }
             // browser_open goes on and opens a new tab; any other tool stops with the way forward.
-            if let Some(why) = page_events::crash_stops_tool(self.page_state.context().opening) {
+            if let Some(why) = page_events::crash_stops_tool(self.page_state.opening()) {
                 return Err(why.to_string());
             }
         }
@@ -712,7 +737,7 @@ impl BrowserTools {
             Verdict::Allow => {
                 // A send the guard let through: the site's own "are you sure?" may now be accepted.
                 if approves_dialogs(decision) {
-                    self.page_state.approve_click();
+                    self.page_state.approve_click(page_url);
                 }
                 Ok(())
             }
@@ -1742,6 +1767,17 @@ mod tests {
         p.add_name(&info.name);
         p.add_info(&info);
         assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
+    fn a_send_name_on_the_hit_child_of_a_plain_button_still_counts_as_a_send() {
+        // <button type=button aria-label="x"><span>Submit application</span></button>: the button is called "x",
+        // the span says what it does. Pure: strings and structs.
+        let info = BrowserTools::parse_info(&json!(r#"{"name":"x","hitName":"Submit application","tag":"BUTTON","btype":"button","hasForm":false}"#));
+        let mut p = Probe::default();
+        p.add_info(&info);
+        assert_eq!(p.target_names, vec!["x".to_string()], "the hit name is not the button's name");
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmAndSpend);
     }
 
     #[test]
