@@ -41,3 +41,22 @@ function Get-LabOutCleanRefusal {
   if ($l.Count) { return "link (symlink/junction) in or under the path: $($l[0])" }
   return $null
 }
+
+function Get-LabMissingTools {
+  # Compares shared\tools.sha256 with the files found (relative path with '/', size). Size only: hashing ~600 MB on
+  # every test-up is too slow; validate-config and the copy check use the hash. Extra files are not a problem.
+  param([string]$ManifestText, [hashtable]$FoundSizes)
+  $problems = New-Object System.Collections.Generic.List[string]
+  $entries = 0
+  foreach ($line in ($ManifestText -split "`r?`n")) {
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    if ($line -notmatch '^([0-9a-f]{64}) (\d+) (.+)$') { $problems.Add("malformed manifest line: $line"); continue }
+    $entries++
+    $size = [long]$Matches[2]; $rel = $Matches[3]
+    $key = @($FoundSizes.Keys | Where-Object { $_ -ieq $rel }) | Select-Object -First 1
+    if ($null -eq $key) { $problems.Add("missing: $rel") }
+    elseif ([long]$FoundSizes[$key] -ne $size) { $problems.Add("size differs: $rel") }
+  }
+  if ($entries -eq 0 -and $problems.Count -eq 0) { $problems.Add('manifest is empty') }
+  return ,$problems.ToArray()
+}

@@ -1,6 +1,6 @@
 {
-  "$comment": "Perfil: rodar um app desktop controlado pelo winapp. Rede ligada (o winapp precisa dela); bloqueie a internet com sandbox\\app\\guest-firewall.ps1 (wsb exec -r System) antes de abrir o app. Requer LAB_APP_PROJECT e LAB_WORK_DIR. Antes: scripts\\app-stage.ps1. Uso: scripts\\test-up.ps1 -Config lab.config.app-winapp.json",
-  "projectPath": "%LAB_APP_PROJECT%",
+  "$comment": "Perfil: rodar um app desktop controlado pelo winapp. Rede ligada (o winapp precisa dela); bloqueie a internet com sandbox\\app\\guest-firewall.ps1 (wsb exec -r System) antes de abrir o app. Projeto: -Project do test-up.ps1 (padrao: a raiz do repositorio). Pasta de trabalho: <raiz>\\.sandbox-work (publicar.mjs / app-stage.ps1). Antes: scripts\\app-stage.ps1. Uso: scripts\\test-up.ps1 -Config lab.config.app-winapp.json",
+  "projectPath": "..",
   "extensionsDir": "shared/extensions",
   "extensions": [
     "lab-ext"
@@ -29,12 +29,12 @@
   "networking": "Enable",
   "extraMappedFolders": [
     {
-      "host": "%LAB_WORK_DIR%\\deploy",
+      "host": "..\\.sandbox-work\\deploy",
       "readOnly": true,
       "sandbox": "C:\\appdeploy"
     },
     {
-      "host": "%LAB_WORK_DIR%\\guest-rw",
+      "host": "..\\.sandbox-work\\guest-rw",
       "readOnly": false,
       "sandbox": "C:\\labwork"
     }

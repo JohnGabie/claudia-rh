@@ -1,6 +1,6 @@
 {
-  "$comment": "Perfil: build dentro do guest com toolchains do host montados read-only em C:\\hosttools (Node, Rust msvc, MSVC, Windows SDK; ajuste os caminhos ao host). Rede ligada (registros de pacotes). Requer LAB_APP_PROJECT e LAB_WORK_DIR. Uso: scripts\\test-up.ps1 -Config lab.config.app-build.json; depois sandbox\\app\\guest-build.ps1 via winapp target exec",
-  "projectPath": "%LAB_APP_PROJECT%",
+  "$comment": "Perfil: build dentro do guest com toolchains do host montados read-only em C:\\hosttools (Node, Rust msvc, MSVC, Windows SDK; ajuste os caminhos ao host). Rede ligada (registros de pacotes). Projeto: -Project do test-up.ps1 (padrao: a raiz do repositorio). Pasta de trabalho: <raiz>\\.sandbox-work (publicar.mjs / app-stage.ps1). Uso: scripts\\test-up.ps1 -Config lab.config.app-build.json; depois sandbox\\app\\guest-build.ps1 via winapp target exec",
+  "projectPath": "..",
   "extensionsDir": "shared/extensions",
   "extensions": [
     "lab-ext"
@@ -29,12 +29,12 @@
   "networking": "Enable",
   "extraMappedFolders": [
     {
-      "host": "%LAB_WORK_DIR%\\deploy",
+      "host": "..\\.sandbox-work\\deploy",
       "readOnly": true,
       "sandbox": "C:\\appdeploy"
     },
     {
-      "host": "%LAB_WORK_DIR%\\guest-rw",
+      "host": "..\\.sandbox-work\\guest-rw",
       "readOnly": false,
       "sandbox": "C:\\labwork"
     },

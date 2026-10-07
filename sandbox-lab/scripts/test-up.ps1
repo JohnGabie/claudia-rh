@@ -9,6 +9,8 @@
 .PARAMETER WaitForMcp   Espera tambem a fase MCP terminar (phase=complete), nao so o core.
 .PARAMETER Config       Perfil do lab (padrao: lab.config.json). Ex.: -Config lab.config.app.json.
                         Caminho relativo a raiz do lab ou absoluto.
+.PARAMETER Project      Pasta do projeto montada read-only em C:\labproject (absoluta). Tem prioridade sobre o
+                        projectPath do perfil. A skill claudia-teste-sandbox passa o checkout atual (onde.mjs: projeto).
   Caminhos aceitam variaveis de ambiente (%USERPROFILE% etc.).
   Chave opcional no perfil: "extraMappedFolders": [ { "host": "D:\\x", "sandbox": "C:\\y", "readOnly": true } ]
   (pastas extras montadas no guest; o perfil padrao nao usa).
@@ -20,7 +22,8 @@ param(
   [switch]$Force,
   [switch]$NoWait,
   [switch]$WaitForMcp,
-  [string]$Config = 'lab.config.json'
+  [string]$Config = 'lab.config.json',
+  [string]$Project
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\travas.ps1')
@@ -47,10 +50,19 @@ function XmlEsc([string]$s) { [Security.SecurityElement]::Escape($s) }
 
 $OutDir     = Join-Path $SharedDir 'out'
 $SandboxDir = Resolve-LabPath 'sandbox'
-$ProjectDir = Resolve-LabPath $cfg.projectPath
+$ProjectDir = $(if ($Project) {
+  if (-not [IO.Path]::IsPathRooted($Project)) { throw "-Project must be an absolute path: $Project" }
+  [IO.Path]::GetFullPath($Project)
+} else { Resolve-LabPath $cfg.projectPath })
 $ExtDir     = Resolve-LabPath $cfg.extensionsDir
 foreach ($d in @($SharedDir, $SandboxDir, $ProjectDir, $ExtDir)) { if (-not (Test-Path $d -PathType Container)) { throw "Pasta nao encontrada: $d" } }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
+if (-not $GenerateOnly) {
+  $missingTools = Test-LabTools -LabDir $Root
+  if ($missingTools.Count) {
+    throw ("[test-up] ferramentas faltando ou diferentes em shared\tools ({0}): {1}. Nada foi baixado e nenhum Sandbox subiu. Como obter: sandbox-lab\README.md, secao Ferramentas." -f $missingTools.Count, (($missingTools | Select-Object -First 10) -join '; '))
+  }
+}
 
 # --- guest.config.json (lido pelo bootstrap.ps1 e bootstrap-mcp.ps1 no guest) ---
 $extList = @($cfg.extensions | ForEach-Object { To-Guest (Join-Path $cfg.extensionsDir $_) })

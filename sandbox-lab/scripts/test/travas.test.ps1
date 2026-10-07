@@ -41,5 +41,24 @@ Check 'out: bad lab dirs are refused' {
   Should-Match (Get-LabOutCleanRefusal -OutDir $O -LabDir '') 'required'
 }
 
+$H = 'a' * 64
+$M = "$H 10 chrome/chrome-win64/chrome.exe`n$H 3 uv/uv.exe`n"
+Check 'tools: everything present with the right size' {
+  $r = Get-LabMissingTools -ManifestText $M -FoundSizes @{ 'chrome/chrome-win64/chrome.exe' = 10; 'uv/uv.exe' = 3; 'extra.txt' = 1 }
+  if ($r.Count) { throw "unexpected: $($r -join '; ')" }
+}
+Check 'tools: missing and size differences are listed' {
+  $r = Get-LabMissingTools -ManifestText $M -FoundSizes @{ 'uv/uv.exe' = 4 }
+  if ($r.Count -ne 2 -or $r[0] -notmatch '^missing: chrome/' -or $r[1] -notmatch '^size differs: uv/uv\.exe') { throw "got: $($r -join '; ')" }
+}
+Check 'tools: letter case does not matter' {
+  $r = Get-LabMissingTools -ManifestText $M -FoundSizes @{ 'Chrome/Chrome-Win64/Chrome.exe' = 10; 'UV/uv.exe' = 3 }
+  if ($r.Count) { throw "unexpected: $($r -join '; ')" }
+}
+Check 'tools: an empty or malformed manifest is a problem, never a pass' {
+  Should-Match ((Get-LabMissingTools -ManifestText '' -FoundSizes @{}) -join ';') 'empty'
+  Should-Match ((Get-LabMissingTools -ManifestText "lixo`n" -FoundSizes @{}) -join ';') 'malformed'
+}
+
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

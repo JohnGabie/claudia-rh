@@ -38,3 +38,16 @@ function Clear-LabOut([string]$OutDir, [string]$LabDir) {
   if ($refusal) { throw "Refusing to clean ${OutDir}: $refusal" }
   Get-ChildItem -LiteralPath $OutDir -Force | Where-Object { $_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force
 }
+
+function Test-LabTools([string]$LabDir) {
+  # Problems with shared\tools against shared\tools.sha256 (empty array = fine). Reads only.
+  $manifest = Join-Path $LabDir 'shared\tools.sha256'
+  if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return ,@('manifest not found: shared\tools.sha256') }
+  $toolsDir = Join-Path $LabDir 'shared\tools'
+  $found = @{}
+  if (Test-Path -LiteralPath $toolsDir -PathType Container) {
+    $base = (Get-Item -LiteralPath $toolsDir).FullName.TrimEnd('\') + '\'
+    Get-ChildItem -LiteralPath $toolsDir -Recurse -File -Force | ForEach-Object { $found[$_.FullName.Substring($base.Length).Replace('\', '/')] = $_.Length }
+  }
+  return ,(Get-LabMissingTools -ManifestText (Get-Content -LiteralPath $manifest -Raw) -FoundSizes $found)
+}

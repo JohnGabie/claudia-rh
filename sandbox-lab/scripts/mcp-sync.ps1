@@ -16,16 +16,13 @@
   A chave NAO vai para o .mcp.json: o Claude Code expande ${LAB_MCP_AUTH_KEY} do ambiente.
   Antes de abrir o `claude` no lab, defina a variavel (na mesma sessao):
      $env:LAB_MCP_AUTH_KEY = (Get-Content shared\secrets\mcp-auth.key -Raw).Trim()
-  ou use -Literal para gravar a chave literal (o .mcp.json passa a conter segredo).
 
 .PARAMETER Wait     Segundos para esperar o mcp-status.json aparecer com ok=true (default 0).
-.PARAMETER Literal  Grava a chave literal no header em vez de ${LAB_MCP_AUTH_KEY}.
 .PARAMETER Test     Faz um POST initialize + tools/list no servidor e mostra quantas tools existem.
 #>
 [CmdletBinding()]
 param(
   [int]$Wait = 0,
-  [switch]$Literal,
   [switch]$Test
 )
 $ErrorActionPreference = 'Stop'
@@ -53,7 +50,7 @@ $port = if ($st.port) { $st.port } else { $cfg.port }
 $path = if ($cfg.path) { $cfg.path } else { '/mcp' }
 $url = "http://$($st.ip):$port$path"
 $key = (Get-Content $keyFile -Raw).Trim()
-$auth = if ($Literal) { "Bearer $key" } else { "Bearer `${$envName}" }
+$auth = "Bearer `${$envName}"   # the key itself never goes to .mcp.json
 
 $mcp = [ordered]@{
   mcpServers = [ordered]@{
@@ -66,8 +63,8 @@ $mcp = [ordered]@{
 }
 $json = $mcp | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $lab '.mcp.json'), $json + "`n", (New-Object Text.UTF8Encoding($false)))
-Write-Host ".mcp.json -> $url (auth: $(if ($Literal) { 'chave literal' } else { "`${$envName}" }))"
-if (-not $Literal -and -not [Environment]::GetEnvironmentVariable($envName)) {
+Write-Host ".mcp.json -> $url (auth: `${$envName})"
+if (-not [Environment]::GetEnvironmentVariable($envName)) {
   Write-Warning "`$env:$envName nao esta definida nesta sessao. Rode antes do claude:`n  `$env:$envName = (Get-Content '$keyFile' -Raw).Trim()"
 }
 
