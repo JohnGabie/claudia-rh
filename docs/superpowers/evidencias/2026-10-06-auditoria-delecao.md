@@ -18,6 +18,18 @@ Motivo da auditoria: em 2026-10-05 um teste apagou o disco C do usuário, e cerc
 | B6 | `.claude/skills/*/evals/rodar-evals.mjs:21-24` | Lança dezenas de `claude -p` no repositório, com o modo de permissão `auto` do usuário. Entre as consultas há "desinstalação", "corrige este bug", "roda cargo test". A primeira ferramenta executa de verdade, o kill não pega a árvore de processos, e cada execução tem custo. | `--permission-mode plan` e `--disallowedTools` para Bash, PowerShell, Edit, Write, NotebookEdit e WebFetch; matar com `taskkill /PID <pid> /T /F`. Só roda com o usuário autorizando. |
 | B7 | `src-tauri/src/browser/service.rs:120,507` (5 testes de `prepare`) | O `fake_spawn` devolve o PID fixo **555**. Num caminho de erro, roda o `taskkill /PID 555 /T /F` **real**, que mata qualquer processo da máquina que tenha esse número, com a árvore inteira. | Injetar o kill em `prepare`: a produção passa `manager::kill_tree`, os testes passam `\|_\| {}`. |
 
+**Decisões do usuário, item por item (2026-10-06)** (valem sobre a tabela acima):
+
+| # | Decisão |
+|---|---|
+| B1 | **Corrigir.** "Foi esse que ferrou meu sistema. Nunca mais faz isso." O teste nunca mais chama a função que apaga com caminho real. |
+| B2 | **Endurecer** (lista branca dentro de `%TEMP%\claudia-teste-sandbox\`). Princípio do usuário: **teste cujo objetivo é apagar ou limpar coisas roda só no Sandbox.** Teste normal que só limpa a própria pasta temporária continua rodando na máquina. |
+| B3 | **Pôr trava:** só apaga o `deploy` que tiver o marcador criado pelo próprio `publicar`. (O `deploy` é limpo antes de copiar, não depois da rodada.) |
+| B4 | **Não recusar:** quando o agente sobe o app para teste, ele sobe com o disparo por ociosidade e o modo autônomo **desligados**, por uma variável que só vale no build de desenvolvimento. Os arquivos do usuário e o app normal ficam iguais. O `--dangerously-skip-permissions` em si fica para o usuário resolver depois. |
+| B5 | **Lista negra no `--escrever`** (`apagar_`, `excluir_`, `remover_`, `limpar_`, `desinstalar`, `instalar_`, `iniciar_`, `disparar_`, `enviar_` só com `--confirmo=<comando>`) e **`obter_credencial` sempre recusado**. O parse do JSON não foi pedido. |
+| B6 | **Linear, depois.** Fora do caminho do plano; os evals continuam só manuais. |
+| B7 | **Higiene, não bloqueia:** o kill falso nos testes entra junto com a Tarefa 1. |
+
 ## 2. REVISAR: corrigir junto, sem bloquear os testes seguros
 
 - `tests/browser_live.rs:32`, `viewport_live.rs:22`: `taskkill` pelo PID sem conferir que ainda é o Chrome do teste (PID reciclado). Antes de matar, conferir `chrome.exe` e que a porta ainda responde.

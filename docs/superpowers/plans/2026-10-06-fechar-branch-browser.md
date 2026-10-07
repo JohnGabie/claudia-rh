@@ -25,7 +25,7 @@ Em 2026-10-05 um teste de "limpeza de dados", escrito por um agente e nunca revi
 - Todo caminho que chega a `remove_dir_all`, `remove_file`, `rmSync`, `Remove-Item`, `rm -rf`, `robocopy /MIR` ou `git clean` tem de ser uma **pasta temporária criada pelo próprio teste**. Na dúvida, **não roda**: pergunte ao usuário.
 - **Nunca** passe raiz de disco, `~`, `%USERPROFILE%`, `AppData`, a pasta do projeto ou qualquer caminho real a uma função que apaga, **nem para testar a recusa**. A recusa se testa na função de validação pura.
 - **Todo subagente recebe este bloco literalmente no prompt.**
-- Desinstalação e qualquer limpeza de dados do app **só** rodam no Windows Sandbox. Nunca nesta máquina.
+- Desinstalação, limpeza de dados e **todo teste cujo objetivo é apagar ou limpar coisas** rodam **só** no Windows Sandbox. Nunca nesta máquina. (Teste normal que só limpa a própria pasta temporária continua rodando aqui.)
 - Antes de escrever nos dados reais, faça um **backup novo numa pasta nova**. Nunca sobrescreva nem apague um backup.
 - **Evidência vai para o repositório.** `.superpowers/` está em `.git/info/exclude` e não é versionado. A prova desta branch fica em `docs/superpowers/evidencias/` (Tarefa 2), sem caminhos pessoais.
 - Commit a cada passo verde. Trabalho de agente que não foi commitado conta como perdido.
@@ -206,6 +206,18 @@ Cada correção segue o ciclo de sempre (teste que falha antes, depois passa, e 
 | B5 | `invocar.mjs`: `JSON.parse` e `JSON.stringify`, lista negra mesmo com `--escrever`, `obter_credencial` sempre recusado. Junto, ampliar `rotuloPerigoso` em `regras.mjs`. | `claudia-teste-e2e/scripts/{invocar,regras}.mjs` e os testes deles | Sonnet |
 | B6 | Evals com `--permission-mode plan`, `--disallowedTools` e kill da árvore | `.claude/skills/*/evals/rodar-evals.mjs` | Haiku |
 | B7 | Injetar o kill em `prepare`: os testes passam `|_| {}` | `src-tauri/src/browser/service.rs` | Sonnet |
+
+**Decisões do usuário, item por item (2026-10-06)** (valem sobre a tabela acima):
+
+| # | Decisão |
+|---|---|
+| B1 | **Corrigir.** "Foi esse que ferrou meu sistema. Nunca mais faz isso." O teste nunca mais chama a função que apaga com caminho real. |
+| B2 | **Endurecer** (lista branca dentro de `%TEMP%\claudia-teste-sandbox\`). Princípio do usuário: **teste cujo objetivo é apagar ou limpar coisas roda só no Sandbox.** Teste normal que só limpa a própria pasta temporária continua rodando na máquina. |
+| B3 | **Pôr trava:** só apaga o `deploy` que tiver o marcador criado pelo próprio `publicar`. (O `deploy` é limpo antes de copiar, não depois da rodada.) |
+| B4 | **Não recusar:** quando o agente sobe o app para teste, ele sobe com o disparo por ociosidade e o modo autônomo **desligados**, por uma variável que só vale no build de desenvolvimento. Os arquivos do usuário e o app normal ficam iguais. O `--dangerously-skip-permissions` em si fica para o usuário resolver depois. |
+| B5 | **Lista negra no `--escrever`** (`apagar_`, `excluir_`, `remover_`, `limpar_`, `desinstalar`, `instalar_`, `iniciar_`, `disparar_`, `enviar_` só com `--confirmo=<comando>`) e **`obter_credencial` sempre recusado**. O parse do JSON não foi pedido. |
+| B6 | **Linear, depois.** Fora do caminho do plano; os evals continuam só manuais. |
+| B7 | **Higiene, não bloqueia:** o kill falso nos testes entra junto com a Tarefa 1. |
 
 Depois, a mesma revisão Opus da auditoria relê os arquivos corrigidos e confirma que não sobrou `BLOQUEIA`. Os itens das seções 2 e 3 da auditoria vão junto com a Tarefa 1 (harness live) ou para o Linear. As travas da seção 6 passam a valer em todas as tarefas.
 
