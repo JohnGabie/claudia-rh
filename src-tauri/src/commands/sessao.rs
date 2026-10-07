@@ -234,6 +234,10 @@ fn iniciar_sessao_agora(
 }
 
 pub fn ler_skip_permissions(data_dir: &std::path::Path) -> bool {
+    // Test run of the dev build (CLAUDIA_SEM_AUTOMACAO=1): autonomous mode counts as off, file untouched.
+    if crate::idle_watcher::automacao_suprimida_agora() {
+        return false;
+    }
     std::fs::read_to_string(data_dir.join("modo_autonomo.json"))
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
