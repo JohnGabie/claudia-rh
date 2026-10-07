@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::activity_log::sink::LogSink;
+use crate::activity_log::BrowserEvent;
+
 use super::install::Progress;
 use super::manager::{self, BrowserState, LaunchOptions, WatchAction, Watcher};
 use super::pin::Pin;
@@ -79,22 +82,57 @@ fn forward_progress(throttle: &Mutex<Throttle>, p: Progress, now: Instant, publi
 
 /// Install the pinned Chrome if it is not there yet (download, checksum, extract), without launching it.
 /// Publishes `downloading`, or `error`. Returns the path of chrome.exe.
-pub(crate) async fn install(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)) -> Result<std::path::PathBuf, String> {
+pub(crate) async fn install(
+    local: &Path,
+    pin: &Pin,
+    publish: &(dyn Fn(Status) + Send + Sync),
+    events: &(dyn Fn(BrowserEvent) + Send + Sync),
+) -> Result<std::path::PathBuf, String> {
     let root = super::browser_root(local);
     if let Err(e) = std::fs::create_dir_all(&root) {
         let msg = format!("não foi possível criar a pasta do browser: {e}");
         publish(Status::error(msg.clone()));
+        events(BrowserEvent::InstallFailed { version: pin.version.clone(), error: msg.clone() });
         return Err(msg);
     }
 
     publish(Status::at("downloading"));
     let throttle = Mutex::new(Throttle::new(Duration::from_millis(200)));
-    let on_progress = |p: Progress| forward_progress(&throttle, p, Instant::now(), publish);
+    // A real download is the only thing that sends progress: the first update marks its start.
+    let downloaded = AtomicBool::new(false);
+    let on_progress = |p: Progress| {
+        if !downloaded.swap(true, Ordering::SeqCst) {
+            events(BrowserEvent::DownloadStarted { version: pin.version.clone(), total_bytes: p.total });
+        }
+        forward_progress(&throttle, p, Instant::now(), publish)
+    };
     match super::install::ensure_installed(&root, &pin.version, &pin.zip_url(), &pin.sha256, &on_progress).await {
-        Ok(p) => Ok(p),
+        Ok(p) => {
+            if downloaded.load(Ordering::SeqCst) {
+                events(BrowserEvent::Installed { version: pin.version.clone() });
+            }
+            Ok(p)
+        }
         Err(e) => {
             publish(Status::error(e.to_string()));
+            events(BrowserEvent::InstallFailed { version: pin.version.clone(), error: e.to_string() });
             Err(e.to_string())
+        }
+    }
+}
+
+/// The Activity log writer for the app process. Each event is written on a blocking thread that nobody
+/// waits for: the download, the launch and the watcher never slow down, and a failed write only reaches
+/// diagnostics (inside `LogSink`). Without the data folders it silently does nothing.
+fn event_sink(app: &AppHandle) -> impl Fn(BrowserEvent) + Send + Sync + 'static {
+    let sink = match (app.path().app_data_dir(), app.path().app_local_data_dir()) {
+        (Ok(data), Ok(local)) => Some(Arc::new(LogSink::new(data, local))),
+        _ => None,
+    };
+    move |ev| {
+        if let Some(sink) = &sink {
+            let sink = sink.clone();
+            drop(tauri::async_runtime::spawn_blocking(move || sink.browser_event(ev)));
         }
     }
 }
@@ -105,9 +143,10 @@ pub(crate) async fn prepare(
     local: &Path,
     pin: &Pin,
     publish: &(dyn Fn(Status) + Send + Sync),
+    events: &(dyn Fn(BrowserEvent) + Send + Sync),
     spawn: impl Fn(&LaunchOptions, u16) -> Result<u32, String>,
 ) -> Result<BrowserState, String> {
-    let exe = install(local, pin, publish).await?;
+    let exe = install(local, pin, publish, events).await?;
 
     publish(Status::at("launching"));
     let opts = LaunchOptions::visible(exe, super::profile_dir(local));
@@ -120,10 +159,12 @@ pub(crate) async fn prepare(
     match manager::ensure_running_full(&opts, &pin.version, &super::state_file(local), prepare_profile, spawn, manager::kill_tree, Duration::from_secs(20)).await {
         Ok(state) => {
             publish(Status::at("ready"));
+            events(BrowserEvent::Launched { version: state.version.clone(), port: state.port });
             Ok(state)
         }
         Err(e) => {
             publish(Status::error(e.clone()));
+            events(BrowserEvent::LaunchFailed { error: e.clone() });
             Err(e)
         }
     }
@@ -196,7 +237,8 @@ pub async fn install_in_background(app: AppHandle) {
             return;
         }
     }
-    if install(&local, &pin, &publish).await.is_ok() {
+    let events = event_sink(&app);
+    if install(&local, &pin, &publish, &events).await.is_ok() {
         publish(Status::at("installed"));
     }
     finish_running(&app);
@@ -230,11 +272,12 @@ pub async fn start(app: AppHandle) {
         }
     };
     let pin = super::pin::pin();
-    if let Ok(state) = prepare(&local, &pin, &publish, manager::spawn_chrome).await {
+    let events = event_sink(&app);
+    if let Ok(state) = prepare(&local, &pin, &publish, &events, manager::spawn_chrome).await {
         // The orange logo on the window (taskbar, Alt+Tab): the window opens a moment after the launch.
         until_window(60, Duration::from_millis(250), || super::icon::apply_to_process(state.pid)).await;
         let active = || agent_session_active(&app);
-        watch(&local, &pin, &publish, &active).await;
+        watch(&local, &pin, &publish, &events, &active).await;
     }
     finish_running(&app);
 }
@@ -261,7 +304,13 @@ pub(crate) fn relaunch_wanted(agent_active: bool) -> bool {
 }
 
 /// Health check every few seconds; relaunch a Chrome that died, give up if it keeps dying.
-async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync), agent_active: &(dyn Fn() -> bool + Send + Sync)) {
+async fn watch(
+    local: &Path,
+    pin: &Pin,
+    publish: &(dyn Fn(Status) + Send + Sync),
+    events: &(dyn Fn(BrowserEvent) + Send + Sync),
+    agent_active: &(dyn Fn() -> bool + Send + Sync),
+) {
     let state_file = super::state_file(local);
     let mut watcher = Watcher::default();
     loop {
@@ -277,17 +326,21 @@ async fn watch(local: &Path, pin: &Pin, publish: &(dyn Fn(Status) + Send + Sync)
         match watcher.observe(alive, Instant::now()) {
             WatchAction::Nothing => {}
             WatchAction::Relaunch => {
+                events(BrowserEvent::Gone);
                 if !relaunch_wanted(agent_active()) {
                     // Nobody is using it: a window the user closed stays closed until the next session or the open button.
+                    events(BrowserEvent::NotRelaunched);
                     publish(Status::at("installed"));
                     return;
                 }
                 log::warn!("browser is gone, relaunching");
-                if prepare(local, pin, publish, manager::spawn_chrome).await.is_err() {
-                    return;
+                match prepare(local, pin, publish, events, manager::spawn_chrome).await {
+                    Ok(state) => events(BrowserEvent::Relaunched { version: state.version, port: state.port }),
+                    Err(_) => return,
                 }
             }
             WatchAction::GiveUp => {
+                events(BrowserEvent::GaveUp);
                 publish(Status::error("o browser fechou várias vezes seguidas; abra o app de novo ou reinicie o browser pelas configurações"));
                 return;
             }
@@ -328,6 +381,14 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn noop_events(_: BrowserEvent) {}
+
+    fn event_recorder() -> (Arc<Mutex<Vec<&'static str>>>, impl Fn(BrowserEvent) + Send + Sync) {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let l2 = log.clone();
+        (log, move |e: BrowserEvent| l2.lock().unwrap().push(e.name()))
+    }
 
     fn s(downloaded: u64, total: Option<u64>) -> Status {
         Status { stage: "downloading".into(), downloaded, total, message: None }
@@ -437,7 +498,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("alive-live");
         let (_l, publish) = recorder();
-        let st = prepare(&local, &pin, &publish, fake_spawn).await.unwrap();
+        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
         let file = super::super::state_file(&local);
         assert!(is_alive(&file, "154.0.1.2").await);
         assert!(!is_alive(&file, "999.0.0.1").await, "the port answers, but not as the pinned version");
@@ -519,7 +580,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("first");
         let (log, publish) = recorder();
-        let st = prepare(&local, &pin, &publish, fake_spawn).await.unwrap();
+        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
         let stages: Vec<String> = {
             let mut v: Vec<String> = log.lock().unwrap().iter().map(|x| x.stage.clone()).collect();
             v.dedup();
@@ -538,7 +599,7 @@ mod tests {
         let (_log, publish) = recorder();
         let seen_at_spawn = Arc::new(Mutex::new(String::new()));
         let seen = seen_at_spawn.clone();
-        prepare(&local, &pin, &publish, move |o, port| {
+        prepare(&local, &pin, &publish, &noop_events, move |o, port| {
             let prefs = std::fs::read_to_string(o.profile_dir.join("Default").join("Preferences")).unwrap_or_default();
             *seen.lock().unwrap() = prefs;
             fake_spawn(o, port)
@@ -554,9 +615,9 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("second");
         let (_l, publish) = recorder();
-        let first = prepare(&local, &pin, &publish, fake_spawn).await.unwrap();
+        let first = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
         let spawns = std::sync::atomic::AtomicUsize::new(0);
-        let again = prepare(&local, &pin, &publish, |_, _| {
+        let again = prepare(&local, &pin, &publish, &noop_events, |_, _| {
             spawns.fetch_add(1, Ordering::SeqCst);
             Err("must not spawn".into())
         })
@@ -573,7 +634,7 @@ mod tests {
         pin.sha256 = "0".repeat(64); // the download will not match
         let local = temp("bad-hash");
         let (log, publish) = recorder();
-        let e = prepare(&local, &pin, &publish, fake_spawn).await.unwrap_err();
+        let e = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap_err();
         assert!(e.contains("confere"), "{e}");
         let last = log.lock().unwrap().last().cloned().unwrap();
         assert_eq!(last.stage, "error");
@@ -586,9 +647,55 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("bad-launch");
         let (log, publish) = recorder();
-        let e = prepare(&local, &pin, &publish, |_, _| Err("não abriu".to_string())).await.unwrap_err();
+        let e = prepare(&local, &pin, &publish, &noop_events, |_, _| Err("não abriu".to_string())).await.unwrap_err();
         assert!(e.contains("não abriu"));
         assert_eq!(log.lock().unwrap().last().unwrap().stage, "error");
+    }
+
+    // Pending Sandbox: the four tests below create temp folders (like the prepare() tests above).
+    #[tokio::test]
+    async fn a_first_run_records_download_install_and_launch_and_a_second_run_only_the_launch() {
+        let zip = chrome_zip();
+        let pin = pin_for(serve(zip.clone()).await, &zip);
+        let local = temp("ev-first");
+        let (_l, publish) = recorder();
+        let (events, ev) = event_recorder();
+        prepare(&local, &pin, &publish, &ev, fake_spawn).await.unwrap();
+        assert_eq!(*events.lock().unwrap(), vec!["download_started", "installed", "launched"]);
+        events.lock().unwrap().clear();
+        prepare(&local, &pin, &publish, &ev, |_, _| Err("must not spawn".into())).await.unwrap();
+        assert_eq!(*events.lock().unwrap(), vec!["launched"], "already installed: no download events");
+    }
+
+    #[tokio::test]
+    async fn a_failed_download_records_install_failed_and_no_installed() {
+        let zip = chrome_zip();
+        let mut pin = pin_for(serve(zip.clone()).await, &zip);
+        pin.sha256 = "0".repeat(64);
+        let (_l, publish) = recorder();
+        let (events, ev) = event_recorder();
+        prepare(&temp("ev-hash"), &pin, &publish, &ev, fake_spawn).await.unwrap_err();
+        assert_eq!(*events.lock().unwrap(), vec!["download_started", "install_failed"]);
+    }
+
+    #[tokio::test]
+    async fn a_launch_failure_records_launch_failed() {
+        let zip = chrome_zip();
+        let pin = pin_for(serve(zip.clone()).await, &zip);
+        let (_l, publish) = recorder();
+        let (events, ev) = event_recorder();
+        prepare(&temp("ev-launch"), &pin, &publish, &ev, |_, _| Err("não abriu".to_string())).await.unwrap_err();
+        assert_eq!(events.lock().unwrap().last().copied(), Some("launch_failed"));
+    }
+
+    #[tokio::test]
+    async fn install_alone_records_download_started_and_installed() {
+        let zip = chrome_zip();
+        let pin = pin_for(serve(zip.clone()).await, &zip);
+        let (_l, publish) = recorder();
+        let (events, ev) = event_recorder();
+        install(&temp("ev-install"), &pin, &publish, &ev).await.unwrap();
+        assert_eq!(*events.lock().unwrap(), vec!["download_started", "installed"]);
     }
 
     #[tokio::test]
@@ -608,7 +715,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("throttle");
         let (log, publish) = recorder();
-        prepare(&local, &pin, &publish, fake_spawn).await.unwrap();
+        prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
         let downloading = log.lock().unwrap().iter().filter(|x| x.stage == "downloading").count();
         assert!(downloading <= 110, "at most ~1 update per percent, got {downloading}");
         assert!(downloading >= 2);

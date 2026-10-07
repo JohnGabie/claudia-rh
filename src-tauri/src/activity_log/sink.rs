@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use super::{ActivityLog, NewEvent};
+use super::{ActivityLog, BrowserEvent, NewEvent};
 use crate::browser::nav::NavRecord;
 use crate::mcp::tools::browser::{ActionRecord, ActionSink};
 
@@ -62,6 +62,17 @@ impl LogSink {
         if self.purge_due(Instant::now()) {
             let _ = log.purge(MAX_AGE_DAYS, MAX_CAPTURE_BYTES);
         }
+    }
+
+    /// Records what the browser itself did (download, launch, crash, dialog). Synchronous and best effort:
+    /// it never panics and never returns an error. Callers on an async path must run it on a blocking
+    /// thread and not wait for it (`service.rs` does), so the browser never waits for the log.
+    pub fn browser_event(&self, ev: BrowserEvent) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (session_id, vaga_id) = self.context();
+            let row = NewEvent { session_id, vaga_id, ..ev.to_new_event() };
+            self.write(row, None, None);
+        }));
     }
 }
 
@@ -148,6 +159,28 @@ mod tests {
         s.action(rec("browser_click", "ok"));
         let rows = ActivityLog::open(&local.join("dev")).unwrap().list(&Filter::default()).unwrap();
         assert_eq!(rows.len(), 3, "the stale dev-mode.json is ignored");
+    }
+
+    // Pending Sandbox: the next two write a database into a temp folder.
+    #[test]
+    fn a_browser_event_is_recorded_as_kind_browser_with_its_name_and_result() {
+        let (data, local) = (temp_dir("sink-bev-d"), temp_dir("sink-bev-l"));
+        let s = LogSink::new(data, local.clone());
+        s.browser_event(BrowserEvent::Launched { version: "154.0.1.2".into(), port: 9222 });
+        s.browser_event(BrowserEvent::LaunchFailed { error: "boom".into() });
+        let log = ActivityLog::open(&local.join("dev")).unwrap();
+        let rows = log.list(&Filter { kind: Some("browser".into()), ..Default::default() }).unwrap();
+        assert_eq!(rows.iter().map(|r| r.tool.as_deref().unwrap()).collect::<Vec<_>>(), vec!["launch_failed", "launched"]);
+        assert_eq!(rows[0].result.as_deref(), Some("error"));
+        assert_eq!(rows[0].error.as_deref(), Some("boom"));
+        assert_eq!(rows[1].target.as_deref(), Some("154.0.1.2 port 9222"));
+    }
+
+    #[test]
+    fn a_browser_event_write_failure_never_panics() {
+        let local = temp_dir("sink-bev-fail").join("im-a-file");
+        std::fs::write(&local, b"x").unwrap();
+        LogSink::new(temp_dir("sink-bev-fail-d"), local).browser_event(BrowserEvent::Gone); // must simply return
     }
 
     #[test]
