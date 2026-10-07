@@ -7,6 +7,8 @@
 param()
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'lib\travas.ps1')
+. (Join-Path $PSScriptRoot 'lib\disco.ps1')
 $results = New-Object System.Collections.Generic.List[object]
 function Add-Result([string]$level, [string]$check, [string]$detail = '') {
   $results.Add([pscustomobject]@{ Level = $level; Check = $check; Detail = $detail })
@@ -56,8 +58,13 @@ if ($cfg) {
   if ($cfg.mcp.authKeyFile -and -not (Test-Path (P $cfg.mcp.authKeyFile))) { Add-Result WARN 'mcp.authKeyFile existe' "$($cfg.mcp.authKeyFile) (gerado pelo setup do MCP)" }
 }
 
+# 1b. ferramentas (shared\tools) batem com o manifesto versionado
+$missingTools = Test-LabTools -LabDir $Root
+if ($missingTools.Count) { Add-Result FAIL 'shared/tools bate com shared/tools.sha256' ("{0}: {1}" -f $missingTools.Count, (($missingTools | Select-Object -First 5) -join '; ')) }
+else { Add-Result PASS 'shared/tools bate com shared/tools.sha256' }
+
 # 2. scripts PowerShell parseiam
-foreach ($s in Get-ChildItem (Join-Path $Root 'scripts'), (Join-Path $Root 'sandbox') -Filter *.ps1) {
+foreach ($s in Get-ChildItem (Join-Path $Root 'scripts'), (Join-Path $Root 'scripts\lib'), (Join-Path $Root 'scripts\test'), (Join-Path $Root 'sandbox'), (Join-Path $Root 'sandbox\app') -Filter *.ps1) {
   $tok = $null; $err = $null
   [void][Management.Automation.Language.Parser]::ParseFile($s.FullName, [ref]$tok, [ref]$err)
   if ($err.Count) { Add-Result FAIL "sintaxe $($s.Name)" ($err | Select-Object -First 1).Message } else { Add-Result PASS "sintaxe $($s.Name)" }
@@ -89,7 +96,7 @@ if (Test-Path $mcpJson) {
 } else { Add-Result WARN '.mcp.json presente' 'ausente' }
 
 # 5. skills (opcional)
-$skillsDir = Join-Path $Root '.claude\skills'
+$skillsDir = Join-Path (Split-Path $Root -Parent) '.claude\skills'   # skills live in the repo root
 $skillFiles = @(Get-ChildItem $skillsDir -Recurse -Filter SKILL.md -ErrorAction SilentlyContinue)
 if (-not $skillFiles.Count) { Add-Result WARN '.claude/skills com SKILL.md' 'ausente' }
 foreach ($f in $skillFiles) {

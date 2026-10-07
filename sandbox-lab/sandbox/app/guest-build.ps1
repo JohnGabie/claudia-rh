@@ -57,7 +57,8 @@ Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) msvc=$($res.env.m
 Save
 
 $Src = 'C:\labdata\project'
-robocopy C:\labproject $Src /E /XD node_modules target dist .git /NFL /NDL /NP /R:1 /W:1 | Out-Null
+# Full paths in /XD exclude only these folders of the project root, not any folder with the same name.
+robocopy C:\labproject $Src /E /XD node_modules target dist .git C:\labproject\sandbox-lab\shared C:\labproject\.sandbox-work C:\labproject\.claude\worktrees /NFL /NDL /NP /R:1 /W:1 | Out-Null
 Set-Location $Src
 if (-not $Install -or (Step 'install' $Install)) {
   if ($Build) { Step 'build' $Build | Out-Null }

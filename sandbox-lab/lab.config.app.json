@@ -1,6 +1,6 @@
 {
-  "$comment": "Perfil: rodar um app desktop SEM rede. Requer LAB_APP_PROJECT e LAB_WORK_DIR (ver skill sandbox-lab). Antes: scripts\\app-stage.ps1. Uso: scripts\\test-up.ps1 -Config lab.config.app.json; depois sandbox\\app\\guest-run.ps1 via wsb exec -r ExistingLogin (o winapp nao alcanca o guest sem rede).",
-  "projectPath": "%LAB_APP_PROJECT%",
+  "$comment": "Perfil: rodar um app desktop SEM rede. Projeto: -Project do test-up.ps1 (padrao: a raiz do repositorio). Pasta de trabalho: <raiz>\\.sandbox-work (publicar.mjs / app-stage.ps1). Antes: scripts\\app-stage.ps1. Uso: scripts\\test-up.ps1 -Config lab.config.app.json; depois sandbox\\app\\guest-run.ps1 via wsb exec -r ExistingLogin (o winapp nao alcanca o guest sem rede).",
+  "projectPath": "..",
   "extensionsDir": "shared/extensions",
   "extensions": [
     "lab-ext"
@@ -29,12 +29,12 @@
   "networking": "Disable",
   "extraMappedFolders": [
     {
-      "host": "%LAB_WORK_DIR%\\deploy",
+      "host": "..\\.sandbox-work\\deploy",
       "readOnly": true,
       "sandbox": "C:\\appdeploy"
     },
     {
-      "host": "%LAB_WORK_DIR%\\guest-rw",
+      "host": "..\\.sandbox-work\\guest-rw",
       "readOnly": false,
       "sandbox": "C:\\labwork"
     }
