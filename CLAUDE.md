@@ -61,6 +61,7 @@ Isto é sugestão, como o resto desta seção. Se o usuário quiser ir direto ao
 - **Spec driven development, estritamente.** Sem spec aprovada pelo usuário, não se escreve código. Ver "Processo de desenvolvimento" abaixo.
 - Se uma decisão não está na arquitectura nem no design, pare e pergunte.
 - **Nada de caminho absoluto de máquina** (`C:Users<nome>...`, a pasta do usuário, o caminho do laboratório) em código, testes, scripts, skills, planos ou docs. Use variáveis de ambiente (`SANDBOX_LAB_DIR`, `CARGO_TARGET_DIR`, `USERPROFILE`), caminhos relativos ao repositório ou as APIs (`temp_dir()`, `os.tmpdir()`, `app_data_dir()`). Os que já existem estão numa issue do Linear para ajustar.
+- **Nunca usar o Chrome pessoal do usuário** (nem o perfil dele, nem cópia dele) em teste, script ou agente. Só o Chrome do Claudia-RH (o que o app baixa) ou o Chrome de teste com perfil temporário.
 - **Teste nunca usa caminho real** (`C:\`, o repositório, `AppData`, arquivo do sistema), nem para ler, nem para provar que a recusa funciona: a recusa se testa na função de validação pura. **Todo teste que apaga qualquer arquivo roda só no Windows Sandbox** (skill `claudia-teste-sandbox`). No PC do usuário: só compilar, clippy, `tsc`, build e testes de front que não tocam o disco. Motivo: em 2026-10-05 um teste que passava `C:\` para uma função de apagar destruiu o disco do usuário.
 
 ### Por que a regra dos passos existe

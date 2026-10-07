@@ -9,4 +9,7 @@ Criar com a skill `linear-claudia`. Depois de criar, anotar o id ao lado de cada
 5. **Urgent: nunca mais perder trabalho.** O incidente de 2026-10-05 (12 h perdidas), os 158 commits sem `dev`, o `dev` 55 commits à frente do `origin`, a evidência guardada em pasta ignorada pelo git e o CI que não roda front, clippy nem live. Solução depois de `feat/browser-cdp-mcp`, com spec aprovada; a primeira proposta foi recusada por ser burocrática.
 6. **CI.** Roda só `cargo test --lib` e `npm run build`. Os testes que apagam vão para o Sandbox, então o CI precisa decidir o que roda onde.
 
+7. **Migração da pasta antiga (`com.joaog.claudia-rh`) apaga subpastas que não copiou.** `migration.rs`: o app confere só o banco e os YAML antes de apagar a pasta antiga. Quem atualizar de uma versão antiga com `curriculos\` lá perde esses arquivos. Também aceita caminho relativo. Corrigir: só apagar se tudo foi copiado. (P2 da auditoria; a máquina do usuário não tem a pasta antiga.)
+8. **`app_data_dir().unwrap_or_default()` em `feedback.rs`, `perfil.rs` (2x) e `cover_letter.rs`.** Hoje só leem; se um dia gravarem ou apagarem, o caminho vazio vira a pasta atual. Trocar por erro explícito. (P4 da auditoria.)
+
 As demais linhas "L" do inventário do plano entram aqui quando a Tarefa 10 rodar.

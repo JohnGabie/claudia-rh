@@ -232,6 +232,27 @@ Cada correção segue o ciclo de sempre (teste que falha antes, depois passa, e 
 | B6 | **Linear, depois.** Fora do caminho do plano; os evals continuam só manuais. |
 | B7 | **Higiene, não bloqueia:** o kill falso nos testes entra junto com a Tarefa 1. |
 
+**Decisões do usuário sobre as seções 2 e 3 da auditoria (2026-10-07):**
+
+| # | O que é | Decisão | Onde entra |
+|---|---|---|---|
+| R1 | Testes live matam o Chrome pelo PID sem conferir | Conferir `chrome.exe` e a porta antes de matar | Tarefa 1 |
+| R2 | `CLAUDIA_TEST_CHROME` executa qualquer `.exe` | Validar: absoluto, existe, nome `chrome.exe` | Tarefa 1 |
+| R4 | 3 testes do `manager.rs` com lançador e kill reais | Lançador e kill falsos | Tarefa 1 |
+| R5 | Teste lê `C:\Windows\win.ini` | Não ler arquivo real | Tarefa 0b |
+| R7 | Teste usa a raiz do `%TEMP%` como pasta de dados | Pasta temporária própria | Tarefa 0b |
+| R8 | ~15 testes apagam a própria pasta temporária | Rodam só no Sandbox (regra geral) | — |
+| R9 | `ver.mjs` grava print em qualquer caminho e sobrescreve | Só em `debug-logs/prints/`, sem sobrescrever | Tarefa 0b |
+| R10 | Lista de botões proibidos sem "Iniciar procura" etc. | Sem mudança; cliques do agente de teste no app só no Sandbox | — |
+| R11 | Smoke com `CLAUDIA_APP_LOCAL` usa o Chrome do Claudia-RH | Pode (o Chrome do Claudia-RH é permitido). **Nunca o Chrome pessoal do usuário.** | regra no `CLAUDE.md` |
+| R12 | `subir.mjs` não percebe o app instalado aberto | Parar e perguntar | Tarefa 0b |
+| P1 | Versão vazia ou errada no `browser-pin.json` apaga a pasta do browser com o perfil | Corrigir: só apaga com versão no formato de 4 números; teste só da validação pura | Tarefa 0b |
+| P2 | Migração da pasta antiga apaga subpastas não copiadas | Linear, depois | Linear |
+| P3 | MCP sem `--data-dir` grava na pasta atual | Exigir o argumento | Tarefa 0b |
+| P4 | 4 lugares usam caminho vazio sem a pasta de dados (hoje só leem) | Linear | Linear |
+
+A Tarefa 0b inclui também R5, R7, R9, R12, P1 e P3 (cada um com teste que falha antes, mutação e execução no Sandbox). R1, R2 e R4 entram na Tarefa 1.
+
 Depois, a mesma revisão Opus da auditoria relê os arquivos corrigidos e confirma que não sobrou `BLOQUEIA`. Os itens das seções 2 e 3 da auditoria vão junto com a Tarefa 1 (harness live) ou para o Linear. As travas da seção 6 passam a valer em todas as tarefas.
 
 ---
