@@ -95,6 +95,25 @@ Riscos da opção 2: dentro do guest o token fica disponível para qualquer proc
   - Para escolher a conta: `-Conta <nome>`, mapeado num arquivo local fora do git (`sandbox-lab/shared/secrets/contas.json`: nome → pasta de configuração daquela conta). **Em aberto:** como o usuário separa as contas hoje (pastas de configuração diferentes? trocando o login?).
   - **Risco, não verificado:** se o Claude Code do guest renovar o token, a credencial do PC pode deixar de valer e o PC pede login de novo. Precisa de teste no Sandbox antes de adotar. Se acontecer, o recuo é o token de longa duração (opção 2).
 
+### A6. Disco Z: no guest para tudo o que os testes criam e apagam (pedido do usuário em 2026-10-07)
+
+Pedido: "Tem como mudar para que os arquivos do sandbox sejam outra letra e não C? poderia ser uma aleatória com Z". Objetivo: um teste que apaga e rode por engano no PC mira em `Z:\`, que não existe no host (hoje o host tem C:, D: e G:), e falha sem tocar em nada.
+
+Investigação ao vivo no Sandbox (2026-10-07):
+- **MappedFolder em Z:** só pela documentação, que não fala de outra letra. O guest só tem C:. Mesmo que funcionasse, seria uma pasta do host: o que fosse apagado ali seria apagado no host. **Descartada.**
+- **`subst Z:`:** funciona para a conta que o criou, mas `fs.realpathSync.native` (usado pelo `tempDir()` e pelo `novoCenarioDir()`) devolve o caminho real em `C:\`. As travas não enxergam o subst. Dá uma falsa sensação de segurança. **Descartada.**
+- **VHD montado como letra (verificado, com a letra V:):** o `diskpart` como System leva cerca de 7 s; a letra vale para todas as contas, sem reparse point, e o `realpathSync.native` continua na letra. Node e PowerShell criam e apagam normalmente.
+
+Proposta (NÃO decidida):
+- O `bootstrap.ps1` (ou o `test-up.ps1` via `wsb exec -r System`, se o LogonCommand não tiver admin; **não verificado**) cria `C:\labdata\z.vhdx`, monta como **Z: fixo** e cria `Z:\tmp`. Antes de formatar, seleciona o vdisk pelo arquivo e confere a letra.
+- `util.mjs tempDir()`, `comum.mjs novoCenarioDir()` e `travas.sandbox.ps1` usam a raiz fixa `Z:\claudia-teste-sandbox` (não `os.tmpdir()`) e recusam caminho cujo real path não comece com `Z:\`. `testes-no-guest.mjs` passa `TEMP=Z:\tmp`. Revisar `cenario-copia.mjs:87` (usa `TEMP`).
+- O `test-up.ps1` recusa subir se o host tiver Z:.
+- É uma trava a mais: não substitui a de dois fatores (`exigirSandbox()`).
+
+### A7. Correção no `travas.sandbox.ps1`
+
+O teste "a source that is a drive root is refused" passa `Q:\` ao `app-stage.ps1`. Isso viola a regra "nunca passar raiz de disco, nem para testar a recusa". Proposta: remover esse caso e cobrir a recusa de raiz de disco só no teste puro `travas.test.ps1`.
+
 ## 4. Impacto
 
 - **Laboratório:** `test-up.ps1` (lê o ambiente do `compose.json`), novo `cache-up.ps1`, novo `sandbox\instalar.ps1`, `guest-build.ps1` (sem `C:\hosttools`), os `lab.config.*.json` saem, `travas.ps1` (recusa do compose), `.gitignore`, `proibidos.mjs`, `conferir-repo.mjs`, README e skill `claudia-teste-sandbox` (seções 2 e 9).
