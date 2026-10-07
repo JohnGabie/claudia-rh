@@ -1,15 +1,15 @@
 // Clean-machine scenario "copia": copy of the user's real app data. Reads the source only.
 // Requires --autorizado: ask the user for permission for this round before running it.
 // Usage: node cenario-copia.mjs --autorizado [--origem <folder>] [--saida <folder>] [--manter-automacao]
-//   --origem            default %APPDATA%\io.github.johngabie.claudia-rh
-//   --saida             default %TEMP%\claudia-teste-sandbox\copia, recreated on every run
+// Runs only inside the guest (D1); from the PC use cenario-no-guest.mjs.
+//   --origem            default C:\labdadosreais (mounted read-only by test-up -DadosReais)
+//   --saida             default Z:\claudia-teste-sandbox\copia, recreated on every run
 //   --manter-automacao  keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy)
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
-import { APP_ID, novoCenarioDir, escreverCenario, desligarAutomacao, dentroDe, falhaDe, sair } from "./comum.mjs";
+import { APP_ID, ORIGEM_DADOS_REAIS, raizCenariosAtual, saidaPadraoCenario, novoCenarioDir, escreverCenario, desligarAutomacao, dentroDe, falhaDe, sair } from "./comum.mjs";
 
 let values;
 try {
@@ -80,11 +80,14 @@ function copiarUmaVez(origem, dados) {
 }
 
 try {
-  const origem = path.resolve(values.origem || path.join(process.env.APPDATA, APP_ID));
-  if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) throw new Error(`Source data not found: ${origem}`);
+  const tempRoot = raizCenariosAtual(); // throws on the PC before anything is read (D1)
+  const origem = path.resolve(values.origem || ORIGEM_DADOS_REAIS);
+  if (!fs.existsSync(origem) || !fs.statSync(origem).isDirectory()) {
+    throw new Error(`Source data not found: ${origem}. The real data is mounted only by test-up -DadosReais, with the user's authorization for this round.`);
+  }
 
-  // Resolve saida the same way novoCenarioDir does.
-  const saidaPath = path.resolve(values.saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-teste-sandbox", "copia"));
+  // Same default folder novoCenarioDir uses.
+  const saidaPath = path.resolve(values.saida || saidaPadraoCenario("copia", tempRoot));
 
   // Check for overlap: --saida must not be inside --origem or vice versa.
   if (dentroDe(origem, saidaPath) || dentroDe(saidaPath, origem)) {
