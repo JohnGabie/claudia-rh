@@ -119,7 +119,7 @@ Cada proposta traz opções e uma recomendação. Nada disto foi aprovado.
 4. **Um passo no CI** (`.github/workflows/ci.yml`) que roda `git ls-files` e passa a saída para essa função. Só lê.
 5. **Hook de pre-commit: não recomendado agora.** O git não instala hook sozinho. Cada máquina teria de configurar, e isso é um passo a mais que se esquece. O CI pega o mesmo erro.
 
-**Caminhos pessoais nos versionados:** uma segunda função pura (nome provisório `achaCaminhoPessoal`) recebe um texto e diz se há caminho de máquina (`<letra>:\Users\`, `/Users/`, pasta de projetos da IDE, pasta de usuário). Teste com textos fixos. O mesmo passo do CI aplica a função aos arquivos versionados de `sandbox-lab/` e `.claude/skills/`.
+**Caminhos pessoais nos versionados:** uma segunda função pura (nome provisório `achaCaminhoPessoal`) recebe um texto e diz se há caminho de máquina (`<letra>:\Users\`, a pasta Users do macOS, pasta de projetos da IDE, pasta de usuário). Teste com textos fixos. O mesmo passo do CI aplica a função aos arquivos versionados de `sandbox-lab/` e `.claude/skills/`.
 
 **Como os perfis deixam de usar variável:** `projectPath` e as pastas extras (`deploy`, `guest-rw`) passam a ser caminhos **relativos** (o `test-up.ps1` já resolve caminho relativo a partir da pasta do laboratório). O perfil de build continua usando `%USERPROFILE%` e `%ProgramFiles%` para achar as toolchains do host: são variáveis padrão do Windows, não caminho pessoal escrito. Ver P4 para o caso de worktree.
 
