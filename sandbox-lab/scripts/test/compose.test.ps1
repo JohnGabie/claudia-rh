@@ -71,6 +71,28 @@ Check 'ambiente fields: rede bool, memoriaMB 2048..32768, conta bool' {
     if (-not (Get-LabComposeRefusal -Compose $c -Ambiente 'testes')) { throw "must refuse $($set[0])=$($set[1])" }
   }
 }
+Check 'internet: optional bool; false needs rede true; only rede true + internet false blocks the guest internet' {
+  $c = New-Compose
+  if (Test-LabAmbienteInternetBlocked -Compose $c -Ambiente 'testes') { throw 'absent -> internet allowed' }
+  Add-Member -InputObject $c.ambientes.testes -NotePropertyName internet -NotePropertyValue $false
+  Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente 'testes')
+  if (-not (Test-LabAmbienteInternetBlocked -Compose $c -Ambiente 'testes')) { throw 'rede true + internet false -> blocked' }
+  $c.ambientes.testes.internet = $true
+  if (Test-LabAmbienteInternetBlocked -Compose $c -Ambiente 'testes') { throw 'internet true -> allowed' }
+  $c.ambientes.testes.internet = 'nao'
+  Should-Match (Get-LabComposeRefusal -Compose $c -Ambiente 'testes') 'internet must be true or false'
+  $c2 = New-Compose
+  Add-Member -InputObject $c2.ambientes.app -NotePropertyName internet -NotePropertyValue $false
+  Should-Match (Get-LabComposeRefusal -Compose $c2 -Ambiente 'app') 'rede true'
+  if (Test-LabAmbienteInternetBlocked -Compose $c2 -Ambiente 'app') { throw 'no network -> nothing to block' }
+  if (Test-LabAmbienteInternetBlocked -Compose $null -Ambiente 'app') { throw 'null compose' }
+}
+Check 'versioned compose.json: app-winapp declares internet false, the other ambientes do not block' {
+  $real = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../../compose.json') -Raw | ConvertFrom-Json
+  if (-not (Test-LabAmbienteInternetBlocked -Compose $real -Ambiente 'app-winapp')) { throw 'app-winapp must block the internet' }
+  foreach ($n in @('exemplo', 'app', 'cache-msvc', 'testes')) { if (Test-LabAmbienteInternetBlocked -Compose $real -Ambiente $n) { throw "$n must not require the firewall" } }
+  Should-BeNull (Get-LabComposeRefusal -Compose $real -Ambiente 'app-winapp')
+}
 Check 'instalar: unknown or undeclared package is refused' {
   $c = New-Compose; $c.ambientes.testes.instalar = @('python')
   Should-Match (Get-LabComposeRefusal -Compose $c -Ambiente 'testes') 'unknown package'

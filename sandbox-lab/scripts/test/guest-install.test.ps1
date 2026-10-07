@@ -78,5 +78,39 @@ Check 'scenario folder for guest-run: only a direct child of Z:\claudia-teste-sa
     if (-not (Get-LabGuestScenarioRefusal $bad)) { throw "must refuse '$bad'" }
   }
 }
+$fwOk = (@('Domain enabled=True', 'Private enabled=True', 'Public enabled=True', 'regra lab-block-internet-out: 1',
+  'INTERNET: BLOQUEADA (Unable to connect to the remote server)', 'storage.googleapis.com: BLOQUEADO') -join "`r`n") + "`r`n"
+Check 'guest internet: allowed only with a real boolean false in guest.config.json; anything else fails closed' {
+  if (-not (Get-LabGuestInternetPermitida ([pscustomobject]@{ internetBloqueada = $false }))) { throw 'false -> allowed' }
+  if (Get-LabGuestInternetPermitida ([pscustomobject]@{ internetBloqueada = $true })) { throw 'true -> blocked' }
+  if (Get-LabGuestInternetPermitida $null) { throw 'no config -> blocked' }
+  if (Get-LabGuestInternetPermitida ([pscustomobject]@{ outro = 1 })) { throw 'missing field -> blocked' }
+  foreach ($v in @('false', 0, '', $null)) { if (Get-LabGuestInternetPermitida ([pscustomobject]@{ internetBloqueada = $v })) { throw "value '$v' must not allow the internet" } }
+  if (Get-LabGuestInternetPermitida 'texto') { throw 'not an object -> blocked' }
+}
+Check 'app start: internet allowed -> no refusal; blocked -> only with the whole block mark in firewall.txt' {
+  if (Get-LabAppStartRefusal -InternetPermitida $true -FirewallText $null) { throw 'internet allowed needs no firewall.txt' }
+  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $fwOk) { throw 'complete mark must pass' }
+  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText ($fwOk -replace "`r`n", "`n")) { throw 'LF line endings must pass' }
+  foreach ($t in @($null, '', '   ', "`r`n")) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $t)) { throw "missing/empty file '$t' must refuse" } }
+}
+Check 'app start: every missing or contradicting piece of the mark refuses' {
+  $bad = @{
+    'internet reachable'  = $fwOk.Replace('INTERNET: BLOQUEADA (Unable to connect to the remote server)', 'INTERNET: ACESSIVEL (FALHA)')
+    'storage reachable'   = $fwOk.Replace('storage.googleapis.com: BLOQUEADO', 'storage.googleapis.com: ACESSIVEL (FALHA)')
+    'no internet line'    = $fwOk.Replace('INTERNET: BLOQUEADA (Unable to connect to the remote server)', '')
+    'no storage line'     = $fwOk.Replace('storage.googleapis.com: BLOQUEADO', '')
+    'zero rules'          = $fwOk.Replace('regra lab-block-internet-out: 1', 'regra lab-block-internet-out: 0')
+    'two rules'           = $fwOk.Replace('regra lab-block-internet-out: 1', 'regra lab-block-internet-out: 2')
+    'domain profile off'  = $fwOk.Replace('Domain enabled=True', 'Domain enabled=False')
+    'private profile off' = $fwOk.Replace('Private enabled=True', 'Private enabled=False')
+    'public profile off'  = $fwOk.Replace('Public enabled=True', 'Public enabled=False')
+    'no profile lines'    = "regra lab-block-internet-out: 1`r`nINTERNET: BLOQUEADA (x)`r`nstorage.googleapis.com: BLOQUEADO`r`n"
+    'mark in other case'  = $fwOk.Replace('INTERNET: BLOQUEADA', 'internet: bloqueada')
+    'mark AND a reachable line' = $fwOk + "INTERNET: ACESSIVEL (FALHA)`r`n"
+    'junk file'           = 'qualquer coisa'
+  }
+  foreach ($k in $bad.Keys) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $bad[$k])) { throw "must refuse: $k" } }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

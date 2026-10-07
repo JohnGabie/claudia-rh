@@ -6,6 +6,10 @@ param([int]$MaxMB = 20480)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'guest-z.lib.ps1')
 . (Join-Path $PSScriptRoot 'guest-install.lib.ps1')
+# Guest only, two factors: the guest identity (WDAGUtilityAccount, or SYSTEM through wsb exec plus the WDAG profile)
+# and the bootstrap marker that is mapped only in the guest. Outside the guest: print and leave, BEFORE anything else runs
+# and outside the try, so the refusal never reaches Save-Result and nothing is written to the disk.
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $Image = $script:LabZImage
 $OutFile = 'C:\lab\out\disco-z.json'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -28,10 +32,6 @@ function Get-State {
   return @{ img = $img; part = $part; refusal = (Get-LabZFormatRefusal -ImageAttached ([bool]($img -and $img.Attached)) -ImageDiskNumber $imgDisk -PartitionDiskNumber $partDisk) }
 }
 
-# Guest only, two factors: the guest identity (WDAGUtilityAccount, or SYSTEM through wsb exec plus the WDAG profile)
-# and the bootstrap marker that is mapped only in the guest. Outside the guest: print and leave, outside the try, so the
-# refusal never reaches Save-Result and nothing is written to the disk.
-if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 try {
   $zExists = Test-Path -LiteralPath 'Z:\'
   $s = $(if ($zExists) { Get-State } else { @{ refusal = $null } })

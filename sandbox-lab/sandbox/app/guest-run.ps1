@@ -55,7 +55,16 @@ try {
   $exePath = $(if ($Exe) { Join-Path $appDir $Exe } elseif ($exes.Count -eq 1) { $exes[0].FullName } else { $null })
   if (-not $exePath) { throw "informe -Exe (exes em ${appDir}: $($exes.Name -join ', '))" }
   $r.exe = $exePath
+  # Where the ambiente keeps the internet blocked, the app opens only with the block mark in firewall.txt (guest-firewall.ps1
+  # exits 1 without applying the rule when its guard refuses or it fails). Unreadable config or file = refuse.
+  $refusal = $null
   if (-not $NoStart) {
+    $cfgG = $null; try { $cfgG = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
+    $fwText = $null; try { $fwText = Get-Content -LiteralPath (Join-Path $Out 'firewall.txt') -Raw -ErrorAction Stop } catch { }
+    $refusal = Get-LabAppStartRefusal -InternetPermitida (Get-LabGuestInternetPermitida $cfgG) -FirewallText $fwText
+    if ($refusal) { $r.errors += "app not started: $refusal"; $r.refused = $true }
+  }
+  if (-not $NoStart -and -not $refusal) {
     $name = [IO.Path]::GetFileNameWithoutExtension($exePath)
     Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $p = Start-Process $exePath -PassThru
@@ -67,4 +76,5 @@ try {
   }
 } catch { $r.errors += "app: $_" }
 [IO.File]::WriteAllText((Join-Path $Out 'guest-run.json'), ($r | ConvertTo-Json -Depth 5), $utf8)
+if ($r.Contains('refused')) { $r | ConvertTo-Json -Depth 5; exit 1 }
 $r | ConvertTo-Json -Depth 5

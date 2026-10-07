@@ -65,13 +65,34 @@ function Get-LabReparsePoints([string]$Dir) {
   return ,$found
 }
 
+function Read-LabLinkTarget([string]$LinkPath) {
+  # The text a link points to, read WITHOUT following it (Get-Item -Force gives the reparse data; PowerShell 5.1 has .Target,
+  # PowerShell 7 also .LinkTarget). $null when unreadable, empty, or more than one target. SANDBOX ONLY.
+  try {
+    $item = Get-Item -LiteralPath $LinkPath -Force -ErrorAction Stop
+    $v = $item.Target
+    if ($null -eq $v -and $item.PSObject.Properties['LinkTarget']) { $v = $item.LinkTarget }
+    $v = @($v | Where-Object { $null -ne $_ })
+    if ($v.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$v[0])) { return $null }
+    return [string]$v[0]
+  } catch { return $null }
+}
+
+function Get-LabLinkTargets([string[]]$Paths) {
+  # Hashtable link path -> target text (Read-LabLinkTarget); links whose target cannot be read are left out. Never follows a link.
+  $r = @{}
+  foreach ($p in @($Paths | Where-Object { $_ })) { $t = Read-LabLinkTarget $p; if ($null -ne $t) { $r[$p] = $t } }
+  return $r
+}
+
 function Get-LabFileLinks([string[]]$Paths) {
   # Of reparse points already found, the ones that are links to a FILE (no Directory attribute). Reads attributes only and
   # never follows the link; anything unreadable is NOT listed, so it stays a refusing link. SANDBOX ONLY.
   $r = @()
   foreach ($p in @($Paths | Where-Object { $_ })) {
     $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
-    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($item.Attributes -band [IO.FileAttributes]::Directory)) { $r += $p }
+    # A target that cannot be read leaves the link out of the list, so it stays a refusing link.
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($item.Attributes -band [IO.FileAttributes]::Directory) -and ($null -ne (Read-LabLinkTarget $p))) { $r += $p }
   }
   return ,$r
 }

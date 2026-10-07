@@ -35,8 +35,8 @@
       "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
     },
     "app-winapp": {
-      "$comment": "App desktop controlado pelo winapp; rede ligada, internet bloqueada por sandbox\\app\\guest-firewall.ps1 (wsb exec -r System). Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs + guest-run.ps1 -Cenario.",
-      "rede": true, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
+      "$comment": "App desktop controlado pelo winapp; rede ligada, internet bloqueada por sandbox\\app\\guest-firewall.ps1 (wsb exec -r System); com internet:false o guest-run.ps1 recusa abrir o app sem o firewall.txt com a marca de bloqueio. Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs + guest-run.ps1 -Cenario.",
+      "rede": true, "internet": false, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
       "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
     },
     "cache-msvc": {

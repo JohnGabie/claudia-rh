@@ -16,7 +16,7 @@
     7. grava C:\lab\out\mcp-status.json e C:\lab\out\bootstrap-mcp.log
 
   -DryRun: faz o setup (passos 1-3) e roda --help, mas NAO abre firewall nem inicia o servidor.
-  Use -LabRoot/-DataRoot/-OutDir para testar fora do guest (ex.: no host, so com -DryRun).
+  So roda dentro do guest (trava Test-LabInGuest, tambem em -DryRun); -LabRoot/-DataRoot/-OutDir mudam as pastas la dentro.
 
   Compativel com Windows PowerShell 5.1 (o guest nao tem pwsh). Arquivo ASCII de proposito.
 #>
@@ -31,10 +31,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# Guard (not in -DryRun, which is the documented way to test outside the guest): bootstrap.ps1 starts this script as the
+# Guard (also in -DryRun: this script never runs outside the guest): bootstrap.ps1 starts this script as the
 # guest logon user, so both factors hold there (WDAGUtilityAccount plus the bootstrap marker). Nothing is written on refusal.
 . (Join-Path $PSScriptRoot 'guest-install.lib.ps1')
-if (-not $DryRun -and -not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
 $startedAt = (Get-Date).ToString('o')

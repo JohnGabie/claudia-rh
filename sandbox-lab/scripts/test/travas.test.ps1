@@ -226,7 +226,8 @@ Check 'real data: a link INSIDE the app folder refuses (no link inside is fine)'
 Check 'real data: the only tolerated link is the FILE link diagnostics\latest at the exact place' {
   $src = "$RO\io.github.johngabie.claudia-rh"
   $L = "$src\diagnostics\latest"
-  $r = { param($inside, $files) Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside $inside -FileLinksInside $files }
+  # By default every link points to the legitimate relative target; the target cases have their own Check below.
+  $r = { param($inside, $files) $tg = @{}; foreach ($i in @($inside)) { $tg[$i] = 'claude-startup.log' }; Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside $inside -FileLinksInside $files -LinkTargets $tg }
   Should-BeNull (& $r @($L) @($L))
   Should-BeNull (& $r @("$RO\io.github.johngabie.claudia-rh\DIAGNOSTICS/Latest") @("$src\diagnostics\latest"))   # case and slash
   Should-BeNull (& $r @() @())
@@ -238,6 +239,27 @@ Check 'real data: the only tolerated link is the FILE link diagnostics\latest at
   Should-Match (& $r @($L, "$src\y") @($L, "$src\y")) 'inside'                                 # the exception covers only that one
   Should-Match (& $r @($L, "$src\y") @($L)) 'inside'
   Should-Match (& $r @("$src\diagnostics\latest\sub") @("$src\diagnostics\latest\sub")) 'inside'
+}
+Check 'real data: diagnostics\latest is tolerated only when its TARGET is exactly claude-startup.log (relative or inside the source)' {
+  $src = "$RO\io.github.johngabie.claudia-rh"
+  $L = "$src\diagnostics\latest"
+  $r = { param($target, $withKey = $true) $tg = @{}; if ($withKey) { $tg[$L] = $target }; Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @($L) -FileLinksInside @($L) -LinkTargets $tg }
+  foreach ($ok in @('claude-startup.log', 'CLAUDE-STARTUP.LOG', "$src\diagnostics\claude-startup.log", "$RO\IO.GITHUB.JOHNGABIE.CLAUDIA-RH\diagnostics\Claude-Startup.log", "$src/diagnostics/claude-startup.log")) {
+    Should-BeNull (& $r $ok)
+  }
+  $evil = @('', '   ', '..\claude-startup.log', '..\..\Roaming\x', "$src\diagnostics\..\claude-startup.log", "$src\claude-startup.log", "$src\diagnostics\other.log",
+    "$src\diagnostics\claude-startup.log\x", "$src\diagnostics\claude-startup.log\", "$src\diagnostics\claude-startup.log ", 'claude-startup.log.', 'claude-startup.log\', '.\claude-startup.log', 'sub\claude-startup.log',
+    'Y:\inventado\segredo\claude-startup.log', 'Z:\Perfis\fulano\AppData\Roaming\io.github.johngabie.claudia-rh\diagnostics\claude-startup.log',
+    '\\srv\share\claude-startup.log', '\\?\Y:\inventado\claude-startup.log', 'Y:\PERFIS~1\AppData\Roaming\io.github.johngabie.claudia-rh\diagnostics\claude-startup.log',
+    'CLAUDE~1.LOG', "$src\diagnostics\claude-startup.log2", 'C:\Windows\System32\config\SAM', 'claude-startup.log:stream')
+  foreach ($t in $evil) { Should-Match (& $r $t) 'inside the app data folder' }
+  Should-Match (& $r $null) 'inside'                  # unreadable target (null in the table)
+  Should-Match (& $r 'x' $false) 'inside'             # link missing from the table
+  Should-Match (& $r @('claude-startup.log', 'outro')) 'inside'   # more than one target
+  Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @($L) -FileLinksInside @($L)) 'inside'   # no table at all
+  Should-Match (Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $RO -LinksInside @($L) -FileLinksInside @($L) -LinkTargets 'texto') 'inside'
+  if (-not (Test-LabLatestLinkTargetOk -Target 'claude-startup.log' -Source $src)) { throw 'direct: relative target' }
+  if (Test-LabLatestLinkTargetOk -Target 'claude-startup.log' -Source '') { throw 'direct: empty source' }
 }
 Check 'layout import: only <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>' {
   $ok = "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1"

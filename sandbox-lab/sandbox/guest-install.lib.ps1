@@ -74,6 +74,33 @@ function Test-LabInGuest {
     -HasWdagProfile (Test-Path -LiteralPath 'C:\Users\WDAGUtilityAccount' -PathType Container)
 }
 
+function Get-LabGuestInternetPermitida($Cfg) {
+  # From guest.config.json: internet is allowed only when the file says so with a real boolean (internetBloqueada = false).
+  # Missing file, missing field or any other value = NOT allowed (fail closed).
+  if ($null -eq $Cfg -or $Cfg -isnot [System.Management.Automation.PSCustomObject]) { return $false }
+  $p = $Cfg.PSObject.Properties['internetBloqueada']
+  if (-not $p -or $p.Value -isnot [bool]) { return $false }
+  return (-not $p.Value)
+}
+
+function Get-LabAppStartRefusal {
+  # guest-run.ps1: why the app must NOT be opened, or $null. Where the ambiente keeps the internet blocked, the app opens only
+  # when C:\labwork\run\firewall.txt (written by guest-firewall.ps1 AFTER it applied the rule and tested it) carries the block
+  # mark: the 3 profiles on, exactly 1 lab-block-internet-out rule, both internet probes blocked, none reachable.
+  param([bool]$InternetPermitida, [string]$FirewallText)
+  if ($InternetPermitida) { return $null }
+  if ([string]::IsNullOrWhiteSpace($FirewallText)) { return 'firewall.txt is missing or empty: guest-firewall.ps1 did not finish, the internet may be open' }
+  $lines = @($FirewallText -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  if (@($lines | Where-Object { $_ -match 'ACESSIVEL' }).Count) { return 'firewall.txt says the internet is reachable' }
+  foreach ($prof in 'Domain', 'Private', 'Public') {
+    if (@($lines | Where-Object { $_ -ceq "$prof enabled=True" }).Count -ne 1) { return "firewall.txt does not show the $prof profile enabled" }
+  }
+  if (@($lines | Where-Object { $_ -ceq 'regra lab-block-internet-out: 1' }).Count -ne 1) { return 'firewall.txt does not show exactly one lab-block-internet-out rule' }
+  if (@($lines | Where-Object { $_ -clike 'INTERNET: BLOQUEADA (*' }).Count -ne 1) { return 'firewall.txt does not carry the INTERNET: BLOQUEADA mark' }
+  if (@($lines | Where-Object { $_ -ceq 'storage.googleapis.com: BLOQUEADO' }).Count -ne 1) { return 'firewall.txt does not show storage.googleapis.com blocked' }
+  return $null
+}
+
 function Get-LabGuestScenarioRefusal([string]$Path) {
   # guest-run.ps1 -Cenario: a scenario folder created by the scenario scripts in the guest (D1), nothing else.
   if ([string]::IsNullOrWhiteSpace($Path)) { return 'scenario folder is required' }

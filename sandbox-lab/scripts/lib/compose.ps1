@@ -99,6 +99,9 @@ function Get-LabComposeRefusal {
   if ($names -notcontains $Ambiente) { return "unknown ambiente '$Ambiente' (one of: $($names -join ', '))" }
   $a = Get-LabProp $ambientes $Ambiente
   if ((Get-LabProp $a 'rede') -isnot [bool]) { return "ambiente ${Ambiente}: rede must be true or false" }
+  $net = Get-LabProp $a 'internet'
+  if ($null -ne $net -and $net -isnot [bool]) { return "ambiente ${Ambiente}: internet must be true or false" }
+  if ($net -eq $false -and (Get-LabProp $a 'rede') -ne $true) { return "ambiente ${Ambiente}: internet false only makes sense with rede true (without a network there is nothing to block)" }
   $mem = Get-LabProp $a 'memoriaMB'
   if (-not ($mem -is [int] -or $mem -is [long]) -or $mem -lt 2048 -or $mem -gt 32768) { return "ambiente ${Ambiente}: memoriaMB must be an integer between 2048 and 32768" }
   $conta = Get-LabProp $a 'conta'
@@ -120,6 +123,14 @@ function Get-LabComposeRefusal {
     if ($why) { return $why }
   }
   return $null
+}
+
+function Test-LabAmbienteInternetBlocked {
+  # guest.config.json "internetBloqueada": true only when the ambiente has the network on AND declares internet false
+  # (then guest-run.ps1 refuses to open the app without the firewall mark). Absent or true = internet allowed.
+  param($Compose, [string]$Ambiente)
+  $a = Get-LabProp (Get-LabProp $Compose 'ambientes') $Ambiente
+  return (((Get-LabProp $a 'rede') -eq $true) -and ((Get-LabProp $a 'internet') -eq $false))
 }
 
 function ConvertTo-LabGuestInstall {

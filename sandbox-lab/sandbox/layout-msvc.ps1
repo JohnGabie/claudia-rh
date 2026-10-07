@@ -4,6 +4,8 @@
 # on the host). The host checks and imports it with cache-up.ps1 -ImportarMsvc <id>. Output: C:\lab\out\layout-msvc.json
 $ErrorActionPreference = 'Continue'   # PS 5.1: native stderr must not become a terminating error
 . (Join-Path $PSScriptRoot 'guest-install.lib.ps1')
+# Refusal outside the guest: print and leave, BEFORE anything else runs. Nothing is written to the disk (no Save-Result, no layout-msvc.json).
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $OutFile = 'C:\lab\out\layout-msvc.json'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -11,8 +13,6 @@ $res = [ordered]@{ ok = $false; id = $null; versao = $null; arquivos = 0; bytes 
 function Save-Result { $res.segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1); [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json), $utf8) }
 function Stop-With([string]$Why) { $res.erro = $Why; Save-Result; exit 1 }
 
-# Refusal outside the guest: print and leave. Nothing is written to the disk (no Save-Result, no layout-msvc.json).
-if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw | ConvertFrom-Json
 $m = $cfg.msvc
 if (-not $m) { Stop-With 'guest.config.json has no msvc entry: start the lab with -Ambiente cache-msvc' }
