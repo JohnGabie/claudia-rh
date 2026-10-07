@@ -31,7 +31,7 @@ scripts\test-down.ps1           # derruba e descarta tudo do guest
 |---|---|---|
 | `C:\lab` | `shared\` | read-only |
 | `C:\lab\out` | `shared\out\` | **gravavel** (logs, status.json, mcp-status.json) |
-| `C:\labproject` | projeto do `lab.config.json` | read-only |
+| `C:\labproject` | projeto do `compose.json` / `test-up.ps1 -Project` | read-only |
 | `C:\labsandbox` | `sandbox\` | read-only (bootstrap) |
 | `C:\labdata` | (local do guest) | gravavel, some no test-down |
 
@@ -73,30 +73,39 @@ winapp target screenshot sandbox -o evidence\desktop.png
 Chrome do guest: Chrome for Testing com a extensao `lab-ext`, CDP na porta 9222 (dentro do guest),
 pagina de teste servida em `http://localhost:8080/test-page.html` no guest.
 
-## Perfis (`-Config`)
+## Ambientes (`-Ambiente`, `compose.json`)
 
-`scripts\test-up.ps1 -Config <perfil>`; sem `-Config` usa `lab.config.json` (projeto de exemplo).
-Caminhos nos perfis são relativos a `sandbox-lab/`; o perfil de build usa `%USERPROFILE%` e `%ProgramFiles%` só para as toolchains do host. Cada perfil explica o uso no `$comment`.
+`scripts\test-up.ps1 -Ambiente <nome> -Project <projeto>`; sem `-Projeto` usa `sample-project/`. Os ambientes são definidos em `compose.json`; cada um explica o uso no `$comment`.
 
-| Perfil | Para que serve | Rede |
-|---|---|---|
-| `lab.config.json` | lab de exemplo (O1-O10) | ligada |
-| `lab.config.app.json` | rodar um app desktop; controle via `wsb exec` + `sandbox\app\guest-observe.ps1` / `guest-click.ps1` (o winapp nao alcanca o guest sem rede) | desligada |
-| `lab.config.app-winapp.json` | rodar um app desktop controlado pelo winapp; rode antes `sandbox\app\guest-firewall.ps1` como System para bloquear a internet | ligada, internet bloqueada |
-| `lab.config.app-build.json` | build do projeto dentro do guest (`sandbox\app\guest-build.ps1`) com toolchains do host montados read-only | ligada |
+| Ambiente | Para que serve | Rede | Instalações do guest |
+|---|---|---|---|
+| `exemplo` | lab de exemplo (O1-O10) | ligada | nenhuma |
+| `app` | rodar um app desktop sem rede; controle via `wsb exec` | desligada | Node 22.23.3 |
+| `app-winapp` | rodar um app desktop controlado pelo winapp; rede ligada para winapp e CDP, internet bloqueada por `guest-firewall.ps1` (System) | ligada | Node 22.23.3 |
+| `cache-msvc` | montar o layout offline do MSVC: `wsb exec -r System` + `layout-msvc.ps1`; depois `cache-up.ps1 -ImportarMsvc <id>` | ligada | nenhuma |
+| `testes` | testes no Sandbox, `cargo test --lib` e Claude Code com a conta do PC; MSVC 17.14, Rust 1.95.0, Node 22.23.3 e Claude Code 2.1.285 instalados no guest a partir do cache; resultado em `C:\lab\out\instalar.json` | ligada | MSVC, Rust, Node, Claude Code |
 
-Perfis `lab.config.app*.json`:
+Projeto e pasta de trabalho:
 - Projeto: `test-up.ps1 -Project <pasta>` (a skill passa o checkout atual; montado read-only em `C:\labproject`). Pasta de trabalho: `.sandbox-work/` do checkout principal (`deploy\` vira `C:\appdeploy` read-only, `guest-rw\` vira `C:\labwork` gravável). Sem variável de ambiente.
-- Publicar o app: `node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta>` (chama `scripts\app-stage.ps1 -Clean` com a trava do marcador `.lab-deploy`).
-- No guest (`winapp target exec sandbox -- powershell -ExecutionPolicy Bypass -File <script>`):
-  - `C:\labsandbox\app\guest-run.ps1 [-Exe x.exe]` - copia os dados para `%APPDATA%`/`%LOCALAPPDATA%` e inicia o app.
-    Rode com `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File ..."` (id em `wsb list`):
-    iniciado por `winapp target exec`, o app e encerrado quando o comando termina.
-  - `C:\labsandbox\app\guest-chrome-probe.ps1 [-Port N] [-Navigate <url>]` - acha o Chrome com DevTools ligado e lista as abas.
-  - `C:\labsandbox\app\guest-observe.ps1 -Process <nome>` / `guest-click.ps1 -X -Y` - screenshot, arvore UIA e clique sem winapp.
-  - Saidas em `C:\labwork\...` (= `.sandbox-work\guest-rw\...` no host).
-- Nao acione no app nenhuma acao com efeito externo real (envios, publicacoes, pagamentos) e nao faca login em contas reais.
-- Falhas do proprio app no Windows limpo (dependencia ausente, erro de inicializacao) sao resultado do teste: registre, nao contorne.
+- Publicar o app: `node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta>` (chama `scripts\app-stage.ps1 -Clean` com a trava do marcador `.lab-deploy`).
+
+Dados no guest:
+- Cenários: `node .claude/skills/claudia-teste-sandbox/scripts/cenario-no-guest.mjs --cenario novo|mock|copia [--autorizado] [--manter-automacao]`; resultado em `Z:\claudia-teste-sandbox\<cenario>`.
+- Instalar dados no guest: `C:\labsandbox\app\guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\<cenario> [-NoStart]` - copia os dados para `%APPDATA%`/`%LOCALAPPDATA%` do perfil do guest e opcionalmente inicia o app.
+  Rode com `wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File ..."` (id em `wsb list`).
+- Saídas em `C:\labwork\...` (= `.sandbox-work\guest-rw\...` no host).
+
+Pastas no guest (além de `C:\lab`, `C:\labsandbox`, `C:\appdeploy`, `C:\labwork`):
+- `C:\labcred` - login do Claude copiado do PC (read-only, só no ambiente `testes`).
+- `C:\labdadosreais` - pasta Roaming do app copiada (read-only, só com `-DadosReais`, só no ambiente que pede conta).
+- `C:\labtools` - ferramentas instaladas (`msvc`, `node`, `claude`).
+- `C:\labdata` - workspace do guest (disco C).
+- `Z:\claudia-teste-sandbox` - cenários de dados (disco Z, só para testes).
+- `Z:\tmp` - temporário (disco Z).
+
+Regras:
+- Não acione no app nenhuma ação com efeito externo real (envios, publicações, pagamentos) e não faça login manual no guest.
+- Falhas do próprio app no Windows limpo (dependência ausente, erro de inicialização) são resultado do teste: registre, não contorne.
 
 ## Evidencias
 

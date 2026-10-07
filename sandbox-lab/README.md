@@ -10,11 +10,21 @@ Laboratório Windows Sandbox do claudia-rh: um Windows limpo e descartável para
 
 | Versionado | Fora do git (ignorado) |
 |---|---|
-| `scripts/`, `sandbox/` (sem os gerados), `lab.config*.json`, `sample-project/`, `shared/db/`, `shared/extensions/`, `shared/mcp.json`, `shared/test-page.html`, `shared/tools.sha256` | `shared/tools/` (~592 MB), `shared/secrets/` (chave do MCP), `shared/out/`, `evidence/`, `sandbox/sandbox.generated.wsb`, `sandbox/guest.config.json`, `.mcp.json`, e `.sandbox-work/` na raiz do repositório |
+| `scripts/`, `sandbox/` (sem os gerados), `compose.json`, `sample-project/`, `shared/db/`, `shared/extensions/`, `shared/mcp.json`, `shared/test-page.html`, `shared/tools.sha256` | `shared/tools/` (~592 MB), `shared/cache/` (instaladores do guest), `shared/secrets/` (chave do MCP), `shared/out/`, `evidence/`, `sandbox/sandbox.generated.wsb`, `sandbox/guest.config.json`, `.mcp.json`, e `.sandbox-work/` na raiz do repositório |
 
 ## Ferramentas
 
 `shared/tools/` (Chrome for Testing, Python portátil, `uv`, wheels do `windows-mcp`, `sqlite`) não está no git. A lista de arquivos com tamanho e SHA-256 está em `shared/tools.sha256`. Se faltar algo, o `test-up.ps1` para antes de subir o Sandbox e diz o quê. Para obter: copiar da pasta antiga do laboratório para `shared/tools/` (destino novo, sem `/MIR`) e conferir com `node .claude/skills/claudia-teste-sandbox/scripts/conferir-copia.mjs --manifesto sandbox-lab/shared/tools.sha256 --copia sandbox-lab/shared/tools`. Um script que baixa as ferramentas é trabalho futuro (Linear).
+
+## Cache de instaladores
+
+`shared/cache/` guarda os instaladores dos pacotes que o guest instala (Rust, Node, Claude Code, MSVC bootstrapper e layout), baixados uma vez pelo `scripts\cache-up.ps1` e nunca apagados. Tamanho aproximado por pacote:
+- Rust 1.95.0: 304 MB
+- Node 22.23.3: 36 MB
+- Claude Code 2.1.285: 244 MB
+- MSVC 17.14: **não verificado** (bootstrapper ~4.3 MB + layout ~?? GB)
+
+Uso: `scripts\cache-up.ps1` (sem parâmetros) baixa os pacotes para `shared\cache\` (só cria; nunca apaga); `scripts\cache-up.ps1 -SoPlano` mostra o plano sem baixar. Se o `test-up.ps1` disser que o cache está incompleto, **pare e avise o usuário** para rodar `cache-up.ps1` primeiro.
 
 ## Regras
 
