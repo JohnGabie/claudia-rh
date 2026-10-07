@@ -174,10 +174,10 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
 fn save_cover_letter(cfg: &McpConfig, args: &serde_json::Value) -> Result<String, String> {
     let texto = args["texto"].as_str().ok_or("parâmetro 'texto' em falta")?;
     let idioma = args["idioma"].as_str().unwrap_or("pt");
-    let base = tools::guardar_pendente(&cfg.data_dir, texto, args["vaga_id"].as_i64(), idioma, args["variante_id"].as_str())?;
+    let (base, aviso) = tools::guardar_pendente(&cfg.data_dir, texto, args["vaga_id"].as_i64(), idioma, args["variante_id"].as_str())?;
     notify(cfg, "documentos");
     let espera = if cfg.notify_port.is_some() { std::time::Duration::from_secs(20) } else { std::time::Duration::ZERO };
-    Ok(tools::aguardar_documento(&cfg.data_dir, &base, espera))
+    Ok(tools::juntar_aviso(tools::aguardar_documento(&cfg.data_dir, &base, espera), aviso.as_deref()))
 }
 
 #[cfg(test)]
