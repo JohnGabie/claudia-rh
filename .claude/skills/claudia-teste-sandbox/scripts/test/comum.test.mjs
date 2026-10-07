@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir, dentroDe, erroDeExec, erroBancoAusente } from "../comum.mjs";
+import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, dentroDe, erroDeExec, erroBancoAusente } from "../comum.mjs";
 import { tempDir, SCRIPTS } from "./util.mjs";
 
 function cleanup(dir) {
@@ -56,23 +56,6 @@ test("automacao completa a partir de arquivo parcial", () => {
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dados, "modo_autonomo.json"), "utf8")), { skip_permissions: false });
   } finally {
     cleanup(temp);
-  }
-});
-
-test("lab ausente ou incompleto nomeia o que falta", () => {
-  const antigo = process.env.SANDBOX_LAB_DIR;
-  try {
-    delete process.env.SANDBOX_LAB_DIR;
-    assert.throws(() => labDir(), /SANDBOX_LAB_DIR/);
-    const labTemp = tempDir("lab");
-    try {
-      process.env.SANDBOX_LAB_DIR = labTemp;
-      assert.throws(() => labDir(), /app-stage\.ps1/);
-    } finally {
-      cleanup(labTemp);
-    }
-  } finally {
-    if (antigo === undefined) delete process.env.SANDBOX_LAB_DIR; else process.env.SANDBOX_LAB_DIR = antigo;
   }
 });
 

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { raizPrincipalDe, caminhosDoLab } from "./caminhos-lab.mjs";
 
 export const APP_ID = "io.github.johngabie.claudia-rh";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
@@ -23,12 +24,29 @@ export function falhaDe(err) {
   sair(err.message, String(err.code ?? "").startsWith("ERR_PARSE_ARGS") ? 2 : 1);
 }
 
-export function labDir() {
-  const d = process.env.SANDBOX_LAB_DIR;
-  if (!d) throw new Error("SANDBOX_LAB_DIR is not set: point it to the Windows Sandbox lab folder.");
-  const stage = path.join(d, "scripts", "app-stage.ps1");
-  if (!fs.existsSync(stage)) throw new Error(`Incomplete lab: ${stage} not found.`);
-  return path.resolve(d);
+function gitLer(args, cwd) {
+  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(r.stderr || r.error?.message || "").trim()}`);
+  return r.stdout.trim();
+}
+
+/**
+ * Main checkout (lab + work folder) and current checkout (project under test). Read-only: only `git rev-parse`.
+ * `git` is injectable so the logic is tested without spawning git.
+ */
+export function onde(cwd = REPO_ROOT, git = gitLer) {
+  const raizPrincipal = raizPrincipalDe(git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd));
+  const projeto = path.win32.normalize(git(["rev-parse", "--show-toplevel"], cwd));
+  return { raizPrincipal, projeto, ...caminhosDoLab(raizPrincipal) };
+}
+
+/** sandbox-lab of the main checkout; throws naming the missing file. Never reads an environment variable. */
+export function labDir({ cwd = REPO_ROOT, git = gitLer, existe = fs.existsSync } = {}) {
+  const o = onde(cwd, git);
+  if (!existe(o.appStage)) {
+    throw new Error(`Lab not found: ${o.appStage} is missing in the main checkout. The lab lives in sandbox-lab/ of the main checkout (SKILL.md, section 1).`);
+  }
+  return o.lab;
 }
 
 const NOME_BASE = "claudia-teste-sandbox";
@@ -82,18 +100,7 @@ export function ancestoresComGit(dir, existe = fs.existsSync) {
   return achados;
 }
 
-export const MARCADOR_DEPLOY = ".lab-deploy";
-
-/**
- * PURE. Decides whether `<work-dir>/deploy` may be wiped by app-stage.ps1 -Clean.
- * Returns null when allowed, otherwise the reason.
- */
-export function podeLimparDeploy({ existe, temMarcador, ehLink }) {
-  if (!existe) return null;
-  if (ehLink) return "deploy is a link (symlink/junction/reparse point)";
-  if (!temMarcador) return `deploy exists without the ${MARCADOR_DEPLOY} marker (not created by this script)`;
-  return null;
-}
+export { MARCADOR_DEPLOY, podeLimparDeploy } from "./caminhos-lab.mjs";
 
 export function novoCenarioDir(saida, nome) {
   const tempRoot = fs.realpathSync.native(os.tmpdir());
