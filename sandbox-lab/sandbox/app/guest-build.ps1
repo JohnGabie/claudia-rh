@@ -4,14 +4,18 @@
 # Saida: C:\labwork\build\ (pasta gravavel mapeada pelo perfil): guest-build.log, result.json.
 # O target do cargo fica no disco do guest (C:\labdata\cargo-target): em pasta mapeada os build scripts falham (os error 1392).
 # Uso (host): winapp target exec sandbox -- powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-build.ps1 `
-#               [-Install 'npm.cmd ci'] [-Build 'npm.cmd run build'] [-Artifacts 'C:\labdata\cargo-target\release\*.exe']
+#               [-Install 'npm.cmd ci'] [-Build 'npm.cmd run build'] [-Artifacts 'C:\labdata\cargo-target\release\*.exe'] [-Precisa todos|node|cargo]
 param(
   [string]$Install = 'npm.cmd ci --no-audit --no-fund',
   [string]$Build = 'npm.cmd run build',
-  [string]$Artifacts = 'C:\labdata\cargo-target\release\*.exe'
+  [string]$Artifacts = 'C:\labdata\cargo-target\release\*.exe',
+  # What this run needs from instalar.ps1: 'node' = the Sandbox-only tests (MSVC/Rust may have failed), 'cargo' = a Rust
+  # build (MSVC and Rust ok), 'todos' = every package of the ambiente.
+  [ValidateSet('todos', 'node', 'cargo')][string]$Precisa = 'todos'
 )
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot '..\guest-install.lib.ps1')
+if (-not (Test-LabInGuest)) { Write-Host 'not inside the lab guest (needs the guest identity and the bootstrap marker)'; exit 1 }
 $Out = 'C:\labwork\build'
 New-Item -ItemType Directory -Force $Out | Out-Null
 $Log = Join-Path $Out 'guest-build.log'
@@ -35,9 +39,9 @@ function Step([string]$name, [string]$cmd) {
 # --- environment: what instalar.ps1 installed in this guest (C:\lab\out\instalar.json, ambiente 'testes') ---
 $inst = $null
 try { $inst = Get-Content -LiteralPath 'C:\lab\out\instalar.json' -Raw | ConvertFrom-Json } catch { }
-$toolEnv = Get-LabGuestToolEnv $inst
+$toolEnv = Get-LabGuestToolEnv $inst -Precisa $Precisa
 if (-not $toolEnv) {
-  Log 'instalar.json missing or not ok: start the lab with -Ambiente testes and wait for test-up to finish'
+  Log "instalar.json missing, unfinished, or the packages '$Precisa' needs did not install ok: start the lab with -Ambiente testes and wait for test-up to finish"
   # The host waits for a "build" step carrying its nonce: report the failure there instead of letting it time out.
   $res.steps['build'] = [ordered]@{ cmd = $Build; exit = 1; seconds = 0 }
   $res.end = (Get-Date).ToString('o'); Save

@@ -1,4 +1,5 @@
-# Pure decisions for instalar.ps1 and guest-build.ps1. Dot-sourced in the guest and by the pure test on the host. No disk.
+# Pure decisions for the guest scripts (instalar, guest-build, guest-cenario, ...). Dot-sourced in the guest and by the
+# pure test on the host. No disk, except Test-LabInGuest at the end, the one thin reader of the OS identity.
 
 function ConvertTo-LabInstallExit($Exit) {
   # 3010 = success, reboot requested (the guest is never rebooted). No code at all is a failure.
@@ -17,13 +18,60 @@ function Test-LabInstallOk {
   return -not @(@($Results) | Where-Object { $_ -and $_.exit -ne 0 }).Count
 }
 
+function Get-LabInstallDone($Instalar) {
+  # Names of the packages that finished with exit 0 in instalar.json. Failed packages never count.
+  if ($null -eq $Instalar) { return @() }
+  return @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -eq 0 } | ForEach-Object { [string]$_.nome })
+}
+
+function Test-LabInstallNeed {
+  # What a guest script needs from instalar.json ($Precisa): 'todos' = every package ok (Instalar.ok), 'node' = Node ok
+  # (the Sandbox-only tests and the scenarios), 'cargo' = MSVC and Rust ok (the Rust build links with MSVC). The partial
+  # modes also need the install to have finished (fim), so a run never starts while a package is still being installed.
+  param($Instalar, [string]$Precisa = 'todos')
+  if ($null -eq $Instalar) { return $false }
+  switch ($Precisa) {
+    'todos' { return [bool]$Instalar.ok }
+    'node' { if (-not $Instalar.fim) { return $false }; return ((Get-LabInstallDone $Instalar) -contains 'node') }
+    'cargo' {
+      if (-not $Instalar.fim) { return $false }
+      $done = Get-LabInstallDone $Instalar
+      return (($done -contains 'msvc') -and ($done -contains 'rust'))
+    }
+    default { return $false }
+  }
+}
+
 function Get-LabGuestToolEnv {
-  # From instalar.json: folders to put first on PATH and the vcvars64.bat to import. $null when the install is not ok.
-  param($Instalar)
-  if ($null -eq $Instalar -or -not $Instalar.ok) { return $null }
-  $paths = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.binDir } | ForEach-Object { [string]$_.binDir })
-  $vc = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.vcvars } | ForEach-Object { [string]$_.vcvars }) | Select-Object -First 1
+  # From instalar.json: folders to put first on PATH and the vcvars64.bat to import, taken only from packages that
+  # finished ok. $null when the install does not satisfy $Precisa (see Test-LabInstallNeed).
+  param($Instalar, [string]$Precisa = 'todos')
+  if (-not (Test-LabInstallNeed -Instalar $Instalar -Precisa $Precisa)) { return $null }
+  $good = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -eq 0 })
+  $paths = @($good | Where-Object { $_.binDir } | ForEach-Object { [string]$_.binDir })
+  $vc = @($good | Where-Object { $_.vcvars } | ForEach-Object { [string]$_.vcvars }) | Select-Object -First 1
   return [ordered]@{ paths = $paths; vcvars = $vc }
+}
+
+function Test-LabGuestScriptDecision {
+  # Two-factor guard of the guest scripts (instalar, disco-z, layout-msvc, guest-run, guest-cenario, guest-build). Both:
+  #  1. the marker file mapped only in the guest (C:\labsandbox\bootstrap.ps1), and
+  #  2. the process identity: WDAGUtilityAccount (DOMAIN\user from WindowsIdentity, never $env:USERNAME), or, for
+  #     'wsb exec -r System', SYSTEM (decided by the identity's IsSystem flag, so the localized account name does not
+  #     matter) together with the profile folder of WDAGUtilityAccount, which exists in the guest.
+  # Inputs are injected by Test-LabInGuest; this function reads nothing.
+  param([string]$Identity, [bool]$IsSystem, [bool]$HasBootstrap, [bool]$HasWdagProfile)
+  if (-not $HasBootstrap) { return $false }
+  if ($Identity -match '\\WDAGUtilityAccount$') { return $true }
+  return ($IsSystem -and $HasWdagProfile)
+}
+
+function Test-LabInGuest {
+  # The only impure part: reads the OS identity and two guest-only paths; the decision is Test-LabGuestScriptDecision.
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+  return Test-LabGuestScriptDecision -Identity $id.Name -IsSystem $id.IsSystem `
+    -HasBootstrap (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf) `
+    -HasWdagProfile (Test-Path -LiteralPath 'C:\Users\WDAGUtilityAccount' -PathType Container)
 }
 
 function Get-LabGuestScenarioRefusal([string]$Path) {

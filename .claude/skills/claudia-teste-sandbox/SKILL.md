@@ -62,7 +62,7 @@ Cenários rodam **só no guest**, em `Z:\claudia-teste-sandbox\<cenario>`. Do PC
 | `copia` | `cenario-no-guest.mjs --cenario copia --autorizado [--manter-automacao]` | bug que só aparece com os dados reais; migração sobre dados reais |
 
 **`copia` exige duas autorizações do usuário naquela rodada:**
-1. Subir o Sandbox com `-DadosReais`: `scripts\test-up.ps1 -Ambiente <...> -Project <projeto> -DadosReais` (monta só leitura a pasta Roaming do app em `C:\labdadosreais`; nunca `%LOCALAPPDATA%`).
+1. Subir o Sandbox com `-DadosReais`: `scripts\test-up.ps1 -Ambiente app|app-winapp -Project <projeto> -DadosReais` (só nesses dois ambientes; qualquer outro recusa antes de montar; monta só leitura a pasta Roaming do app em `C:\labdadosreais`; nunca `%LOCALAPPDATA%`).
 2. Passar `--autorizado` ao comando de cenário.
 
 Comportamento:
@@ -70,7 +70,7 @@ Comportamento:
 - `copia` copia só `%APPDATA%\io.github.johngabie.claudia-rh` (no guest, a origem é `C:\labdadosreais`) para `Z:\claudia-teste-sandbox\copia`; **nunca** `%LOCALAPPDATA%` (perfil do browser, cookies).
 - Cópia consolida o WAL do SQLite e confere integridade (até 3 tentativas; se falhar, peça ao usuário para fechar o app no PC).
 - Desliga disparo e modo autônomo na cópia, salvo `--manter-automacao` (só com motivo e com o usuário ciente).
-- Não reproduz links simbólicos da origem (ex.: `diagnostics\latest`): não aparecem na cópia; o app recria o link ao abrir. Ficam de fora também `*.db-wal` e `*.db-shm` (consolidados no banco).
+- Não reproduz links simbólicos nem junctions da origem (ex.: `diagnostics\latest`) e **não os segue**: se houver qualquer link dentro da pasta de dados, o `test-up -DadosReais` recusa antes de montar e o `cenario-copia.mjs` falha (`dereference: false` + filtro que lança). Remova o link na origem ou rode sem `-DadosReais`; o app recria o link ao abrir. Ficam de fora também `*.db-wal` e `*.db-shm` (consolidados no banco).
 - A cópia dos dados reais existe só no `Z:` do guest e some no `test-down`.
 
 Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes e depois), automação desligada no guest antes e depois da primeira abertura, firewall aplicado antes da primeira abertura, contagens do banco no guest iguais às da cópia no host.
@@ -83,7 +83,7 @@ Os dados entram no guest com `guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\<c
 
 Fluxo típico: `publicar.mjs --app <exe|instalador|pasta>` → `test-up.ps1 -Ambiente app-winapp` → `guest-firewall.ps1` (System) → `cenario-no-guest.mjs --cenario mock` → `guest-run.ps1 -Cenario Z:\claudia-teste-sandbox\mock` → observar → `test-down.ps1`.
 
-Build dentro do guest: ambiente `testes`. Exige subida com `test-up.ps1 -Ambiente testes -Project <projeto>` e depois `wsb exec --id <id> -r ExistingLogin -c "cd <projeto> && cargo test --lib"` (ou equivalente); target do cargo no disco do guest (`references/limites.md`).
+Build dentro do guest: ambiente `testes`. Exige subida com `test-up.ps1 -Ambiente testes -Project <projeto>` e depois `wsb exec --id <id> -r ExistingLogin -c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-build.ps1 -Precisa cargo -Install 'npm.cmd ci --no-audit --no-fund' -Build 'npm.cmd run build && cd src-tauri && cargo test --lib'"` (o `guest-build.ps1` copia o projeto para o guest e importa o MSVC; `-Precisa cargo` exige MSVC e Rust instalados; `-Precisa node` basta para os testes de Sandbox, que o `testes-no-guest.mjs` já passa); target do cargo no disco do guest (`references/limites.md`).
 
 - **exe de `tauri build --no-bundle`**: rápido, mas não instala pré-requisitos; sem WebView2 no guest o app não abre.
 - **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart` (com o instalador publicado, o `guest-run.json` registra o instalador como `exe`: inofensivo).

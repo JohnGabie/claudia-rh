@@ -64,6 +64,10 @@ jobs:
           .claude/skills/claudia-teste-sandbox/scripts/test/caminhos-lab.test.mjs
           .claude/skills/claudia-teste-sandbox/scripts/test/testes-no-guest.test.mjs
           .claude/skills/claudia-teste-sandbox/scripts/test/cenario-no-guest.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/motivo-recusa.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/onde.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/sandbox.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/copia-filtro.test.mjs
 
       - name: pure guard tests (PowerShell)
         shell: pwsh

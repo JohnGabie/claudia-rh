@@ -149,6 +149,36 @@ Check 'up verdict: status, Z: drive and install decide the exit code' {
   if ((Get-LabUpVerdict -Status $ok -DiscoZ $z -Instalar $null -PrecisaInstalar $false).exit -ne 0) { throw 'nothing to install -> 0' }
   if ((Get-LabUpVerdict -Status $ok -DiscoZ $null -Instalar $null -PrecisaInstalar $false).exit -ne 1) { throw 'Z: is always required' }
 }
+Check 'up verdict: a failed package stays visible (exit 1) and the reason lists what did install' {
+  $ok = [pscustomobject]@{ bootstrap = 'ok' }; $z = [pscustomobject]@{ ok = $true }
+  $inst = [pscustomobject]@{ fim = 'x'; ok = $false; pacotes = @(
+    [pscustomobject]@{ nome = 'msvc'; exit = 1603 }, [pscustomobject]@{ nome = 'rust'; exit = 0 }, [pscustomobject]@{ nome = 'node'; exit = 0 }) }
+  $v = Get-LabUpVerdict -Status $ok -DiscoZ $z -Instalar $inst -PrecisaInstalar $true
+  if ($v.exit -ne 1) { throw 'msvc failed -> exit 1, never hidden' }
+  Should-Match $v.motivo 'msvc \(exit 1603\)'
+  Should-Match $v.motivo 'installed ok: rust, node'
+}
+Check 'up verdict: when the ambiente asks for the login, status.conta must be presente' {
+  $z = [pscustomobject]@{ ok = $true }
+  foreach ($c in @('ausente', 'falhou', $null, '')) {
+    $v = Get-LabUpVerdict -Status ([pscustomobject]@{ bootstrap = 'ok'; conta = $c }) -DiscoZ $z -Instalar $null -PrecisaInstalar $false -PrecisaConta $true
+    if ($v.exit -ne 1) { throw "conta '$c' must give exit 1" }
+    Should-Match $v.motivo 'login'
+  }
+  $v = Get-LabUpVerdict -Status ([pscustomobject]@{ bootstrap = 'ok'; conta = 'presente' }) -DiscoZ $z -Instalar $null -PrecisaInstalar $false -PrecisaConta $true
+  if ($v.exit -ne 0) { throw 'conta presente -> 0' }
+  # An ambiente without conta does not care about status.conta.
+  $v = Get-LabUpVerdict -Status ([pscustomobject]@{ bootstrap = 'ok' }) -DiscoZ $z -Instalar $null -PrecisaInstalar $false -PrecisaConta $false
+  if ($v.exit -ne 0) { throw 'no conta needed -> 0' }
+}
+Check '-DadosReais: only the ambientes app and app-winapp; anything else is refused before mounting' {
+  Should-BeNull (Get-LabRealDataAmbienteRefusal 'app')
+  Should-BeNull (Get-LabRealDataAmbienteRefusal 'app-winapp')
+  foreach ($a in @('testes', 'exemplo', 'cache-msvc', 'app2', 'xapp', '', $null)) {
+    if (-not (Get-LabRealDataAmbienteRefusal $a)) { throw "must refuse '$a'" }
+  }
+  Should-Match (Get-LabRealDataAmbienteRefusal 'testes') 'only for the ambientes app, app-winapp'
+}
 Check 'start with credential: cleanup runs when the start throws, never when conta is false; a failed copy stops before start' {
   $log = New-Object System.Collections.Generic.List[string]
   $threw = $false

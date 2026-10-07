@@ -33,7 +33,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     const build = comandoDeTesteNoGuest({ node: values.node ?? [], ps: values.ps ?? null, nonce });
     const id = sandboxId(values.id);
     const result = path.join(onde().guestRw, "build", "result.json");
-    noGuest(id, "ExistingLogin", `& C:\\labsandbox\\app\\guest-build.ps1 -Install '' -Build '${build}'`);
+    noGuest(id, "ExistingLogin", `& C:\\labsandbox\\app\\guest-build.ps1 -Install '' -Precisa node -Build '${build}'`);
     const fim = Date.now() + timeout * 1000;
     let j = null;
     while (Date.now() < fim) {

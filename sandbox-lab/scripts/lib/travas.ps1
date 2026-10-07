@@ -68,7 +68,7 @@ function Test-LabShortNameSegment([string]$Path) {
 }
 
 function Get-LabSourceRefusal {
-  # Source of a copy into the deploy (-App, -AppData, -LocalAppData): full path, below a drive root, and unrelated to
+  # Source of a copy into the deploy (-App): full path, below a drive root, and unrelated to
   # the deploy (not the deploy, not inside it, not a parent of it: robocopy /MIR would copy the deploy into itself).
   # Callers pass the REAL path (disco.ps1: Resolve-LabRealPath) and the reparse points found in it (Get-LabLinksAboveRoot).
   param([string]$Source, [string]$Deploy, [string[]]$Links = @())
@@ -234,8 +234,9 @@ $script:LabAppId = 'io.github.johngabie.claudia-rh'
 
 function Get-LabRealDataSourceRefusal {
   # test-up -DadosReais (spec addendum 8.1): only the app's folder under Roaming, read-only, never %LOCALAPPDATA%.
-  # Callers pass [Environment]::GetFolderPath('ApplicationData') and the reparse points above the source.
-  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @())
+  # Callers pass [Environment]::GetFolderPath('ApplicationData'), the reparse points above the source ($Links) and the ones
+  # found INSIDE it ($LinksInside): any link inside refuses too (the copy scenario refuses links, it never follows them).
+  param([string]$Source, [string]$RoamingAppData, [string[]]$Links = @(), [string[]]$LinksInside = @())
   if ([string]::IsNullOrWhiteSpace($Source) -or [string]::IsNullOrWhiteSpace($RoamingAppData)) { return 'source and roaming folder are required' }
   $r = $RoamingAppData.TrimEnd('\')
   $why = Get-LabRootProblem $r
@@ -245,6 +246,7 @@ function Get-LabRealDataSourceRefusal {
   if ((ConvertTo-LabPathKey $Source) -ne (ConvertTo-LabPathKey "$r\$script:LabAppId")) { return "source is not exactly %APPDATA%\$script:LabAppId" }
   $l = @($Links | Where-Object { $_ })
   if ($l.Count) { return 'link (symlink/junction) in the path of the app data folder' }
+  if (@($LinksInside | Where-Object { $_ }).Count) { return 'link (symlink/junction) inside the app data folder: the copy scenario refuses links' }
   return $null
 }
 

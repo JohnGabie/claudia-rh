@@ -5,6 +5,7 @@
 param([int]$MaxMB = 20480)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'guest-z.lib.ps1')
+. (Join-Path $PSScriptRoot 'guest-install.lib.ps1')
 $Image = $script:LabZImage
 $OutFile = 'C:\lab\out\disco-z.json'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -28,8 +29,9 @@ function Get-State {
 }
 
 try {
-  # Guest only: the marker is mapped only in the guest (the identity is SYSTEM when run through wsb exec).
-  if (-not (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf)) { throw 'not inside the lab guest' }
+  # Guest only, two factors: the guest identity (WDAGUtilityAccount, or SYSTEM through wsb exec plus the WDAG profile)
+  # and the bootstrap marker that is mapped only in the guest.
+  if (-not (Test-LabInGuest)) { throw 'not inside the lab guest (needs the guest identity and the bootstrap marker)' }
   $zExists = Test-Path -LiteralPath 'Z:\'
   $s = $(if ($zExists) { Get-State } else { @{ refusal = $null } })
   $action = Get-LabZStartAction -ZExists $zExists -ImageExists (Test-Path -LiteralPath $Image) -FormatRefusal $s.refusal
