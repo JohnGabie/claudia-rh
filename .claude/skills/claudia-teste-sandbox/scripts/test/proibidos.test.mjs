@@ -1,7 +1,7 @@
 // Pure tests: lists of strings only, no disk, no git.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { arquivosProibidos } from "../proibidos.mjs";
+import { arquivosProibidos, achaCaminhoPessoal } from "../proibidos.mjs";
 
 const nomes = (lista) => arquivosProibidos(lista).map((a) => a.arquivo);
 
@@ -55,4 +55,45 @@ test("every finding has a reason", () => {
 test("ignores empty and non-string entries", () => {
   assert.deepEqual(arquivosProibidos(["", "   ", null, undefined, 3]), []);
   assert.deepEqual(arquivosProibidos(undefined), []);
+});
+
+const B = "\\";
+const naoAcha = (t) => assert.deepEqual(achaCaminhoPessoal(t), [], t);
+const acha = (t) => assert.equal(achaCaminhoPessoal(t).length, 1, t);
+
+test("achaCaminhoPessoal: Windows user folder with \\, / and JSON-escaped \\\\", () => {
+  acha(["C:", "Users", "fulano", "x"].join(B));
+  acha(["c:", "users", "fulano"].join("/"));
+  acha(["D:", "Users", "fulano", "a"].join(B + B));
+});
+
+test("achaCaminhoPessoal: macOS and Linux home folders", () => {
+  acha(`cd ${"/" + ["Users", "fulano", "x"].join("/")}`);
+  acha(`"${"/" + ["home", "fulano"].join("/")}"`);
+});
+
+test("achaCaminhoPessoal: IDE project folders", () => {
+  acha("Pycharm" + "Projects/x");
+  acha("Idea" + "Projects");
+  acha(["source", "repos", "x"].join(B));
+});
+
+test("achaCaminhoPessoal: placeholders, variables, the Sandbox user and guest paths are fine", () => {
+  naoAcha(["C:", "Users", "<nome>", "x"].join(B));
+  naoAcha(["C:", "Users", "%USERNAME%"].join(B));
+  naoAcha(["C:", "Users", "$env:USERNAME"].join(B));
+  naoAcha(["C:", "Users", "WDAGUtilityAccount", "AppData"].join(B));
+  naoAcha(["C:", "Users", "Public"].join(B));
+  naoAcha("%USERPROFILE%\\.rustup\\toolchains");
+  naoAcha("C:\\lab\\tools\\sqlite\\sqlite3.exe and C:\\labwork\\db");
+  naoAcha("https://example.com/ho" + "me/x");
+});
+
+test("achaCaminhoPessoal: Public-like names are still flagged", () => {
+  acha(["C:", "Users", "Publicador"].join(B));
+});
+
+test("achaCaminhoPessoal: reports the line number and the match", () => {
+  const r = achaCaminhoPessoal(`a\nb\nx ${["C:", "Users", "fulano"].join(B)} y`);
+  assert.deepEqual(r, [{ linha: 3, trecho: ["C:", "Users", "fulano"].join(B) }]);
 });

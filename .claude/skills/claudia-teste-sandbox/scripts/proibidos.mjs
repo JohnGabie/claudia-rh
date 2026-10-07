@@ -31,3 +31,24 @@ export function arquivosProibidos(arquivos) {
   }
   return achados;
 }
+
+// Machine paths that must not appear in versioned text. Placeholders (<nome>), variables (%USERNAME%, $env:) and the
+// Windows Sandbox user are not names, so they do not match.
+const PADROES_CAMINHO = [
+  /[a-z]:(?:\\{1,2}|\/)users(?:\\{1,2}|\/)(?!(?:public|default|wdagutilityaccount)(?![a-z0-9]))[^\\/\s"'<>%$]+/i,
+  /(?:^|[\s"'(=])\/(?:users|home)\/[^/\s"'<>$]+/i,
+  // "[p]" keeps this source line from matching itself when conferir-repo scans the skill.
+  /pycharm[p]rojects|idea[p]rojects|source(?:\\{1,2}|\/)repos/i,
+];
+
+/** One finding per line that holds a machine path: { linha (1-based), trecho }. */
+export function achaCaminhoPessoal(texto) {
+  const achados = [];
+  String(texto ?? "").split(/\r?\n/).forEach((l, i) => {
+    for (const p of PADROES_CAMINHO) {
+      const m = l.match(p);
+      if (m) { achados.push({ linha: i + 1, trecho: m[0].trim() }); break; }
+    }
+  });
+  return achados;
+}
