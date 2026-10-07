@@ -1,7 +1,7 @@
 ---
 name: claudia-teste-sandbox
 description: >-
-  Testa o Claudia RH (app Tauri) num Windows LIMPO e isolado (Windows Sandbox, laboratório em SANDBOX_LAB_DIR): monta o ambiente, escolhe os dados (cenário novo, mock ou cópia dos dados do usuário), publica ou instala o app e liga o CDP do app dentro do guest.
+  Testa o Claudia RH (app Tauri) num Windows LIMPO e isolado (Windows Sandbox, laboratório em sandbox-lab/ do repositório): monta o ambiente, escolhe os dados (cenário novo, mock ou cópia dos dados do usuário), publica ou instala o app e liga o CDP do app dentro do guest.
   Use SEMPRE que o pedido envolver máquina limpa ou PC novo ("funciona num PC novo?", "testa do zero", "como se fosse a primeira vez"), Windows Sandbox, testar o instalador (NSIS, setup, pré-requisitos como WebView2), primeira abertura e welcome, desinstalação, build ou instalação do zero, ou testar com os dados reais do usuário sem mexer neles. Use também para preparar o Sandbox antes de olhar o app lá dentro.
   NÃO use para olhar, clicar ou tirar print do app já rodando (local ou no Sandbox já montado), reproduzir bug no app aberto, mexer em CSS ou UI: isso é a claudia-teste-e2e. NÃO use para cargo test, tsc, Linear nem sites de vagas.
 ---
@@ -20,30 +20,27 @@ Origem: incidente de 2026-10-05 (um teste passou `C:\` a uma função de apagar)
 - **Nenhum caminho real em teste** (raiz de disco, repositório, pasta acima dele, `AppData`, sistema), nem para provar a recusa: a recusa se testa na função de validação pura.
 - **Nunca o Chrome pessoal do usuário** (nem perfil, nem cópia). O Chrome do Claudia-RH pode.
 - `node --test` **sempre com a lista de arquivos explícita**, nunca glob nem pasta.
-- **Até a Tarefa 0b do plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md` entrar** (o código ainda não foi corrigido):
-  - **NÃO rodar `scripts/test/comum.test.mjs`** fora do Sandbox (apaga pastas; as recusas de B1 agora são testadas só em `scripts/test/motivo-recusa.test.mjs`, função pura, sem disco);
-  - **NÃO rodar `evals/rodar-evals.mjs`** (CLA-56);
-  - `--saida` dos cenários **só dentro de `<tmp>\claudia-teste-sandbox\`** (lista branca em `motivoRecusa`; fora disso o script recusa);
-  - `publicar.mjs` **só com pasta de trabalho dedicada** (B3), nunca uma pasta com outros dados.
+- A guarda "estou no Sandbox" dos testes e do `travas.sandbox.ps1` usa **dois fatores**: identidade `WDAGUtilityAccount` (do SO, nunca `$env:USERNAME`) **e** o arquivo `C:\labsandbox\bootstrap.ps1`, que só existe montado no guest.
 
 ## 1. Pré-requisitos
 
-- `SANDBOX_LAB_DIR` aponta para o laboratório (precisa de `scripts\app-stage.ps1`). Ausente ou incompleto: **pare e diga ao usuário o que falta**; não invente caminho nem crie laboratório.
-- Perfis `app*` exigem `LAB_APP_PROJECT` (projeto, read-only no guest em `C:\labproject`) e `LAB_WORK_DIR` (pasta de trabalho). Use o **mesmo** `LAB_WORK_DIR` no `publicar.mjs`, no `test-up.ps1` e no `banco-guest.mjs`.
+- O laboratório fica em `sandbox-lab/` do **checkout principal** do repositório; a pasta de trabalho, em `.sandbox-work/` do mesmo checkout. Descubra os caminhos com `node .claude/skills/claudia-teste-sandbox/scripts/onde.mjs` (só lê o git) → `{raizPrincipal, projeto, lab, trabalho, deploy, guestRw, appStage, testUp}`. De uma worktree, `projeto` é a worktree e o resto é do checkout principal.
+- Sem variável de ambiente de caminho: `SANDBOX_LAB_DIR`, `LAB_APP_PROJECT` e `LAB_WORK_DIR` não existem mais.
+- Ferramentas (`sandbox-lab/shared/tools/`, conferidas por `sandbox-lab/shared/tools.sha256`) e a chave do MCP (`sandbox-lab/shared/secrets/`) ficam fora do git. Se o `onde.mjs` falhar ou o `test-up.ps1` disser que falta ferramenta: **pare e diga ao usuário o que falta** (`sandbox-lab/README.md`, seção Ferramentas); não baixe nada nem crie laboratório.
 - Windows Sandbox habilitado (`wsb` no PATH). Só existe **um** Sandbox por vez.
 
 ## 2. O laboratório em uma tela
 
-| Peça (em `%SANDBOX_LAB_DIR%`) | Uso |
+| Peça (em `lab` do `onde.mjs`) | Uso |
 |---|---|
-| `scripts\test-up.ps1 -Config <perfil>` / `scripts\test-down.ps1` | sobe / derruba (descarta tudo do guest); id em `wsb list` |
+| `scripts\test-up.ps1 -Config <perfil> -Project <projeto>` / `scripts\test-down.ps1` | sobe / derruba (descarta tudo do guest); id em `wsb list`; `<projeto>` vem do `onde.mjs` |
 | `lab.config.app.json` | app sem rede; controle só por `wsb exec` (winapp não alcança o guest) |
 | `lab.config.app-winapp.json` | rede ligada para winapp e CDP; internet bloqueada por `sandbox\app\guest-firewall.ps1` (rodar como System) |
 | `lab.config.app-build.json` | build dentro do guest com toolchains do host read-only |
 | `sandbox\app\guest-run.ps1 [-Exe] [-NoStart]` | no guest: copia `appdata`/`localappdata` publicados e inicia o exe (`-NoStart`: só os dados) |
 | `guest-observe.ps1`, `guest-click.ps1`, `guest-chrome-probe.ps1` | tela + árvore UIA, clique e Chrome no guest sem winapp |
 
-Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\labsandbox` (scripts do guest, RO), `C:\appdeploy` (deploy, RO), `C:\labwork` (= `<work-dir>\guest-rw`, gravável). Controle: `wsb exec --id <id> -r ExistingLogin|System -c "<comando>"` (não devolve a saída do processo: grave em `C:\labwork`; o `wsb exec` sempre sai com 0 no host e o código do guest aparece só como texto localizado no stdout, que os scripts desta skill interpretam: `references/limites.md`). Documentação completa: `%SANDBOX_LAB_DIR%\.claude\skills\sandbox-lab\SKILL.md`. Comportamentos que afetam o teste: `references/limites.md`.
+Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\labsandbox` (scripts do guest, RO), `C:\appdeploy` (deploy, RO), `C:\labwork` (= `.sandbox-work\guest-rw`, gravável). Controle: `wsb exec --id <id> -r ExistingLogin|System -c "<comando>"` (não devolve a saída do processo: grave em `C:\labwork`; o `wsb exec` sempre sai com 0 no host e o código do guest aparece só como texto localizado no stdout, que os scripts desta skill interpretam: `references/limites.md`). Documentação completa: `references/laboratorio.md`. Comportamentos que afetam o teste: `references/limites.md`.
 
 ## 3. Específico do app
 
@@ -54,7 +51,7 @@ Pastas no guest: `C:\lab` (shared, RO; `C:\lab\tools\sqlite\sqlite3.exe`), `C:\l
 
 ## 4. Cenários de dados
 
-Em andamento: o cenário de dados falsos completos está em spec (CLA-53, branch `feat/dados-falsos-teste`) e a decisão de trazer o laboratório para dentro do claudia-rh aguarda spec.
+Em andamento: o cenário de dados falsos completos está em spec (CLA-53, branch `feat/dados-falsos-teste`).
 
 Cada script recria `--saida` (padrão `%TEMP%\claudia-teste-sandbox\<cenario>`; `--saida` só dentro de `<tmp>\claudia-teste-sandbox\`, nunca a própria pasta base, outro disco, link ou pasta real) e grava `cenario.json`. Só recria pastas de cenário (com `cenario.json` ou marcador `.cenario`); recusa pasta não vazia sem relação, a raiz do repositório e seus ancestrais, e raiz de disco.
 
@@ -75,7 +72,7 @@ Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes
 
 ## 5. O que publicar
 
-`node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta> [--work-dir <p>]` (padrão `LAB_WORK_DIR`, senão `%TEMP%\claudia-teste-sandbox\work`; a pasta de trabalho tem de ser **dedicada**, B3: `-Clean` só roda se `<work-dir>\deploy` não existir ou tiver o marcador `.lab-deploy` e não for link). O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`.
+`node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app <exe|instalador|pasta> --cenario <pasta>`. A pasta de trabalho é sempre `.sandbox-work/` do checkout principal (não há `--work-dir`). O `-Clean` só roda se `.sandbox-work\deploy` não existir ou tiver o marcador `.lab-deploy`, sem junction nem link no caminho ou dentro dele; a mesma trava está no `publicar.mjs` e no `app-stage.ps1`. O app vai para `C:\appdeploy\app`, os dados para `C:\appdeploy\appdata`. O `app-stage.ps1` recusa origem que seja raiz de disco, o próprio deploy, uma pasta que o contenha ou algo dentro dele, e copia com `robocopy /XJ` (não segue junction). Só o `app-stage.ps1` mostra o que foi publicado (total de arquivos e MB); o `publicar.mjs` aplica a trava do `-Clean` e **não confere o conteúdo** do deploy.
 
 - **exe de `tauri build --no-bundle`**: rápido, mas não instala pré-requisitos; sem WebView2 no guest o app não abre.
 - **instalador** (`tauri build`, NSIS): cuida de pré-requisitos como o WebView2 (o bootstrapper precisa de rede). Silencioso: `wsb exec --id <id> -r ExistingLogin -c "C:\appdeploy\app\<instalador>.exe /S"`. Instale os dados antes da primeira abertura com `guest-run.ps1 -NoStart` (com o instalador publicado, o `guest-run.json` registra o instalador como `exe`: inofensivo).
@@ -94,10 +91,10 @@ Verificado ao vivo de ponta a ponta: origem inalterada (listagem idêntica antes
    - `winapp ui screenshot --on sandbox -a claudia-rh -w <hwnd> -o <arq>`: print só da janela do app; sem `-w` o print inclui também uma janela minúscula extra.
    - Limites: sem `invoke` de comandos Tauri e sem avaliação de JavaScript; só o que a árvore de acessibilidade expõe.
    - A página do app instalado (release) tem origem `http://tauri.localhost/`.
-3. Banco: `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs [--id <id>] [--work-dir <p>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
+3. Banco: `node .claude/skills/claudia-teste-sandbox/scripts/banco-guest.mjs [--id <id>] [--timeout 30]` → `{db}`, snapshot consistente (`.tmp` → rename) para usar como `CLAUDIA_DB`. Repita depois de cada ação que muda dados.
 4. Prints: escada de prints da `claudia-teste-e2e` (inclui degraus sem CDP e sem rede).
 
-Fluxo típico, **exemplo e não obrigação**: cenário → `publicar.mjs` → `test-up.ps1 -Config lab.config.app-winapp.json` → `guest-firewall.ps1` (System) → instalar ou `guest-run.ps1` → `cdp-guest.mjs` → observar com `claudia-teste-e2e` → prints → copiar evidências de `C:\labwork` → `test-down.ps1`.
+Fluxo típico, **exemplo e não obrigação**: cenário → `publicar.mjs` → `test-up.ps1 -Config lab.config.app-winapp.json -Project <projeto do onde.mjs>` → `guest-firewall.ps1` (System) → instalar ou `guest-run.ps1` → `cdp-guest.mjs` → observar com `claudia-teste-e2e` → prints → copiar evidências de `C:\labwork` → `test-down.ps1`.
 
 ## 7. Regras
 
@@ -109,17 +106,21 @@ Fluxo típico, **exemplo e não obrigação**: cenário → `publicar.mjs` → `
 
 ## 8. Melhorias no ferramental
 
-Quando notar algo que tornaria o teste mais fácil, rápido ou confiável (no laboratório, nos scripts e cenários desta skill ou nesta skill), **sugira ao usuário com o motivo e o custo**. Com o "sim" dele, implemente (o laboratório tem processo próprio, fora deste repositório). Se não for o momento, registre no Linear (`linear-claudia`). **Nunca mude o ferramental por conta própria no meio de um teste**: um teste com ferramenta alterada no caminho não prova nada.
+Quando notar algo que tornaria o teste mais fácil, rápido ou confiável (no laboratório, nos scripts e cenários desta skill ou nesta skill), **sugira ao usuário com o motivo e o custo**. Com o "sim" dele, implemente (o laboratório está em `sandbox-lab/` e segue o processo deste repositório: spec, plano, revisão). Se não for o momento, registre no Linear (`linear-claudia`). **Nunca mude o ferramental por conta própria no meio de um teste**: um teste com ferramenta alterada no caminho não prova nada.
 
 ## 9. Testes
 
-Você desenha os testes a partir da pergunta e decide se vale escrever testes automáticos. Os testes dos scripts desta skill não precisam de Sandbox para rodar, mas **apagam pastas**: só rodam depois da Tarefa 0b e sempre com a lista de arquivos explícita; até lá, **nunca** `comum.test.mjs` (seção 0).
+Você desenha os testes a partir da pergunta e decide se vale escrever testes automáticos.
+
+- **Puros (rodam no PC; não tocam o disco):** `scripts/test/proibidos.test.mjs`, `manifesto.test.mjs`, `caminhos-lab.test.mjs`, `onde.test.mjs`, `testes-no-guest.test.mjs`, `motivo-recusa.test.mjs`, `sandbox.test.mjs`, e `sandbox-lab/scripts/test/travas.test.ps1`.
+- **O CI (job `repo-guard`, `.github/workflows/ci.yml`) roda só:** `conferir-repo.mjs` (leitura via `git ls-files`: arquivos proibidos e caminho de máquina em `sandbox-lab/`, `.claude/skills/`, `docs/` e `CLAUDE.md`), `proibidos.test.mjs`, `manifesto.test.mjs`, `caminhos-lab.test.mjs`, `testes-no-guest.test.mjs` e `travas.test.ps1`. `onde.test.mjs`, `motivo-recusa.test.mjs` e `sandbox.test.mjs` são puros mas **não** estão no CI.
+- **Sandbox (criam ou apagam pastas):** `comum.test.mjs`, `novo.test.mjs`, `mock.test.mjs`, `copia.test.mjs`, `publicar.test.mjs` e `sandbox-lab/scripts/test/travas.sandbox.ps1`. Rodam **só no guest**: `test-up.ps1 -Config lab.config.app-build.json -Project <projeto>` e depois `node .claude/skills/claudia-teste-sandbox/scripts/testes-no-guest.mjs --node <arquivos>` ou `--ps sandbox-lab/scripts/test/travas.sandbox.ps1`. Fora do Sandbox, `tempDir()` e o cabeçalho do `.sandbox.ps1` recusam antes de criar qualquer pasta.
 
 ```
 node --test <arquivo1>.test.mjs <arquivo2>.test.mjs
 ```
 
-Glob e `node --test <pasta>/` não são permitidos (a forma de pasta falha no Node 24 e o glob incluiria `comum.test.mjs`).
+Glob e `node --test <pasta>/` não são permitidos (a forma de pasta falha no Node 24 e o glob incluiria testes de Sandbox).
 
 ## Saída
 

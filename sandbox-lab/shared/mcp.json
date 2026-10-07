@@ -1,0 +1,15 @@
+{
+  "$comment": "Config do Windows-MCP no guest. Lido por C:\\labsandbox\\bootstrap-mcp.ps1 (como C:\\lab\\mcp.json) e por scripts\\mcp-sync.ps1. Caminhos relativos a shared\\ (= C:\\lab no guest).",
+  "port": 8000,
+  "transport": "streamable-http",
+  "path": "/mcp",
+  "authKeyFile": "secrets/mcp-auth.key",
+  "authKeyEnv": "LAB_MCP_AUTH_KEY",
+  "windowsMcpVersion": "0.8.7",
+  "pythonVersion": "3.14",
+  "uvExe": "tools/uv/uv.exe",
+  "pythonDir": "tools/python",
+  "wheelhouse": "tools/wheels",
+  "excludeTools": "",
+  "readyTimeoutSec": 120
+}

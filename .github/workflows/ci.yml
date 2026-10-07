@@ -43,6 +43,31 @@ jobs:
       - name: build
         run: npm run build
 
+  repo-guard:
+    name: repo guard (lab files, keys, machine paths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: forbidden files and machine paths
+        run: node .claude/skills/claudia-teste-sandbox/scripts/conferir-repo.mjs
+
+      - name: pure guard tests (node)
+        run: >-
+          node --test
+          .claude/skills/claudia-teste-sandbox/scripts/test/proibidos.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/manifesto.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/caminhos-lab.test.mjs
+          .claude/skills/claudia-teste-sandbox/scripts/test/testes-no-guest.test.mjs
+
+      - name: pure guard tests (PowerShell)
+        shell: pwsh
+        run: ./sandbox-lab/scripts/test/travas.test.ps1
+
   cargo-test:
     name: cargo test
     runs-on: ubuntu-latest

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Lab Test Page</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; margin: 60px 40px; }
+  input, button { font-size: 18px; padding: 6px 10px; }
+  #result { margin-top: 20px; font-size: 22px; min-height: 30px; border: 1px dashed #888; padding: 8px; }
+</style>
+</head>
+<body>
+  <h1>Pagina de teste do lab</h1>
+  <label for="q">Texto:</label>
+  <input id="q" type="text" autocomplete="off">
+  <button id="go" type="button">Enviar</button>
+  <div id="result" aria-live="polite"></div>
+  <script>
+    document.getElementById("go").addEventListener("click", function () {
+      document.getElementById("result").textContent = document.getElementById("q").value;
+    });
+  </script>
+</body>
+</html>

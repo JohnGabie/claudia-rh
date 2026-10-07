@@ -99,7 +99,7 @@ Criar `/tmp/sonda-terminal.mjs`:
 
 ```js
 // Probe: is the xterm text readable from the DOM, from the AX tree, or neither?
-import { alvos, ligar, sleep } from "/c/Users/joaog/PycharmProjects/curriculum-apply/claudia-rh/.claude/skills/claudia-teste/scripts/cdp.mjs";
+import { alvos, ligar, sleep } from ".claude/skills/claudia-teste/scripts/cdp.mjs";
 
 const lista = await alvos(9333);
 const alvo = lista.find((t) => t.type === "page" && /1420/.test(t.url));
@@ -177,7 +177,7 @@ Criar `/tmp/sonda-clique.mjs`:
 
 ```js
 // Probe: does a click on the app UI change state, and which mechanism works?
-import { alvos, ligar, sleep } from "/c/Users/joaog/PycharmProjects/curriculum-apply/claudia-rh/.claude/skills/claudia-teste/scripts/cdp.mjs";
+import { alvos, ligar, sleep } from ".claude/skills/claudia-teste/scripts/cdp.mjs";
 
 const lista = await alvos(9333);
 const alvo = lista.find((t) => t.type === "page" && /1420/.test(t.url));

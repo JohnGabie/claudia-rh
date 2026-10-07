@@ -18,7 +18,7 @@
 - Do not remove `--chrome`.
 - Do not `git add` yaml, `npm-package/`, `debug-logs/`.
 - Work on `feat/fix-sessao-spawn`. Merge to `dev`. Never `main`.
-- Cwd: `C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh`. Cargo tests: `src-tauri/`.
+- Cwd: `claudia-rh`. Cargo tests: `src-tauri/`.
 
 ## File map
 
@@ -98,7 +98,7 @@ Do **not** implement `build_claude_cli_args` yet (or stub `todo!()` so tests com
 - [ ] **Step 2: Run tests — they must fail**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh\src-tauri"
+Set-Location "src-tauri"
 cargo test --lib commands::sessao::tests -- --nocapture
 ```
 
@@ -403,7 +403,7 @@ git commit -m "fix(session): LinkedIn spawn order and drop PTY initial_task"
 - [ ] **Step 1:**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git diff HEAD -- src-tauri/tauri.conf.json
 # must be empty
 

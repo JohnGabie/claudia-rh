@@ -1,0 +1,58 @@
+# guest-run.ps1 - roda DENTRO do Sandbox (PowerShell 5.1), na sessao do usuario do guest.
+# Instala e inicia o app publicado por scripts\app-stage.ps1 (C:\appdeploy):
+#   1. registra o estado do runtime WebView2 no guest
+#   2. copia C:\appdeploy\appdata\* -> %APPDATA%  e  C:\appdeploy\localappdata\* -> %LOCALAPPDATA%
+#   3. copia C:\appdeploy\app -> C:\labdata\app e inicia o exe (destacado)
+# Saida: C:\labwork\run\guest-run.json
+# Uso (host): wsb exec --id <id> -r ExistingLogin -c "powershell -ExecutionPolicy Bypass -File C:\labsandbox\app\guest-run.ps1 [-Exe nome.exe]"
+#   (via 'winapp target exec' o app e encerrado quando o comando termina; use -NoStart la so para instalar os dados)
+param([string]$Exe = '', [string]$Deploy = 'C:\appdeploy', [int]$WaitSec = 8, [switch]$NoStart)
+$ErrorActionPreference = 'Continue'
+$Out = 'C:\labwork\run'; New-Item -ItemType Directory -Force $Out | Out-Null
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$r = [ordered]@{ at = (Get-Date).ToString('o'); user = $env:USERNAME; appdata = $env:APPDATA; localappdata = $env:LOCALAPPDATA; errors = @() }
+
+# 1. WebView2
+$wv = $null
+foreach ($k in 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+               'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') {
+  try { $wv = (Get-ItemProperty $k -ErrorAction Stop).pv; break } catch { }
+}
+$wvDir = Get-ChildItem 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application' -Directory -ErrorAction SilentlyContinue | Where-Object Name -match '^\d' | Select-Object -Expand Name
+$r.webview2 = [ordered]@{ registryPv = $wv; evergreenDirs = @($wvDir) }
+
+# 2. dados do app
+$r.dataFiles = [ordered]@{}
+foreach ($pair in @(@('appdata', $env:APPDATA), @('localappdata', $env:LOCALAPPDATA))) {
+  $src = Join-Path $Deploy $pair[0]
+  if (-not (Test-Path $src)) { continue }
+  try {
+    robocopy $src $pair[1] /E /NFL /NDL /NP /R:1 /W:1 | Out-Null
+    $files = @(Get-ChildItem $src -Recurse -File)
+    foreach ($f in $files) { $t = Join-Path $pair[1] $f.FullName.Substring($src.Length + 1); if (Test-Path $t) { (Get-Item $t).IsReadOnly = $false } }
+    $r.dataFiles[$pair[0]] = $files.Count
+  } catch { $r.errors += "$($pair[0]): $_" }
+}
+
+# 3. app
+$appDir = 'C:\labdata\app'
+try {
+  New-Item -ItemType Directory -Force $appDir | Out-Null
+  robocopy (Join-Path $Deploy 'app') $appDir /MIR /NFL /NDL /NP /R:1 /W:1 | Out-Null
+  $exes = @(Get-ChildItem $appDir -Filter *.exe -File)
+  $exePath = $(if ($Exe) { Join-Path $appDir $Exe } elseif ($exes.Count -eq 1) { $exes[0].FullName } else { $null })
+  if (-not $exePath) { throw "informe -Exe (exes em ${appDir}: $($exes.Name -join ', '))" }
+  $r.exe = $exePath
+  if (-not $NoStart) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($exePath)
+    Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    $p = Start-Process $exePath -PassThru
+    Start-Sleep -Seconds $WaitSec
+    $r.pid = $p.Id
+    $r.alive = -not $p.HasExited
+    if ($p.HasExited) { $r.exitCode = $p.ExitCode }
+    $r.windows = @(Get-Process -Id $p.Id -ErrorAction SilentlyContinue | Where-Object MainWindowTitle | ForEach-Object MainWindowTitle)
+  }
+} catch { $r.errors += "app: $_" }
+[IO.File]::WriteAllText((Join-Path $Out 'guest-run.json'), ($r | ConvertTo-Json -Depth 5), $utf8)
+$r | ConvertTo-Json -Depth 5

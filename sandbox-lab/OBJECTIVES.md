@@ -1,0 +1,51 @@
+# win-sandbox-lab — Objetivos de teste
+
+Ambiente de teste descartável: build no host, execução num Windows Sandbox limpo,
+controlado por IA (winapp CLI + Windows-MCP). Nada toca o sistema/banco reais.
+
+## Layout
+
+```
+win-sandbox-lab/
+├─ lab.config.json        ← perfil padrão: projeto, extensões, backup do banco, porta MCP
+├─ lab.config.app*.json   ← perfis para um app desktop real (rodar, rodar com winapp, build no guest)
+├─ OBJECTIVES.md          ← este arquivo
+├─ scripts/
+│  ├─ test-up.ps1         ← lê lab.config.json → gera sandbox/sandbox.generated.wsb → sobe o Sandbox
+│  ├─ test-down.ps1       ← derruba o Sandbox
+│  ├─ app-stage.ps1       ← publica exe + dados de teste para os perfis lab.config.app*.json
+│  ├─ mcp-sync.ps1        ← atualiza o IP do guest no .mcp.json
+│  └─ validate-config.ps1 ← valida arquivos de config sem subir o Sandbox (estático)
+├─ sandbox/
+│  ├─ sandbox.template.wsb
+│  ├─ bootstrap.ps1       ← roda no LogonCommand dentro do Sandbox
+│  ├─ bootstrap-mcp.ps1   ← sobe o Windows-MCP no guest
+│  └─ app/                ← scripts do guest para os perfis lab.config.app*.json
+├─ shared/                ← mapeado no Sandbox em C:\lab (somente leitura, exceto out/)
+│  ├─ extensions/lab-ext/ ← extensão MV3 de exemplo (marcador visível na página)
+│  ├─ db/backup.sqlite    ← backup SQLite de exemplo (hash conhecido)
+│  ├─ tools/              ← Chrome for Testing portátil, Python/uv + windows-mcp pré-baixados
+│  └─ out/                ← ÚNICA pasta gravável: logs, status.json, evidências do guest
+├─ .mcp.json              ← Claude Code → Windows-MCP (HTTP) dentro do Sandbox
+├─ .claude/skills/        ← skills do winapp (winapp-ui-automation etc.)
+└─ evidence/              ← screenshots/relatórios gerados no host durante os testes
+```
+
+Dentro do Sandbox: `C:\lab` = `shared\` (read-only), `C:\lab\out` = `shared\out` (gravável),
+`C:\labproject` = projeto do `lab.config.json` (read-only). Banco de trabalho: `C:\labdata\app.sqlite`
+(cópia do backup — o original nunca é aberto para escrita).
+
+## Objetivos
+
+| ID  | Objetivo | Critério de aprovação |
+|-----|----------|-----------------------|
+| O1  | Config estática válida | `validate-config.ps1` passa: JSON válido, todos os caminhos existem, `.wsb` gerado é XML válido, `.mcp.json` válido |
+| O2  | Sobe com 1 comando | `scripts\test-up.ps1` sobe o Sandbox sem interação manual; `shared\out\status.json` aparece com `bootstrap: "ok"` |
+| O3  | Projeto montado | `C:\labproject` existe no guest, read-only (escrita falha) |
+| O4  | Banco restaurado | `C:\labdata\app.sqlite` no guest tem o mesmo SHA-256 do backup no boot e a consulta de verificação retorna as linhas esperadas; o `backup.sqlite` do host continua com o hash original no fim |
+| O5  | Extensões carregadas | Chrome (for Testing) no guest abre com `lab-ext` carregada; a página de teste mostra o marcador da extensão |
+| O6  | MCP acessível | Windows-MCP rodando no guest via HTTP com auth key; do host, listar tools funciona |
+| O7  | Skills instaladas | `.claude/skills/` contém as skills do winapp com `SKILL.md` válido (frontmatter name/description) |
+| O8  | Controle do Chrome pela IA | Navegar, digitar e clicar no Chrome do guest (winapp `--on sandbox` ou MCP); screenshot comprova |
+| O9  | Validação independente | O2–O8 reconferidos com evidência nova (arquivos, hashes, screenshots), sem depender de relatórios anteriores |
+| O10 | Isolamento / descarte | Após `test-down.ps1`, nenhum processo/arquivo do guest persiste; host intacto (sem Chrome/Python novos fora de `shared/tools`, banco original intacto) |

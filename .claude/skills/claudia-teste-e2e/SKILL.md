@@ -20,7 +20,7 @@ Origem: incidente de 2026-10-05. Detalhes, decisões B1 a B7 e tabela R1 a R12: 
 
 - Teste que apaga qualquer arquivo roda **só no Windows Sandbox** (`claudia-teste-sandbox`). Nenhum caminho real em teste (raiz de disco, repositório, `AppData`, sistema).
 - **Nunca o Chrome pessoal do usuário**; o Chrome do Claudia-RH pode (inclusive no smoke MCP, R11).
-- `node --test` **sempre com a lista de arquivos explícita**. Não rodar `evals/rodar-evals.mjs` até a Tarefa 0b (CLA-56).
+- `node --test` **sempre com a lista de arquivos explícita**. Não rodar `evals/rodar-evals.mjs` até a CLA-56 ser resolvida.
 - **Até a Tarefa 0b do plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md` entrar** (o código ainda não foi corrigido):
   - antes de `subir.mjs`, a **automação (disparo por ociosidade e modo autônomo) tem de estar desligada pelo usuário na tela** (B4; depois o app de teste subirá sem automação por variável de dev). Se o app instalado estiver aberto, **pare e pergunte** (R12);
   - o `subir.mjs` já passa `CLAUDIA_SEM_AUTOMACAO=1` ao `tauri dev` e informa `"automacao":"desligada nesta execução"`; **o efeito depende do app suportar CLAUDIA_SEM_AUTOMACAO (Tarefa 0b, frente c)**. Se não conseguir listar os processos, `subir.mjs` devolve `perguntar` ("não consegui verificar se o app instalado está aberto");

@@ -18,7 +18,7 @@
 - Zip must never contain `candidate_base.yaml`, `search_variants.yaml`, `notif.json`, or keyring dumps.
 - MCP events log **tool name + ok/err only** — never tool args.
 - Work on `feat/diagnostico-logs`. Merge back to `dev`. Never commit on `main`.
-- Cwd git: `C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh`. Cargo: `src-tauri/`.
+- Cwd git: `claudia-rh`. Cargo: `src-tauri/`.
 - `strip_ansi` is **not** on this branch (lives on unmerged `feat/fix-api-stall-continue`). Implement it under `diagnostics/`.
 
 ## File map
@@ -107,7 +107,7 @@ mod tests {
 - [ ] **Step 3: Run tests — they must fail**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh\src-tauri"
+Set-Location "src-tauri"
 cargo test --lib diagnostics::redact -- --nocapture
 ```
 
@@ -432,7 +432,7 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 - [ ] **Step 7: `cargo check`**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh\src-tauri"
+Set-Location "src-tauri"
 cargo check
 ```
 
@@ -776,7 +776,7 @@ Pause/resume: in `commands/sessao.rs` `registar_pausa_sessao` / `registar_retoma
 - [ ] **Step 4: Verification commands**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git diff HEAD -- src-tauri/tauri.conf.json
 # must be empty (no identifier change)
 

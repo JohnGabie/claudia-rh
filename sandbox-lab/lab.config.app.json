@@ -1,0 +1,42 @@
+{
+  "$comment": "Perfil: rodar um app desktop SEM rede. Projeto: -Project do test-up.ps1 (padrao: a raiz do repositorio). Pasta de trabalho: <raiz>\\.sandbox-work (publicar.mjs / app-stage.ps1). Antes: scripts\\app-stage.ps1. Uso: scripts\\test-up.ps1 -Config lab.config.app.json; depois sandbox\\app\\guest-run.ps1 via wsb exec -r ExistingLogin (o winapp nao alcanca o guest sem rede).",
+  "projectPath": "..",
+  "extensionsDir": "shared/extensions",
+  "extensions": [
+    "lab-ext"
+  ],
+  "dbBackup": "shared/db/backup.sqlite",
+  "dbHashFile": "shared/db/backup.sha256",
+  "dbVerifySql": "shared/db/verify.sql",
+  "dbVerifyExpected": "shared/db/verify.expected.txt",
+  "chrome": {
+    "exe": "shared/tools/chrome/chrome-win64/chrome.exe",
+    "startUrl": "http://localhost:8080/test-page.html",
+    "testServerPort": 8080,
+    "remoteDebuggingPort": 9222
+  },
+  "mcp": {
+    "$comment": "Detalhes do Windows-MCP ficam em shared/mcp.json; port deve bater com ele.",
+    "port": 8000,
+    "configFile": "shared/mcp.json",
+    "authKeyFile": "shared/secrets/mcp-auth.key",
+    "authKeyEnv": "LAB_MCP_AUTH_KEY"
+  },
+  "vGPU": "Enable",
+  "clipboardRedirection": "Enable",
+  "bootTimeoutSec": 300,
+  "memoryMB": 6144,
+  "networking": "Disable",
+  "extraMappedFolders": [
+    {
+      "host": "..\\.sandbox-work\\deploy",
+      "readOnly": true,
+      "sandbox": "C:\\appdeploy"
+    },
+    {
+      "host": "..\\.sandbox-work\\guest-rw",
+      "readOnly": false,
+      "sandbox": "C:\\labwork"
+    }
+  ]
+}
