@@ -103,3 +103,26 @@ export function estaNoSandbox({ identidade, temBootstrap } = {}) {
   const usuario = partes[partes.length - 1];
   return usuario.toLowerCase() === USUARIO_SANDBOX.toLowerCase() && temBootstrap === true;
 }
+
+/**
+ * Root of every folder the Sandbox tests create (spec A6): a VHD mounted as Z: inside the guest only (sandbox\disco-z.ps1).
+ * travas.ps1 keeps the same literal ($script:LabGuestTestRoot); a pure test on each side pins it.
+ */
+export const RAIZ_TESTE_GUEST = "Z:\\claudia-teste-sandbox";
+
+/** PURE. null when `real` (from fs.realpathSync.native) is the guest test root or inside it; otherwise the reason. */
+export function motivoRecusaRaizTeste(real) {
+  const r = String(real ?? "");
+  if (r.trim() === "") return "path is required";
+  if (r.split(/[\\/]+/).some((s) => s === "." || s === "..")) return "path has '.' or '..' segments";
+  if (w.normalize(r) !== r) return "path is not normalized";
+  const k = r.replace(/\\+$/, "").toLowerCase();
+  const raiz = RAIZ_TESTE_GUEST.toLowerCase();
+  if (k === raiz || k.startsWith(raiz + "\\")) return null;
+  return `real path is not under ${RAIZ_TESTE_GUEST}`;
+}
+
+/** PURE. tempRoot for scenario folders (D1, spec addendum 8.1): Z:\ inside the guest; null on the PC, where scenarios never run. */
+export function raizDeCenarios({ noSandbox } = {}) {
+  return noSandbox === true ? "Z:\\" : null;
+}

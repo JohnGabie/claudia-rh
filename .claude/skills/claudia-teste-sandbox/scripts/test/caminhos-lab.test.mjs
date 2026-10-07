@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   raizPrincipalDe, caminhosDoLab, linksAte, podeLimparDeploy, motivoRecusaLimparDeploy, estaNoSandbox, MARCADOR_DEPLOY, MARCADOR_GUEST, ambienteGitLimpo,
+  RAIZ_TESTE_GUEST, motivoRecusaRaizTeste, raizDeCenarios,
 } from "../caminhos-lab.mjs";
 
 const RAIZ = "Z:\\proj x\\claudia-rh";
@@ -108,4 +109,27 @@ test("ambienteGitLimpo drops GIT_DIR, GIT_COMMON_DIR and GIT_WORK_TREE and keeps
 
 test("MARCADOR_GUEST is the bootstrap mapped by the .wsb template", () => {
   assert.equal(MARCADOR_GUEST, "C:\\labsandbox\\bootstrap.ps1");
+});
+
+test("guest test root literal is pinned (travas.ps1 pins the same literal)", () => {
+  assert.equal(RAIZ_TESTE_GUEST, "Z:\\claudia-teste-sandbox");
+});
+
+test("motivoRecusaRaizTeste: the root and anything under it, any letter case", () => {
+  for (const p of ["Z:\\claudia-teste-sandbox", "z:\\CLAUDIA-TESTE-SANDBOX\\cs test a 1", "Z:\\claudia-teste-sandbox\\a\\b"]) {
+    assert.equal(motivoRecusaRaizTeste(p), null, p);
+  }
+});
+
+test("motivoRecusaRaizTeste: C:, other folders on Z:, siblings, dotted, relative, UNC and empty are refused", () => {
+  for (const p of ["C:\\labdata\\tmp\\x", "Z:\\", "Z:\\tmp\\x", "Z:\\claudia-teste-sandbox-irmao\\x", "Z:\\claudia-teste-sandbox\\..\\x",
+    "Z:\\claudia-teste-sandbox\\.\\x", "claudia-teste-sandbox\\x", "\\\\srv\\s\\claudia-teste-sandbox", "", null]) {
+    assert.notEqual(motivoRecusaRaizTeste(p), null, String(p));
+  }
+});
+
+test("raizDeCenarios: Z:\\ in the guest, nothing on the PC (D1: scenarios only in the Sandbox)", () => {
+  assert.equal(raizDeCenarios({ noSandbox: true }), "Z:\\");
+  assert.equal(raizDeCenarios({ noSandbox: false }), null);
+  assert.equal(raizDeCenarios({}), null);
 });

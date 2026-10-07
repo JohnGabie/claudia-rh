@@ -5,9 +5,9 @@ import { comandoDeTesteNoGuest } from "../testes-no-guest.mjs";
 
 const NONCE = "0123abcd0123abcd";
 
-test("node tests: explicit files, guest temp under C:\\labdata, nonce first", () => {
+test("node tests: explicit files, guest temp on Z:, refuses without the Z: test root, nonce first", () => {
   const c = comandoDeTesteNoGuest({ node: [".claude/skills/claudia-teste-sandbox/scripts/test/publicar.test.mjs"], nonce: NONCE });
-  assert.equal(c, `set LAB_NONCE=${NONCE}&& set TEMP=C:\\labdata\\tmp&& set TMP=C:\\labdata\\tmp&& (if not exist C:\\labdata\\tmp mkdir C:\\labdata\\tmp)&& node --test .claude/skills/claudia-teste-sandbox/scripts/test/publicar.test.mjs`);
+  assert.equal(c, `set LAB_NONCE=${NONCE}&& (if not exist Z:\\claudia-teste-sandbox exit /b 97)&& set TEMP=Z:\\tmp&& set TMP=Z:\\tmp&& (if not exist Z:\\tmp mkdir Z:\\tmp)&& node --test .claude/skills/claudia-teste-sandbox/scripts/test/publicar.test.mjs`);
 });
 
 test("ps test: only sandbox-lab/scripts/test/*.sandbox.ps1, with backslashes", () => {
