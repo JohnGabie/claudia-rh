@@ -48,8 +48,9 @@ const MAX_CARTA: usize = 20_000;
 /// Step 1 of save_cover_letter: renders the letter and leaves it in the app's queue,
 /// documentos/pendentes/carta-<nanos>.{html,json} (the pair `migrar::processar_pendentes` consumes).
 /// The only names written are built here, so nothing the agent sends can reach another folder.
-/// Returns the queue's base name (internal: it never goes back to the agent).
-pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idioma: &str, variante_id: Option<&str>) -> Result<String, String> {
+/// Returns the queue's base name (internal: it never goes back to the agent) and, when the profile
+/// has no e-mail, a warning for the agent's answer. A profile without a name is refused (CLA-40).
+pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idioma: &str, variante_id: Option<&str>) -> Result<(String, Option<&'static str>), String> {
     if idioma != "pt" && idioma != "en" {
         return Err(format!("idioma inválido: {idioma} (use pt ou en)"));
     }
@@ -64,6 +65,7 @@ pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idio
     }
     let raw = std::fs::read_to_string(data_dir.join("candidate_base.yaml")).map_err(|e| format!("erro ao ler candidate_base.yaml: {e}"))?;
     let perfil = crate::commands::perfil::parse_candidato_base_str(&raw)?;
+    let aviso = crate::commands::cover_letter::validar_perfil_para_carta(&perfil.dados_pessoais, crate::commands::cover_letter::Destino::Agente)?;
     let (empresa, cargo) = match vaga_id {
         Some(id) => super::open_db(data_dir)?
             .query_row("SELECT empresa, titulo FROM vagas WHERE id = ?1", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -101,7 +103,15 @@ pub fn guardar_pendente(data_dir: &Path, texto: &str, vaga_id: Option<i64>, idio
         let _ = std::fs::remove_file(pasta.join(format!("{base}.html")));
         return Err(format!("erro ao guardar a carta: {e}"));
     }
-    Ok(base)
+    Ok((base, aviso))
+}
+
+/// The answer the agent reads: the wait's result, plus the warning when there is one.
+pub fn juntar_aviso(resposta: String, aviso: Option<&str>) -> String {
+    match aviso {
+        Some(a) => format!("{resposta} Aviso: {}", crate::commands::cover_letter::texto_aviso(a)),
+        None => resposta,
+    }
 }
 
 /// Step 2: waits (polling the library) until the app has turned the queued letter into a document.
@@ -156,7 +166,7 @@ mod tests {
     fn save_cover_letter_leaves_a_pending_letter_and_no_path_in_the_answer() {
         let d = dir_carta();
         let antes = arvore(&d);
-        let base = guardar_pendente(&d, "Prezados,\n\nQuero a vaga.", None, "pt", Some("backend")).unwrap();
+        let base = guardar_pendente(&d, "Prezados,\n\nQuero a vaga.", None, "pt", Some("backend")).unwrap().0;
         let resposta = aguardar_documento(&d, &base, std::time::Duration::ZERO);
         assert!(resposta.contains("fica pronto"), "{resposta}");
         for leak in [d.to_string_lossy().as_ref(), "pendentes", ".html", ".json", "carta-"] {
@@ -176,13 +186,43 @@ mod tests {
     }
 
     #[test]
+    fn juntar_aviso_so_acrescenta_quando_ha_aviso() {
+        assert_eq!(juntar_aviso("Carta salva.".into(), None), "Carta salva.");
+        let r = juntar_aviso("Carta salva.".into(), Some("sem_email"));
+        assert!(r.starts_with("Carta salva. Aviso: ") && r.contains("não tem e-mail"), "{r}");
+    }
+
+    // Pendente de Sandbox: grava em temp_dir.
+    #[test]
+    fn save_cover_letter_without_a_name_refuses_and_writes_nothing() {
+        let d = temp_dir("mcp-carta-sem-nome");
+        std::fs::write(d.join("candidate_base.yaml"), "dados_pessoais:\n  email: ana@example.invalid\n").unwrap();
+        crate::db::apply(&biblioteca::open_conn(&d).unwrap()).unwrap();
+        let antes = arvore(&d);
+        let e = guardar_pendente(&d, "Texto.", None, "pt", None).unwrap_err();
+        assert!(e.contains("não tem nome"), "{e}");
+        assert_eq!(arvore(&d), antes, "nothing was written");
+    }
+
+    // Pendente de Sandbox: grava em temp_dir.
+    #[test]
+    fn save_cover_letter_without_an_email_saves_and_warns() {
+        let d = temp_dir("mcp-carta-sem-email");
+        std::fs::write(d.join("candidate_base.yaml"), "dados_pessoais:\n  nome_completo: Ana Lima\n").unwrap();
+        crate::db::apply(&biblioteca::open_conn(&d).unwrap()).unwrap();
+        let (base, aviso) = guardar_pendente(&d, "Texto.", None, "pt", None).unwrap();
+        assert_eq!(aviso, Some("sem_email"));
+        assert!(documentos::docs_dir(&d).join("pendentes").join(format!("{base}.json")).exists());
+    }
+
+    #[test]
     fn save_cover_letter_takes_company_and_title_from_the_vaga() {
         let d = dir_carta();
         biblioteca::open_conn(&d)
             .unwrap()
             .execute_batch("INSERT INTO vagas (id, titulo, empresa, plataforma, url, descoberta_em, status) VALUES (1, 'Dev Rust', 'ACME', 'linkedin', 'https://x/1', datetime('now'), 'descoberta');")
             .unwrap();
-        let base = guardar_pendente(&d, "Texto.", Some(1), "en", None).unwrap();
+        let base = guardar_pendente(&d, "Texto.", Some(1), "en", None).unwrap().0;
         let pasta = documentos::docs_dir(&d).join("pendentes");
         let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(pasta.join(format!("{base}.json"))).unwrap()).unwrap();
         assert_eq!(meta["vaga_id"], 1);
@@ -206,7 +246,7 @@ mod tests {
     #[tokio::test]
     async fn the_app_consumes_the_letter_this_tool_queued() {
         let d = dir_carta();
-        let base = guardar_pendente(&d, "Texto da carta.", None, "en", Some("backend")).unwrap();
+        let base = guardar_pendente(&d, "Texto da carta.", None, "en", Some("backend")).unwrap().0;
         let r = crate::documentos::migrar::migrar_com(&d, |_h: std::path::PathBuf, p: std::path::PathBuf| async move {
             std::fs::write(p, b"%PDF-1.7 fake").map_err(|e| e.to_string())
         })
@@ -221,7 +261,7 @@ mod tests {
     #[test]
     fn a_queued_letter_that_the_app_registered_is_reported_as_a_document() {
         let d = dir_carta();
-        let base = guardar_pendente(&d, "Texto.", None, "pt", None).unwrap();
+        let base = guardar_pendente(&d, "Texto.", None, "pt", None).unwrap().0;
         let c = biblioteca::open_conn(&d).unwrap();
         let docs = documentos::docs_dir(&d);
         std::fs::write(docs.join(format!("{base}.pdf")), b"%PDF-1.7").unwrap();

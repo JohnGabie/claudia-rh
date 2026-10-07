@@ -135,6 +135,68 @@ fn build_system_prompt(data: &CandidatoBase, idioma: &str, data_dir: &std::path:
         .replace("{{CANDIDATE_PROFILE}}", &profile)
 }
 
+// ── Pure rules (profile check, texts, title) ──────────────────────────────────
+
+/// Letter fixed texts per language. `pt` is pt-BR (CLA-40).
+struct TextosCarta {
+    recipient: &'static str,
+    subject_prefix: &'static str,
+    salutation: &'static str,
+    closing: &'static str,
+    lang_attr: &'static str,
+    title_prefix: &'static str,
+}
+
+fn textos_carta(idioma: &str) -> TextosCarta {
+    if idioma == "en" {
+        TextosCarta { recipient: "Hiring Manager", subject_prefix: "Re:", salutation: "Dear Hiring Manager,",
+                      closing: "Best regards,", lang_attr: "en", title_prefix: "Cover Letter" }
+    } else {
+        TextosCarta { recipient: "Equipe de Recrutamento", subject_prefix: "Assunto:", salutation: "Prezada equipe de recrutamento,",
+                      closing: "Atenciosamente,", lang_attr: "pt", title_prefix: "Carta de apresentação" }
+    }
+}
+
+/// Joins the non-empty parts with " — ": a letter never shows "—  —".
+fn juntar_partes(partes: &[&str]) -> String {
+    partes.iter().map(|p| p.trim()).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" — ")
+}
+
+/// Checks the profile before writing a letter. No name: refuses (Err, nothing is written or asked
+/// of the AI). No e-mail: Ok(Some(warning)), the letter is made without the contact line.
+pub(crate) fn validar_perfil_para_carta(dp: &crate::commands::perfil::DadosPessoais, para: Destino) -> Result<Option<&'static str>, String> {
+    if !texto_visivel(&dp.nome_completo) {
+        return Err(match para {
+            Destino::Agente => "a carta não foi salva: o perfil não tem nome (dados_pessoais.nome_completo). Registre uma pendência pedindo ao usuário para preencher o nome no Perfil.",
+            Destino::Tela => "A carta não foi salva: o perfil não tem nome. Preencha o nome no Perfil.",
+        }.into());
+    }
+    if !texto_visivel(&dp.email) {
+        return Ok(Some(AVISO_SEM_EMAIL));
+    }
+    Ok(None)
+}
+
+/// Warning code (the screen translates it; the agent gets the text from `texto_aviso`).
+pub(crate) const AVISO_SEM_EMAIL: &str = "sem_email";
+
+pub(crate) fn texto_aviso(codigo: &str) -> &'static str {
+    match codigo {
+        AVISO_SEM_EMAIL => "o perfil não tem e-mail; a carta saiu sem contato.",
+        _ => "aviso desconhecido.",
+    }
+}
+
+/// Who reads the refusal: the agent (MCP) or the user (screen).
+#[derive(Clone, Copy)]
+pub(crate) enum Destino { Agente, Tela }
+
+/// True when the text has at least one visible character: zero-width space, BOM, word joiner and
+/// soft hyphen are not alphanumeric, so a value made only of them does not count.
+fn texto_visivel(s: &str) -> bool {
+    s.chars().any(char::is_alphanumeric)
+}
+
 // ── HTML builder ──────────────────────────────────────────────────────────────
 
 /// The letter the agent wrote through the MCP (save_cover_letter), in the default colour.
@@ -158,8 +220,8 @@ fn build_cover_letter_html(
 
     // Contact line — visible URLs for PDF ATS parsing
     let mut contact_parts: Vec<String> = Vec::new();
-    if !dp.email.is_empty() {
-        contact_parts.push(format!(r#"<a href="mailto:{0}">{0}</a>"#, esc(&dp.email)));
+    if texto_visivel(&dp.email) {
+        contact_parts.push(format!(r#"<a href="mailto:{0}">{0}</a>"#, esc(dp.email.trim())));
     }
     if !dp.localizacao_atual.is_empty() {
         contact_parts.push(esc(&dp.localizacao_atual));
@@ -191,15 +253,12 @@ fn build_cover_letter_html(
         format!("{} de {} de {}", now.day(), months[(now.month() - 1) as usize], now.year())
     };
 
-    let (recipient, subject_prefix, closing, lang_attr, salutation) = if idioma == "en" {
-        ("Hiring Manager", "Re:", "Best regards,", "en",
-         "Dear Hiring Manager,".to_string())
-    } else {
-        ("Responsável de Recrutamento", "Assunto:", "Com os melhores cumprimentos,", "pt",
-         "Exmo./Exma. Responsável de Recrutamento,".to_string())
-    };
-
-    let subject = format!("{} {} — {}", subject_prefix, esc(cargo), nome);
+    let tx = textos_carta(idioma);
+    let (recipient, closing, lang_attr, salutation) = (tx.recipient, tx.closing, tx.lang_attr, tx.salutation);
+    let subject = format!("{} {}", tx.subject_prefix, juntar_partes(&[&esc(cargo), &nome]));
+    let titulo = juntar_partes(&[tx.title_prefix, &nome, &esc(cargo)]);
+    let contact_div = if contact.is_empty() { String::new() } else { format!(r#"<div class="contact-line">{contact}</div>"#) };
+    let empresa_br = if empresa.trim().is_empty() { String::new() } else { format!("<br>\n    {}", esc(empresa)) };
 
     // Body: convert plain paragraphs to <p> tags
     // Claude should output clean paragraphs separated by \n\n
@@ -219,7 +278,7 @@ fn build_cover_letter_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cover Letter — {nome} — {cargo_esc}</title>
+<title>{titulo}</title>
 <style>
   @page {{ size: A4; margin: 22mm 26mm; }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -244,14 +303,13 @@ fn build_cover_letter_html(
 
   <div class="header-block">
     <div class="candidate-name">{nome}</div>
-    <div class="contact-line">{contact}</div>
+    {contact_div}
   </div>
 
   <div class="date-line">{date}</div>
 
   <div class="recipient-block">
-    {recipient}<br>
-    {empresa_esc}
+    {recipient}{empresa_br}
   </div>
 
   <div class="subject-line">{subject}</div>
@@ -269,11 +327,11 @@ fn build_cover_letter_html(
 </html>"#,
         lang_attr = lang_attr,
         nome = nome,
-        cargo_esc = esc(cargo),
-        empresa_esc = esc(empresa),
+        titulo = titulo,
+        empresa_br = empresa_br,
         accent = accent,
         accent_dark = accent_dark,
-        contact = contact,
+        contact_div = contact_div,
         date = date,
         recipient = recipient,
         subject = subject,
@@ -302,6 +360,15 @@ fn spawn_cover_letter_claude(
             Ok(d) => d,
             Err(e) => {
                 let _ = app.emit("cover-letter-error", format!("Erro ao ler perfil: {e}"));
+                return;
+            }
+        };
+
+        // CLA-40: no name, no letter; the AI is not even called.
+        let aviso = match validar_perfil_para_carta(&data.dados_pessoais, Destino::Tela) {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = app.emit("cover-letter-error", e);
                 return;
             }
         };
@@ -412,6 +479,9 @@ fn spawn_cover_letter_claude(
         let view = registered.and_then(|id| crate::documentos::biblioteca::ver(&crate::documentos::biblioteca::open_conn(&data_dir)?, id));
         match view {
             Ok(doc) => {
+                if let Some(a) = aviso {
+                    let _ = app.emit("cover-letter-warning", a.to_string());
+                }
                 let _ = app.emit("cover-letter-done", doc);
             }
             Err(e) => {
@@ -445,4 +515,94 @@ pub fn gerar_cover_letter(
         cor_primaria.unwrap_or_else(|| "#D97757".to_string()),
         variante_id,
     );
+}
+
+#[cfg(test)]
+mod carta_tests {
+    use super::*;
+    use crate::commands::perfil::DadosPessoais;
+
+    fn perfil(nome: &str, email: &str) -> CandidatoBase {
+        CandidatoBase {
+            dados_pessoais: DadosPessoais { nome_completo: nome.into(), email: email.into(), ..Default::default() },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sem_nome_recusa() {
+        for nome in ["", "   ", "\u{200B}", "\u{FEFF}", "\u{2060}", "\u{00AD}", " \u{200B}\u{FEFF}\u{2060}\u{00AD} "] {
+            let e = validar_perfil_para_carta(&perfil(nome, "ana@example.invalid").dados_pessoais, Destino::Tela).unwrap_err();
+            assert!(e.contains("não tem nome"), "{e}");
+        }
+    }
+
+    #[test]
+    fn recusa_fala_com_cada_destinatario() {
+        let dp = perfil("", "").dados_pessoais;
+        let agente = validar_perfil_para_carta(&dp, Destino::Agente).unwrap_err();
+        assert!(agente.contains("Registre uma pendência pedindo ao usuário para preencher o nome no Perfil"), "{agente}");
+        let tela = validar_perfil_para_carta(&dp, Destino::Tela).unwrap_err();
+        assert!(tela.contains("Preencha o nome no Perfil") && !tela.contains("pendência"), "{tela}");
+    }
+
+    #[test]
+    fn sem_email_salva_e_avisa() {
+        for email in ["", "   ", "\u{200B}"] {
+            let a = validar_perfil_para_carta(&perfil("Ana Lima", email).dados_pessoais, Destino::Tela).unwrap();
+            assert_eq!(a, Some("sem_email"));
+        }
+        assert!(texto_aviso("sem_email").contains("e-mail"));
+    }
+
+    #[test]
+    fn email_so_de_espacos_nao_gera_mailto() {
+        let h = render_carta("Corpo.", &perfil("Ana Lima", "   "), "ACME", "Dev", "pt");
+        assert!(!h.contains("mailto:") && !h.contains(r#"<div class="contact-line">"#), "{h}");
+    }
+
+    #[test]
+    fn perfil_completo_sem_aviso() {
+        assert_eq!(validar_perfil_para_carta(&perfil("Ana Lima", "ana@example.invalid").dados_pessoais, Destino::Tela).unwrap(), None);
+    }
+
+    #[test]
+    fn pt_usa_os_textos_pt_br() {
+        let h = render_carta("Corpo.", &perfil("Ana Lima", "ana@example.invalid"), "ACME", "Dev", "pt");
+        for t in ["Equipe de Recrutamento", "Prezada equipe de recrutamento,", "Atenciosamente,", "Assunto: Dev — Ana Lima", "<title>Carta de apresentação — Ana Lima — Dev</title>"] {
+            assert!(h.contains(t), "falta {t}: {h}");
+        }
+        for t in ["Exmo.", "Responsável de Recrutamento", "melhores cumprimentos", "Cover Letter"] {
+            assert!(!h.contains(t), "sobrou {t}");
+        }
+    }
+
+    #[test]
+    fn en_nao_muda() {
+        let h = render_carta("Body.", &perfil("Ana Lima", "ana@example.invalid"), "ACME", "Dev", "en");
+        for t in ["Dear Hiring Manager,", "Best regards,", "Hiring Manager", "Re: Dev — Ana Lima", "<title>Cover Letter — Ana Lima — Dev</title>", r#"lang="en""#] {
+            assert!(h.contains(t), "falta {t}");
+        }
+    }
+
+    #[test]
+    fn titulo_e_assunto_sem_partes_vazias() {
+        let h = render_carta("Corpo.", &perfil("Ana Lima", ""), "", "", "pt");
+        assert!(h.contains("<title>Carta de apresentação — Ana Lima</title>"), "{h}");
+        assert!(h.contains("Assunto: Ana Lima</div>"), "{h}");
+        assert!(!h.contains("—  —") && !h.contains("— </") && !h.contains("— —"), "{h}");
+        assert!(!h.contains(r#"<div class="contact-line">"#), "linha de contato vazia");
+    }
+
+    #[test]
+    fn contato_aparece_com_email() {
+        let h = render_carta("Corpo.", &perfil("Ana Lima", "ana@example.invalid"), "ACME", "Dev", "pt");
+        assert!(h.contains("mailto:ana@example.invalid"));
+    }
+
+    #[test]
+    fn juntar_partes_ignora_vazias() {
+        assert_eq!(juntar_partes(&["a", "", "  ", "b"]), "a — b");
+        assert_eq!(juntar_partes(&["", ""]), "");
+    }
 }

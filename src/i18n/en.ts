@@ -484,6 +484,9 @@ export const en = {
     tabCoverLetters: "Cover letters",
     generate: "Generate",
     generateResume: "Generate résumé",
+    coverLetterSavedWarning: "Cover letter saved. Warning:",
+    coverLetterWarningNoEmail: "the profile has no e-mail; the letter has no contact line.",
+    coverLetterWarningOk: "OK",
     importMine: "Add mine",
     empty: {
       curriculo: "No résumés yet.",

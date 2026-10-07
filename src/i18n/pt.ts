@@ -487,6 +487,9 @@ export const pt: Strings = {
     tabCoverLetters: "Cover letters",
     generate: "Gerar",
     generateResume: "Gerar currículo",
+    coverLetterSavedWarning: "Carta salva. Aviso:",
+    coverLetterWarningNoEmail: "o perfil não tem e-mail; a carta saiu sem contato.",
+    coverLetterWarningOk: "OK",
     importMine: "Adicionar o meu",
     empty: {
       curriculo: "Nenhum currículo ainda.",
