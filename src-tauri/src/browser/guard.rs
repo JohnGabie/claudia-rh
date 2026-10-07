@@ -66,7 +66,7 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
 
     PATTERNS.lines()
         .map(str::trim)
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with('!'))
         .any(|p| {
             if let Some(exact_pattern) = p.strip_prefix('=') {
                 // Exact match pattern (without the '=' prefix)
@@ -79,6 +79,60 @@ pub fn looks_like_submit(accessible_name: &str) -> bool {
                 name.contains(p) || name_no_spaces.contains(&p.replace(" ", ""))
             }
         })
+}
+
+/// True when the (folded) name is EXACTLY one of the navigation names listed with a `!` prefix in
+/// `submit-patterns.txt` ("Next", "Avançar", "Voltar"...). Equality, never substring: "Review and
+/// submit" is not navigation. A form-submit button with such a name only moves between steps.
+pub fn is_navigation_name(accessible_name: &str) -> bool {
+    let name = fold(accessible_name);
+    if name.is_empty() {
+        return false;
+    }
+    PATTERNS
+        .lines()
+        .map(str::trim)
+        .filter_map(|l| l.strip_prefix('!'))
+        .any(|item| item == name)
+}
+
+/// What the guard decides for one action's target(s). Pure: no page, no database.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum SubmitDecision {
+    /// Nothing to check.
+    Allow,
+    /// A name says "send": needs a valid confirmation and SPENDS the vaga's single allowed submit.
+    ConfirmAndSpend,
+    /// Iframe, nameless submit or unreadable node: needs a valid confirmation, does not spend it.
+    ConfirmStructural,
+    /// A form-submit button whose name is not navigation ("Upload", "Concluir", "Salvar"):
+    /// needs a valid confirmation, does not spend it.
+    ConfirmForm,
+}
+
+/// Decision order (spec D6, option C):
+/// 1. any name matches a submit pattern -> confirm and spend (a send pattern beats the navigation list);
+/// 2. structural (iframe, nameless submit, unreadable) -> confirm, no spend;
+/// 3. the target submits a `<form>` and NOT every name is navigation -> confirm, no spend;
+/// 4. everything else passes.
+///
+/// `names` holds every name collected (the send-name check looks at all of them, field names
+/// included). `target_names` holds only the names of the element that would act (the button): ALL of
+/// them must be navigation for the exception; with none, a form-submit is not navigation (fail closed).
+pub fn classify_submit(names: &[String], target_names: &[String], structural: bool, form_submit: bool) -> SubmitDecision {
+    if names.iter().chain(target_names).any(|n| looks_like_submit(n)) {
+        return SubmitDecision::ConfirmAndSpend;
+    }
+    if structural {
+        return SubmitDecision::ConfirmStructural;
+    }
+    if form_submit {
+        let all_navigation = !target_names.is_empty() && target_names.iter().all(|n| is_navigation_name(n));
+        if !all_navigation {
+            return SubmitDecision::ConfirmForm;
+        }
+    }
+    SubmitDecision::Allow
 }
 
 pub trait GuardContext: Send + Sync {
@@ -244,6 +298,11 @@ mod tests {
     fn patterns_file_is_already_folded() {
         for line in PATTERNS.lines() {
             let line = line.trim();
+            if let Some(item) = line.strip_prefix('!') {
+                assert_eq!(item, fold(item), "navigation item '{line}' is not already folded");
+                assert!(!item.is_empty() && item.chars().all(|c| c.is_ascii_lowercase() || c == ' '), "{line}");
+                continue;
+            }
             if !line.is_empty() {
                 if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: check the part after '='
@@ -267,6 +326,9 @@ mod tests {
     fn every_pattern_is_recognised() {
         for line in PATTERNS.lines() {
             let line = line.trim();
+            if line.starts_with('!') {
+                continue; // navigation exceptions are not submit patterns
+            }
             if !line.is_empty() {
                 if let Some(pattern) = line.strip_prefix('=') {
                     // Exact patterns: test matching the bare name (without the '=' prefix)
@@ -640,5 +702,105 @@ mod tests {
         assert_eq!(ctx.claims(), 0, "check_confirmation never claims");
         assert!(matches!(check_confirmation("https://example.com", None, &ctx), Verdict::Refuse(_)));
         assert!(matches!(check_confirmation("https://example.com", Some(9), &ctx), Verdict::Refuse(_)));
+    }
+
+    // ── D6: navigation exceptions and the pure decision (no page, no disk) ──
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn navigation_names_are_recognised_after_folding() {
+        for n in ["Next", "NEXT", "  Next  ", "Avançar", "AVANCAR", "Próximo", "Continuar", "Seguinte", "Revisar", "Voltar",
+                  "Anterior", "Continue", "Review", "Back", "Previous", "Næste", "Videre", "Fortsæt", "Tilbage",
+                  "Weiter", "Zurück", "Suivant", "Retour"] {
+            assert!(is_navigation_name(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn navigation_is_exact_equality_never_substring() {
+        for n in ["Revisar e enviar", "Next step and submit", "Upload", "Concluir", "Salvar", "Save", "Finish", "Done",
+                  "Review and submit", "Continue to payment", "", "   "] {
+            assert!(!is_navigation_name(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn no_navigation_item_is_also_a_submit_pattern() {
+        for item in PATTERNS.lines().map(str::trim).filter_map(|l| l.strip_prefix('!')) {
+            assert!(!looks_like_submit(item), "navigation item '{item}' would also count as a send name");
+        }
+    }
+
+    #[test]
+    fn navigation_lines_do_not_leak_into_submit_matching() {
+        // A "!next" line must not make "next" (or anything containing it) a send name.
+        assert!(!looks_like_submit("Next"));
+        assert!(!looks_like_submit("!next"));
+    }
+
+    #[test]
+    fn a_send_name_confirms_and_spends_even_next_to_a_navigation_name() {
+        assert_eq!(classify_submit(&names(&["Enviar candidatura"]), &names(&["Enviar candidatura"]), false, false), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Next", "Enviar candidatura"]), &names(&["Next", "Enviar candidatura"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Submit application"]), &names(&["Submit application"]), false, true), SubmitDecision::ConfirmAndSpend);
+    }
+
+    #[test]
+    fn review_and_send_is_a_send_not_navigation() {
+        assert_eq!(classify_submit(&names(&["Revisar e enviar"]), &names(&["Revisar e enviar"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Review and submit"]), &names(&["Review and submit"]), false, true), SubmitDecision::ConfirmAndSpend);
+        // The bare word is navigation, the longer label is not.
+        assert_eq!(classify_submit(&names(&["Revisar"]), &names(&["Revisar"]), false, true), SubmitDecision::Allow);
+    }
+
+    #[test]
+    fn structural_targets_confirm_without_spending() {
+        assert_eq!(classify_submit(&names(&[]), &names(&[]), true, false), SubmitDecision::ConfirmStructural);
+        assert_eq!(classify_submit(&names(&["Next"]), &names(&["Next"]), true, true), SubmitDecision::ConfirmStructural);
+    }
+
+    #[test]
+    fn a_form_submit_with_an_unknown_name_confirms_without_spending() {
+        for n in ["Upload", "Concluir", "Salvar", "Save", "Finish", "Done", "Færdig", "Aplicar filtro"] {
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, true), SubmitDecision::ConfirmForm, "{n}");
+        }
+    }
+
+    #[test]
+    fn a_form_submit_named_as_navigation_passes() {
+        for n in ["Avançar", "Next", "Próximo", "Voltar", "Weiter", "Tilbage"] {
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, true), SubmitDecision::Allow, "{n}");
+        }
+    }
+
+    #[test]
+    fn every_name_of_the_element_must_be_navigation() {
+        assert_eq!(classify_submit(&names(&["Next", "Next"]), &names(&["Next", "Next"]), false, true), SubmitDecision::Allow);
+        assert_eq!(classify_submit(&names(&["Next", "Upload"]), &names(&["Next", "Upload"]), false, true), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
+    fn a_fields_own_name_is_context_and_does_not_break_the_enter_exception() {
+        // Enter in the field "Campo B" whose form's default button is "Próximo": only the button counts.
+        assert_eq!(classify_submit(&names(&["Campo B", "Próximo"]), &names(&["Próximo"]), false, true), SubmitDecision::Allow);
+        assert_eq!(classify_submit(&names(&["Campo A", "Concluir"]), &names(&["Concluir"]), false, true), SubmitDecision::ConfirmForm);
+        // A send name in the field's context still sends.
+        assert_eq!(classify_submit(&names(&["Enviar candidatura", "Próximo"]), &names(&["Próximo"]), false, true), SubmitDecision::ConfirmAndSpend);
+    }
+
+    #[test]
+    fn a_form_submit_without_any_name_is_not_navigation() {
+        assert_eq!(classify_submit(&names(&[]), &names(&[]), false, true), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
+    fn a_button_outside_a_form_with_an_unknown_name_passes() {
+        // Documented limit (spec 4.5-1): a plain button with a JS handler is not seen as a submit.
+        for n in ["Upload", "Finish", "Concluir", "Salvar"] {
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, false), SubmitDecision::Allow, "{n}");
+        }
     }
 }

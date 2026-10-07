@@ -1573,3 +1573,127 @@ async fn failed_upload_does_not_call_attached() {
     let calls = tracked.get_calls();
     assert_eq!(calls.len(), 0, "no attached() calls on failure");
 }
+
+// ───────────── D6 (CLA-37): form-submit buttons with a non-navigation name ─────────────
+// Written against tests/fixtures/guard-form.html. PENDING SANDBOX: not run on the user's machine.
+
+async fn open_guard_form(l: &Live, ctx: Arc<Ctx>) -> (BrowserTools, cdp::CdpClient, String) {
+    let t = tools(l, ctx);
+    t.open(&fixture_file("guard-form.html")).await.unwrap();
+    let a = agent_client(l).await;
+    let list = t.read(None).await.unwrap();
+    (t, a, list)
+}
+
+async fn sent(a: &cdp::CdpClient, name: &str) -> bool {
+    eval(a, &format!("window.__sent['{name}'] === true")).await == true
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_named_submit_input_in_a_form_called_upload_is_refused_without_confirmation() {
+    // The CLA-37 regression: fails before the fix, passes after.
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let (t, a, list) = open_guard_form(&l, ctx.clone()).await;
+    let e = t.click(&ref_of(&list, "button", "Upload"), None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO") && e.contains("confirm_submit"), "{e}");
+    assert!(!sent(&a, "upload").await, "the form must not have been submitted");
+    // Confirmed: goes through, but does NOT spend the vaga's single send of the day.
+    t.click(&ref_of(&list, "button", "Upload"), Some(7)).await.unwrap();
+    assert!(sent(&a, "upload").await);
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "an unknown-name form submit never claims the send");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_button_without_type_in_a_form_called_concluir_is_refused() {
+    let l = launch().await;
+    let (t, a, list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let e = t.click(&ref_of(&list, "button", "Concluir"), None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "concluir").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_image_input_in_a_form_is_refused() {
+    let l = launch().await;
+    let (t, a, list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let e = t.click(&ref_of(&list, "button", "Ir"), None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "ir").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn navigation_named_form_submits_pass() {
+    let l = launch().await;
+    let (t, a, list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    t.click(&ref_of(&list, "button", "Next"), None).await.unwrap();
+    t.click(&ref_of(&list, "button", "Avançar"), None).await.unwrap();
+    assert!(sent(&a, "next").await && sent(&a, "avancar").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_type_button_called_upload_in_a_form_passes() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    // Two buttons are named "Upload" (the submit and this type=button): reach this one by coordinate.
+    let (x, y) = center_of(&a, "#ubtn").await;
+    t.click_at(x, y, None).await.unwrap();
+    assert_eq!(eval(&a, "window.__ubtnClicked === true").await, true);
+    assert!(!sent(&a, "ubtn").await, "type=button never submits");
+}
+
+#[tokio::test]
+#[ignore]
+async fn review_and_send_is_refused_and_a_confirmed_click_spends_the_send() {
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let (t, a, list) = open_guard_form(&l, ctx.clone()).await;
+    let r = ref_of(&list, "button", "Revisar e enviar");
+    assert!(t.click(&r, None).await.unwrap_err().starts_with("RECUSADO"));
+    assert!(!sent(&a, "rev").await);
+    t.click(&r, Some(7)).await.unwrap();
+    assert!(sent(&a, "rev").await);
+    assert_eq!(ctx.claimed.lock().unwrap().len(), 1, "a send name spends the vaga's single send");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_finish_button_outside_any_form_passes_a_documented_limit() {
+    // Spec 4.5-1: a plain button with a JS handler is not seen as a submit (only a network guard would).
+    let l = launch().await;
+    let (t, a, list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    t.click(&ref_of(&list, "button", "Finish"), None).await.unwrap();
+    assert_eq!(eval(&a, "window.__finishClicked === true").await, true);
+}
+
+#[tokio::test]
+#[ignore]
+async fn enter_in_a_field_follows_the_same_rule_as_the_forms_default_button() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    // Default button "Concluir": refused.
+    eval(&a, "document.getElementById('e-bad').focus(); true").await;
+    let e = t.key("Enter", None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "enter-bad").await);
+    // Default button "Próximo": passes.
+    eval(&a, "document.getElementById('e-ok').focus(); true").await;
+    t.key("Enter", None).await.unwrap();
+    assert!(sent(&a, "enter-ok").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn click_at_over_the_upload_submit_is_refused() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#upload").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "upload").await);
+}
