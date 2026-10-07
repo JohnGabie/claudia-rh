@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Guard form fixture</title>
+<style>
+  body { font: 14px sans-serif; margin: 12px; }
+  form { display: block; margin: 6px 0; }
+  button, input[type=submit] { width: 160px; height: 28px; }
+  input[type=text] { width: 160px; height: 24px; }
+</style>
+<script>
+  // window.__sent.<name> turns true when the form really submits (the handler cancels the navigation).
+  window.__sent = {};
+  function sent(name) { window.__sent[name] = true; return false; }
+</script>
+</head>
+<body>
+  <!-- A named submit that is NOT a send name and NOT navigation: the CLA-37 case. -->
+  <form id="f-upload" onsubmit="return sent('upload')">
+    <input id="upload" type="submit" value="Upload">
+  </form>
+
+  <!-- <button> with no type attribute: the HTML default is submit. -->
+  <form id="f-concluir" onsubmit="return sent('concluir')">
+    <button id="concluir">Concluir</button>
+  </form>
+
+  <!-- <input type=image> submits too. -->
+  <form id="f-ir" onsubmit="return sent('ir')">
+    <input id="ir" type="image" alt="Ir" width="40" height="24"
+           src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+  </form>
+
+  <!-- Navigation names: allowed. -->
+  <form id="f-next" onsubmit="return sent('next')">
+    <button id="next" type="submit">Next</button>
+  </form>
+  <form id="f-avancar" onsubmit="return sent('avancar')">
+    <button id="avancar" type="submit">Avançar</button>
+  </form>
+
+  <!-- Not a submit: type=button does nothing to the form. -->
+  <form id="f-ubtn" onsubmit="return sent('ubtn')">
+    <button id="ubtn" type="button" onclick="window.__ubtnClicked = true">Upload</button>
+  </form>
+
+  <!-- "Revisar e enviar" is a send name: confirm AND spend. -->
+  <form id="f-rev" onsubmit="return sent('rev')">
+    <button id="rev" type="submit">Revisar e enviar</button>
+  </form>
+
+  <!-- Outside any form: JS-only, passes (documented limit 4.5-1). -->
+  <button id="finish" type="button" onclick="window.__finishClicked = true">Finish</button>
+
+  <!-- Enter in a field presses the form's default button. -->
+  <form id="f-enter-bad" onsubmit="return sent('enter-bad')">
+    <input id="e-bad" type="text" aria-label="Campo A">
+    <button id="e-bad-btn" type="submit">Concluir</button>
+  </form>
+  <form id="f-enter-ok" onsubmit="return sent('enter-ok')">
+    <input id="e-ok" type="text" aria-label="Campo B">
+    <button id="e-ok-btn" type="submit">Próximo</button>
+  </form>
+</body>
+</html>

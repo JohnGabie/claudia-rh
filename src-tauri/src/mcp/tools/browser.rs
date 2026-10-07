@@ -339,7 +339,11 @@ fn url_refusal(url: &str, allow_file: bool, allow_local: bool) -> Option<String>
 /// target is a submit by structure alone.
 #[derive(Default)]
 struct Probe {
+    /// Every name collected, for the send-name check (context included: a field's own name).
     names: Vec<String>,
+    /// The names of the element that would act (the button): the navigation check looks only at these.
+    /// On Enter, the focused text field's name is context, not part of the button.
+    target_names: Vec<String>,
     structural: bool,
     /// Some examined target submits a `<form>` (see `Info::form_submit`), whatever its name.
     form_submit: bool,
@@ -349,7 +353,21 @@ impl Probe {
     fn add_name(&mut self, n: &str) {
         if !n.trim().is_empty() {
             self.names.push(n.to_string());
+            self.target_names.push(n.to_string());
         }
+    }
+
+    /// Enter on a focused element: if it is itself a form-submit button it is the target; otherwise
+    /// (a text field) its names only count for the send-name check and its structure stays structural.
+    fn add_focused(&mut self, focused: Probe) {
+        if focused.form_submit {
+            self.names.extend(focused.names);
+            self.target_names.extend(focused.target_names);
+        } else {
+            self.names.extend(focused.names);
+        }
+        self.structural |= focused.structural;
+        self.form_submit |= focused.form_submit;
     }
 
     fn add_info(&mut self, info: &Info) {
@@ -620,7 +638,7 @@ impl BrowserTools {
     /// that is only submit-like by structure (iframe, nameless button, unreadable) needs a valid
     /// confirmation but does not spend it.
     fn run_guard(&self, p: &Probe, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
-        let verdict = match guard::classify_submit(&p.names, p.structural, p.form_submit) {
+        let verdict = match guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit) {
             // "submit" is a whole-word pattern: whatever the real label was, the guard sees a submit.
             SubmitDecision::ConfirmAndSpend => guard::check_submit("submit", page_url, confirm, self.guard.as_ref()),
             SubmitDecision::ConfirmStructural => guard::check_confirmation(page_url, confirm, self.guard.as_ref()),
@@ -1285,7 +1303,9 @@ impl BrowserTools {
                 let mut probe = Probe::default();
                 match Self::focused_node(&c).await {
                     Ok(Some(id)) => {
-                        Self::probe_node(&c, id, &mut probe).await;
+                        let mut focused = Probe::default();
+                        Self::probe_node(&c, id, &mut focused).await;
+                        probe.add_focused(focused);
                         if code == "Enter" {
                             let info = Self::info_for_node(&c, id).await;
                             probe.add_form_default(&info);
@@ -1642,30 +1662,38 @@ mod tests {
         let mut p = Probe::default();
         p.add_info(&upload);
         assert!(p.form_submit && !p.structural);
-        assert_eq!(guard::classify_submit(&p.names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
 
         let next = BrowserTools::parse_info(&json!(r#"{"name":"Next","formSubmit":true}"#));
         let mut p = Probe::default();
         p.add_name("Next");
         p.add_info(&next);
-        assert_eq!(guard::classify_submit(&p.names, p.structural, p.form_submit), SubmitDecision::Allow);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::Allow);
 
         // Enter: the form's default button is judged as well; a nameless one is structural.
         let field = BrowserTools::parse_info(&json!(r#"{"name":"Email","formDefaultExists":true,"formDefault":"Concluir"}"#));
         let mut p = Probe::default();
         p.add_info(&field);
         p.add_form_default(&field);
-        assert_eq!(guard::classify_submit(&p.names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
         let nameless = BrowserTools::parse_info(&json!(r#"{"name":"Email","formDefaultExists":true,"formDefault":""}"#));
         let mut p = Probe::default();
         p.add_form_default(&nameless);
         assert!(p.structural);
+        // The focused text field's own name is context: a form whose default button is "Próximo" passes.
+        let campo = BrowserTools::parse_info(&json!(r#"{"name":"Campo B","formDefaultExists":true,"formDefault":"Próximo"}"#));
+        let mut focused = Probe::default();
+        focused.add_info(&campo);
+        let mut p = Probe::default();
+        p.add_focused(focused);
+        p.add_form_default(&campo);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::Allow);
         // No default button: nothing to judge (documented limit).
         let none = BrowserTools::parse_info(&json!(r#"{"name":"Search"}"#));
         let mut p = Probe::default();
         p.add_info(&none);
         p.add_form_default(&none);
-        assert_eq!(guard::classify_submit(&p.names, p.structural, p.form_submit), SubmitDecision::Allow);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::Allow);
     }
 
     #[test]
@@ -1727,7 +1755,8 @@ mod tests {
     }
 
     fn probe_of(names: &[&str], structural: bool) -> Probe {
-        Probe { names: names.iter().map(|s| s.to_string()).collect(), structural, ..Default::default() }
+        let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        Probe { target_names: names.clone(), names, structural, ..Default::default() }
     }
 
     fn tools_with(dir: &std::path::Path) -> BrowserTools {

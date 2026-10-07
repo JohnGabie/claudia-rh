@@ -116,17 +116,21 @@ pub enum SubmitDecision {
 /// 3. the target submits a `<form>` and NOT every name is navigation -> confirm, no spend;
 /// 4. everything else passes.
 ///
-/// `names` holds every name collected for the target(s); with no usable name a form-submit is not
-/// navigation (fail closed).
-pub fn classify_submit(names: &[String], structural: bool, form_submit: bool) -> SubmitDecision {
-    if names.iter().any(|n| looks_like_submit(n)) {
+/// `names` holds every name collected (the send-name check looks at all of them, field names
+/// included). `target_names` holds only the names of the element that would act (the button): ALL of
+/// them must be navigation for the exception; with none, a form-submit is not navigation (fail closed).
+pub fn classify_submit(names: &[String], target_names: &[String], structural: bool, form_submit: bool) -> SubmitDecision {
+    if names.iter().chain(target_names).any(|n| looks_like_submit(n)) {
         return SubmitDecision::ConfirmAndSpend;
     }
     if structural {
         return SubmitDecision::ConfirmStructural;
     }
-    if form_submit && !(!names.is_empty() && names.iter().all(|n| is_navigation_name(n))) {
-        return SubmitDecision::ConfirmForm;
+    if form_submit {
+        let all_navigation = !target_names.is_empty() && target_names.iter().all(|n| is_navigation_name(n));
+        if !all_navigation {
+            return SubmitDecision::ConfirmForm;
+        }
     }
     SubmitDecision::Allow
 }
@@ -739,55 +743,64 @@ mod tests {
 
     #[test]
     fn a_send_name_confirms_and_spends_even_next_to_a_navigation_name() {
-        assert_eq!(classify_submit(&names(&["Enviar candidatura"]), false, false), SubmitDecision::ConfirmAndSpend);
-        assert_eq!(classify_submit(&names(&["Next", "Enviar candidatura"]), false, true), SubmitDecision::ConfirmAndSpend);
-        assert_eq!(classify_submit(&names(&["Submit application"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Enviar candidatura"]), &names(&["Enviar candidatura"]), false, false), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Next", "Enviar candidatura"]), &names(&["Next", "Enviar candidatura"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Submit application"]), &names(&["Submit application"]), false, true), SubmitDecision::ConfirmAndSpend);
     }
 
     #[test]
     fn review_and_send_is_a_send_not_navigation() {
-        assert_eq!(classify_submit(&names(&["Revisar e enviar"]), false, true), SubmitDecision::ConfirmAndSpend);
-        assert_eq!(classify_submit(&names(&["Review and submit"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Revisar e enviar"]), &names(&["Revisar e enviar"]), false, true), SubmitDecision::ConfirmAndSpend);
+        assert_eq!(classify_submit(&names(&["Review and submit"]), &names(&["Review and submit"]), false, true), SubmitDecision::ConfirmAndSpend);
         // The bare word is navigation, the longer label is not.
-        assert_eq!(classify_submit(&names(&["Revisar"]), false, true), SubmitDecision::Allow);
+        assert_eq!(classify_submit(&names(&["Revisar"]), &names(&["Revisar"]), false, true), SubmitDecision::Allow);
     }
 
     #[test]
     fn structural_targets_confirm_without_spending() {
-        assert_eq!(classify_submit(&names(&[]), true, false), SubmitDecision::ConfirmStructural);
-        assert_eq!(classify_submit(&names(&["Next"]), true, true), SubmitDecision::ConfirmStructural);
+        assert_eq!(classify_submit(&names(&[]), &names(&[]), true, false), SubmitDecision::ConfirmStructural);
+        assert_eq!(classify_submit(&names(&["Next"]), &names(&["Next"]), true, true), SubmitDecision::ConfirmStructural);
     }
 
     #[test]
     fn a_form_submit_with_an_unknown_name_confirms_without_spending() {
         for n in ["Upload", "Concluir", "Salvar", "Save", "Finish", "Done", "Færdig", "Aplicar filtro"] {
-            assert_eq!(classify_submit(&names(&[n]), false, true), SubmitDecision::ConfirmForm, "{n}");
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, true), SubmitDecision::ConfirmForm, "{n}");
         }
     }
 
     #[test]
     fn a_form_submit_named_as_navigation_passes() {
         for n in ["Avançar", "Next", "Próximo", "Voltar", "Weiter", "Tilbage"] {
-            assert_eq!(classify_submit(&names(&[n]), false, true), SubmitDecision::Allow, "{n}");
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, true), SubmitDecision::Allow, "{n}");
         }
     }
 
     #[test]
     fn every_name_of_the_element_must_be_navigation() {
-        assert_eq!(classify_submit(&names(&["Next", "Next"]), false, true), SubmitDecision::Allow);
-        assert_eq!(classify_submit(&names(&["Next", "Upload"]), false, true), SubmitDecision::ConfirmForm);
+        assert_eq!(classify_submit(&names(&["Next", "Next"]), &names(&["Next", "Next"]), false, true), SubmitDecision::Allow);
+        assert_eq!(classify_submit(&names(&["Next", "Upload"]), &names(&["Next", "Upload"]), false, true), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
+    fn a_fields_own_name_is_context_and_does_not_break_the_enter_exception() {
+        // Enter in the field "Campo B" whose form's default button is "Próximo": only the button counts.
+        assert_eq!(classify_submit(&names(&["Campo B", "Próximo"]), &names(&["Próximo"]), false, true), SubmitDecision::Allow);
+        assert_eq!(classify_submit(&names(&["Campo A", "Concluir"]), &names(&["Concluir"]), false, true), SubmitDecision::ConfirmForm);
+        // A send name in the field's context still sends.
+        assert_eq!(classify_submit(&names(&["Enviar candidatura", "Próximo"]), &names(&["Próximo"]), false, true), SubmitDecision::ConfirmAndSpend);
     }
 
     #[test]
     fn a_form_submit_without_any_name_is_not_navigation() {
-        assert_eq!(classify_submit(&names(&[]), false, true), SubmitDecision::ConfirmForm);
+        assert_eq!(classify_submit(&names(&[]), &names(&[]), false, true), SubmitDecision::ConfirmForm);
     }
 
     #[test]
     fn a_button_outside_a_form_with_an_unknown_name_passes() {
         // Documented limit (spec 4.5-1): a plain button with a JS handler is not seen as a submit.
         for n in ["Upload", "Finish", "Concluir", "Salvar"] {
-            assert_eq!(classify_submit(&names(&[n]), false, false), SubmitDecision::Allow, "{n}");
+            assert_eq!(classify_submit(&names(&[n]), &names(&[n]), false, false), SubmitDecision::Allow, "{n}");
         }
     }
 }
