@@ -1,4 +1,4 @@
-# SANDBOX ONLY. Creates folders and junctions under C:\labdata and runs app-stage.ps1 / Clear-LabOut against fake
+# SANDBOX ONLY. Creates folders and junctions under Z:\claudia-teste-sandbox and runs app-stage.ps1 / Clear-LabOut against fake
 # checkouts there. Refuses to run anywhere else. Nothing is cleaned up: the guest is discarded by test-down.
 # Run through: node testes-no-guest.mjs --ps sandbox-lab/scripts/test/travas.sandbox.ps1
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,13 @@ $Lib = Join-Path $PSScriptRoot '..\lib'
 . (Join-Path $Lib 'disco.ps1')    # only defines functions
 # Two factors, never $env:USERNAME: the WDAGUtilityAccount identity AND the guest-only C:\labsandbox\bootstrap.ps1.
 if (-not (Test-LabInSandbox)) { Write-Host 'REFUSED: this test runs only inside Windows Sandbox'; exit 3 }
-$Base = Join-Path 'C:\labdata' ('travas-' + [guid]::NewGuid().ToString('N'))
+# Spec A6: everything this test creates lives on the guest-only Z: drive (sandbox\disco-z.ps1), never on C:.
+$RootReal = $null
+try { New-Item -ItemType Directory -Force -Path $script:LabGuestTestRoot | Out-Null; $RootReal = (Get-Item -LiteralPath $script:LabGuestTestRoot -Force).FullName } catch { }
+$why = $(if ($RootReal) { Get-LabGuestTestRootRefusal $RootReal } else { 'the Z: test root could not be created (is Z: mounted? see C:\lab\out\disco-z.json)' })
+if (-not $why -and @(Get-LabLinksAboveRoot $RootReal).Count) { $why = 'link (junction/symlink) above the test root' }
+if ($why) { Write-Host "REFUSED: $why"; exit 3 }
+$Base = Join-Path $RootReal ('travas-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Base | Out-Null
 $script:failed = 0
 function Check([string]$Name, [scriptblock]$Body) {
@@ -98,16 +104,6 @@ Check 'a source that is the repo (parent of the deploy) is refused, nothing copi
   if ($code -eq 0) { throw 'expected refusal' }
   if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app')) { throw 'deploy was populated' }
 }
-Check 'a source that is a drive root is refused, nothing copied' {
-  $r = New-FakeRepo 'l'
-  $ErrorActionPreference = 'Continue'
-  $stage = Join-Path $r 'sandbox-lab\scripts\app-stage.ps1'
-  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $stage -App 'Q:\' 2>&1
-  $code = $LASTEXITCODE
-  $ErrorActionPreference = 'Stop'
-  if ($code -eq 0) { throw 'expected refusal' }
-  if (Test-Path -LiteralPath (Join-Path $r '.sandbox-work\deploy\app')) { throw 'deploy was populated' }
-}
 Check 'robocopy /XJ: a junction inside the app source is not followed' {
   $r = New-FakeRepo 'm'
   $src = Join-Path $Base 'fonte-m'; New-Item -ItemType Directory -Path $src | Out-Null
@@ -167,6 +163,67 @@ Check 'Clear-LabOut refuses shared\out as a junction, target kept' {
   New-Item -ItemType Junction -Path (Join-Path $lab 'shared\out') -Target $target | Out-Null
   Should-Refuse { Clear-LabOut -OutDir (Join-Path $lab 'shared\out') -LabDir $lab }
   if (-not (Test-Path -LiteralPath $keep)) { throw 'target file deleted' }
+}
+
+function New-FakeLogin([string]$Name) {
+  $up = Join-Path $Base $Name
+  New-Item -ItemType Directory -Force (Join-Path $up '.claude') | Out-Null
+  [IO.File]::WriteAllText((Join-Path $up '.claude\.credentials.json'), 'fake-login-for-test')
+  return $up
+}
+Check 'the test base is on Z: and its real path is under the guest test root' {
+  if (Get-LabGuestTestRootRefusal (Get-Item -LiteralPath $Base).FullName) { throw 'base not under Z:\claudia-teste-sandbox' }
+}
+Check 'credential: copy creates exactly .sandbox-work\credencial\.credentials.json, same bytes, no .tmp left' {
+  $r = Join-Path $Base 'cred-a'; $up = New-FakeLogin 'perfil-a'
+  Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir ''
+  $p = Get-LabCredentialPaths $r
+  if ([IO.File]::ReadAllText($p.File) -ne 'fake-login-for-test') { throw 'content differs' }
+  if (@(Get-ChildItem -LiteralPath $p.Dir -Force).Count -ne 1) { throw 'extra files in credencial' }
+}
+Check 'credential: a second copy replaces the first' {
+  $r = Join-Path $Base 'cred-b'; $up = New-FakeLogin 'perfil-b'
+  Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir ''
+  [IO.File]::WriteAllText((Join-Path $up '.claude\.credentials.json'), 'second')
+  Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir ''
+  if ([IO.File]::ReadAllText((Get-LabCredentialPaths $r).File) -ne 'second') { throw 'not replaced' }
+}
+Check 'credential: CLAUDE_CONFIG_DIR set refuses and copies nothing' {
+  $r = Join-Path $Base 'cred-c'; $up = New-FakeLogin 'perfil-c'
+  Should-Refuse { Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir 'Z:\outra' }
+  if (Test-Path -LiteralPath (Get-LabCredentialPaths $r).File) { throw 'copied anyway' }
+}
+Check 'credential: no login on the PC refuses with the /login hint' {
+  $r = Join-Path $Base 'cred-d'; $up = Join-Path $Base 'perfil-vazio'; New-Item -ItemType Directory -Force $up | Out-Null
+  $msg = $null; try { Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir '' } catch { $msg = $_.Exception.Message }
+  if ("$msg" -notmatch '/login') { throw "got: $msg" }
+}
+Check 'credential: remove deletes only that file; a sentinel in the same folder is kept' {
+  $r = Join-Path $Base 'cred-e'; $up = New-FakeLogin 'perfil-e'
+  Copy-LabCredential -RepoRoot $r -UserProfile $up -ConfigDir ''
+  $p = Get-LabCredentialPaths $r; $keep = Join-Path $p.Dir 'keep.txt'; [IO.File]::WriteAllText($keep, 'keep')
+  Remove-LabCredential -RepoRoot $r
+  if (Test-Path -LiteralPath $p.File) { throw 'copy survived' }
+  if (-not (Test-Path -LiteralPath $keep)) { throw 'sentinel deleted' }
+  if (-not (Test-Path -LiteralPath (Join-Path $up '.claude\.credentials.json'))) { throw 'source deleted' }
+}
+Check 'credential: a stray .tmp is removed, any other file is refused and kept' {
+  $r = Join-Path $Base 'cred-f'; $p = Get-LabCredentialPaths $r; New-Item -ItemType Directory -Force $p.Dir | Out-Null
+  $tmp = "$($p.File).0123456789abcdef0123456789abcdef.tmp"; [IO.File]::WriteAllText($tmp, 'x')
+  Remove-LabCredential -RepoRoot $r
+  if (Test-Path -LiteralPath $tmp) { throw '.tmp survived' }
+  $other = Join-Path $p.Dir 'outro.json'; [IO.File]::WriteAllText($other, 'x')
+  Should-Refuse { Remove-LabCredentialFile -File $other -RepoRoot $r }
+  if (-not (Test-Path -LiteralPath $other)) { throw 'other file deleted' }
+}
+Check 'credential: credencial folder as a junction is refused, target kept' {
+  $r = Join-Path $Base 'cred-g'; New-Item -ItemType Directory -Force (Join-Path $r '.sandbox-work') | Out-Null
+  $target = Join-Path $Base 'alvo-cred'; $keep = New-Sentinel $target
+  [IO.File]::WriteAllText((Join-Path $target '.credentials.json'), 'x')
+  New-Item -ItemType Junction -Path (Get-LabCredentialPaths $r).Dir -Target $target | Out-Null
+  Should-Refuse { Remove-LabCredential -RepoRoot $r }
+  Should-Refuse { Copy-LabCredential -RepoRoot $r -UserProfile (New-FakeLogin 'perfil-g') -ConfigDir '' }
+  if (-not (Test-Path -LiteralPath $keep) -or -not (Test-Path -LiteralPath (Join-Path $target '.credentials.json'))) { throw 'target changed' }
 }
 
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }

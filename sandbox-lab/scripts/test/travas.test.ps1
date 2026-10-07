@@ -81,7 +81,7 @@ Check 'source: ordinary folders and files are allowed' {
   Should-BeNull (Get-LabSourceRefusal -Source "$R\src-tauri\target" -Deploy $D)
 }
 Check 'source: drive roots, empty and relative values are refused' {
-  foreach ($p in @('Z:\', 'Z:', '', '   ', 'build\app', '\\srv\s\app', 'Z:\a\..\b')) { if (-not (Get-LabSourceRefusal -Source $p -Deploy $D)) { throw "must refuse '$p'" } }
+  foreach ($p in @('Z:\', 'Q:\', 'Z:', '', '   ', 'build\app', '\\srv\s\app', 'Z:\a\..\b')) { if (-not (Get-LabSourceRefusal -Source $p -Deploy $D)) { throw "must refuse '$p'" } }
 }
 Check 'source: the deploy, its parents and anything inside it are refused' {
   foreach ($p in @($D, "$D\app", $D.ToUpper(), "$R\.sandbox-work", $R, 'Z:\proj x')) {
@@ -124,6 +124,117 @@ Check 'guest marker literal is pinned (the Node side pins the same literal)' {
 Check 'down: only exit code 0 lets Clear-LabOut run' {
   Should-BeNull (Get-LabDownRefusal -ExitCode 0)
   foreach ($c in @(1, 2, -1, $null, '')) { if (-not (Get-LabDownRefusal -ExitCode $c)) { throw "must refuse for '$c'" } }
+}
+
+$UP = 'Y:\Perfis\fulano'
+$RR = 'Y:\proj x\claudia-rh'
+$CD = 'Y:\proj x\claudia-rh\.sandbox-work\credencial'
+$CF = "$CD\.credentials.json"
+$G32 = '0123456789abcdef0123456789abcdef'
+
+Check 'guest test root literal is pinned (the Node side pins the same literal)' {
+  if ($script:LabGuestTestRoot -cne 'Z:\claudia-teste-sandbox') { throw "root changed: '$script:LabGuestTestRoot'" }
+}
+Check 'guest test root: the root and anything under it are allowed' {
+  foreach ($p in @('Z:\claudia-teste-sandbox', 'z:\CLAUDIA-TESTE-SANDBOX\cs test a 1', 'Z:\claudia-teste-sandbox\a\b', 'Z:\claudia-teste-sandbox\')) { Should-BeNull (Get-LabGuestTestRootRefusal $p) }
+}
+Check 'guest test root: other drives, siblings, dotted, relative and empty are refused' {
+  foreach ($p in @('C:\labdata\x', 'Z:\', 'Z:\tmp\x', 'Z:\claudia-teste-sandbox-irmao\x', 'Z:\claudia-teste-sandbox\..\x', 'Z:\claudia-teste-sandbox\.\x', '', 'claudia-teste-sandbox\x', '\\srv\s\claudia-teste-sandbox')) {
+    if (-not (Get-LabGuestTestRootRefusal $p)) { throw "must refuse '$p'" }
+  }
+}
+Check 'host drives: a Z: drive on the host refuses test-up' {
+  Should-BeNull (Get-LabHostDriveRefusal -DriveNames @('C:\', 'D:\', 'G:\'))
+  Should-BeNull (Get-LabHostDriveRefusal -DriveNames @())
+  Should-Match (Get-LabHostDriveRefusal -DriveNames @('C:\', 'Z:\')) 'Z:'
+  Should-Match (Get-LabHostDriveRefusal -DriveNames @('z:\')) 'Z:'
+}
+Check 'credential source: only the default login file of the user folder' {
+  Should-BeNull (Get-LabCredentialSourceRefusal -Source "$UP\.claude\.credentials.json" -UserProfile $UP -ConfigDir '')
+  Should-BeNull (Get-LabCredentialSourceRefusal -Source "Y:\PERFIS\FULANO\.claude\.credentials.json" -UserProfile "$UP\" -ConfigDir $null)
+}
+Check 'credential source: CLAUDE_CONFIG_DIR set is refused' {
+  Should-Match (Get-LabCredentialSourceRefusal -Source "$UP\.claude\.credentials.json" -UserProfile $UP -ConfigDir 'Y:\outra') 'CLAUDE_CONFIG_DIR'
+}
+Check 'credential source: other files, empty values, drive-root profile, 8.3 names and links are refused' {
+  foreach ($s in @("$UP\.claude\settings.json", "$UP\.claude", "$UP\.claude-work\.credentials.json", 'Y:\outro\.claude\.credentials.json', '')) {
+    if (-not (Get-LabCredentialSourceRefusal -Source $s -UserProfile $UP -ConfigDir '')) { throw "must refuse '$s'" }
+  }
+  Should-Match (Get-LabCredentialSourceRefusal -Source 'Y:\.claude\.credentials.json' -UserProfile 'Y:\' -ConfigDir '') 'user folder'
+  Should-Match (Get-LabCredentialSourceRefusal -Source 'Y:\Perfis\FULANO~1\.claude\.credentials.json' -UserProfile 'Y:\Perfis\FULANO~1' -ConfigDir '') '8\.3'
+  Should-Match (Get-LabCredentialSourceRefusal -Source "$UP\.claude\.credentials.json" -UserProfile $UP -ConfigDir '' -Links @("$UP\.claude")) 'link'
+}
+Check 'credential paths: derived only from the repo root' {
+  $p = Get-LabCredentialPaths "$RR\"
+  if ($p.Dir -cne $CD -or $p.File -cne $CF) { throw "got $($p.Dir) / $($p.File)" }
+}
+Check 'credential clean: only the exact copy or its .tmp sibling' {
+  Should-BeNull (Get-LabCredentialCleanRefusal -File $CF -RepoRoot $RR)
+  Should-BeNull (Get-LabCredentialCleanRefusal -File $CF.ToUpper() -RepoRoot $RR)
+  Should-BeNull (Get-LabCredentialCleanRefusal -File "$CF.$G32.tmp" -RepoRoot $RR)
+  foreach ($f in @($CD, "$CD\x.json", "$CF.abc.tmp", "$CF.$G32.tmp.x", "$RR\.sandbox-work\deploy\.credentials.json", 'Y:\', $RR, "$CF\..", ($CF -replace '\\', '/'), "$UP\.claude\.credentials.json")) {
+    if (-not (Get-LabCredentialCleanRefusal -File $f -RepoRoot $RR)) { throw "must refuse '$f'" }
+  }
+  Should-Match (Get-LabCredentialCleanRefusal -File $CF -RepoRoot '') 'required'
+  Should-Match (Get-LabCredentialCleanRefusal -File 'Y:\.sandbox-work\credencial\.credentials.json' -RepoRoot 'Y:\') 'repo root'
+  Should-Match (Get-LabCredentialCleanRefusal -File $CF -RepoRoot $RR -Links @("$RR\.sandbox-work")) 'link'
+}
+Check 'cache dir: only the exact shared\cache, no links' {
+  $Lab = "$RR\sandbox-lab"
+  Should-BeNull (Get-LabCacheDirRefusal -CacheDir "$Lab\shared\cache" -LabDir $Lab)
+  foreach ($c in @("$Lab\shared", "$Lab\shared\cache\x", 'Y:\', "$Lab\shared\out", ("$Lab\shared\cache" -replace '\\', '/'))) {
+    Should-Match (Get-LabCacheDirRefusal -CacheDir $c -LabDir $Lab) 'not exactly'
+  }
+  Should-Match (Get-LabCacheDirRefusal -CacheDir "$Lab\shared\cache" -LabDir $Lab -Links @("$Lab\shared")) 'link'
+  Should-Match (Get-LabCacheDirRefusal -CacheDir 'Y:\shared\cache' -LabDir 'Y:\') 'lab dir'
+}
+Check 'cache plan: missing -> baixar, same hash -> ok, other hash or wrong kind -> conflito' {
+  $h1 = 'a' * 64; $h2 = 'b' * 64
+  $pk = @(
+    [pscustomobject]@{ nome = 'rust'; arquivo = 'rust.msi'; sha256 = $h1 },
+    [pscustomobject]@{ nome = 'node'; arquivo = 'node.zip'; sha256 = $h1 },
+    [pscustomobject]@{ nome = 'claude-code'; arquivo = 'claude.exe'; sha256 = $h1 },
+    [pscustomobject]@{ nome = 'msvc'; arquivo = 'msvc-17'; sha256 = '' }
+  )
+  $plan = @(Get-LabCachePlan -Pacotes $pk -Existentes @{ 'RUST.msi' = $h1; 'node.zip' = $h2; 'msvc-17' = 'dir' })
+  $acts = @($plan | ForEach-Object { "$($_.nome)=$($_.acao)" }) -join ','
+  if ($acts -ne 'rust=ok,node=conflito,claude-code=baixar,msvc=ok') { throw "got $acts" }
+  $plan2 = @(Get-LabCachePlan -Pacotes @($pk[3], $pk[0]) -Existentes @{ 'msvc-17' = $h1; 'rust.msi' = 'dir' })
+  if ((@($plan2 | ForEach-Object { $_.acao }) -join ',') -ne 'conflito,conflito') { throw 'wrong kind must be conflito' }
+}
+$RO = 'Y:\Perfis\fulano\AppData\Roaming'
+Check 'real data: only the app folder under Roaming (spec addendum 8.1)' {
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source "$RO\io.github.johngabie.claudia-rh" -RoamingAppData $RO)
+  Should-BeNull (Get-LabRealDataSourceRefusal -Source "$RO\IO.GITHUB.JOHNGABIE.CLAUDIA-RH" -RoamingAppData "$RO\")
+}
+Check 'real data: LOCALAPPDATA, other folders, the Roaming root, empty, 8.3 and links are refused' {
+  foreach ($s in @('Y:\Perfis\fulano\AppData\Local\io.github.johngabie.claudia-rh', $RO, "$RO\outro", "$RO\io.github.johngabie.claudia-rh\x", "$RO\io.github.johngabie.claudia-rh2", '')) {
+    if (-not (Get-LabRealDataSourceRefusal -Source $s -RoamingAppData $RO)) { throw "must refuse '$s'" }
+  }
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\P\AppData\Local\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\P\AppData\Local') 'LOCALAPPDATA'
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\') 'roaming'
+  Should-Match (Get-LabRealDataSourceRefusal -Source 'Y:\PERFIS~1\io.github.johngabie.claudia-rh' -RoamingAppData 'Y:\PERFIS~1') '8\.3'
+  Should-Match (Get-LabRealDataSourceRefusal -Source "$RO\io.github.johngabie.claudia-rh" -RoamingAppData $RO -Links @($RO)) 'link'
+}
+Check 'layout import: only <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>' {
+  $ok = "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1"
+  Should-BeNull (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1')
+  foreach ($s in @("$RR\.sandbox-work\cache-saida\0a1b2c3d", "$RR\.sandbox-work\cache-saida\0A1B2C3X\msvc-17.14.1", "$RR\.sandbox-work\cache-saida\0a1b2c3d4e\msvc-17.14.1", "$RR\.sandbox-work\cache-saida\0a1b2c\msvc-17.14.1","$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.2",
+                   "$RR\.sandbox-work\cache-saida\0a1b2c3d\msvc-17.14.1\layout", "$RR\sandbox-lab\shared\cache\msvc-17.14.1", 'Y:\', '')) {
+    if (-not (Get-LabLayoutImportRefusal -Source $s -RepoRoot $RR -Versao '17.14.1')) { throw "must refuse '$s'" }
+  }
+  Should-Match (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao 'latest') 'versao'
+  Should-Match (Get-LabLayoutImportRefusal -Source $ok -RepoRoot $RR -Versao '17.14.1' -Links @("$RR\.sandbox-work")) 'link'
+}
+Check 'layout manifest: same files, sizes and hashes pass; missing, extra, different or malformed fail' {
+  $a = 'a' * 64; $b = 'b' * 64
+  $man = "$a 10 vs_setup.exe`n$b 20 Archives/x.cab`n"
+  if (@(Get-LabLayoutManifestProblems -ManifestText $man -Found @{ 'vs_setup.exe' = "$a 10"; 'archives/X.cab' = "$b 20" }).Count) { throw 'identical must pass' }
+  $p = @(Get-LabLayoutManifestProblems -ManifestText $man -Found @{ 'vs_setup.exe' = "$a 11"; 'extra.txt' = "$a 1" })
+  $txt = $p -join ';'
+  if ($txt -notmatch 'differs: vs_setup\.exe' -or $txt -notmatch 'missing: Archives/x\.cab' -or $txt -notmatch 'not in the manifest: extra\.txt') { throw "got $txt" }
+  Should-Match ((Get-LabLayoutManifestProblems -ManifestText '' -Found @{}) -join ';') 'empty'
+  Should-Match ((Get-LabLayoutManifestProblems -ManifestText "lixo`n" -Found @{}) -join ';') 'malformed'
 }
 
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
