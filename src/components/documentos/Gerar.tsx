@@ -35,6 +35,8 @@ export const Gerar: React.FC<{
   const [notaExtra, setNotaExtra] = useState("");
   const [streamText, setStreamText] = useState("");
   const streamEndRef = useRef<HTMLDivElement>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const avisoRef = useRef<string | null>(null);
   const onFeitoRef = useRef(onFeito);
   useEffect(() => { onFeitoRef.current = onFeito; }, [onFeito]);
 
@@ -54,9 +56,15 @@ export const Gerar: React.FC<{
         streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }),
       // P1: the payload is the library Document; the grid reloads from the backend.
+      // CLA-40: the letter was saved without a contact e-mail; the warning arrives just before "done".
+      listen<string>("cover-letter-warning", (e) => {
+        avisoRef.current = e.payload;
+        setAviso(e.payload);
+      }),
       listen<Documento>("cover-letter-done", () => {
         setGerando(null);
-        onFeitoRef.current();
+        // With a warning, keep the panel open so the user reads it; closing it reloads the grid.
+        if (!avisoRef.current) onFeitoRef.current();
       }),
       listen<string>("cover-letter-error", (e) => {
         setErro(e.payload);
@@ -87,6 +95,8 @@ export const Gerar: React.FC<{
     const car = cargo.trim();
     if (!emp || !car) return;
     setErro(null);
+    avisoRef.current = null;
+    setAviso(null);
     setStreamText("");
     setGerando("carta");
     try {
@@ -118,6 +128,13 @@ export const Gerar: React.FC<{
       {erro && (
         <div style={{ border: "1px solid var(--danger)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "var(--danger)", display: "flex", alignItems: "center", gap: 8 }}>
           <AlertCircle size={14} /> {erro}
+        </div>
+      )}
+
+      {aviso && (
+        <div style={{ border: "1px solid var(--warning, var(--border))", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={14} /> Carta salva. Aviso: {aviso}
+          <button onClick={() => onFeito()} style={{ marginLeft: "auto", fontSize: 13 }}>OK</button>
         </div>
       )}
 
