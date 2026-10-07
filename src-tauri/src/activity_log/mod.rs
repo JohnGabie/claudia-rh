@@ -77,7 +77,7 @@ pub enum BrowserEvent {
     TabCrashed { url: Option<String> },
     /// A JavaScript dialog opened (`alert`, `confirm`, `prompt`, `beforeunload`). The default value of a
     /// `prompt()` is deliberately not part of the event.
-    Dialog { dialog_type: String, message: String, url: Option<String> },
+    Dialog { dialog_type: String, message: String, url: Option<String>, accepted: bool, during_tool: Option<String> },
 }
 
 impl BrowserEvent {
@@ -133,10 +133,13 @@ impl BrowserEvent {
                 url = u.clone();
                 (Some("agent tab crashed".to_string()), None)
             }
-            Self::Dialog { dialog_type, message, url: u } => {
+            Self::Dialog { dialog_type, message, url: u, accepted, during_tool } => {
                 url = u.clone();
                 let message = clip(message, MAX_EVENT_TEXT);
-                (Some(format!("{dialog_type}: {message}")), Some(serde_json::json!({ "dialog_type": dialog_type, "message": message })))
+                (
+                    Some(format!("{dialog_type}: {message}")),
+                    Some(serde_json::json!({ "dialog_type": dialog_type, "message": message, "accepted": accepted, "during_tool": during_tool })),
+                )
             }
         };
         NewEvent {
@@ -353,7 +356,7 @@ mod tests {
             BrowserEvent::NotRelaunched,
             BrowserEvent::GaveUp,
             BrowserEvent::TabCrashed { url: Some("https://x/y".into()) },
-            BrowserEvent::Dialog { dialog_type: "alert".into(), message: "oi".into(), url: Some("https://x/".into()) },
+            BrowserEvent::Dialog { dialog_type: "alert".into(), message: "oi".into(), url: Some("https://x/".into()), accepted: true, during_tool: None },
         ]
     }
 
@@ -389,11 +392,23 @@ mod tests {
     }
 
     #[test]
+    fn a_dialog_event_records_the_answer_and_the_tool_it_happened_in() {
+        let ev = BrowserEvent::Dialog { dialog_type: "confirm".into(), message: "Enviar?".into(), url: None, accepted: false, during_tool: Some("browser_click".into()) };
+        let extra: serde_json::Value = serde_json::from_str(ev.to_new_event().extra.as_deref().unwrap()).unwrap();
+        assert_eq!(extra["accepted"], false);
+        assert_eq!(extra["during_tool"], "browser_click");
+        let outside = BrowserEvent::Dialog { dialog_type: "alert".into(), message: "x".into(), url: None, accepted: true, during_tool: None };
+        let extra: serde_json::Value = serde_json::from_str(outside.to_new_event().extra.as_deref().unwrap()).unwrap();
+        assert_eq!(extra["accepted"], true);
+        assert!(extra["during_tool"].is_null());
+    }
+
+    #[test]
     fn browser_event_text_is_clipped_to_200_characters_without_splitting_one() {
         let long = "ã".repeat(500);
         let row = BrowserEvent::LaunchFailed { error: long.clone() }.to_new_event();
         assert_eq!(row.error.as_ref().unwrap().chars().count(), MAX_EVENT_TEXT + 1, "200 characters plus the ellipsis");
-        let row = BrowserEvent::Dialog { dialog_type: "prompt".into(), message: long, url: None }.to_new_event();
+        let row = BrowserEvent::Dialog { dialog_type: "prompt".into(), message: long, url: None, accepted: false, during_tool: None }.to_new_event();
         let extra: serde_json::Value = serde_json::from_str(row.extra.as_deref().unwrap()).unwrap();
         assert_eq!(extra["message"].as_str().unwrap().chars().count(), MAX_EVENT_TEXT + 1);
         assert_eq!(clip("curto", 200), "curto", "short text is untouched");

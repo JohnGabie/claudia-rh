@@ -1697,3 +1697,230 @@ async fn click_at_over_the_upload_submit_is_refused() {
     assert!(e.starts_with("RECUSADO"), "{e}");
     assert!(!sent(&a, "upload").await);
 }
+// ───────────── D8 (native dialogs) + tab_crashed: tests/fixtures/dialogs.html ─────────────
+// PENDING SANDBOX: written, never run on the user's machine (they open a real Chrome).
+
+use claudia_rh_lib::activity_log::BrowserEvent;
+
+/// A sink that keeps the browser events (dialogs, crashes) the handler task emits.
+struct EvSink {
+    events: Mutex<Vec<BrowserEvent>>,
+}
+
+impl EvSink {
+    fn new() -> Arc<EvSink> {
+        Arc::new(EvSink { events: Mutex::new(vec![]) })
+    }
+
+    /// Waits (the sink is fed from a blocking task, not waited for by the tools) for `n` events.
+    async fn wait_for(&self, n: usize) -> Vec<BrowserEvent> {
+        for _ in 0..50 {
+            if self.events.lock().unwrap().len() >= n {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl ActionSink for EvSink {
+    fn enabled(&self) -> bool {
+        false
+    }
+    fn action(&self, _: ActionRecord) {}
+    fn navigation(&self, _: NavRecord) {}
+    fn browser_event(&self, ev: BrowserEvent) {
+        self.events.lock().unwrap().push(ev);
+    }
+}
+
+async fn open_dialogs(l: &Live, ctx: Arc<Ctx>, sink: Arc<EvSink>) -> (BrowserTools, cdp::CdpClient, String) {
+    let t = BrowserTools::new(l.profile.join("state.json"), ctx, sink).allow_file_urls();
+    t.open(&fixture_file("dialogs.html")).await.unwrap();
+    let a = agent_client(l).await;
+    let list = t.read(None).await.unwrap();
+    (t, a, list)
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_alert_is_answered_at_once_the_tool_returns_with_a_note_and_the_page_keeps_working() {
+    // Mutation: do not spawn the handler -> the click times out.
+    let l = launch().await;
+    let (t, a, list) = open_dialogs(&l, Ctx::candidatando(7), EvSink::new()).await;
+    let out = tokio::time::timeout(Duration::from_secs(5), t.click(&ref_of(&list, "button", "Alerta"), None))
+        .await
+        .expect("the click must not hang on the dialog")
+        .unwrap();
+    assert!(out.contains("Diálogo da página (alert): \"Olá do alerta\". O app respondeu: OK."), "{out}");
+    assert_eq!(eval(&a, "window.__alertDone === true").await, true);
+    let read = tokio::time::timeout(Duration::from_secs(5), t.read(None)).await.expect("the page still answers").unwrap();
+    assert!(!read.contains("Diálogo da página"), "the note leaves once: {read}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_confirm_without_an_approved_click_is_cancelled() {
+    // Mutation: make `confirm` answer OK always -> this test fails.
+    let l = launch().await;
+    let (t, a, list) = open_dialogs(&l, Ctx::candidatando(7), EvSink::new()).await;
+    let out = t.click(&ref_of(&list, "button", "Confirmar"), None).await.unwrap();
+    assert!(out.contains("(confirm)") && out.contains("O app respondeu: Cancelar."), "{out}");
+    assert_eq!(eval(&a, "window.__confirm === false").await, true);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_confirm_during_a_send_the_guard_approved_is_accepted_and_only_then() {
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let (t, a, list) = open_dialogs(&l, ctx.clone(), EvSink::new()).await;
+    // Unconfirmed: refused, no dialog ever opens.
+    let e = t.click(&ref_of(&list, "button", "Submit application"), None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert_eq!(eval(&a, "window.__confirmSubmit === null").await, true);
+    // Confirmed: the site's "Enviar?" is accepted and the form goes through.
+    let out = t.click(&ref_of(&list, "button", "Submit application"), Some(7)).await.unwrap();
+    assert!(out.contains("(confirm)") && out.contains("O app respondeu: OK."), "{out}");
+    assert_eq!(eval(&a, "window.__confirmSubmit === true && window.__submitted === true").await, true);
+    // The approval ended with that call: a plain confirm right after is cancelled again.
+    t.click(&ref_of(&list, "button", "Confirmar"), None).await.unwrap();
+    assert_eq!(eval(&a, "window.__confirm === false").await, true);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_prompt_returns_null_and_its_default_value_is_never_shown_nor_logged() {
+    let l = launch().await;
+    let sink = EvSink::new();
+    let (t, a, list) = open_dialogs(&l, Ctx::candidatando(7), sink.clone()).await;
+    let out = t.click(&ref_of(&list, "button", "Perguntar"), None).await.unwrap();
+    assert!(out.contains("(prompt)") && out.contains("O app respondeu: Cancelar."), "{out}");
+    assert!(!out.contains("SEGREDO-PADRAO"), "{out}");
+    assert_eq!(eval(&a, "window.__prompt === null").await, true);
+    let evs = sink.wait_for(1).await;
+    assert!(!format!("{evs:?}").contains("SEGREDO-PADRAO"), "{evs:?}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn beforeunload_lets_browser_open_leave_but_keeps_a_click_on_a_link_on_the_page() {
+    let l = launch().await;
+    let (t, a, list) = open_dialogs(&l, Ctx::candidatando(7), EvSink::new()).await;
+    // A user activation is what makes Chrome show the beforeunload dialog at all.
+    t.click(&ref_of(&list, "button", "Marcar interação"), None).await.unwrap();
+    let out = t.click(&ref_of(&list, "link", "Ir para outra página"), None).await.unwrap();
+    assert!(out.contains("(beforeunload)") && out.contains("Ficar na página"), "{out}");
+    assert_eq!(eval(&a, "location.href.endsWith('dialogs.html')").await, true, "the page stayed");
+    // browser_open asked to leave: the dialog is accepted and the navigation happens.
+    let opened = t.open(&fixture_file("empty.html")).await.unwrap();
+    assert!(opened.contains("Abriu"), "{opened}");
+    assert_eq!(eval(&a, "location.href.endsWith('empty.html')").await, true, "browser_open left the page");
+}
+
+#[tokio::test]
+#[ignore]
+async fn an_alert_fired_by_a_timer_outside_any_tool_rides_on_the_next_result() {
+    let l = launch().await;
+    let (t, _a, list) = open_dialogs(&l, Ctx::candidatando(7), EvSink::new()).await;
+    let first = t.click(&ref_of(&list, "button", "Alerta com atraso"), None).await.unwrap();
+    assert!(!first.contains("Alerta do timer"), "the timer had not fired yet: {first}");
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let next = tokio::time::timeout(Duration::from_secs(5), t.read(None)).await.expect("no hang").unwrap();
+    assert!(next.contains("Diálogo da página (alert): \"Alerta do timer\""), "{next}");
+    // Before the estado: line, which stays last.
+    let note_at = next.find("Diálogo da página").unwrap();
+    let estado_at = next.rfind("estado:").unwrap();
+    assert!(note_at < estado_at, "{next}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_activity_log_gets_one_dialog_event_with_type_and_clipped_text() {
+    let l = launch().await;
+    let sink = EvSink::new();
+    let (t, _a, list) = open_dialogs(&l, Ctx::candidatando(7), sink.clone()).await;
+    let out = t.click(&ref_of(&list, "button", "Alerta longo"), None).await.unwrap();
+    assert!(out.contains("Diálogo da página (alert)"), "{out}");
+    let evs = sink.wait_for(1).await;
+    assert_eq!(evs.len(), 1, "{evs:?}");
+    match &evs[0] {
+        BrowserEvent::Dialog { dialog_type, message, url, accepted, during_tool } => {
+            assert_eq!(dialog_type, "alert");
+            assert!(*accepted, "an alert is accepted");
+            assert_eq!(during_tool.as_deref(), Some("browser_click"));
+            assert!(message.chars().count() <= 200, "{}", message.chars().count());
+            assert!(url.as_deref().is_some_and(|u| u.contains("dialogs.html")), "{url:?}");
+        }
+        other => panic!("expected a dialog event, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_crashed_tab_is_logged_and_the_next_tool_says_how_to_recover_without_hanging() {
+    let l = launch().await;
+    let sink = EvSink::new();
+    let (t, a, _list) = open_dialogs(&l, Ctx::candidatando(7), sink.clone()).await;
+    // Page.crash kills the renderer: the call itself may never answer.
+    let _ = tokio::time::timeout(Duration::from_secs(2), a.call("Page.crash", json!({}))).await;
+    let evs = sink.wait_for(1).await;
+    assert!(evs.iter().any(|e| matches!(e, BrowserEvent::TabCrashed { .. })), "{evs:?}");
+    let e = tokio::time::timeout(Duration::from_secs(10), t.read(None)).await.expect("must not hang").unwrap_err();
+    assert!(e.contains("browser_open"), "an actionable message: {e}");
+    // And browser_open brings a working tab back.
+    t.open(&fixture_file("dialogs.html")).await.unwrap();
+    assert!(t.read(None).await.is_ok());
+}
+
+// ───────────── F1 review (C1, I1): guard-form.html. PENDING SANDBOX: written, never run here. ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_on_the_child_of_a_submit_button_is_refused_like_the_button() {
+    // C1: <button><span>Concluir</span></button>; the point is over the span, the submit is the button.
+    // Mutation: read tag/type/form from the hit element instead of the button -> the click goes through.
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#span-in").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "span").await, "the form must not have been submitted");
+}
+
+#[tokio::test]
+#[ignore]
+async fn enter_finds_the_default_button_even_when_it_sits_outside_the_form_tag() {
+    // I1: <button form="f-ext"> is the form's default button; Enter in its field is judged by it.
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    eval(&a, "document.getElementById('e-ext').focus(); true").await;
+    let e = t.key("Enter", None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "ext").await);
+}
+
+// ───────────── F1 second review: shadow DOM and label. PENDING SANDBOX: written, never run here. ─────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#shadow-host").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "shadow").await);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_on_a_label_of_a_submit_button_is_refused() {
+    let l = launch().await;
+    let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
+    let (x, y) = center_of(&a, "#label-for").await;
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert!(!sent(&a, "label").await);
+}

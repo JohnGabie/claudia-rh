@@ -6,6 +6,7 @@ pub mod install;
 pub mod loopguard;
 pub mod manager;
 pub mod nav;
+pub mod page_events;
 pub mod pagestate;
 pub mod pin;
 pub mod refs;

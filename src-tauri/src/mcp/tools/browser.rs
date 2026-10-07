@@ -23,6 +23,7 @@ use crate::browser::guard::{self, GuardContext, SubmitDecision, Verdict};
 use crate::browser::manager::{is_pinned, probe, read_state};
 use crate::browser::loopguard::LoopGuard;
 use crate::browser::nav::NavRecord;
+use crate::browser::page_events::{self, PageState};
 use crate::browser::pagestate;
 use crate::browser::refs::{self, RefBook, RefNode};
 use crate::browser::text;
@@ -60,6 +61,8 @@ pub trait ActionSink: Send + Sync {
     fn enabled(&self) -> bool;
     fn action(&self, rec: ActionRecord);
     fn navigation(&self, rec: NavRecord);
+    /// What the browser itself did (a dialog, a tab crash). Default: nothing, for `NoSink` and test sinks.
+    fn browser_event(&self, _ev: crate::activity_log::BrowserEvent) {}
 }
 
 pub struct NoSink;
@@ -208,9 +211,30 @@ pub(crate) struct Info {
     /// `<input type=submit|image>` that belongs to a form, WHATEVER its name.
     #[serde(default, rename = "formSubmit")]
     form_submit: bool,
+    /// Raw facts about the element that submits (see `INFO_FN`); `submit_facts` turns them into the two flags above.
+    #[serde(default)]
+    tag: String,
+    #[serde(default)]
+    btype: String,
+    #[serde(default, rename = "hasForm")]
+    has_form: bool,
+    #[serde(default, rename = "nameEmpty")]
+    name_empty: bool,
+    /// The name of the element that was really hit (a span inside the button), for the send-name check only.
+    #[serde(default, rename = "hitName")]
+    hit_name: String,
     /// The info could not be read at all (script failed or returned garbage). Fail closed.
     #[serde(default)]
     unknown: bool,
+}
+
+/// Pure: is the element a submit button, and does it submit a form? `tag` and `btype` come from the element the
+/// page script resolved (the button, not a span inside it). Returns (nameless submit in a form, submits a form).
+pub(crate) fn submit_facts(tag: &str, btype: &str, has_form: bool, name_empty: bool) -> (bool, bool) {
+    let tag = tag.to_ascii_uppercase();
+    let ty = btype.to_ascii_lowercase();
+    let submit_like = (tag == "BUTTON" && ty == "submit") || (tag == "INPUT" && (ty == "submit" || ty == "image"));
+    (name_empty && has_form && submit_like, has_form && submit_like)
 }
 
 impl Info {
@@ -236,16 +260,48 @@ const INFO_FN: &str = r#"function(){
     }
     return ((e.getAttribute && e.getAttribute('aria-label')) || e.innerText || e.value || e.title || e.alt || e.textContent || '').toString().trim();
   };
-  const tag = (el.tagName || '').toUpperCase();
-  const type = (el.type || '').toLowerCase();
-  const form = el.form || (el.closest && el.closest('form'));
-  const submitBtn = form ? form.querySelector('button[type=submit],input[type=submit],input[type=image],button:not([type])') : null;
-  const empty = nameOf(el) === '';
-  const submitLike = (tag === 'BUTTON' && type === 'submit') || (tag === 'INPUT' && (type === 'submit' || type === 'image'));
+  // The element the user would really press: a click on a child of a button (<button><span>Concluir</span></button>)
+  // lands on the span, but it is the button that submits. Everything below is read from that button.
+  const SEL = 'button,input[type=submit],input[type=image]';
+  const isSubmitEl = (e) => {
+    const t = (e.tagName || '').toUpperCase();
+    const ty = (e.type || '').toLowerCase();
+    return (t === 'BUTTON' && ty === 'submit') || (t === 'INPUT' && (ty === 'submit' || ty === 'image'));
+  };
+  // Up the COMPOSED tree: out of a shadow root through its host too.
+  const up = (e) => e.parentElement || (e.getRootNode && e.getRootNode().host) || null;
+  let b = null;
+  for (let e = el, n = 0; e && n < 100; e = up(e), n++) {
+    if (e.matches && e.matches(SEL)) { b = e; break; }
+  }
+  if (!b) {
+    // A click on <label for=...> presses its control.
+    const lab = el.closest && el.closest('label');
+    if (lab && lab.control && isSubmitEl(lab.control)) b = lab.control;
+  }
+  if (!b) b = el;
+  const tag = (b.tagName || '').toUpperCase();
+  const type = (b.type || '').toLowerCase();
+  let form = b.form || null;
+  for (let e = b, n = 0; !form && e && n < 100; e = up(e), n++) {
+    if ((e.tagName || '').toUpperCase() === 'FORM') form = e;
+  }
+  // The default button is the first submit button in DOCUMENT order, wherever its tag sits (form="id" included).
+  // form.elements leaves out <input type=image>: those of THIS form (also form="id" ones) are added, then sorted.
+  let submitBtn = null;
+  if (form) {
+    const imgs = Array.from(document.querySelectorAll('input[type=image]')).filter((i) => i.form === form);
+    const all = Array.from(form.elements).filter(isSubmitEl).concat(imgs.filter((i) => !Array.from(form.elements).includes(i)));
+    all.sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
+    submitBtn = all[0] || null;
+  }
   return JSON.stringify({
-    name: nameOf(el),
-    isSubmit: empty && !!form && submitLike,
-    formSubmit: !!form && submitLike,
+    name: nameOf(b),
+    hitName: nameOf(el),
+    tag: tag,
+    btype: type,
+    hasForm: !!form,
+    nameEmpty: nameOf(b) === '',
     opaque: tag === 'IFRAME' || tag === 'FRAME',
     formDefault: submitBtn ? nameOf(submitBtn) : '',
     formDefaultExists: !!submitBtn
@@ -372,6 +428,11 @@ impl Probe {
 
     fn add_info(&mut self, info: &Info) {
         self.add_name(&info.name);
+        // What the hit element says ("Submit application" in a span inside a type=button) counts for the send-name
+        // check only; it is not the button's own name.
+        if !info.hit_name.trim().is_empty() {
+            self.names.push(info.hit_name.clone());
+        }
         self.structural |= info.structural_submit();
         self.form_submit |= info.form_submit;
     }
@@ -407,6 +468,8 @@ pub struct BrowserTools {
     /// Stable refs per element within one document (see `RefBook`).
     refs: Mutex<RefBook>,
     agent_active: Arc<AtomicBool>,
+    /// Dialog and crash handling shared with the page-event task (see `browser::page_events`).
+    page_state: Arc<PageState>,
     /// Repeated-call hint (see `loopguard`). A plain mutex: never held across an await.
     loopguard: StdMutex<LoopGuard>,
     /// Hash of what the last browser_read / browser_text returned: part of the page signature the
@@ -442,6 +505,7 @@ impl BrowserTools {
             tab: Mutex::new(None),
             refs: Mutex::new(RefBook::default()),
             agent_active: Arc::new(AtomicBool::new(false)),
+            page_state: Arc::new(PageState::default()),
             loopguard: StdMutex::new(LoopGuard::default()),
             last_content: StdMutex::new(0),
             pending_note: StdMutex::new(None),
@@ -497,6 +561,16 @@ impl BrowserTools {
 
     async fn tab_inner(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
         let mut g = self.tab.lock().await;
+        if self.page_state.take_crashed() {
+            // The renderer died: drop the tab (best effort to close it) so the next browser_open starts a new one.
+            if let Some(t) = g.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(1), t.client.call("Page.close", json!({}))).await;
+            }
+            // browser_open goes on and opens a new tab; any other tool stops with the way forward.
+            if let Some(why) = page_events::crash_stops_tool(self.page_state.opening()) {
+                return Err(why.to_string());
+            }
+        }
         if let Some(t) = g.as_ref() {
             if !t.client.is_closed() {
                 cdp::bring_to_front(t.port, &t.target_id, &t.client).await?;
@@ -523,9 +597,13 @@ impl BrowserTools {
             None => cdp::new_page(state.port).await?,
         };
         let client = Arc::new(CdpClient::connect(&target.ws_url).await?);
+        // Before anything else can open a dialog: from here on a native dialog never freezes the tab.
+        page_events::spawn_handler(&client, self.sink.clone(), self.page_state.clone());
         for m in ["Page.enable", "DOM.enable", "Accessibility.enable"] {
             client.call(m, json!({})).await?;
         }
+        // Without it Chrome may not report `Inspector.targetCrashed`. Best effort.
+        let _ = client.call("Inspector.enable", json!({})).await;
         cdp::emulate_normal_languages(&client).await?;
         if self.sink.enabled() {
             client.call("Network.enable", json!({})).await?;
@@ -565,7 +643,12 @@ impl BrowserTools {
 
     // ── what the page says about an element: browser-computed, never page-trusted ──
     fn parse_info(v: &Value) -> Info {
-        v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(Info::unreadable)
+        let mut info: Info = v.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(Info::unreadable);
+        // The raw facts, when the page script sent them, decide the two submit flags.
+        if !info.tag.is_empty() {
+            (info.is_submit, info.form_submit) = submit_facts(&info.tag, &info.btype, info.has_form, info.name_empty);
+        }
+        info
     }
 
     /// An isolated JavaScript world in the main frame: its built-ins are pristine, whatever the
@@ -638,7 +721,8 @@ impl BrowserTools {
     /// that is only submit-like by structure (iframe, nameless button, unreadable) needs a valid
     /// confirmation but does not spend it.
     fn run_guard(&self, p: &Probe, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
-        let verdict = match guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit) {
+        let decision = guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit);
+        let verdict = match decision {
             // "submit" is a whole-word pattern: whatever the real label was, the guard sees a submit.
             SubmitDecision::ConfirmAndSpend => guard::check_submit("submit", page_url, confirm, self.guard.as_ref()),
             SubmitDecision::ConfirmStructural => guard::check_confirmation(page_url, confirm, self.guard.as_ref()),
@@ -650,7 +734,13 @@ impl BrowserTools {
             SubmitDecision::Allow => Verdict::Allow,
         };
         match verdict {
-            Verdict::Allow => Ok(()),
+            Verdict::Allow => {
+                // A send the guard let through: the site's own "are you sure?" may now be accepted.
+                if approves_dialogs(decision) {
+                    self.page_state.approve_click(page_url);
+                }
+                Ok(())
+            }
             Verdict::Refuse(why) => Err(why),
         }
     }
@@ -723,7 +813,8 @@ impl BrowserTools {
     /// Extra lines for a result: a pending viewport note, then the repeated-call hint. Each starts
     /// with "\n"; empty when there is nothing to say. A hint never blocks anything.
     async fn extra_lines(&self, tool: &str, key: &str, c: Option<&CdpClient>) -> String {
-        let mut s = String::new();
+        // Dialogs the app answered (during this tool or while none was running) come first.
+        let mut s = self.page_state.take_notes();
         if let Ok(mut g) = self.pending_note.lock() {
             if let Some(n) = g.take() {
                 s.push('\n');
@@ -763,6 +854,8 @@ impl BrowserTools {
         alvo: Option<(String, String)>,
     ) -> Result<String, String> {
         self.agent_active.store(false, Ordering::SeqCst);
+        // Every exit passes here: whatever the guard approved, or `browser_open` allowed, ends with the call.
+        self.page_state.end();
         let loop_key = match &r {
             Ok(o) => o.loop_key.clone().or_else(|| o.target.clone()),
             Err(_) => None,
@@ -836,6 +929,7 @@ impl BrowserTools {
             return self.finish("browser_open", started, Err(why), None).await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_open");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_open", started, Err(e), None).await,
@@ -867,6 +961,7 @@ impl BrowserTools {
     pub async fn read(&self, scope: Option<&str>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_read");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_read", started, Err(e), None).await,
@@ -897,6 +992,7 @@ impl BrowserTools {
     pub async fn text(&self, scope: Option<&str>, offset: Option<usize>, max_chars: Option<usize>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_text");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_text", started, Err(e), None).await,
@@ -993,6 +1089,7 @@ impl BrowserTools {
         }
         let pages = pages.min(5.0);
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_scroll");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_scroll", started, Err(e), None).await,
@@ -1076,6 +1173,7 @@ impl BrowserTools {
     pub async fn upload(&self, reference: &str, tipo: Option<&str>, documento: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_upload");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_upload", started, Err(e), None).await,
@@ -1213,6 +1311,7 @@ impl BrowserTools {
     pub async fn click(&self, reference: &str, confirm: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_click");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click", started, Err(e), None).await,
@@ -1252,6 +1351,7 @@ impl BrowserTools {
                 .await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_type");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_type", started, Err(e), None).await,
@@ -1284,6 +1384,7 @@ impl BrowserTools {
     pub async fn key(&self, key: &str, confirm: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_key");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_key", started, Err(e), None).await,
@@ -1339,6 +1440,7 @@ impl BrowserTools {
             return self.finish("browser_crop", started, Err(why), None).await.map(ToolOutput::Text);
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_crop");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_crop", started, Err(e), None).await.map(ToolOutput::Text),
@@ -1366,6 +1468,7 @@ impl BrowserTools {
             return self.finish("browser_click_at", started, Err("coordenada inválida".into()), None).await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_click_at");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click_at", started, Err(e), None).await,
@@ -1388,6 +1491,12 @@ impl BrowserTools {
         .await;
         self.finish("browser_click_at", started, r, Some(&c)).await
     }
+}
+
+/// Whether a guard decision that ended in `Allow` was a SEND the guard let through (a valid `confirm_submit`),
+/// as opposed to an ordinary action. Only the former may accept the site's own `confirm()` (policy P2).
+pub(crate) fn approves_dialogs(decision: SubmitDecision) -> bool {
+    !matches!(decision, SubmitDecision::Allow)
 }
 
 /// Points to try for the wheel, middle first, then the sides and the quarters of the page.
@@ -1644,6 +1753,34 @@ mod tests {
     }
 
     #[test]
+    fn submit_facts_are_read_from_the_button_and_a_child_of_it_is_not_a_way_around() {
+        // Pure. A click_at on <span> inside <button> resolves to the BUTTON before this is called.
+        assert_eq!(submit_facts("BUTTON", "submit", true, false), (false, true));
+        assert_eq!(submit_facts("BUTTON", "submit", true, true), (true, true), "nameless: structural");
+        assert_eq!(submit_facts("INPUT", "image", true, false), (false, true));
+        assert_eq!(submit_facts("BUTTON", "button", true, false), (false, false));
+        assert_eq!(submit_facts("BUTTON", "submit", false, false), (false, false), "no form: nothing to submit");
+        // The span itself is never a submit: this is what the old script saw and why it let the click through.
+        assert_eq!(submit_facts("SPAN", "", true, false), (false, false));
+        let info = BrowserTools::parse_info(&json!(r#"{"name":"Concluir","tag":"BUTTON","btype":"submit","hasForm":true}"#));
+        let mut p = Probe::default();
+        p.add_name(&info.name);
+        p.add_info(&info);
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmForm);
+    }
+
+    #[test]
+    fn a_send_name_on_the_hit_child_of_a_plain_button_still_counts_as_a_send() {
+        // <button type=button aria-label="x"><span>Submit application</span></button>: the button is called "x",
+        // the span says what it does. Pure: strings and structs.
+        let info = BrowserTools::parse_info(&json!(r#"{"name":"x","hitName":"Submit application","tag":"BUTTON","btype":"button","hasForm":false}"#));
+        let mut p = Probe::default();
+        p.add_info(&info);
+        assert_eq!(p.target_names, vec!["x".to_string()], "the hit name is not the button's name");
+        assert_eq!(guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit), SubmitDecision::ConfirmAndSpend);
+    }
+
+    #[test]
     fn info_parsing_tolerates_garbage_and_missing_fields() {
         let ok = BrowserTools::parse_info(&json!(r#"{"name":"Enviar","isSubmit":true,"opaque":false,"formDefault":"Ok"}"#));
         assert_eq!((ok.name.as_str(), ok.is_submit, ok.opaque, ok.form_default.as_str()), ("Enviar", true, false, "Ok"));
@@ -1751,6 +1888,14 @@ mod tests {
         let t = BrowserTools::new(dir.join("s.json"), Arc::new(DbGuardContext::new(dir)), Arc::new(NoSink));
         if !cfg!(debug_assertions) {
             assert!(!t.allow_local_hosts);
+        }
+    }
+
+    #[test]
+    fn only_a_send_the_guard_let_through_may_accept_a_confirm_dialog() {
+        assert!(!approves_dialogs(SubmitDecision::Allow), "an ordinary click never approves a confirm");
+        for d in [SubmitDecision::ConfirmAndSpend, SubmitDecision::ConfirmStructural, SubmitDecision::ConfirmForm] {
+            assert!(approves_dialogs(d), "{d:?}");
         }
     }
 
