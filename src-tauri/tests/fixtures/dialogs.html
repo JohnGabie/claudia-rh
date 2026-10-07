@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Dialogs fixture</title>
+<style>
+  body { font: 14px sans-serif; margin: 12px; }
+  button { width: 200px; height: 28px; margin: 4px 0; display: block; }
+  a { display: block; margin: 8px 0; }
+</style>
+<script>
+  // Results the live tests read back (window.__confirm === false means the app cancelled the dialog).
+  window.__alertDone = false;
+  window.__confirm = null;
+  window.__prompt = 'untouched';
+  window.__confirmSubmit = null;
+  window.__submitted = false;
+
+  // beforeunload only shows when the page had a user interaction (the "Marcar interação" click gives it).
+  window.addEventListener('beforeunload', function (e) { e.preventDefault(); e.returnValue = ''; });
+</script>
+</head>
+<body>
+  <button id="alert" onclick="alert('Olá do alerta'); window.__alertDone = true;">Alerta</button>
+  <button id="confirm" onclick="window.__confirm = confirm('Tem certeza?');">Confirmar</button>
+  <button id="prompt" onclick="window.__prompt = prompt('Seu nome?', 'SEGREDO-PADRAO');">Perguntar</button>
+  <button id="timer" onclick="setTimeout(function () { alert('Alerta do timer'); }, 300);">Alerta com atraso</button>
+  <button id="long" onclick="alert('x'.repeat(500));">Alerta longo</button>
+  <button id="touch" onclick="document.body.dataset.touched = '1';">Marcar interação</button>
+
+  <!-- The site's own "are you sure?" on a send: accepted only when the guard approved the click. -->
+  <form id="f-send" onsubmit="window.__confirmSubmit = confirm('Enviar?'); window.__submitted = window.__confirmSubmit; return false;">
+    <button id="send" type="submit">Submit application</button>
+  </form>
+
+  <a id="leave" href="empty.html">Ir para outra página</a>
+</body>
+</html>
