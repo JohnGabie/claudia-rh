@@ -1,5 +1,6 @@
-// Runs Sandbox-only tests inside the running guest through the lab's guest-build.ps1 (profile lab.config.app-build.json,
-// which mounts the host Node at C:\hosttools\nodejs). The guest copies C:\labproject (the project passed to test-up -Project)
+// Runs Sandbox-only tests inside the running guest through the lab's guest-build.ps1 of the `testes` environment
+// (compose.json), which uses the Node the guest installed; `exit /b 97` stops everything if the Z: disk is not mounted.
+// The guest copies C:\labproject (the project passed to test-up -Project)
 // to C:\labdata\project and runs the command there. The host only reads <work folder>\guest-rw\build\result.json.
 // Usage: node testes-no-guest.mjs [--id <id>] (--node <file.test.mjs> ... | --ps sandbox-lab/scripts/test/<x>.sandbox.ps1) [--timeout 900]
 import fs from "node:fs";
@@ -19,7 +20,7 @@ export function comandoDeTesteNoGuest({ node = [], ps = null, nonce }) {
   for (const f of [...node, ...(ps ? [ps] : [])]) if (String(f).split("/").includes("..")) throw new Error(`'..' is not allowed: ${f}`);
   for (const f of node) if (!ARQ_NODE.test(f)) throw new Error(`not a skill test file: ${f}`);
   if (ps && !ARQ_PS.test(ps)) throw new Error(`not a lab Sandbox test: ${ps}`);
-  const prefixo = `set LAB_NONCE=${nonce}&& set TEMP=C:\\labdata\\tmp&& set TMP=C:\\labdata\\tmp&& (if not exist C:\\labdata\\tmp mkdir C:\\labdata\\tmp)`;
+  const prefixo = `set LAB_NONCE=${nonce}&& (if not exist Z:\\claudia-teste-sandbox exit /b 97)&& set TEMP=Z:\\tmp&& set TMP=Z:\\tmp&& (if not exist Z:\\tmp mkdir Z:\\tmp)`;
   const corpo = ps ? `powershell -NoProfile -ExecutionPolicy Bypass -File ${ps.replace(/\//g, "\\")}` : `node --test ${node.join(" ")}`;
   return `${prefixo}&& ${corpo}`;
 }

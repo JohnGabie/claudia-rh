@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { estaNoSandbox, MARCADOR_GUEST } from "../caminhos-lab.mjs";
+import { estaNoSandbox, MARCADOR_GUEST, RAIZ_TESTE_GUEST, motivoRecusaRaizTeste } from "../caminhos-lab.mjs";
 
 export const SCRIPTS = path.join(import.meta.dirname, "..");
 
@@ -15,13 +15,17 @@ export function exigirSandbox() {
   }
 }
 
-/** Temp folder with a space in its name, so every test also covers paths with spaces. Sandbox only. */
+/** Temp folder with a space in its name, on the guest-only Z: drive (spec A6). Sandbox only. */
 export function tempDir(prefixo) {
   exigirSandbox(); // before any folder is created
-  // Must live under <tmp>/claudia-teste-sandbox: the scenario scripts refuse anything else (allow-list).
-  const base = path.join(fs.realpathSync.native(os.tmpdir()), "claudia-teste-sandbox");
-  fs.mkdirSync(base, { recursive: true });
-  return fs.mkdtempSync(path.join(base, `cs test ${prefixo} `));
+  fs.mkdirSync(RAIZ_TESTE_GUEST, { recursive: true });
+  const raiz = fs.realpathSync.native(RAIZ_TESTE_GUEST);
+  const m1 = motivoRecusaRaizTeste(raiz);
+  if (m1) throw new Error(`tempDir: refused (${m1}): ${raiz}`);
+  const dir = fs.mkdtempSync(path.join(raiz, `cs test ${prefixo} `));
+  const m2 = motivoRecusaRaizTeste(fs.realpathSync.native(dir));
+  if (m2) throw new Error(`tempDir: refused (${m2}): ${dir}`);
+  return dir;
 }
 
 export function rodar(script, args = [], env = {}) {
