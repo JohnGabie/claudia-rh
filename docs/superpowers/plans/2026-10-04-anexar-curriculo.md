@@ -1288,7 +1288,7 @@ Decisão **derivada da spec, não nova**: `arquivo_html` passa a ser um **nome s
 
 ## Execução em ondas
 
-Regras (CLAUDE.md, "Quem faz cada etapa"): uma preocupação por agente, uma worktree por agente, **arquivos diferentes por frente**, contrato escrito. O orquestrador (Opus) integra depois que todas as frentes da onda terminam, roda de novo as rodadas e só então abre a onda seguinte. Cada agente usa o próprio `CARGO_TARGET_DIR` fora do repo (ex.: `C:/Users/joaog/.cache/claudia-p2-<frente>`) e confere a base da worktree antes de começar (`git log -1` igual ao commit que o orquestrador indicou).
+Regras (CLAUDE.md, "Quem faz cada etapa"): uma preocupação por agente, uma worktree por agente, **arquivos diferentes por frente**, contrato escrito. O orquestrador (Opus) integra depois que todas as frentes da onda terminam, roda de novo as rodadas e só então abre a onda seguinte. Cada agente usa o próprio `CARGO_TARGET_DIR` fora do repo (ex.: `$USERPROFILE/.cache/claudia-p2-<frente>`) e confere a base da worktree antes de começar (`git log -1` igual ao commit que o orquestrador indicou).
 
 | Onda | Frente | Tarefas | Modelo | Por quê | Arquivos que **só ela** toca |
 |---|---|---|---|---|---|
@@ -1484,7 +1484,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Rodar e ver falhar.** `cd src-tauri && CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-onda0 cargo test --lib documentos::biblioteca commands::documentos` → FAIL (não compila; depois, `the_old_path_commands_are_gone` falha).
+- [ ] **Step 3: Rodar e ver falhar.** `cd src-tauri && CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-onda0 cargo test --lib documentos::biblioteca commands::documentos` → FAIL (não compila; depois, `the_old_path_commands_are_gone` falha).
 
 - [ ] **Step 4: Implementar `biblioteca.rs`** (compilado e testado pelo planejador):
 
@@ -1734,7 +1734,7 @@ webview2-com = "0.38"
 windows-core = "0.61"
 ```
 
-Rodar `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-a cargo tree -i webview2-com --depth 1`. Expected: **uma** versão (`v0.38.2`), com `tauri`, `wry` e `claudia-rh` como dependentes. O `Cargo.lock` muda em 2 linhas.
+Rodar `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-a cargo tree -i webview2-com --depth 1`. Expected: **uma** versão (`v0.38.2`), com `tauri`, `wry` e `claudia-rh` como dependentes. O `Cargo.lock` muda em 2 linhas.
 
 - [ ] **Step 2: `documentos/pdf.rs`** (compilado pelo planejador contra `webview2-com 0.38.2`, `windows-core 0.61.2`, `tauri 2.11.2`):
 
@@ -1884,7 +1884,7 @@ E um teste ignorado em `commands/curriculos.rs` (no `mod tests` existente, que j
     }
 ```
 
-- [ ] **Step 4: Compilar.** `cd src-tauri && CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-a cargo build` → exit 0.
+- [ ] **Step 4: Compilar.** `cd src-tauri && CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-a cargo build` → exit 0.
 
 - [ ] **Step 5: Prova no app rodando** (skill `claudia-teste`; **pedir ao usuário antes** se o app dele estiver aberto sem CDP — `subir.mjs` responde `perguntar`):
   1. `CLAUDIA_PDF_PROVA_DIR=<scratchpad>\pdf-prova cargo test --lib write_sample_cv_for_the_pdf_proof -- --ignored` → três `amostra-*.html`.
@@ -1985,7 +1985,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-a cargo test --lib documentos::registrar` → FAIL (não compila).
+- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-a cargo test --lib documentos::registrar` → FAIL (não compila).
 
 - [ ] **Step 3: Implementar `registrar.rs`:**
 
@@ -2382,7 +2382,7 @@ mod tests {
     }
 ```
 
-- [ ] **Step 5: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-b1 cargo test --lib variantes vagas fonte dispatch` → FAIL.
+- [ ] **Step 5: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-b1 cargo test --lib variantes vagas fonte dispatch` → FAIL.
 
 - [ ] **Step 6: Implementar.**
 
@@ -2670,7 +2670,7 @@ struct SetVagaVarianteArgs {
 
 - [ ] **Step 3: Teste que falha — `db/mod.rs`** (minor): no `schema_creates_all_tables`, a lista vira `["candidaturas", "documentos", "feedbacks", "pendencias", "preferidos", "propostas_perfil", "sessoes", "vagas"]`.
 
-- [ ] **Step 4: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-b2 cargo test --lib documentos db::tests` → FAIL (os novos não compilam; o do schema passa já, porque as tabelas existem: é teste de regressão, não de regra nova — a mutação abaixo prova que ele protege).
+- [ ] **Step 4: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-b2 cargo test --lib documentos db::tests` → FAIL (os novos não compilam; o do schema passa já, porque as tabelas existem: é teste de regressão, não de regra nova — a mutação abaixo prova que ele protege).
 
 - [ ] **Step 5: Implementar — `biblioteca.rs`:**
 
@@ -3210,7 +3210,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-d cargo test --lib documentos::migrar` → FAIL.
+- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-d cargo test --lib documentos::migrar` → FAIL.
 
 - [ ] **Step 3: Implementar `migrar.rs`:**
 
@@ -3404,7 +3404,7 @@ mod tests {
     use super::*;
     use crate::mcp::tools::test_support::temp_dir;
 
-    const SV: &str = "variantes:\n  - id: backend\n    nome_exibicao: Backend\n    peso: 60\n    cv_gerado_path: C:\\\\Users\\\\x\\\\cv.html\n  - id: devops\n    nome_exibicao: DevOps\n    principal: true\n";
+    const SV: &str = "variantes:\n  - id: backend\n    nome_exibicao: Backend\n    peso: 60\n    cv_gerado_path: <usuário>\\\cv.html\n  - id: devops\n    nome_exibicao: DevOps\n    principal: true\n";
 
     fn dir() -> std::path::PathBuf {
         let d = temp_dir("mcp-var");
@@ -3538,7 +3538,7 @@ E em `mcp/mod.rs` `dispatch_tests`:
 
 (`seed_db` aplica só o `schema.sql` cru; o `db::apply` extra garante as tabelas novas. Se der conflito de coluna duplicada, ele é ignorado pelo próprio `apply`.)
 
-- [ ] **Step 4: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-e cargo test --lib texto mcp` → FAIL.
+- [ ] **Step 4: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-e cargo test --lib texto mcp` → FAIL.
 
 - [ ] **Step 5: Implementar `texto.rs`:**
 
@@ -3866,7 +3866,7 @@ async fn the_upload_message_and_the_log_use_the_same_size_unit() {
 
 (Se `ActionRecord` não for `Clone`/`Debug`, usar os campos diretamente dentro do `lock`; não mudar a visibilidade do tipo de produção.)
 
-- [ ] **Step 2: Rodar e ver falhar.** `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-f cargo test --test browser_live upload -- --ignored --test-threads=2` → os três novos FAILED.
+- [ ] **Step 2: Rodar e ver falhar.** `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-f cargo test --test browser_live upload -- --ignored --test-threads=2` → os três novos FAILED.
 
 - [ ] **Step 3: Implementar.**
   - Em `upload`, antes do `async {`: `let mut alvo: Option<(String, String)> = None;`; logo depois de `let n = self.resolve_ref(...)` : `alvo = Some((n.name.clone(), n.role.clone()));`; no fim: `self.finish_with("browser_upload", started, r, Some(&c), alvo).await`.
@@ -3902,7 +3902,7 @@ async fn the_upload_message_and_the_log_use_the_same_size_unit() {
   - `vagas.rs`: `the_candidatura_remembers_the_cv_that_was_attached` (insere dois `anexos` de currículo e um de carta para a vaga 1; `register_candidatura` → `candidaturas.documento_id` = o currículo mais recente) e `without_an_attachment_the_candidatura_has_no_document`.
   - `queries.rs`: `the_current_vaga_lists_its_latest_attachments` e `history_names_the_document_used` (com o documento apagado depois: `documento_id` NULL e `documento_nome` NULL, sem erro — prova o `ON DELETE SET NULL`).
   - `browser_live.rs` não muda nesta tarefa (o `attached` padrão é vazio); a chamada no sucesso é conferida pela mutação abaixo com um teste unitário em `browser.rs` se já houver um `DocumentSource` de teste lá; se não houver, pela rodada de agente da Tarefa 16 (anotar "conferido no smoke").
-- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=C:/Users/joaog/.cache/claudia-p2-g cargo test --lib` → os novos FAILED.
+- [ ] **Step 2: Rodar e ver falhar.** `CARGO_TARGET_DIR=$USERPROFILE/.cache/claudia-p2-g cargo test --lib` → os novos FAILED.
 - [ ] **Step 3: Implementar** conforme as interfaces acima (SQL na `schema.sql` com `CREATE TABLE IF NOT EXISTS anexos`; `register_candidatura` dentro da transação existente: `INSERT INTO candidaturas (..., documento_id) VALUES (..., (SELECT documento_id FROM anexos WHERE vaga_id = ?1 AND tipo = 'curriculo' ORDER BY id DESC LIMIT 1))`).
 - [ ] **Step 4: Rodar e ver passar.** `cargo test --lib` → exit 0; suíte live → exit 0.
 - [ ] **Step 5: Mutações:** tirar o `ON DELETE SET NULL` da coluna/ tabela → `history_names_the_document_used` FAILED (o `apagar_documento` falha com FK); trocar `ORDER BY id DESC` por `ASC` → `the_candidatura_remembers_the_cv_that_was_attached` FAILED.
