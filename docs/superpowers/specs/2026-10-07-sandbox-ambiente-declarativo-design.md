@@ -1,6 +1,8 @@
 # Ambiente do Sandbox declarado num arquivo (dependências instaladas no guest)
 
-**Estado:** RASCUNHO, aguardando aprovação do usuário. Nada foi implementado.
+**Estado:** APROVADA pelo usuário em 2026-10-07 ("Aprovo"), com A1, A2, A4 (conta logada), A6 (VHD como Z:) e A7. Nada implementado ainda.
+
+**A4, resposta do usuário (2026-10-07):** "não, tudo na mesma env". As contas não ficam em pastas separadas: ele troca de conta com `/login` no mesmo Claude Code. Então a conta usada no guest é **a que está logada no PC na hora do `test-up`**. Saem o `-Conta` e o `contas.json`. O resto da proposta A4 continua valendo: copiar só o arquivo de credencial, achar o caminho em tempo de execução, montar só leitura e apagar a cópia no `test-down` com recusa pura. O risco da renovação do token continua **não verificado** e é o primeiro teste no Sandbox.
 **Branch:** `feat/sandbox-ambiente` (a partir de `feat/browser-cdp-mcp`, depois do merge do laboratório).
 **Bloqueia:** a T9 do plano de fechamento do browser na parte de testes em Rust dentro do Sandbox (`cargo test`, testes ao vivo).
 
