@@ -646,7 +646,9 @@ foreach ($f in 'scripts\app-stage.ps1', 'lab.config.json', 'shared\tools', 'shar
 
 Expected: os quatro itens da origem `True`; os três destinos `False`; as duas linhas "dentro" `False`; espaço livre maior que 2 GB. **Qualquer diferença: parar e relatar.** O agente relata as três pastas ao orquestrador **sem** colá-las em arquivo versionado nem em commit.
 
-As variáveis do PowerShell não persistem entre chamadas: cada Step abaixo começa repetindo as três primeiras linhas deste Step.
+As variáveis do PowerShell não persistem entre chamadas: cada Step abaixo começa repetindo as três primeiras linhas deste Step e, a partir do Step 4, também `$mig = Join-Path $main '.sandbox-work\migracao'` (só a atribuição; o `New-Item` do Step 3 roda uma vez).
+
+O próprio texto do plano também não pode ter caminho de máquina: os testes da Tarefa 3 montam os exemplos com `join` e a regex usa `[p]`, para o `conferir-repo.mjs` não acusar os próprios arquivos da skill.
 
 - [ ] **Step 2: Rede de segurança local no `.git/info/exclude`**
 
@@ -802,7 +804,7 @@ test("achaCaminhoPessoal: placeholders, variables, the Sandbox user and guest pa
   naoAcha(["C:", "Users", "Public"].join(B));
   naoAcha("%USERPROFILE%\\.rustup\\toolchains");
   naoAcha("C:\\lab\\tools\\sqlite\\sqlite3.exe and C:\\labwork\\db");
-  naoAcha("https://example.com" + "/home/x");
+  naoAcha("https://example.com/ho" + "me/x");
 });
 
 test("achaCaminhoPessoal: Public-like names are still flagged", () => {
@@ -831,7 +833,8 @@ Acrescentar ao fim de `proibidos.mjs`:
 const PADROES_CAMINHO = [
   /[a-z]:(?:\\{1,2}|\/)users(?:\\{1,2}|\/)(?!(?:public|default|wdagutilityaccount)(?![a-z0-9]))[^\\/\s"'<>%$]+/i,
   /(?:^|[\s"'(=])\/(?:users|home)\/[^/\s"'<>$]+/i,
-  /pycharmprojects|ideaprojects|source(?:\\{1,2}|\/)repos/i,
+  // "[p]" keeps this source line from matching itself when conferir-repo scans the skill.
+  /pycharm[p]rojects|idea[p]rojects|source(?:\\{1,2}|\/)repos/i,
 ];
 
 /** One finding per line that holds a machine path: { linha (1-based), trecho }. */
@@ -2463,7 +2466,7 @@ node .claude/skills/claudia-teste-sandbox/scripts/cenario-novo.mjs
 node .claude/skills/claudia-teste-sandbox/scripts/publicar.mjs --app sandbox-lab/sample-project/hello.txt --cenario <saida do cenario-novo>
 ```
 
-Expected: o segundo imprime `{"workDir":...,"deploy":...,"cenario":"novo"}`; `<trabalho>\deploy\.lab-deploy` existe.
+Expected: o segundo imprime `{"workDir":...,"deploy":...,"cenario":"novo"}`; `<trabalho>\deploy\.lab-deploy` existe. Isto é uso normal da skill, não teste: o `cenario-novo` só recria pasta dentro da lista branca de `%TEMP%\claudia-teste-sandbox\` (B2), e o `-Clean` do `publicar` passa pela trava desta branch. Se qualquer um recusar, parar e relatar; não contornar.
 
 - [ ] **Step 4: Subir com o perfil de build e o projeto da worktree**
 
