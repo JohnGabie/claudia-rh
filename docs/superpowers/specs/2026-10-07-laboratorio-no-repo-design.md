@@ -4,6 +4,22 @@
 
 Data: 2026-10-07. Branch: `feat/laboratorio-no-repo` (criada a partir de `feat/browser-cdp-mcp`, commit `595bada`).
 
+## Decisões do usuário (2026-10-07)
+
+Respostas aos pontos em aberto. Valem sobre as propostas abaixo. **A spec continua aguardando a aprovação final do usuário antes de qualquer código ou cópia.**
+
+| # | Ponto | Decisão |
+|---|---|---|
+| L1 | Lugar | `sandbox-lab/` na raiz do claudia-rh. Scripts e configs versionados; ferramentas, chave, saídas e evidências ignoradas. |
+| L2 | Ferramentas pesadas (~592 MB) | Copiar uma vez agora para a pasta ignorada, com uma lista de SHA-256 versionada para conferência. O script de download vira issue para depois. |
+| L3 | Variáveis de ambiente | Nenhuma. A skill acha tudo pela raiz do repositório. |
+| L4 | Worktrees | Laboratório do checkout principal; projeto testado é o da worktree onde o teste roda. |
+| L5 | Chave do MCP (`shared/secrets`) | Copiar a mesma chave para a pasta ignorada. Nunca entra no git. |
+| L6 | Quem faz a cópia | Um agente, com travas: destino novo e vazio, sem `/MIR`, `/MOV` nem `/PURGE`, nada apagado, conferência por hash de cada arquivo, original intacto. |
+| L7 | Skills | Juntar a `sandbox-lab` como referência da `claudia-teste-sandbox`; trazer as `winapp-*` para `.claude/skills/` com a licença MIT. |
+| L8 | Saídas antigas (`shared/out`, `evidence`) | Não copiar. A pasta nova começa limpa; as antigas ficam no lugar original. |
+| L9 | Branch | Entra na `feat/browser-cdp-mcp`, como pré-requisito para fechar essa branch. |
+
 ## 1. Pedido do usuário
 
 Nas palavras dele:
