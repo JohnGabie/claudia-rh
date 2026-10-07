@@ -1,7 +1,7 @@
 // Pure string tests: no disk access, no folder creation. Windows path syntax (the skill targets Windows).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { motivoRecusa, podeLimparDeploy, ancestoresComGit } from "../comum.mjs";
+import { motivoRecusa, podeLimparDeploy, ancestoresComGit, saidaPadraoCenario } from "../comum.mjs";
 
 const TEMP = "Z:\\tmp-inventado";
 const BASE = `${TEMP}\\claudia-teste-sandbox`;
@@ -103,4 +103,9 @@ test("podeLimparDeploy: only an absent deploy or one with the marker, never a li
   assert.match(podeLimparDeploy({ existe: true, temMarcador: false, ehLink: false }), /marker/);
   assert.match(podeLimparDeploy({ existe: true, temMarcador: true, ehLink: true }), /link/);
   assert.match(podeLimparDeploy({ existe: true, temMarcador: false, ehLink: true }), /link/);
+});
+
+test("saidaPadraoCenario: same default folder novoCenarioDir uses, under <tempRoot>\\claudia-teste-sandbox", () => {
+  assert.equal(saidaPadraoCenario("copia", "Z:\\"), "Z:\\claudia-teste-sandbox\\copia");
+  assert.equal(motivoRecusa(saidaPadraoCenario("mock", "Z:\\"), { repoRoot: REPO, tempRoot: "Z:\\" }), null);
 });

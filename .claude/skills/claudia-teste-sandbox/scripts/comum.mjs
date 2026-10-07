@@ -3,9 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { raizPrincipalDe, caminhosDoLab, ambienteGitLimpo } from "./caminhos-lab.mjs";
+import { raizPrincipalDe, caminhosDoLab, ambienteGitLimpo, estaNoSandbox, MARCADOR_GUEST, raizDeCenarios, motivoRecusaRaizTeste } from "./caminhos-lab.mjs";
 
 export const APP_ID = "io.github.johngabie.claudia-rh";
+
+/** Guest folder where test-up -DadosReais mounts the app's Roaming data folder, read-only (spec addendum 8.1). */
+export const ORIGEM_DADOS_REAIS = "C:\\labdadosreais";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 
 /** Check if path b is inside path a. Works across different drives. */
@@ -103,12 +106,27 @@ export function ancestoresComGit(dir, existe = fs.existsSync) {
 
 export { MARCADOR_DEPLOY, podeLimparDeploy } from "./caminhos-lab.mjs";
 
+/** PURE. Default scenario folder for a given tempRoot. cenario-copia uses it for its overlap check. */
+export function saidaPadraoCenario(nome, tempRoot) {
+  return path.join(tempRoot, NOME_BASE, nome);
+}
+
+/** Z:\ inside the guest (two factors). On the PC it throws: scenarios run only in the Sandbox (D1). */
+export function raizCenariosAtual() {
+  const noSandbox = estaNoSandbox({ identidade: os.userInfo().username, temBootstrap: fs.existsSync(MARCADOR_GUEST) });
+  const raiz = raizDeCenarios({ noSandbox });
+  if (!raiz) throw new Error("scenarios run only inside Windows Sandbox (D1): from the PC use cenario-no-guest.mjs --cenario <novo|mock|copia>");
+  return raiz;
+}
+
 export function novoCenarioDir(saida, nome) {
-  const tempRoot = fs.realpathSync.native(os.tmpdir());
-  const dir = path.resolve(saida || path.join(tempRoot, NOME_BASE, nome));
+  const tempRoot = raizCenariosAtual(); // throws on the PC before any disk access
+  const dir = path.resolve(saida || saidaPadraoCenario(nome, tempRoot));
 
   const motivo = motivoRecusa(dir, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(dir) });
   if (motivo) throw new Error(`novoCenarioDir: refused (${motivo}): ${dir}`);
+  const mz = motivoRecusaRaizTeste(dir);
+  if (mz) throw new Error(`novoCenarioDir: refused (${mz}): ${dir}`);
 
   // Symlink/junction guard: never delete through a link.
   let st = null;
@@ -116,6 +134,7 @@ export function novoCenarioDir(saida, nome) {
   if (st) {
     if (st.isSymbolicLink()) throw new Error(`novoCenarioDir: refused (target is a symlink/junction): ${dir}`);
     const real = fs.realpathSync.native(dir);
+    if (motivoRecusaRaizTeste(real)) throw new Error(`novoCenarioDir: refused (real path not on Z:: ${real}): ${dir}`);
     if (minusculas(real) !== minusculas(dir) || motivoRecusa(real, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(real) })) {
       throw new Error(`novoCenarioDir: refused (real path differs: ${real}): ${dir}`);
     }
@@ -131,6 +150,7 @@ export function novoCenarioDir(saida, nome) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
   fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });
+  if (motivoRecusaRaizTeste(fs.realpathSync.native(dir))) throw new Error(`novoCenarioDir: refused (real path not on Z: after create): ${dir}`);
   fs.writeFileSync(path.join(dir, ".cenario"), "");
   return dir;
 }
