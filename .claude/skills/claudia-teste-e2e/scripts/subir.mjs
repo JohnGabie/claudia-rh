@@ -1,9 +1,9 @@
 // Starts `tauri dev` with a CDP port, or reuses one already running.
 // Usage: node subir.mjs
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { validarVersaoApp, decidirSubida, hostRemoto } from "./regras.mjs";
+import { validarVersaoApp, decidirSubida, hostRemoto, decidirComAppInstalado, ambienteSubida } from "./regras.mjs";
 import { HOST } from "./cdp.mjs";
 
 const RAIZ = path.resolve(import.meta.dirname, "../../../..");
@@ -45,6 +45,19 @@ const portaApp = await acharAppComCdp();
 let vite1420 = false;
 try { await fetch("http://127.0.0.1:1420/", { signal: AbortSignal.timeout(1500) }); vite1420 = true; } catch { /* nothing there */ }
 const appRodando = portaApp !== null || vite1420;
+
+// R12: a claudia-rh.exe running without our dev CDP is probably the user's installed app.
+let processos = [];
+try {
+  const saida = execFileSync("tasklist", ["/FI", "IMAGENAME eq claudia-rh.exe", "/FO", "CSV", "/NH"], { encoding: "utf8", timeout: 5000 });
+  processos = saida.split(/\r?\n/).map((l) => l.split('","')[0].replace(/^"/, "")).filter(Boolean);
+} catch { /* tasklist unavailable: fall back to the port checks below */ }
+const instalado = decidirComAppInstalado({ processos, cdpResponde: portaApp !== null });
+if (instalado.acao === "perguntar") {
+  console.log(JSON.stringify({ acao: "perguntar", motivo: instalado.motivo }));
+  process.exit(2);
+}
+
 const decisao = decidirSubida({ appRodando, appTemCdp: portaApp !== null });
 
 if (decisao === "reutilizar") { console.log(JSON.stringify({ acao: "reutilizar", porta: portaApp })); process.exit(0); }
@@ -61,7 +74,8 @@ const log = path.join(process.env.TEMP || ".", "tauri-cdp.log");
 const fd = fs.openSync(log, "w");
 const filho = spawn("npm", ["run", "tauri", "dev"], {
   cwd: RAIZ, shell: true, detached: true, stdio: ["ignore", fd, fd],
-  env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${porta}` },
+  // B4: CLAUDIA_SEM_AUTOMACAO=1 turns idle dispatch and autonomous mode off for this run only (dev build); user files stay untouched.
+  env: ambienteSubida(process.env, porta),
 });
 filho.unref();
 
@@ -69,7 +83,7 @@ for (let i = 0; i < 60; i++) {
   await new Promise((r) => setTimeout(r, 3000));
   const v = await ler(`http://${HOST}:${porta}/json/version`);
   if (v && validarVersaoApp(v, await ler(`http://${HOST}:${porta}/json/list`)).ok) {
-    console.log(JSON.stringify({ acao: "subiu", porta, pid: filho.pid, log }));
+    console.log(JSON.stringify({ acao: "subiu", porta, pid: filho.pid, log, automacao: "desligada nesta execução" }));
     process.exit(0);
   }
 }

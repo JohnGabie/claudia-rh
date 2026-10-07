@@ -1,7 +1,9 @@
 // Pure rules for the claudia-teste-e2e skill. No I/O here, so every rule that
 // protects the user can be pinned by a test that needs no running app.
 
-const PAGINA_APP = /localhost:1420|tauri\.localhost/;
+import path from "node:path";
+
+const PAGINA_APP =/localhost:1420|tauri\.localhost/;
 
 /** The app's WebView2 reports an Edge build and serves the page on :1420 (tauri dev) or tauri.localhost (release). */
 export function validarVersaoApp(versao, paginas) {
@@ -53,4 +55,53 @@ export function sqlSomenteLeitura(sql) {
     return { ok: false, motivo: "palavra de escrita dentro do SELECT" };
   }
   return { ok: true, motivo: "ok" };
+}
+
+/** R12: an installed/normal claudia-rh.exe without CDP is the user's session; never touch it, ask. */
+export function decidirComAppInstalado({ processos, cdpResponde }) {
+  const rodando = (processos ?? []).some((p) => String(p).toLowerCase() === "claudia-rh.exe");
+  if (rodando && !cdpResponde) {
+    return { acao: "perguntar", motivo: "claudia-rh.exe já está rodando sem CDP de dev (provavelmente o app instalado do usuário); não subir por cima" };
+  }
+  return { acao: "seguir", motivo: "ok" };
+}
+
+/** B4: environment for the `tauri dev` we launch: CDP port plus automation off for this run only. */
+export function ambienteSubida(base, porta) {
+  return {
+    ...base,
+    CLAUDIA_SEM_AUTOMACAO: "1",
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${porta}`,
+  };
+}
+
+const LISTA_NEGRA = /^(apagar_|excluir_|remover_|limpar_|desinstalar|instalar_|iniciar_|disparar_|enviar_)/;
+
+/** B5: decides whether invocar.mjs may call a command. flags = { escrever, confirmo }. */
+export function classificarInvocacao(comando, flags = {}) {
+  const c = String(comando ?? "");
+  if (c === "obter_credencial") return { ok: false, motivo: "obter_credencial devolve a senha em texto puro: sempre recusado" };
+  if (LISTA_NEGRA.test(c)) {
+    if (!flags.escrever) return { ok: false, motivo: `"${c}" é destrutivo ou dispara ação real: exige --escrever e --confirmo=${c}` };
+    if (flags.confirmo !== c) return { ok: false, motivo: `"${c}" é destrutivo ou dispara ação real: repita com --confirmo=${c}` };
+    return { ok: true, motivo: "confirmado" };
+  }
+  if (classificarComando(c) === "escrita" && !flags.escrever) {
+    return { ok: false, motivo: `"${c}" não é de leitura reconhecida. Se grava de propósito, repita com --escrever` };
+  }
+  return { ok: true, motivo: "ok" };
+}
+
+/** R9: screenshots only go to <repo>/debug-logs/prints/, never overwrite. Pure: `existe` is injected. */
+export function destinoPrintValido(arq, raizRepo, existe) {
+  if (!arq || !String(arq).trim()) return { ok: false, motivo: "arquivo vazio" };
+  const a = String(arq);
+  if (a.split(/[\\/]/).includes("..")) return { ok: false, motivo: "'..' não é permitido" };
+  if (path.isAbsolute(a) || path.win32.isAbsolute(a) || path.posix.isAbsolute(a)) return { ok: false, motivo: "caminho absoluto não é permitido; use debug-logs/prints/<nome>.png" };
+  if (!/\.png$/i.test(a)) return { ok: false, motivo: "só .png" };
+  const pasta = path.resolve(raizRepo, "debug-logs", "prints");
+  const destino = path.resolve(raizRepo, a);
+  if (!destino.startsWith(pasta + path.sep)) return { ok: false, motivo: "só dentro de debug-logs/prints/" };
+  if (existe(destino)) return { ok: false, motivo: "o arquivo já existe; não sobrescrevo" };
+  return { ok: true, motivo: "ok", destino };
 }

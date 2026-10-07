@@ -1,8 +1,11 @@
 // See and click the running app.
 // Usage: node ver.mjs arvore | tela [arquivo.png] | clicar "<rótulo>"   (env CDP_PORT, default 9333)
 import fs from "node:fs";
+import path from "node:path";
 import { HOST, alvos, ligar, sleep } from "./cdp.mjs";
-import { rotuloPerigoso } from "./regras.mjs";
+import { rotuloPerigoso, destinoPrintValido } from "./regras.mjs";
+
+const RAIZ = path.resolve(import.meta.dirname, "../../../..");
 
 const PORTA = Number(process.env.CDP_PORT ?? 9333);
 const [cmd, arg] = process.argv.slice(2);
@@ -31,10 +34,14 @@ if (cmd === "arvore") {
   console.log(linhas.join("\n"));
   console.error(`# ${linhas.length} nós úteis ≈ ${Math.ceil(linhas.join("\n").length / 3.5)} tokens`);
 } else if (cmd === "tela") {
+  // R9: prints only go to debug-logs/prints/ and never overwrite.
+  const alvoPrint = arg ?? `debug-logs/prints/tela-${Date.now()}.png`;
+  const v = destinoPrintValido(alvoPrint, RAIZ, (d) => fs.existsSync(d));
+  if (!v.ok) { console.error(`recusado: ${v.motivo}`); sair(2); await new Promise(() => {}); }
   const dados = (await cdp("Page.captureScreenshot", { format: "png" })).result.data;
-  const destino = arg ?? "tela.png";
-  fs.writeFileSync(destino, Buffer.from(dados, "base64"));
-  console.log(destino);
+  fs.mkdirSync(path.dirname(v.destino), { recursive: true });
+  fs.writeFileSync(v.destino, Buffer.from(dados, "base64"), { flag: "wx" });
+  console.log(path.relative(RAIZ, v.destino));
 } else if (cmd === "clicar") {
   if (rotuloPerigoso(arg)) { console.error(`recusado: "${arg}" é destrutivo, de envio ou sem nome`); sair(2); await new Promise(() => {}); }
   const antes = await arvore();
