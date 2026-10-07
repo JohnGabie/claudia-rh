@@ -23,6 +23,7 @@ use crate::browser::guard::{self, GuardContext, SubmitDecision, Verdict};
 use crate::browser::manager::{is_pinned, probe, read_state};
 use crate::browser::loopguard::LoopGuard;
 use crate::browser::nav::NavRecord;
+use crate::browser::page_events::{self, PageState};
 use crate::browser::pagestate;
 use crate::browser::refs::{self, RefBook, RefNode};
 use crate::browser::text;
@@ -60,6 +61,8 @@ pub trait ActionSink: Send + Sync {
     fn enabled(&self) -> bool;
     fn action(&self, rec: ActionRecord);
     fn navigation(&self, rec: NavRecord);
+    /// What the browser itself did (a dialog, a tab crash). Default: nothing, for `NoSink` and test sinks.
+    fn browser_event(&self, _ev: crate::activity_log::BrowserEvent) {}
 }
 
 pub struct NoSink;
@@ -407,6 +410,8 @@ pub struct BrowserTools {
     /// Stable refs per element within one document (see `RefBook`).
     refs: Mutex<RefBook>,
     agent_active: Arc<AtomicBool>,
+    /// Dialog and crash handling shared with the page-event task (see `browser::page_events`).
+    page_state: Arc<PageState>,
     /// Repeated-call hint (see `loopguard`). A plain mutex: never held across an await.
     loopguard: StdMutex<LoopGuard>,
     /// Hash of what the last browser_read / browser_text returned: part of the page signature the
@@ -442,6 +447,7 @@ impl BrowserTools {
             tab: Mutex::new(None),
             refs: Mutex::new(RefBook::default()),
             agent_active: Arc::new(AtomicBool::new(false)),
+            page_state: Arc::new(PageState::default()),
             loopguard: StdMutex::new(LoopGuard::default()),
             last_content: StdMutex::new(0),
             pending_note: StdMutex::new(None),
@@ -497,6 +503,13 @@ impl BrowserTools {
 
     async fn tab_inner(&self) -> Result<(Arc<CdpClient>, u16, String), String> {
         let mut g = self.tab.lock().await;
+        if self.page_state.take_crashed() {
+            // The renderer died: drop the tab (best effort to close it) so the next browser_open starts a new one.
+            if let Some(t) = g.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(1), t.client.call("Page.close", json!({}))).await;
+            }
+            return Err(page_events::CRASH_MESSAGE.to_string());
+        }
         if let Some(t) = g.as_ref() {
             if !t.client.is_closed() {
                 cdp::bring_to_front(t.port, &t.target_id, &t.client).await?;
@@ -523,9 +536,13 @@ impl BrowserTools {
             None => cdp::new_page(state.port).await?,
         };
         let client = Arc::new(CdpClient::connect(&target.ws_url).await?);
+        // Before anything else can open a dialog: from here on a native dialog never freezes the tab.
+        page_events::spawn_handler(&client, self.sink.clone(), self.page_state.clone());
         for m in ["Page.enable", "DOM.enable", "Accessibility.enable"] {
             client.call(m, json!({})).await?;
         }
+        // Without it Chrome may not report `Inspector.targetCrashed`. Best effort.
+        let _ = client.call("Inspector.enable", json!({})).await;
         cdp::emulate_normal_languages(&client).await?;
         if self.sink.enabled() {
             client.call("Network.enable", json!({})).await?;
@@ -638,7 +655,8 @@ impl BrowserTools {
     /// that is only submit-like by structure (iframe, nameless button, unreadable) needs a valid
     /// confirmation but does not spend it.
     fn run_guard(&self, p: &Probe, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
-        let verdict = match guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit) {
+        let decision = guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit);
+        let verdict = match decision {
             // "submit" is a whole-word pattern: whatever the real label was, the guard sees a submit.
             SubmitDecision::ConfirmAndSpend => guard::check_submit("submit", page_url, confirm, self.guard.as_ref()),
             SubmitDecision::ConfirmStructural => guard::check_confirmation(page_url, confirm, self.guard.as_ref()),
@@ -650,7 +668,13 @@ impl BrowserTools {
             SubmitDecision::Allow => Verdict::Allow,
         };
         match verdict {
-            Verdict::Allow => Ok(()),
+            Verdict::Allow => {
+                // A send the guard let through: the site's own "are you sure?" may now be accepted.
+                if approves_dialogs(decision) {
+                    self.page_state.approve_click();
+                }
+                Ok(())
+            }
             Verdict::Refuse(why) => Err(why),
         }
     }
@@ -723,7 +747,8 @@ impl BrowserTools {
     /// Extra lines for a result: a pending viewport note, then the repeated-call hint. Each starts
     /// with "\n"; empty when there is nothing to say. A hint never blocks anything.
     async fn extra_lines(&self, tool: &str, key: &str, c: Option<&CdpClient>) -> String {
-        let mut s = String::new();
+        // Dialogs the app answered (during this tool or while none was running) come first.
+        let mut s = self.page_state.take_notes();
         if let Ok(mut g) = self.pending_note.lock() {
             if let Some(n) = g.take() {
                 s.push('\n');
@@ -763,6 +788,8 @@ impl BrowserTools {
         alvo: Option<(String, String)>,
     ) -> Result<String, String> {
         self.agent_active.store(false, Ordering::SeqCst);
+        // Every exit passes here: whatever the guard approved, or `browser_open` allowed, ends with the call.
+        self.page_state.end();
         let loop_key = match &r {
             Ok(o) => o.loop_key.clone().or_else(|| o.target.clone()),
             Err(_) => None,
@@ -836,6 +863,7 @@ impl BrowserTools {
             return self.finish("browser_open", started, Err(why), None).await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_open");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_open", started, Err(e), None).await,
@@ -867,6 +895,7 @@ impl BrowserTools {
     pub async fn read(&self, scope: Option<&str>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_read");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_read", started, Err(e), None).await,
@@ -897,6 +926,7 @@ impl BrowserTools {
     pub async fn text(&self, scope: Option<&str>, offset: Option<usize>, max_chars: Option<usize>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_text");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_text", started, Err(e), None).await,
@@ -993,6 +1023,7 @@ impl BrowserTools {
         }
         let pages = pages.min(5.0);
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_scroll");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_scroll", started, Err(e), None).await,
@@ -1076,6 +1107,7 @@ impl BrowserTools {
     pub async fn upload(&self, reference: &str, tipo: Option<&str>, documento: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_upload");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_upload", started, Err(e), None).await,
@@ -1213,6 +1245,7 @@ impl BrowserTools {
     pub async fn click(&self, reference: &str, confirm: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_click");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click", started, Err(e), None).await,
@@ -1252,6 +1285,7 @@ impl BrowserTools {
                 .await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_type");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_type", started, Err(e), None).await,
@@ -1284,6 +1318,7 @@ impl BrowserTools {
     pub async fn key(&self, key: &str, confirm: Option<i64>) -> Result<String, String> {
         let started = Instant::now();
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_key");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_key", started, Err(e), None).await,
@@ -1339,6 +1374,7 @@ impl BrowserTools {
             return self.finish("browser_crop", started, Err(why), None).await.map(ToolOutput::Text);
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_crop");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_crop", started, Err(e), None).await.map(ToolOutput::Text),
@@ -1366,6 +1402,7 @@ impl BrowserTools {
             return self.finish("browser_click_at", started, Err("coordenada inválida".into()), None).await;
         }
         self.agent_active.store(true, Ordering::SeqCst);
+        self.page_state.begin("browser_click_at");
         let (c, _, _) = match self.tab().await {
             Ok(t) => t,
             Err(e) => return self.finish("browser_click_at", started, Err(e), None).await,
@@ -1388,6 +1425,12 @@ impl BrowserTools {
         .await;
         self.finish("browser_click_at", started, r, Some(&c)).await
     }
+}
+
+/// Whether a guard decision that ended in `Allow` was a SEND the guard let through (a valid `confirm_submit`),
+/// as opposed to an ordinary action. Only the former may accept the site's own `confirm()` (policy P2).
+pub(crate) fn approves_dialogs(decision: SubmitDecision) -> bool {
+    !matches!(decision, SubmitDecision::Allow)
 }
 
 /// Points to try for the wheel, middle first, then the sides and the quarters of the page.
@@ -1751,6 +1794,14 @@ mod tests {
         let t = BrowserTools::new(dir.join("s.json"), Arc::new(DbGuardContext::new(dir)), Arc::new(NoSink));
         if !cfg!(debug_assertions) {
             assert!(!t.allow_local_hosts);
+        }
+    }
+
+    #[test]
+    fn only_a_send_the_guard_let_through_may_accept_a_confirm_dialog() {
+        assert!(!approves_dialogs(SubmitDecision::Allow), "an ordinary click never approves a confirm");
+        for d in [SubmitDecision::ConfirmAndSpend, SubmitDecision::ConfirmStructural, SubmitDecision::ConfirmForm] {
+            assert!(approves_dialogs(d), "{d:?}");
         }
     }
 

@@ -101,6 +101,11 @@ impl ActionSink for LogSink {
         self.write(ev, rec.shot_before.as_deref(), rec.shot_after.as_deref());
     }
 
+    fn browser_event(&self, ev: BrowserEvent) {
+        // The inherent method (same name) does the work: synchronous, best effort, never panics.
+        LogSink::browser_event(self, ev);
+    }
+
     fn navigation(&self, n: NavRecord) {
         let (session_id, vaga_id) = self.context();
         let extra = serde_json::json!({ "status": n.status, "redirects": n.redirects, "initiator": n.initiator }).to_string();
