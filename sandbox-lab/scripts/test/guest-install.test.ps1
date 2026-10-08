@@ -78,6 +78,25 @@ Check 'scenario folder for guest-run: only a direct child of Z:\claudia-teste-sa
     if (-not (Get-LabGuestScenarioRefusal $bad)) { throw "must refuse '$bad'" }
   }
 }
+Check 'scenario cenario.json for guest-run: only a finished scenario (valid cenario.json) is installed' {
+  $good = '{"cenario":"copia","criadoEm":"2026-10-08T12:00:00.000Z","origem":"C:\\labdadosreais","arquivos":["appdata\\x\\a.db"]}'
+  if (Get-LabGuestScenarioJsonRefusal $good) { throw 'a finished copia scenario must be accepted' }
+  if (Get-LabGuestScenarioJsonRefusal '{"cenario":"novo","criadoEm":"2026-10-08T12:00:00.000Z","origem":null,"arquivos":[]}') { throw 'an empty arquivos list is a valid novo scenario' }
+  foreach ($bad in @($null, '', '   ', 'not json', '[]', '"copia"', '{}', '{"cenario":"outro","criadoEm":"x","arquivos":[]}', '{"cenario":"copia","arquivos":[]}',
+      '{"cenario":"copia","criadoEm":"x"}', '{"cenario":"copia","criadoEm":"x","arquivos":"a"}', '{"cenario":"copia","criadoEm":"x","arquivos":null}', '{"cenario":"copia","criadoEm":"x","arquivos":{}}', '{"cenario":"copia"')) {
+    if (-not (Get-LabGuestScenarioJsonRefusal $bad)) { throw "must refuse '$bad'" }
+  }
+  if ((Get-LabGuestScenarioJsonRefusal $null) -notmatch 'partial copy') { throw 'the missing-file message must name the partial copy' }
+}
+Check 'guest copia: the PC fact about diagnostics\latest counts only as a literal true together with dadosReais' {
+  $cfg = { param($json) $json | ConvertFrom-Json }
+  if (-not (Test-LabGuestLatestLinkApproved (& $cfg '{"dadosReais":true,"dadosReaisLatestLink":true}'))) { throw 'true + true must be approved' }
+  foreach ($bad in @('{"dadosReais":true}', '{"dadosReais":true,"dadosReaisLatestLink":false}', '{"dadosReais":false,"dadosReaisLatestLink":true}', '{"dadosReaisLatestLink":true}',
+      '{"dadosReais":true,"dadosReaisLatestLink":"true"}', '{"dadosReais":true,"dadosReaisLatestLink":1}', '{"dadosReais":"true","dadosReaisLatestLink":true}', '{}')) {
+    if (Test-LabGuestLatestLinkApproved (& $cfg $bad)) { throw "must NOT be approved: $bad" }
+  }
+  if (Test-LabGuestLatestLinkApproved $null) { throw 'no config must not be approved' }
+}
 $fwOk = (@('Domain enabled=True', 'Private enabled=True', 'Public enabled=True', 'regra lab-block-internet-out: 1',
   'INTERNET: BLOQUEADA (Unable to connect to the remote server)', 'storage.googleapis.com: BLOQUEADO') -join "`r`n") + "`r`n"
 Check 'guest internet: allowed only with a real boolean false in guest.config.json; anything else fails closed' {

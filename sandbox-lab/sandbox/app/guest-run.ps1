@@ -31,6 +31,15 @@ if ($Cenario) {
   if (-not $why -and -not $item) { $why = 'scenario folder not found' }
   if (-not $why -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $why = 'scenario folder is a link' }
   if (-not $why) { $why = Get-LabGuestScenarioRefusal $item.FullName }   # the real path, too
+  if (-not $why) {
+    # Only a finished scenario is installed: cenario.json is the last file the scenario scripts write. A partial copy
+    # (no or invalid cenario.json) is refused, not deleted (the guest is discarded).
+    $cj = Join-Path $item.FullName 'cenario.json'
+    $cjItem = Get-Item -LiteralPath $cj -Force -ErrorAction SilentlyContinue
+    $json = $null
+    if ($cjItem -and -not $cjItem.PSIsContainer -and -not ($cjItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { try { $json = Get-Content -LiteralPath $cj -Raw -ErrorAction Stop } catch { $json = $null } }
+    $why = Get-LabGuestScenarioJsonRefusal $json
+  }
   if ($why) { $r.errors += "cenario: $why" }
   else {
     foreach ($pair in @(@('appdata', $env:APPDATA), @('localappdata', $env:LOCALAPPDATA))) {

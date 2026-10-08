@@ -148,6 +148,28 @@ function Get-LabVsLayoutRefusal {
   return $null
 }
 
+function Get-LabGuestScenarioJsonRefusal([string]$Json) {
+  # guest-run.ps1 -Cenario: a scenario folder counts only if its scenario script FINISHED. The scripts write cenario.json as
+  # the very last step (after the copy, the database fold and the automation switch-off), so a missing, empty or malformed
+  # file means a partial copy (for example fs.cpSync failed half way): refuse to install it. Nothing is deleted.
+  if ([string]::IsNullOrWhiteSpace($Json)) { return 'cenario.json is missing or empty: the scenario did not finish (partial copy), not installed' }
+  $o = $null
+  try { $o = $Json | ConvertFrom-Json -ErrorAction Stop } catch { return 'cenario.json is not valid JSON: the scenario did not finish, not installed' }
+  if ($o -isnot [System.Management.Automation.PSCustomObject]) { return 'cenario.json is not a JSON object: not installed' }
+  if ("$($o.cenario)" -notin @('novo', 'mock', 'copia')) { return 'cenario.json has no valid "cenario" (novo, mock or copia): not installed' }
+  if ($o.criadoEm -isnot [string] -and $o.criadoEm -isnot [datetime]) { return 'cenario.json has no "criadoEm": not installed' }
+  $list = $o.PSObject.Properties['arquivos']
+  if (-not $list -or $list.Value -isnot [System.Array]) { return 'cenario.json has no "arquivos" list: not installed' }
+  return $null
+}
+
+function Test-LabGuestLatestLinkApproved($Config) {
+  # copia scenario in the guest: the PC decided (test-up, Test-LabLatestLinkApproved) that diagnostics\latest is an approved
+  # FILE link and wrote only that boolean to guest.config.json. Only a literal true counts, and only together with dadosReais.
+  if ($null -eq $Config) { return $false }
+  return [bool]($Config.dadosReais -is [bool] -and $Config.dadosReais -and $Config.dadosReaisLatestLink -is [bool] -and $Config.dadosReaisLatestLink)
+}
+
 function Get-LabGuestScenarioRefusal([string]$Path) {
   # guest-run.ps1 -Cenario: a scenario folder created by the scenario scripts in the guest (D1), nothing else.
   if ([string]::IsNullOrWhiteSpace($Path)) { return 'scenario folder is required' }

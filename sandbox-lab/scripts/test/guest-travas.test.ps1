@@ -380,6 +380,42 @@ Check 'native pipes: Select-Object -First after a non-native source stays allowe
   $ok = '$a = Get-ChildItem x | Select-Object -First 1; $b = @(1,2) | Select-Object -First 1'
   if ((Get-NativeTruncationProblems $ok 'ok').Count) { throw 'false positive on a cmdlet pipe' }
 }
+# Wiring of the copia fixes (parser only): guest-run.ps1 asks for a valid cenario.json BEFORE it copies any scenario data, and
+# guest-cenario.ps1 hands the PC's diagnostics\latest decision to cenario-copia.mjs through the guest.config.json fact.
+function Get-WiringProblems([string]$RunText, [string]$CenText) {
+  $p = New-Object System.Collections.Generic.List[string]
+  $t = $null; $e = $null
+  $run = [System.Management.Automation.Language.Parser]::ParseInput($RunText, [ref]$t, [ref]$e)
+  $cmds = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+  $j = @($cmds | Where-Object { "$($_.GetCommandName())" -ceq 'Get-LabGuestScenarioJsonRefusal' })
+  $rc = @($cmds | Where-Object { "$($_.GetCommandName())" -ceq 'robocopy' } | Sort-Object { $_.Extent.StartOffset })
+  if (-not $j.Count) { $p.Add('guest-run.ps1 never calls Get-LabGuestScenarioJsonRefusal') }
+  elseif (-not $rc.Count -or $j[0].Extent.StartOffset -gt $rc[0].Extent.StartOffset) { $p.Add('guest-run.ps1 copies data before checking cenario.json') }
+  $cen = [System.Management.Automation.Language.Parser]::ParseInput($CenText, [ref]$t, [ref]$e)
+  $ccmds = @($cen.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+  if (-not @($ccmds | Where-Object { "$($_.GetCommandName())" -ceq 'Test-LabGuestLatestLinkApproved' }).Count) { $p.Add('guest-cenario.ps1 never calls Test-LabGuestLatestLinkApproved') }
+  if (-not @($cen.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -ceq '--latest-link-aprovado' }, $true)).Count) { $p.Add('guest-cenario.ps1 never passes --latest-link-aprovado') }
+  return @($p)
+}
+$wRun = [IO.File]::ReadAllText((Join-Path $scan 'sandbox/app/guest-run.ps1'))
+$wCen = [IO.File]::ReadAllText((Join-Path $scan 'sandbox/app/guest-cenario.ps1'))
+Check 'copia wiring: guest-run checks cenario.json before copying; guest-cenario passes the latest-link flag' {
+  $x = Get-WiringProblems $wRun $wCen
+  if ($x.Count) { throw ($x -join ' | ') }
+}
+$wMut = [ordered]@{
+  'guest-run: no cenario.json check'     = @($wRun, 'Get-LabGuestScenarioJsonRefusal $json', '$null', $wCen)
+  'guest-cenario: no approval check'     = @($wRun, '', '', $wCen.Replace('Test-LabGuestLatestLinkApproved $guestCfg', '$false'))
+  'guest-cenario: flag renamed'          = @($wRun, '', '', $wCen.Replace("'--latest-link-aprovado'", "'--outro'"))
+}
+foreach ($k in $wMut.Keys) {
+  Check "copia wiring mutation must be caught: $k" {
+    $m = $wMut[$k]
+    $run2 = $(if ($m[1]) { $m[0].Replace($m[1], $m[2]) } else { $m[0] })
+    if ($run2 -ceq $wRun -and $m[3] -ceq $wCen) { throw 'the mutation did not change the text (harness bug)' }
+    if (-not (Get-WiringProblems $run2 $m[3]).Count) { throw 'NOT detected: the analysis accepted the mutated script' }
+  }
+}
 # [IO.File]::Replace(src, dst, backup): PowerShell passes $null (and '') to a .NET string parameter as "", which File.Replace
 # refuses ("The path is not of a legal form"). The no-backup form must be [NullString]::Value. Checked on the syntax tree.
 function Get-FileReplaceNullProblems([string]$Text, [string]$Label) {

@@ -86,6 +86,7 @@ $cred = Get-LabCredentialPaths $RepoRoot
 
 # --- real app data for the copia scenario (spec addendum 8.1): read-only, found by the API, only with -DadosReais ---
 $RealData = $null
+$LatestLink = $false
 if ($DadosReais) {
   $roaming = [Environment]::GetFolderPath('ApplicationData')
   $src = Join-Path $roaming $script:LabAppId
@@ -96,6 +97,8 @@ if ($DadosReais) {
   if ($why) { throw "[test-up] -DadosReais refused: $why" }
   if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
   $RealData = $src
+  # The guest cannot read the absolute target of diagnostics\latest: it gets only this fact (boolean, no path) and skips that name.
+  $LatestLink = Test-LabLatestLinkApproved -Source $src -LinksInside $inside -FileLinksInside @(ConvertTo-LabLinkList (Get-LabFileLinks $inside)) -LinkTargets (Get-LabLinkTargets $inside)
   Write-Host '[test-up] dados reais do app: montados SO LEITURA em C:\labdadosreais (so com autorizacao do usuario nesta rodada)'
 }
 $msvcLayout = $(if (@($mounts | Where-Object { $_.nome -eq 'cache-saida' }).Count) { ConvertTo-LabGuestMsvcLayout -Compose $compose } else { $null })
@@ -127,7 +130,7 @@ $guest = [ordered]@{
   startUrl = $cfg.chrome.startUrl; testServerPort = [int]$cfg.chrome.testServerPort; remoteDebuggingPort = [int]$cfg.chrome.remoteDebuggingPort
   chromeExe = To-Guest $cfg.chrome.exe; extensions = $extList; dbBackup = To-Guest $cfg.dbBackup; workDb = 'C:\labdata\app.sqlite'
   mcpPort = [int]$cfg.mcp.port; mcpAuthKeyEnv = $cfg.mcp.authKeyEnv; mcpAuthKeyFile = $(if ($cfg.mcp.authKeyFile) { To-Guest $cfg.mcp.authKeyFile } else { $null })
-  outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; internetBloqueada = [bool](Test-LabAmbienteInternetBlocked -Compose $compose -Ambiente $Ambiente); instalar = $install; msvc = $msvcLayout
+  outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; dadosReaisLatestLink = [bool]$LatestLink; internetBloqueada = [bool](Test-LabAmbienteInternetBlocked -Compose $compose -Ambiente $Ambiente); instalar = $install; msvc = $msvcLayout
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $SandboxDir 'guest.config.json'), ($guest | ConvertTo-Json -Depth 6), $utf8)

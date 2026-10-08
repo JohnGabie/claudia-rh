@@ -5,6 +5,7 @@
 //   --origem            default C:\labdadosreais (mounted read-only by test-up -DadosReais)
 //   --saida             default Z:\claudia-teste-sandbox\copia, recreated on every run
 //   --manter-automacao  keep disparo.json / modo_autonomo.json as copied (default: turned off in the copy)
+//   --latest-link-aprovado  the PC approved diagnostics\latest as a file link (guest.config.json, set by test-up): skip it, never follow it
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -15,7 +16,7 @@ import { APP_ID, ORIGEM_DADOS_REAIS, raizCenariosAtual, saidaPadraoCenario, novo
 let values;
 try {
   ({ values } = parseArgs({ options: {
-    autorizado: { type: "boolean" }, origem: { type: "string" }, saida: { type: "string" }, "manter-automacao": { type: "boolean" },
+    autorizado: { type: "boolean" }, origem: { type: "string" }, saida: { type: "string" }, "manter-automacao": { type: "boolean" }, "latest-link-aprovado": { type: "boolean" },
   } }));
 } catch (e) { falhaDe(e); }
 if (!values.autorizado) {
@@ -32,7 +33,7 @@ function dbCorrompido(err) {
 // Throws on cpSync errors, database open errors, etc. — those propagate to top-level catch.
 function copiarUmaVez(origem, dados) {
   // Never follow a link and never reproduce one: the filter throws on a symlink or junction anywhere in the source.
-  fs.cpSync(origem, dados, { recursive: true, dereference: false, filter: filtroSemLinks(origem, fs.lstatSync, fs.statSync) });
+  fs.cpSync(origem, dados, { recursive: true, dereference: false, filter: filtroSemLinks(origem, fs.lstatSync, { latestAprovado: values["latest-link-aprovado"] === true }) });
 
   // Fold each copied database: checkpoint WAL, change journal mode.
   for (const e of fs.readdirSync(dados, { recursive: true, withFileTypes: true })) {

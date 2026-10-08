@@ -28,6 +28,10 @@ $argv = @($script, '--saida', $res.saida)
 if ($Cenario -eq 'copia') {
   if (-not (Test-Path -LiteralPath 'C:\labdadosreais' -PathType Container)) { Stop-With 2 'real data not mounted: start the lab with test-up -DadosReais (only with the user authorization for this round)' }
   $argv += @('--origem', 'C:\labdadosreais')
+  # The PC's decision about diagnostics\latest (a boolean from test-up, no path): the guest skips that one name without
+  # reading or following the link.
+  $guestCfg = $null; try { $guestCfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
+  if (Test-LabGuestLatestLinkApproved $guestCfg) { $argv += '--latest-link-aprovado' }
   if ($Autorizado) { $argv += '--autorizado' }
   if ($ManterAutomacao) { $argv += '--manter-automacao' }
 }

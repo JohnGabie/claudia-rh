@@ -1,18 +1,24 @@
-// PURE (no disk access of its own; lstat and stat are injected). Decision of the `copia` scenario about links in the source.
+// PURE (no disk access of its own; lstat is injected). Decision of the `copia` scenario about links in the source.
 // The copy never follows a link (fs.cpSync dereference:false) and never reproduces one. A symlink or junction in the source
 // makes the whole copy fail, with the relative path in the message, with ONE exception: the FILE link diagnostics\latest
-// (made by the Claude Code debug logger, pointing to claude-startup.log in the same folder). That one is skipped, not copied.
+// (made by the Claude Code debug logger, pointing to claude-startup.log). That one is skipped, not copied.
+//
+// Who decides that it is a FILE link: the PC, not the guest. The real link holds the ABSOLUTE PC path of its target, which
+// does not exist in the guest, and Node offers no way to tell a file symlink from a folder symlink/junction without following
+// it (fs.lstatSync only says "symbolic link"; statSync follows and fails on a dangling target). So test-up checks the link
+// on the PC (file link, exact target) and writes only the boolean to guest.config.json; the guest gets it as the flag
+// --latest-link-aprovado and skips exactly this one name. The guest never calls stat or readlink on any link.
 import path from "node:path";
 
 /**
  * PURE. "pular" (leave the entry out of the copy), "recusar" (fail), or null (a regular entry).
- * `ehLink` comes from lstat (symlinks and junctions are both links); `ehPasta` says whether the link is to a folder
- * (or a junction, or could not be told: then it is true, the conservative answer).
+ * `ehLink` comes from lstat (symlinks and junctions are both links); `latestAprovado` is the PC's decision (see above):
+ * only a literal true counts.
  */
-export function motivoLinkNaOrigem(rel, { ehLink, ehPasta }) {
+export function motivoLinkNaOrigem(rel, { ehLink, latestAprovado = false }) {
   if (!ehLink) return null;
   const norm = String(rel).replace(/\//g, "\\").toLowerCase();
-  if (norm === "diagnostics\\latest" && !ehPasta) return "pular";
+  if (norm === "diagnostics\\latest" && latestAprovado === true) return "pular";
   return "recusar";
 }
 
@@ -21,19 +27,15 @@ export function mensagemLinkNaOrigem(rel) {
 }
 
 /**
- * The `filter` option of fs.cpSync: returns false for the tolerated link, throws on any other link, true otherwise.
- * `lstat` and `stat` are injected (fs.lstatSync / fs.statSync in the scenario, fakes in the pure test). `stat` is only
- * called for a link, to learn if its target is a folder; if it throws (dangling), the link counts as a folder.
+ * The `filter` option of fs.cpSync: returns false for the approved link, throws on any other link, true otherwise.
+ * `lstat` is injected (fs.lstatSync in the scenario, a fake in the pure test). Nothing else is called: a link is never
+ * followed, read or measured.
  */
-export function filtroSemLinks(origem, lstat, stat = () => ({ isDirectory: () => true })) {
+export function filtroSemLinks(origem, lstat, { latestAprovado = false } = {}) {
   return (src) => {
     const rel = path.win32.relative(origem, src); // Windows path semantics on every platform
     const ehLink = lstat(src).isSymbolicLink();
-    let ehPasta = true;
-    if (ehLink) {
-      try { ehPasta = stat(src).isDirectory(); } catch { ehPasta = true; }
-    }
-    const decisao = motivoLinkNaOrigem(rel, { ehLink, ehPasta });
+    const decisao = motivoLinkNaOrigem(rel, { ehLink, latestAprovado });
     if (decisao === "pular") return false;
     if (decisao) throw new Error(mensagemLinkNaOrigem(rel));
     return true;

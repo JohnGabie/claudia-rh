@@ -328,5 +328,26 @@ Check 'link list: what the scripts do with it (count, [0], concatenation, the pu
   Should-BeNull (Get-LabOutCleanRefusal -OutDir $O -LabDir $L -Links @(ConvertTo-LabLinkList (Get-FakeOldNone)))
   Should-Match (Get-LabOutCleanRefusal -OutDir $O -LabDir $L -Links @(ConvertTo-LabLinkList (Get-FakeOldOne))) 'link'
 }
+Check 'real data: the boolean handed to the guest is true only for an approved diagnostics\latest file link' {
+  $src = "$RO\io.github.johngabie.claudia-rh"
+  $L = "$src\diagnostics\latest"
+  $abs = "$src\diagnostics\claude-startup.log"
+  $a = { param($inside, $files, $tg) Test-LabLatestLinkApproved -Source $src -LinksInside $inside -FileLinksInside $files -LinkTargets $tg }
+  if ($true -ne (& $a @($L) @($L) @{ $L = $abs })) { throw 'absolute target inside the source: must be true' }
+  if ($true -ne (& $a @($L) @($L) @{ $L = 'claude-startup.log' })) { throw 'relative target: must be true' }
+  if ($true -ne (& $a @($L.ToUpper()) @($L.ToLower()) @{ $L = $abs })) { throw 'case does not matter' }
+  foreach ($no in @(
+      @{ n = 'no links';              i = @();      f = @();      t = @{} },
+      @{ n = 'link but not a file link'; i = @($L);  f = @();      t = @{ $L = $abs } },
+      @{ n = 'file link not among the links inside'; i = @(); f = @($L); t = @{ $L = $abs } },
+      @{ n = 'bad target';            i = @($L);    f = @($L);    t = @{ $L = 'Y:\inventado\outro.log' } },
+      @{ n = 'target missing';        i = @($L);    f = @($L);    t = @{} },
+      @{ n = 'another link only';     i = @("$src\x"); f = @("$src\x"); t = @{ "$src\x" = 'claude-startup.log' } },
+      @{ n = 'another level';         i = @("$src\a\diagnostics\latest"); f = @("$src\a\diagnostics\latest"); t = @{ "$src\a\diagnostics\latest" = 'claude-startup.log' } })) {
+    if ($false -ne (& $a $no.i $no.f $no.t)) { throw "must be false: $($no.n)" }
+  }
+  if ($false -ne (Test-LabLatestLinkApproved -Source '' -LinksInside @($L) -FileLinksInside @($L) -LinkTargets @{ $L = $abs })) { throw 'empty source' }
+  if ($false -ne (Test-LabLatestLinkApproved -Source $src)) { throw 'no arguments' }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

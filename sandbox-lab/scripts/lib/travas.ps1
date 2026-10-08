@@ -297,6 +297,20 @@ function Get-LabRealDataSourceRefusal {
   return $null
 }
 
+function Test-LabLatestLinkApproved {
+  # The single fact test-up hands to the guest (guest.config.json `dadosReaisLatestLink`, a boolean, no path): the real data
+  # folder holds the FILE link <Source>\diagnostics\latest and its target passed the same checks Get-LabRealDataSourceRefusal
+  # applies. The guest cannot read that target (it is an absolute PC path), so it skips exactly that name on this fact and
+  # never looks at the link. $false when the link is absent or any check fails.
+  param([string]$Source, [string[]]$LinksInside = @(), [string[]]$FileLinksInside = @(), $LinkTargets = $null)
+  if ([string]::IsNullOrWhiteSpace($Source)) { return $false }
+  $skipKey = ConvertTo-LabPathKey "$($Source.TrimEnd('\'))\diagnostics\latest"
+  $inKeys = @(@($LinksInside) | Where-Object { $_ } | ForEach-Object { ConvertTo-LabPathKey ($_ -replace '/', '\') })
+  $fileKeys = @(@($FileLinksInside) | Where-Object { $_ } | ForEach-Object { ConvertTo-LabPathKey ($_ -replace '/', '\') })
+  if ($inKeys -notcontains $skipKey -or $fileKeys -notcontains $skipKey) { return $false }
+  return [bool](Test-LabLatestLinkTargetOk -Target (Get-LabLinkTargetOf $LinkTargets "$($Source.TrimEnd('\'))\diagnostics\latest") -Source $Source)
+}
+
 function Get-LabLayoutImportRefusal {
   # cache-up.ps1 -ImportarMsvc reads only the folder layout-msvc.ps1 wrote: <repo>\.sandbox-work\cache-saida\<8 hex>\msvc-<versao>.
   param([string]$Source, [string]$RepoRoot, [string]$Versao, [string[]]$Links = @())
