@@ -2807,3 +2807,11 @@ Comandos a partir da raiz do checkout principal (`onde.mjs` → `lab`, `projeto`
 - **Guest:** `Get-LabGuestToolEnv`/`Test-LabInstallNeed` ganham `-HostLayout`; cada ferramenta vem do PC se o ambiente a declara, senão do `instalar.json`. `guest-build.ps1` e `guest-cenario.ps1` leem o layout (`Get-LabHostToolsLayout`).
 - **Testes:** novo `scripts/test/host-tools.test.ps1` (no CI), mais casos em `compose.test.ps1`, `guest-install.test.ps1` e `guest-travas.test.ps1`; todos com mutação (linhas `FAILED` em `references/limites.md`, item 18).
 - **Não verificado:** nada rodou no Sandbox; ver spec §9.5.
+
+## Adendo de 2026-10-08 (10): revisão Opus do `22c2854`
+
+- **`rustup which rustc`:** o `Get-LabRustcPathFromRustup` define `RUSTUP_AUTO_INSTALL=0` e remove `RUSTUP_TOOLCHAIN` no `ProcessStartInfo`, para a resolução só LER (sem instalar toolchain no PC). Teste estático em `host-tools.test.ps1`, com 4 mutações.
+- **Argumentos da recusa:** `host-tools.test.ps1` confere pelo parser que `test-up.ps1` passa `-Links` com `Get-LabLinksAboveRoot $realTool` (via `ConvertTo-LabLinkList`), `-MarkerCount $cand.MarkerCount`, `-UserProfile` de `GetFolderPath('UserProfile')` e que `$realTool` vem de `Resolve-LabRealPath`; 6 mutações.
+- **Versão completa:** `Get-LabLatestCompleteVersionDir` (pura, em `guest-install.lib.ps1`) escolhe a versão mais nova entre as que o leitor `Get-LabHostToolsLayout` achou completas (MSVC com `cl.exe`; SDK com `Include`, `Lib` e `bin`). Teste puro com 4 mutações e checagem estática do leitor.
+- **Links dentro das pastas montadas:** não verificados (só o caminho e acima), por serem só leitura e resolverem no guest. Risco aceito, a confirmar com o usuário (item 18 de `limites.md`).
+- **Não verificado:** nada rodou no Sandbox; o leitor `Get-LabHostToolsLayout` (`Test-Path` no guest) só foi conferido estaticamente.
