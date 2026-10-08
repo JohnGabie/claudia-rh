@@ -57,7 +57,7 @@ $env:CARGO_HOME = 'C:\labdata\cargo-home'
 $env:CARGO_TARGET_DIR = 'C:\labdata\cargo-target'
 $env:npm_config_cache = 'C:\labdata\npm-cache'
 $res.env = [ordered]@{ pacotes = @(@($inst.pacotes) | ForEach-Object { "$($_.nome) $($_.versao)" }); cargoTarget = $env:CARGO_TARGET_DIR }
-Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) cl=$(cmd /c where cl.exe 2>&1 | Select-Object -First 1)"
+Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) cl=$(@(cmd /c where cl.exe 2>&1)[0])"
 Save
 
 $Src = 'C:\labdata\project'

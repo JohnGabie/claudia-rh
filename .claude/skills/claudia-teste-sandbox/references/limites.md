@@ -117,6 +117,13 @@ Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout pri
 - **Recusas do `copia`:** sem `--autorizado`, exit 2 no host antes de chegar ao guest; com `--autorizado` e sem `-DadosReais`, `cenario.json` com `exit: 2` e a mensagem do `-DadosReais`. O `cenario-no-guest.mjs` sai com 1 nesse caso, porque o `wsb exec` relata "código: 1" e o despachante para antes de ler o `cenario.json`. `guest-run.ps1 -Cenario` com pasta ausente grava `errors: ["cenario: scenario folder not found"]` e não copia dados.
 - **`-DadosReais`:** mount gerado com `ReadOnly=true` em `C:\labdadosreais` e `guest.config.json` com `dadosReais: true`. No guest, `File.Open(..., CreateNew)` dentro do mount recusou com `Access ... is denied`, e o guest enxergou os mesmos 253 itens do PC. No PC, a listagem da pasta de dados do app (caminho relativo, tamanho, data, atributos) ficou idêntica antes e depois (0 diferenças), sem arquivo de sonda. A cópia em si (`cenario-copia.mjs`) não rodou por causa do item 13.
 
+## 16. `Select-Object -First` em saída de programa nativo muda o exit para -1 (Windows PowerShell 5.1)
+
+- **Comportamento (visto ao vivo, 2026-10-08):** no `instalar.ps1`, `(& $node.FullName --version 2>&1 | Select-Object -First 1)` interrompe o processo nativo e `$LASTEXITCODE` vira -1, mesmo com o Node funcionando (`versaoVista` = `v22.23.3`, `exit` = -1, pacote marcado como falha). O mesmo padrão existia no Claude Code (saiu com 0 por sorte de tempo), no Rust e no MSVC (só para a versão).
+- **Correção (2026-10-08):** capturar a saída inteira (`$out = @(& $exe --version 2>&1)`), guardar `$code = $LASTEXITCODE` logo depois e só então pegar a primeira linha, pela função pura `ConvertTo-LabVersionProbe` (`guest-install.lib.ps1`). Regra: só o código 0 é sucesso; -1 com linha de versão **não** é aceito (o conserto é não cortar o pipe, não tolerar -1); sem código = 1.
+- **Trava:** `guest-travas.test.ps1` lê a árvore do parser de `sandbox/*.ps1` e `sandbox/app/*.ps1` e falha, com o arquivo e a linha, se algum `Select-Object -First`/`-Last` vier logo depois de um comando nativo (`& $x`, `cmd`, `cmd.exe`, `*.exe`).
+- **Não verificado:** a correção só passou por testes puros e estáticos (pwsh e Windows PowerShell 5.1); ainda não rodou num guest novo.
+
 ## Evals de disparo
 
 (Não rodar `rodar-evals.mjs` até a Tarefa 0b: CLA-56.) Medidos com `node .claude/skills/claudia-teste-sandbox/evals/rodar-evals.mjs sonnet` sobre `evals/evals.json` (9 "deve disparar", 6 "não deve"). Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-sandbox)`. Uma execução `INVALIDO` (limite de sessão, falha do CLI) não conta, nem como acerto nem como falha.

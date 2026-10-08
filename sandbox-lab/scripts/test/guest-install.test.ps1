@@ -158,5 +158,25 @@ A instalacao foi concluida com exito.
   }
   foreach ($k in $bad.Keys) { $v = $bad[$k]; if (-not (Get-LabVsLayoutRefusal -ExitCode $v[0] -StdOut $v[1] -StdErr $v[2] -LayoutFiles $v[3])) { throw "must refuse: $k" } }
 }
+Check 'version probe: only exit 0 is success; -1 is never accepted, even with a version line (the 2026-10-08 Node case)' {
+  $p = ConvertTo-LabVersionProbe -Output @('v22.23.3') -ExitCode 0
+  if ($p.exit -ne 0 -or $p.versao -ne 'v22.23.3') { throw "exit 0: $($p.exit) / $($p.versao)" }
+  $p = ConvertTo-LabVersionProbe -Output @('v22.23.3') -ExitCode -1
+  if ($p.exit -ne -1) { throw "exit -1 with a version line must stay -1, got $($p.exit)" }
+  if ($p.versao -ne 'v22.23.3') { throw 'the version line is still reported for diagnosis' }
+  $p = ConvertTo-LabVersionProbe -Output @('boom') -ExitCode 3
+  if ($p.exit -ne 3) { throw 'other codes are kept' }
+  $p = ConvertTo-LabVersionProbe -Output @('v22.23.3') -ExitCode $null
+  if ($p.exit -ne 1) { throw 'no code at all is a failure (1)' }
+}
+Check 'version probe: the version is the first non-empty line of the whole output' {
+  $p = ConvertTo-LabVersionProbe -Output @('', '  rustc 1.95.0 (abc 2026-01-01)  ', 'second line') -ExitCode 0
+  if ($p.versao -ne 'rustc 1.95.0 (abc 2026-01-01)') { throw "got '$($p.versao)'" }
+  $p = ConvertTo-LabVersionProbe -Output @() -ExitCode 0
+  if ($p.exit -ne 0 -or $null -ne $p.versao) { throw 'empty output with exit 0: exit 0, no version' }
+  $rec = New-Object System.Management.Automation.ErrorRecord ((New-Object System.Exception 'warn line')), 'x', 'NotSpecified', $null
+  $p = ConvertTo-LabVersionProbe -Output @($rec, 'v1') -ExitCode 0
+  if ($p.versao -ne 'warn line') { throw 'a stderr ErrorRecord is read as text' }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

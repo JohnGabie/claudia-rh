@@ -328,5 +328,57 @@ foreach ($k in $discoMutants.Keys) {
     if (-not @(Get-DiscoZProblems (Read-AstText $text)).Count) { throw 'NOT detected: the analysis accepted the mutated script' }
   }
 }
+# Native pipes: 'native-command | Select-Object -First N' stops the native process early; in Windows PowerShell 5.1 $LASTEXITCODE
+# then becomes -1 although the tool worked (Node in the Sandbox, 2026-10-08). Rule over the syntax tree, nothing is run: in the
+# guest scripts no Select-Object -First/-Last/-Skip... sits directly after a native command (& <x>, cmd, cmd.exe, anything *.exe).
+# The fix is to capture the whole output first (ConvertTo-LabVersionProbe in guest-install.lib.ps1).
+function Get-NativeTruncationProblems([string]$Text, [string]$Label) {
+  $tok = $null; $err = $null
+  $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tok, [ref]$err)
+  if ($err.Count) { return @("${Label}: does not parse: $($err[0].Message)") }
+  $problems = New-Object System.Collections.Generic.List[string]
+  $pipes = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.PipelineAst] -and $n.PipelineElements.Count -gt 1 }, $true))
+  foreach ($pl in $pipes) {
+    for ($i = 1; $i -lt $pl.PipelineElements.Count; $i++) {
+      $sel = $pl.PipelineElements[$i]; $prev = $pl.PipelineElements[$i - 1]
+      if ($sel -isnot [System.Management.Automation.Language.CommandAst] -or "$($sel.GetCommandName())" -ine 'Select-Object') { continue }
+      $trunc = @($sel.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] -and $_.ParameterName -match '^(?i)(f|fi|fir|firs|first|l|la|las|last)$' })
+      if (-not $trunc.Count) { continue }
+      if ($prev -isnot [System.Management.Automation.Language.CommandAst]) { continue }
+      $name = "$($prev.GetCommandName())"
+      $native = ($prev.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Ampersand -and -not $name) -or
+        ($name -match '^(?i)cmd(\.exe)?$') -or ($name -match '(?i)\.exe$')
+      if ($native) { $problems.Add("${Label}:$($sel.Extent.StartLineNumber): Select-Object -$($trunc[0].ParameterName) directly after a native command ($($prev.Extent.Text)): the pipe is cut and `$LASTEXITCODE becomes -1; capture the whole output first") }
+    }
+  }
+  return @($problems)
+}
+$nativeFiles = @(Get-ChildItem -LiteralPath (Join-Path $scan 'sandbox'), (Join-Path $scan 'sandbox/app') -Filter *.ps1)
+Check 'native pipes: no Select-Object -First/-Last directly after a native command in sandbox/*.ps1 and sandbox/app/*.ps1' {
+  $all = New-Object System.Collections.Generic.List[string]
+  foreach ($f in $nativeFiles) { foreach ($x in @(Get-NativeTruncationProblems ([IO.File]::ReadAllText($f.FullName)) $f.Name)) { $all.Add([string]$x) } }
+  if ($all.Count) { throw ($all -join ' | ') }
+  if ($nativeFiles.Count -lt 10) { throw "only $($nativeFiles.Count) script(s) scanned: the scan is not looking at the scripts" }
+}
+$nativeInst = [IO.File]::ReadAllText((Join-Path $scan 'sandbox/instalar.ps1'))
+$nativeMutants = [ordered]@{
+  'node: old pipe with Select-Object -First 1'   = @('@(& $node.FullName --version 2>&1)', '(& $node.FullName --version 2>&1 | Select-Object -First 1)')
+  'claude: old pipe with Select-Object -First 1' = @('@(& "$d\claude.exe" --version 2>&1)', '(& "$d\claude.exe" --version 2>&1 | Select-Object -First 1)')
+  'rust: old pipe with Select-Object -First 1'   = @('@(& $rustc.FullName --version 2>&1)', '(& $rustc.FullName --version 2>&1 | Select-Object -First 1)')
+  'msvc: cmd.exe pipe with Select-Object -First 1' = @('where cl.exe" 2>&1); $code', 'where cl.exe" 2>&1 | Select-Object -First 1); $code')
+}
+if ((Get-NativeTruncationProblems $nativeInst 'instalar.ps1').Count) { Check 'native pipes mutations need a clean instalar.ps1' { throw 'instalar.ps1 is not clean' } }
+foreach ($k in $nativeMutants.Keys) {
+  Check "native pipes mutation must be caught: $k" {
+    $m = $nativeMutants[$k]
+    $text = $nativeInst.Replace($m[0], $m[1])
+    if ($text -ceq $nativeInst) { throw 'the mutation did not change the text (harness bug)' }
+    if (-not @(Get-NativeTruncationProblems $text 'instalar.ps1').Count) { throw 'NOT detected: the analysis accepted the mutated script' }
+  }
+}
+Check 'native pipes: Select-Object -First after a non-native source stays allowed' {
+  $ok = '$a = Get-ChildItem x | Select-Object -First 1; $b = @(1,2) | Select-Object -First 1'
+  if ((Get-NativeTruncationProblems $ok 'ok').Count) { throw 'false positive on a cmdlet pipe' }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

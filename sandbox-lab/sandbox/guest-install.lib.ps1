@@ -18,6 +18,20 @@ function Test-LabInstallOk {
   return -not @(@($Results) | Where-Object { $_ -and $_.exit -ne 0 }).Count
 }
 
+function ConvertTo-LabVersionProbe {
+  # instalar.ps1: the exit and the version line of a '<tool> --version' probe. Pure.
+  # The caller captures the WHOLE output first ($out = @(& $exe --version 2>&1)), reads $LASTEXITCODE right after, and only
+  # then takes the first line. Seen live (Windows PowerShell 5.1, 2026-10-08): '... 2>&1 | Select-Object -First 1' stops the
+  # native process early and $LASTEXITCODE becomes -1 although Node works (version v22.23.3, exit -1). The fix is not to
+  # truncate the pipe; it is NOT to accept -1 either: only exit 0 is success, whatever the output looks like.
+  # Rule: no code (null) = 1; any other code is kept as is; versao = first non-empty line, or $null.
+  param([string[]]$Output = @(), $ExitCode = $null)
+  $lines = @(@($Output) | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+  $versao = $(if ($lines.Count) { $lines[0] } else { $null })
+  $exit = $(if ($null -eq $ExitCode) { 1 } else { [int]$ExitCode })
+  return [ordered]@{ exit = $exit; versao = $versao }
+}
+
 function Get-LabInstallDone($Instalar) {
   # Names of the packages that finished with exit 0 in instalar.json. Failed packages never count.
   if ($null -eq $Instalar) { return @() }

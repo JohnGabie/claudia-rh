@@ -38,7 +38,7 @@ function Invoke-Package($p) {
         $r.exit = ConvertTo-LabInstallExit $proc.ExitCode
         $vc = "$Tools\msvc\VC\Auxiliary\Build\vcvars64.bat"
         if ($r.exit -eq 0 -and -not (Test-Path -LiteralPath $vc)) { $r.exit = 1; $r.erro = 'vcvars64.bat not found after install' }
-        if ($r.exit -eq 0) { $r.vcvars = $vc; $r.versaoVista = (cmd.exe /d /c "`"$vc`" >nul 2>&1 && where cl.exe" 2>&1 | Select-Object -First 1) }
+        if ($r.exit -eq 0) { $r.vcvars = $vc; $out = @(cmd.exe /d /c "`"$vc`" >nul 2>&1 && where cl.exe" 2>&1); $code = $LASTEXITCODE; $r.versaoVista = (ConvertTo-LabVersionProbe -Output $out -ExitCode $code).versao }
       }
       'msi' {
         if (-not (Test-Sha $p.arquivo $p.sha256)) { throw 'sha256 differs from compose.json' }
@@ -47,7 +47,7 @@ function Invoke-Package($p) {
         $r.exit = ConvertTo-LabInstallExit $proc.ExitCode
         $rustc = Get-ChildItem -Path 'C:\Program Files\Rust*' -Recurse -Filter rustc.exe -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($r.exit -eq 0 -and -not $rustc) { $r.exit = 1; $r.erro = 'rustc.exe not found under C:\Program Files\Rust*' }
-        if ($rustc) { $r.binDir = $rustc.DirectoryName; $r.versaoVista = (& $rustc.FullName --version 2>&1 | Select-Object -First 1) }
+        if ($rustc) { $r.binDir = $rustc.DirectoryName; $out = @(& $rustc.FullName --version 2>&1); $code = $LASTEXITCODE; $r.versaoVista = (ConvertTo-LabVersionProbe -Output $out -ExitCode $code).versao }
       }
       'zip' {
         if (-not (Test-Sha $p.arquivo $p.sha256)) { throw 'sha256 differs from compose.json' }
@@ -55,8 +55,11 @@ function Invoke-Package($p) {
         $node = Get-ChildItem -Path "$Tools\node" -Recurse -Filter node.exe | Select-Object -First 1
         if (-not $node) { throw 'node.exe not found after extract' }
         $r.binDir = $node.DirectoryName
-        $r.versaoVista = (& $node.FullName --version 2>&1 | Select-Object -First 1)
-        $r.exit = $(if ($LASTEXITCODE -eq 0) { 0 } else { $LASTEXITCODE })
+        # Whole output first, exit code right after, first line last: 'Select-Object -First 1' on the native pipe gave exit -1 (Sandbox, 2026-10-08).
+        $out = @(& $node.FullName --version 2>&1); $code = $LASTEXITCODE
+        $probe = ConvertTo-LabVersionProbe -Output $out -ExitCode $code
+        $r.versaoVista = $probe.versao
+        $r.exit = $probe.exit
       }
       'exe' {
         if (-not (Test-Sha $p.arquivo $p.sha256)) { throw 'sha256 differs from compose.json' }
@@ -66,8 +69,10 @@ function Invoke-Package($p) {
         # Pinned version: no background update inside the guest (decision D2e).
         [Environment]::SetEnvironmentVariable('DISABLE_AUTOUPDATER', '1', 'Machine'); $env:DISABLE_AUTOUPDATER = '1'
         $r.binDir = $d
-        $r.versaoVista = (& "$d\claude.exe" --version 2>&1 | Select-Object -First 1)
-        $r.exit = $(if ($LASTEXITCODE -eq 0) { 0 } else { $LASTEXITCODE })
+        $out = @(& "$d\claude.exe" --version 2>&1); $code = $LASTEXITCODE
+        $probe = ConvertTo-LabVersionProbe -Output $out -ExitCode $code
+        $r.versaoVista = $probe.versao
+        $r.exit = $probe.exit
       }
       default { throw "unknown tipo '$($p.tipo)'" }
     }
