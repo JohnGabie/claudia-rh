@@ -1,6 +1,6 @@
 # Spec: pendências finais da branch do browser (D6 a D9)
 
-> **Status: RASCUNHO, aguardando aprovação do usuário.**
+> **Status: APROVADA (decisões G1 a G6 de 2026-10-08, e as de D10 mais abaixo) e implementada em `feat/browser-cdp-mcp`.** Guarda de formulário `0dfe876`, eventos do browser `7e9ab91`, diálogos `bfa5aa6`, CLA-40 `8f5c5e2`. D9 ficou como está (G6); CLA-35 ficou de fora. Testes live pendentes no Sandbox: `docs/superpowers/evidencias/2026-10-feat-browser-cdp-mcp.md`.
 
 Branch: `feat/browser-cdp-mcp`. Base desta spec: `56ced76`.
 Origem: plano `docs/superpowers/plans/2026-10-06-fechar-branch-browser.md`, seção "Respostas do usuário às decisões (2026-10-07)".
@@ -405,7 +405,7 @@ Contratos: `BrowserEvent` e `LogSink::browser_event` (§5.3), que F2 entrega e F
 
 ## 12. D10 — CLA-35 e CLA-40 (antes do merge)
 
-> **Status desta seção: RASCUNHO, aguardando aprovação do usuário.** Lido em `87ddf08`.
+> **Status desta seção: APROVADA em 2026-10-08 (CLA-40 aprovado; CLA-35 ignorado nesta branch) e CLA-40 implementada.** Lido em `87ddf08`.
 
 ### 12.1 Pedido do usuário (palavras dele)
 

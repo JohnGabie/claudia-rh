@@ -2,7 +2,7 @@
 
 > Spec de design. Não é o plano de implementação. Complementa `2026-10-02-browser-cdp-motor-design.md` e `2026-10-03-mcp-leitura-robusta-design.md`. Versão 2 (2026-10-04): a proposta original (biblioteca, regra de escolha, PDF, `browser_upload`, segurança) com as 9 adições pedidas pelo usuário, listadas na seção 2.
 >
-> **Status: RASCUNHO, aguardando aprovação do usuário. Nenhum código é escrito antes dela** (regra do `CLAUDE.md`). A seção 2 é o que o usuário pediu; o resto é a proposta técnica que ele ainda vai aprovar ou ajustar.
+> **Status: APROVADA (2026-10-04) e implementada nesta branch.** Decisões nas seções 2.2 e 2.4; o conteúdo por variante saiu para `feat/curriculo-por-variante`.
 
 **Branch:** `feat/browser-cdp-mcp` (continuação)
 
@@ -74,7 +74,9 @@ Tabela `documentos`:
 | `variante_id` | variante para a qual o documento foi gerado (campo, não tag: a escolha não depende de tag editável) |
 | `criado_em` | |
 
-Tabela `preferidos` (`tipo`, `variante_id` NULL = global, `documento_id`), chave única `(tipo, variante_id)`. Um preferido por variante e um global, por tipo.
+Tabela `preferidos` (`tipo`, `variante_id` com `''` = global, `documento_id`), chave primária `(tipo, variante_id)`. Um preferido por variante e um global, por tipo.
+
+Tabela `anexos` (`id`, `vaga_id`, `tipo`, `documento_id`, `anexado_em`): o app grava uma linha a cada `browser_upload` bem-sucedido, para saber qual documento foi para qual vaga. `documento_id` vira NULL se o documento for excluído depois (o anexo aconteceu). A coluna `candidaturas.documento_id` (nulável, `ON DELETE SET NULL`) guarda o currículo usado na candidatura. Tabela `migrados` (`origem`, `migrado_em`): os arquivos antigos já trazidos para a biblioteca, para que um documento excluído pelo usuário não volte na próxima abertura. `documentos.arquivo` é único.
 
 `search_variants.yaml` ganha `principal: true` em no máximo uma variante (marcada pelo usuário). `vagas.variante_id` passa a ser gravado pelo agente (`register_vaga` e `update_vaga_status` aceitam `variante_id`, validado contra as variantes existentes).
 
@@ -96,7 +98,7 @@ A marca do usuário sempre vence a geração automática. (Não há política "f
 
 - A visualização é o **HTML** com moldura A4 (210×297 mm proporcional, sombra e margens), dentro de um contêiner sem scripts (`<iframe sandbox>` com `srcdoc`). Miniaturas da grade: o mesmo HTML escalado, carregado só quando o card aparece.
 - O **PDF** existe só para anexar e para o usuário abrir fora. **Decisão (2026-10-04): gerado pelo WebView2 do próprio app**, a função nativa `PrintToPdf` (`ICoreWebView2_7`), numa janela do app invisível que carrega o HTML do documento e grava o PDF (A4, com fundo). Sem linguagem, biblioteca ou instalação nova (as ligações `webview2-com` já estão no projeto, via `wry`), sem o Chrome da Claudia e sem tocar nos logins. O **mesmo HTML** da pré-visualização vira o PDF: não há template duplicado. Limite: só Windows (o app hoje só roda em Windows). **A primeira tarefa do plano é uma prova:** gerar o PDF de um currículo real por este caminho e conferir a qualidade antes de construir o resto. Descartados: Typst (template duplicado), WeasyPrint/Python e libs Node (runtime novo, proibido pelo `CLAUDE.md`), Chrome da Claudia (abre a janela laranja).
-- Documento **importado**: sem HTML. A página mostra um cartão (nome, formato, tamanho, data, tags) e "Abrir" no visualizador do sistema; se o WebView exibir PDF em `<iframe>` de forma segura, mostrar o PDF, senão cartão. (A verificar na implementação.)
+- Documento **importado**: sem HTML. A página mostra um cartão (nome, formato, tamanho, data, tags) e "Abrir" no visualizador do sistema. **Cartão, por escolha** (decisão da implementação: não se exibe o PDF importado em `<iframe>`).
 - Importar: o usuário escolhe `.pdf` ou `.docx` pelo seletor do sistema; o app **copia** para `<dados>/documentos/`, confere extensão **e** tipo real (`%PDF-` ou ZIP de docx), limita a 10 MB e grava o `sha256`.
 
 ## 6. Contrato backend ↔ frontend (comandos Tauri)
@@ -121,17 +123,17 @@ Os comandos antigos `listar_curriculos`, `apagar_curriculo`, `abrir_curriculo`, 
 
 ## 7. MCP (`claudia`)
 
-Leitura vale para os dois tipos de sessão; **escrita só na sessão de Perfil** (a arquitetura manda que a sessão de execução não edite o perfil).
+Todas as tools são **listadas nas duas sessões**; as de escrita de perfil (`update_variante`, `set_documento_preferido`) são **recusadas na sessão de execução** (§2.4; a arquitetura manda que a execução não edite o perfil). `save_cover_letter` e `set_vaga_variante` valem nas duas.
 
 | Tool | Sessão | Faz |
 |---|---|---|
 | `list_variantes` | ambas | variantes (id, nome, peso, ativa, foco) |
 | `get_variante(id)` | ambas | uma variante completa |
-| `update_variante(id, campos)` | Perfil | valida e grava, com backup como `update_profile`; nunca afirma fato fora de `candidate_base.yaml` |
+| `update_variante(id, campos)` | ambas; recusada na execução | valida e grava, com backup como `update_profile`, mexendo só nos campos pedidos (chaves desconhecidas e outras variantes sobrevivem). A checagem de fatos contra `candidate_base.yaml` **não foi implementada** (recusada na revisão P4); a regra fica no texto da tool e no prompt |
 | `list_documentos(tipo)` | ambas | metadados e tags, sem caminho |
 | `get_documento(id)` | ambas | metadados + texto se `gerado`; para `importado` não há texto (sem extração por enquanto) e o agente responde formulários pelo `candidate_base.yaml` |
 | `save_cover_letter(texto, vaga_id?, idioma, variante_id?)` | ambas | o agente escreve a carta de uma vaga; o app a renderiza (HTML A4 + PDF), guarda e etiqueta |
-| `set_documento_preferido(id, variante_id?)` | Perfil | marca o preferido |
+| `set_documento_preferido(id, variante_id?)` | ambas; recusada na execução | marca o preferido |
 | `browser_upload(ref, tipo?, documento?)` | execução | anexa (seção 8) |
 | `set_vaga_variante(vaga_id, variante_id)` | execução | grava a variante escolhida para a vaga (ou via `register_vaga`) |
 
@@ -149,7 +151,7 @@ Nenhuma tool devolve ou aceita caminho de arquivo.
 - **O Chrome nunca falha por causa de um upload (regra dura do usuário).** Toda falha do upload é um erro da tool, nunca do browser:
   - timeout em cada passo (no máximo alguns segundos), sem espera infinita;
   - a interceptação do seletor de arquivo (`Page.setInterceptFileChooserDialog`) é sempre desligada ao final, com sucesso ou erro, para não deixar a aba presa;
-  - um seletor de arquivo nativo que abriu sem ser interceptado é fechado (Escape) e reportado, nunca fica aberto bloqueando a aba;
+  - seletor de arquivo nativo tardio: **não implementado**. O Chrome só abre o seletor dentro dos 5 s do clique (ativação transitória do usuário), o mesmo prazo do timeout da tool; um seletor que viesse depois é bloqueado pelo próprio Chrome (ruling de 2026-10-04, sem teste que pudesse falhar);
   - nada no upload fecha, recarrega ou relança o Chrome; a aba continua usável;
   - teste live: depois de cada cenário de falha, `browser_read` e `browser_click` na mesma aba ainda funcionam.
 

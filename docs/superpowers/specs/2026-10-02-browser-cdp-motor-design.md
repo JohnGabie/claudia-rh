@@ -2,6 +2,8 @@
 
 > Spec de design. Não é o plano de implementação. Ciclo 1 de 3 (ver seção 9).
 
+> **Status: implementada em `feat/browser-cdp-mcp`.** Pendências: `docs/superpowers/evidencias/2026-10-feat-browser-cdp-mcp.md`.
+
 **Data:** 2026-10-02
 **Branch:** `feat/browser-cdp-mcp` (a partir de `feat/exec-prototipo-playwright`, que contém `dev` mais a pesquisa)
 **Issue:** CLA-31
@@ -100,15 +102,25 @@ As armadilhas 1 (aba congelada), 2 (modal sem `role=dialog` no DOM, só na árvo
 
 `browser_contas` pertence ao ciclo 2.
 
+**Tools acrescentadas depois desta tabela:** `browser_text` e `browser_scroll` (spec `2026-10-03-mcp-leitura-robusta-design.md`) e `browser_upload` (spec `2026-10-04-anexar-curriculo-design.md`), num total de dez tools `browser_*`. `browser_key` aceita também Enter e Espaço sobre botões, sob a mesma guarda. **Diálogos nativos** (`alert`, `confirm`, `prompt`, `beforeunload`) são respondidos pelo app numa tarefa própria (política P2, spec `2026-10-08-pendencias-finais-browser-design.md` §6), e a queda da aba vira erro da tool.
+
 ### 5.5 Guarda de envio
 
-`browser_click` e `browser_click_at` verificam o nome acessível do alvo. Se parece envio ("Enviar candidatura", "Submit application", "Send application", "Postuler", etc., lista em um arquivo de configuração testado), o clique é **recusado** a menos que a chamada traga `confirm_submit: <vaga_id>` e as três condições valham:
+`browser_click`, `browser_click_at` e `browser_key` (Enter e Espaço) verificam o nome acessível do alvo. Se parece envio ("Enviar candidatura", "Submit application", "Send application", "Postuler", etc., lista em `src-tauri/submit-patterns.txt`, testada), o clique é **recusado** a menos que a chamada traga `confirm_submit: <vaga_id>` e as três condições valham:
 
 1. a vaga está em `candidatando`;
 2. o orçamento diário não estourou;
 3. o site está logado e permitido (ciclo 2; até lá, só 1 e 2).
 
 Recusa devolve texto claro ao agente, que se corrige. A guarda é código do app, não instrução de prompt. Em clique por coordenada, a guarda lê o elemento sob o ponto antes de clicar.
+
+**Regra completa implementada (2026-10-07/08, spec `2026-10-08-pendencias-finais-browser-design.md`, opção C), em quatro degraus, em `browser/guard.rs` (`classify_submit`):**
+1. o nome casa com um padrão de envio do arquivo → exige a confirmação e **gasta** o único envio da vaga no dia (nomes fracos, linhas `^` como "Apply", só contam quando o botão envia um `<form>`);
+2. alvo estrutural (iframe, botão sem nome, nó ilegível) → exige a confirmação, **sem gastar**;
+3. o alvo envia um `<form>` e o nome **não** é de navegação (linhas `!` do arquivo: "Próximo", "Next", "Voltar"...; igualdade exata, nunca substring; "Salvar" fica de fora) → exige a confirmação, **sem gastar** (a decisão G2: o envio real continua liberado depois);
+4. o resto passa.
+
+**Risco aceito:** uma página hostil pode enviar pelos próprios handlers de JavaScript, e o botão feito só de JavaScript fora de `<form>` e o envio implícito de campo único não são pegos. A **porta de debug** do Chrome (`--remote-debugging-port`, local) **não tem autenticação**: qualquer processo local pode falar CDP com o browser e contornar a guarda. É a contenção da CLA-30 (confinamento da sessão) que reduz o risco; a opção de interceptar o envio pela rede (D) fica no Linear.
 
 ### 5.6 Activity log (sempre ligado)
 
@@ -131,7 +143,7 @@ Nenhuma tool MCP lê isso, e nenhum prompt o menciona. Só a UI do app, com o mo
 | Tipo | O que grava |
 |---|---|
 | **Ação** | instante, sessão de IA, vaga (se houver), tool (`browser_click`, …), alvo por **nome acessível** e papel (não só o ref `e12`), texto digitado, URL da página, resultado (ok, erro, ou recusado pela guarda, com o motivo), duração |
-| **Evento do browser** | download e instalação (progresso, falha), Chrome lançado, queda e religação, crash de aba, aba ativada, diálogo inesperado |
+| **Evento do browser** | **implementado (2026-10-07, decisão G4 de 2026-10-08), 11 eventos** em `activity_log::BrowserEvent`: `download_started`, `installed`, `install_failed`, `launched`, `launch_failed`, `gone` (queda: duas verificações seguidas falharam), `relaunched`, `not_relaunched` (caiu mas nenhuma sessão precisa dele), `gave_up` (fechou várias vezes seguidas), `tab_crashed` e `dialog` (tipo, texto cortado em 200 caracteres, URL, aceito ou não, e a tool em andamento; o valor padrão de um `prompt()` nunca entra). **Fora, por decisão:** progresso do download e "aba ativada". Gravados com `kind = browser` e filtráveis na tela |
 | **Falha** | erro do CDP com a mensagem original, exceção do app, e a captura completa da tela no instante |
 | **Navegação** | o histórico de navegação: cada página que o browser carregou, em ordem. Instante, URL, título, código HTTP, tempo de carga, cadeia de redirecionamentos e **quem navegou** (agente via `browser_open`, clique em link, redirecionamento do site, ou o próprio usuário na janela) |
 
@@ -158,6 +170,8 @@ Ação só de leitura (`browser_read`, `browser_crop`) não gera print, pois a r
 **Testes:** gravação e leitura do banco; retenção por idade e por teto de espaço (apaga o mais antigo); campo de senha sem texto nem print; falha de gravação não afeta a ação; modo desligado não cria arquivo algum; dois processos escrevendo ao mesmo tempo; navegação do agente, de redirecionamento e do usuário classificadas certo na página local de teste; cadeia de redirecionamentos completa; o recorte "antes" cai sobre o alvo certo, conferido contra a página local de teste.
 
 ### 5.7 Desinstalação
+
+> **Decisão do usuário (D5, 2026-10-07): a Tarefa 4.2 (limpeza própria na desinstalação) foi cortada.** Vale **só a caixa padrão "Delete the application data" do instalador NSIS do Tauri**, que remove as duas pastas do `identifier` (`%APPDATA%` e `%LOCALAPPDATA%`). **Não existe** a opção "só o browser" nem a função `limpar_dados(opcoes)` descrita abaixo; código de limpeza novo só com spec própria e teste no Sandbox. A desinstalação real nunca foi testada nesta máquina (só Sandbox ou VM). O texto abaixo é a proposta original, mantida como histórico.
 
 O desinstalador oferece duas opções, **ambas desmarcadas por padrão**, porque apagar é irreversível:
 

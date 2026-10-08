@@ -1,5 +1,7 @@
 # Protótipo Playwright MCP — Plano de Implementação
 
+> **Status: CONCLUÍDO.** Resposta da CLA-7: CDP direto.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Responder às quatro perguntas em aberto da CLA-7 com números medidos, e produzir uma recomendação de seguir ou parar.

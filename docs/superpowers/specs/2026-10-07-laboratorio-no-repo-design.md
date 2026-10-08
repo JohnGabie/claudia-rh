@@ -1,6 +1,6 @@
 # Laboratório do Sandbox dentro do claudia-rh
 
-> **Status: RASCUNHO, aguardando aprovação do usuário.** Nenhum código antes da aprovação.
+> **Status: APROVADA (respostas do usuário em 2026-10-07, ver "Decisões do usuário") e implementada (integrada em `e242f28`).** Nenhum código antes da aprovação foi escrito.
 
 Data: 2026-10-07. Branch: `feat/laboratorio-no-repo` (criada a partir de `feat/browser-cdp-mcp`, commit `595bada`).
 

@@ -4,7 +4,7 @@
 
 <h1>Claudia RH</h1>
 
-<p><strong>Automated job-application agent powered by Claude + Chrome.</strong></p>
+<p><strong>Automated job-application agent powered by Claude + its own browser.</strong></p>
 
 <p>
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
@@ -46,7 +46,7 @@
 ### How it works
 
 1. **Conversational profile** — tell Claude who you are, paste your CV, define search variants (e.g. "senior remote dev" vs "hybrid tech lead")
-2. **Automatic triggering** — the app detects when you're idle and launches a Claude Code session connected to Chrome
+2. **Automatic triggering** — the app detects when you're idle and launches a Claude Code session connected to the app's own browser
 3. **Job analysis** — the agent reads each listing, cross-references your profile, and decides whether to apply
 4. **Document generation** — CV and cover letter tailored to each job, with honesty enforced
 5. **Pending actions & notifications** — captchas, required fields, and other blockers appear as Windows notifications for manual resolution
@@ -59,7 +59,7 @@
 
 | | Feature |
 |---|---|
-| 🤖 | Claude Code agent with Chrome access |
+| 🤖 | Claude Code agent with the app's own browser |
 | 📄 | AI-generated CV and cover letter per job |
 | 🔍 | Multiple simultaneous search variants |
 | 🔔 | Windows notifications for captchas / blockers |
@@ -151,7 +151,7 @@
 <td>AI</td>
 <td><img src="https://img.shields.io/badge/Claude_Code-CLI-D97757" /></td>
 <td>latest</td>
-<td>Application agent with Chrome access</td>
+<td>Application agent with its own browser</td>
 </tr>
 <tr>
 <td>Credentials</td>
