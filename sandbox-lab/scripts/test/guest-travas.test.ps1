@@ -459,5 +459,97 @@ foreach ($k in $replaceMutants.Keys) {
 Check 'File.Replace: the NullString form stays allowed' {
   if ((Get-FileReplaceNullProblems '[IO.File]::Replace($a, $b, [NullString]::Value); [IO.File]::Replace($a, $b, $c)' 'ok').Count) { throw 'false positive' }
 }
+# Boot id and exit code wiring (parser only, nothing runs). firewall.txt survives between Sandboxes, so:
+#   bootstrap.ps1 makes the id of this boot (C:\labdata\boot-id.txt), guest-firewall.ps1 writes it in firewall.txt (and applies nothing without it),
+#   guest-run.ps1 hands it to Get-LabAppStartRefusal; and every refusal of guest-run.ps1 (firewall, scenario) leaves exit 1.
+function Get-BootIdWiringProblems([string]$RunText, [string]$FwText, [string]$BootText) {
+  $p = New-Object System.Collections.Generic.List[string]
+  $t = $null; $e = $null
+  $A = 'System.Management.Automation.Language'
+  $run = [System.Management.Automation.Language.Parser]::ParseInput($RunText, [ref]$t, [ref]$e)
+  $fw = [System.Management.Automation.Language.Parser]::ParseInput($FwText, [ref]$t, [ref]$e)
+  $bs = [System.Management.Automation.Language.Parser]::ParseInput($BootText, [ref]$t, [ref]$e)
+  $isCmd = { param($n) $n -is [System.Management.Automation.Language.CommandAst] }
+  # --- guest-run: the id is read from the guest disk and handed to the decision ---
+  $ref = @($run.FindAll($isCmd, $true) | Where-Object { "$($_.GetCommandName())" -ceq 'Get-LabAppStartRefusal' })
+  if (-not $ref.Count) { $p.Add('guest-run.ps1 never calls Get-LabAppStartRefusal') }
+  else {
+    $els = @($ref[0].CommandElements)
+    $ix = -1; for ($i = 0; $i -lt $els.Count; $i++) { if ($els[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $els[$i].ParameterName -ceq 'ExpectedBootId') { $ix = $i } }
+    if ($ix -lt 0 -or $ix + 1 -ge $els.Count) { $p.Add('guest-run.ps1 does not pass -ExpectedBootId to Get-LabAppStartRefusal') }
+    elseif ($els[$ix + 1].Extent.Text -cne '$bootId') { $p.Add("guest-run.ps1 passes -ExpectedBootId $($els[$ix + 1].Extent.Text) instead of `$bootId") }
+    $asg = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$bootId' -and $n.Right.Extent.Text -clike '*Get-Content*boot-id.txt*' }, $true))
+    if (-not $asg.Count) { $p.Add('guest-run.ps1 does not read $bootId from C:\labdata\boot-id.txt (Get-Content)') }
+    elseif ($asg[0].Extent.StartOffset -gt $ref[0].Extent.StartOffset) { $p.Add('guest-run.ps1 reads the boot id after the refusal is decided') }
+  }
+  # --- guest-run: exit 1 after guest-run.json, for the firewall refusal and for the scenario refusal ---
+  $wr = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and "$($n.Member.Extent.Text)" -ceq 'WriteAllText' -and $n.Extent.Text -clike '*guest-run.json*' }, $true))
+  $ex = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq "`$r.Contains('refused')" }, $true))
+  if (-not $ex.Count) { $p.Add("guest-run.ps1 has no  if (`$r.Contains('refused')) { ... exit 1 }") }
+  else {
+    $exit = @($ex[0].Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.ExitStatementAst] }, $true))
+    if (-not $exit.Count -or $exit[0].Pipeline.Extent.Text -cne '1') { $p.Add('guest-run.ps1: the refused branch does not exit 1') }
+    elseif ($wr.Count -and $exit[0].Extent.StartOffset -lt $wr[0].Extent.StartOffset) { $p.Add('guest-run.ps1 exits before writing guest-run.json') }
+    elseif (-not $wr.Count) { $p.Add('guest-run.ps1 never writes guest-run.json (the check would prove nothing)') }
+  }
+  $fwSet = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$refusal' }, $true))
+  if (-not @($fwSet | Where-Object { @($_.Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$r.refused' -and $n.Right.Extent.Text -ceq '$true' }, $true)).Count }).Count) { $p.Add('guest-run.ps1: the firewall refusal does not set $r.refused = $true') }
+  $sc = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$why' }, $true))
+  if (-not @($sc | Where-Object { @($_.Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$r.refused' -and $n.Right.Extent.Text -ceq '$true' }, $true)).Count }).Count) { $p.Add('guest-run.ps1: the scenario refusal ( if ($why) ) does not set $r.refused = $true') }
+  if (-not @($sc | Where-Object { @($_.Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$scenRefusal' }, $true)).Count }).Count) { $p.Add('guest-run.ps1: the scenario refusal does not set $scenRefusal') }
+  $start = @($run.FindAll($isCmd, $true) | Where-Object { "$($_.GetCommandName())" -ceq 'Start-Process' } | Select-Object -First 1)
+  if ($start.Count) {
+    $gate = @($run.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Extent.StartOffset -lt $start[0].Extent.StartOffset -and $n.Extent.EndOffset -gt $start[0].Extent.EndOffset -and $n.Clauses[0].Item1.Extent.Text -clike '*-not $scenRefusal*' }, $true))
+    if (-not $gate.Count) { $p.Add('guest-run.ps1: Start-Process is not gated by -not $scenRefusal') }
+  } else { $p.Add('guest-run.ps1: Start-Process not found (the check would prove nothing)') }
+  # --- guest-firewall: nothing is applied without the id, and the id is the first line written ---
+  $g = @($fw.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '-not (Test-LabBootId $bootId)' }, $true))
+  $newRule = @($fw.FindAll($isCmd, $true) | Where-Object { "$($_.GetCommandName())" -ceq 'New-NetFirewallRule' } | Select-Object -First 1)
+  if (-not $g.Count) { $p.Add('guest-firewall.ps1 has no  if (-not (Test-LabBootId $bootId)) { ... exit 1 }') }
+  else {
+    if (-not @($g[0].Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.ExitStatementAst] -and $n.Pipeline.Extent.Text -ceq '1' }, $true)).Count) { $p.Add('guest-firewall.ps1: the missing boot id does not exit 1') }
+    if ($newRule.Count -and $g[0].Extent.StartOffset -gt $newRule[0].Extent.StartOffset) { $p.Add('guest-firewall.ps1 checks the boot id after it applied the rule') }
+  }
+  $rd = @($fw.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$bootId' -and $n.Right.Extent.Text -clike '*Get-Content*boot-id.txt*' }, $true))
+  if (-not $rd.Count) { $p.Add('guest-firewall.ps1 does not read $bootId from C:\labdata\boot-id.txt (Get-Content)') }
+  $oo = @($fw.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$o' }, $true))
+  if (-not $oo.Count -or $oo[0].Right.Extent.Text -cnotlike '@(Format-LabFirewallBootLine $bootId) + *') { $p.Add('guest-firewall.ps1: $o (the firewall.txt text) does not START with Format-LabFirewallBootLine $bootId') }
+  # --- bootstrap: the id is new for each guest and kept on the guest disk ---
+  if (-not @($bs.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Static -and "$($n.Member.Extent.Text)" -ceq 'NewGuid' }, $true)).Count) { $p.Add('bootstrap.ps1 does not make the boot id with [guid]::NewGuid()') }
+  if (-not @($bs.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -ceq 'boot-id.txt' }, $true)).Count) { $p.Add('bootstrap.ps1 does not write boot-id.txt') }
+  $w = @($bs.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and "$($n.Member.Extent.Text)" -ceq 'WriteAllText' -and $n.Extent.Text -clike '*$bootIdFile*' }, $true))
+  if (-not $w.Count) { $p.Add('bootstrap.ps1 never writes $bootIdFile') }
+  return @($p)
+}
+$wFw = [IO.File]::ReadAllText((Join-Path $scan 'sandbox/app/guest-firewall.ps1'))
+$wBoot = [IO.File]::ReadAllText((Join-Path $scan 'sandbox/bootstrap.ps1'))
+Check 'boot id wiring: bootstrap makes it, guest-firewall writes it first, guest-run passes it; refusals exit 1' {
+  $x = Get-BootIdWiringProblems $wRun $wFw $wBoot
+  if ($x.Count) { throw ($x -join ' | ') }
+}
+$bMut = [ordered]@{
+  'guest-run: boot id not passed to the decision'  = @('run', ' -ExpectedBootId $bootId', '')
+  'guest-run: boot id read from another file'      = @('run', "'C:\labdata\boot-id.txt'", "'C:\labdata\other.txt'")
+  'guest-run: the firewall refusal exits 0'        = @('run', "`$r | ConvertTo-Json -Depth 5; exit 1 }`n`$r | ConvertTo-Json", "`$r | ConvertTo-Json -Depth 5; exit 0 }`n`$r | ConvertTo-Json")
+  'guest-run: scenario refusal does not mark refused (exit 0)' = @('run', '$r.errors += $scenRefusal; $r.refused = $true }', '$r.errors += $scenRefusal }')
+  'guest-run: scenario refusal still starts the app' = @('run', ' -and -not $scenRefusal) {', ') {')
+  'guest-firewall: firewall.txt without the boot id line' = @('fw', '$o = @(Format-LabFirewallBootLine $bootId) + @(', '$o = @(')
+  'guest-firewall: applies the rule without a boot id' = @('fw', "bootstrap did not run in this guest'; exit 1 }", "bootstrap did not run in this guest' }")
+  'bootstrap: no new id per guest (fixed id)'      = @('boot', "[guid]::NewGuid().ToString('N')", "'00000000000000000000000000000000'")
+  'bootstrap: id not written to the guest disk'    = @('boot', '[IO.File]::WriteAllText($bootIdFile, $status.bootId, $utf8)', '$null')
+}
+foreach ($k in $bMut.Keys) {
+  Check "boot id wiring mutation must be caught: $k" {
+    $m = $bMut[$k]
+    $src = @{ run = $wRun; fw = $wFw; boot = $wBoot }[$m[0]]
+    $src = $src -replace "`r`n", "`n"
+    if (-not $src.Contains($m[1])) { throw "harness bug: text to mutate not found: $($m[1])" }
+    $mut = $src.Replace($m[1], $m[2])
+    $r2 = $(if ($m[0] -eq 'run') { $mut } else { $wRun }); $f2 = $(if ($m[0] -eq 'fw') { $mut } else { $wFw }); $b2 = $(if ($m[0] -eq 'boot') { $mut } else { $wBoot })
+    $x = Get-BootIdWiringProblems $r2 $f2 $b2
+    if (-not $x.Count) { throw 'NOT detected: the analysis accepted the mutated script' }
+    Write-Host "    mutation '$k' -> FAILED - $($x -join ' | ')"
+  }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

@@ -97,7 +97,9 @@ Check 'guest copia: the PC fact about diagnostics\latest counts only as a litera
   }
   if (Test-LabGuestLatestLinkApproved $null) { throw 'no config must not be approved' }
 }
-$fwOk = (@('Domain enabled=True', 'Private enabled=True', 'Public enabled=True', 'regra lab-block-internet-out: 1',
+$bootA = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'   # the id of this boot (the old one below is from another Sandbox)
+$bootOld = '0f9e8d7c6b5a49382716a5b4c3d2e1f0'
+$fwOk = (@("BOOTID: $bootA", 'Domain enabled=True', 'Private enabled=True', 'Public enabled=True', 'regra lab-block-internet-out: 1',
   'INTERNET: BLOQUEADA (Unable to connect to the remote server)', 'storage.googleapis.com: BLOQUEADO') -join "`r`n") + "`r`n"
 Check 'guest internet: allowed only with a real boolean false in guest.config.json; anything else fails closed' {
   if (-not (Get-LabGuestInternetPermitida ([pscustomobject]@{ internetBloqueada = $false }))) { throw 'false -> allowed' }
@@ -109,9 +111,9 @@ Check 'guest internet: allowed only with a real boolean false in guest.config.js
 }
 Check 'app start: internet allowed -> no refusal; blocked -> only with the whole block mark in firewall.txt' {
   if (Get-LabAppStartRefusal -InternetPermitida $true -FirewallText $null) { throw 'internet allowed needs no firewall.txt' }
-  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $fwOk) { throw 'complete mark must pass' }
-  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText ($fwOk -replace "`r`n", "`n")) { throw 'LF line endings must pass' }
-  foreach ($t in @($null, '', '   ', "`r`n")) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $t)) { throw "missing/empty file '$t' must refuse" } }
+  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $fwOk -ExpectedBootId $bootA) { throw 'complete mark must pass' }
+  if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText ($fwOk -replace "`r`n", "`n") -ExpectedBootId $bootA) { throw 'LF line endings must pass' }
+  foreach ($t in @($null, '', '   ', "`r`n")) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $t -ExpectedBootId $bootA)) { throw "missing/empty file '$t' must refuse" } }
 }
 Check 'app start: every missing or contradicting piece of the mark refuses' {
   $bad = @{
@@ -129,7 +131,54 @@ Check 'app start: every missing or contradicting piece of the mark refuses' {
     'mark AND a reachable line' = $fwOk + "INTERNET: ACESSIVEL (FALHA)`r`n"
     'junk file'           = 'qualquer coisa'
   }
-  foreach ($k in $bad.Keys) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $bad[$k])) { throw "must refuse: $k" } }
+  foreach ($k in $bad.Keys) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $bad[$k] -ExpectedBootId $bootA)) { throw "must refuse: $k" } }
+}
+# --- boot id: firewall.txt survives between Sandboxes, so it counts only with the id of THIS boot (pure; also run on mutated copies of the lib) ---
+$bootCases = [ordered]@{
+  'boot id: the firewall.txt of this boot passes' = { if (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $fwOk -ExpectedBootId $bootA) { throw 'must pass' } }
+  'boot id: firewall.txt of ANOTHER boot (old id) is refused' = {
+    $old = $fwOk.Replace("BOOTID: $bootA", "BOOTID: $bootOld")
+    if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $old -ExpectedBootId $bootA)) { throw 'accepted a firewall.txt from another boot' } }
+  'boot id: firewall.txt WITHOUT a BOOTID line (older format) is refused' = {
+    $none = $fwOk.Replace("BOOTID: $bootA`r`n", '')
+    if ($none -ceq $fwOk) { throw 'harness bug: nothing removed' }
+    if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $none -ExpectedBootId $bootA)) { throw 'accepted a firewall.txt with no id' } }
+  'boot id: two BOOTID lines (the right one and an old one) are refused' = {
+    if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText ($fwOk + "BOOTID: $bootOld`r`n") -ExpectedBootId $bootA)) { throw 'accepted two ids' }
+    if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText ("BOOTID: $bootOld`r`n" + $fwOk) -ExpectedBootId $bootA)) { throw 'accepted an old id before the right one' } }
+  'boot id: a missing or malformed EXPECTED id refuses, even with a matching line' = {
+    foreach ($e in @($null, '', '   ', 'abc', $bootA.ToUpper(), "$bootA`n", "$bootA ", ($bootA + 'f'), $bootA.Substring(1))) {
+      $txt = $fwOk.Replace("BOOTID: $bootA", "BOOTID: $e")
+      if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $txt -ExpectedBootId $e)) { throw "accepted the expected id '$e'" }
+    } }
+  'boot id: the line must be exactly "BOOTID: <id>" (no space, other case)' = {
+    foreach ($l in @("BOOTID:$bootA", "bootid: $bootA", "BOOTID:  $bootA", "BOOTID: $bootA x")) {
+      if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $fwOk.Replace("BOOTID: $bootA", $l) -ExpectedBootId $bootA)) { throw "accepted '$l'" }
+    } }
+  'boot id: internet allowed still needs no id and no firewall.txt' = { if (Get-LabAppStartRefusal -InternetPermitida $true -FirewallText $null -ExpectedBootId $null) { throw 'refused with the internet allowed' } }
+  'boot id: Test-LabBootId takes only 32 lowercase hex digits; the writer line round-trips' = {
+    if (-not (Test-LabBootId $bootA)) { throw 'valid id refused' }
+    foreach ($b in @($null, '', 'abc', $bootA.ToUpper(), "$bootA`n", "$bootA`r`n", ($bootA + '0'), ('g' * 32))) { if (Test-LabBootId $b) { throw "accepted '$b'" } }
+    if ((Format-LabFirewallBootLine $bootA) -cne "BOOTID: $bootA") { throw 'line format' } }
+}
+function Invoke-BootCases { $f = New-Object System.Collections.Generic.List[string]; foreach ($k in $bootCases.Keys) { try { & $bootCases[$k] } catch { $f.Add("$k - $($_.Exception.Message)") } }; return @($f) }
+foreach ($k in $bootCases.Keys) { Check $k $bootCases[$k] }
+$libText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../sandbox/guest-install.lib.ps1'))
+$bootMut = [ordered]@{
+  'accept the firewall.txt of another subida (id not compared)' = @(, @('-or $idLines[0] -cne (Format-LabFirewallBootLine $ExpectedBootId)', ''))
+  'accept an absent id (no BOOTID line)'                          = @(@('$idLines.Count -eq 0', '$false'), @('$idLines.Count -ne 1 -or $idLines[0] -cne (Format-LabFirewallBootLine $ExpectedBootId)', '$idLines.Count -gt 1'))
+  'do not require the expected id of this guest'                  = @(, @('if (-not (Test-LabBootId $ExpectedBootId)) { return', 'if ($false) { return'))
+  'Test-LabBootId accepts anything'                               = @(, @('\A[0-9a-f]{32}\z', '.*'))
+  'Test-LabBootId with $ instead of \z (accepts a trailing newline)' = @(, @('\A[0-9a-f]{32}\z', '\A[0-9a-f]{32}$'))
+}
+foreach ($m in $bootMut.Keys) {
+  Check "boot id mutation must be caught: $m" {
+    $text = $libText
+    foreach ($pair in $bootMut[$m]) { if (-not $text.Contains($pair[0])) { throw "harness bug: '$($pair[0])' not found in the lib" }; $text = $text.Replace($pair[0], $pair[1]) }
+    $fails = @(& { . ([scriptblock]::Create($text)); Invoke-BootCases })
+    if (-not $fails.Count) { throw 'NOT detected: the mutated lib passed every boot id case' }
+    foreach ($x in $fails) { Write-Host "    mutation '$m' -> FAILED - $x" }
+  }
 }
 Check 'vs_layout verdict: completed layout, no failure marker, layout files present; tolerating only the exit-time console finalizer crash' {
   # Texts as seen live in the Sandbox (2026-10-08), trimmed: the real success log, with lines that MUST NOT count as failure

@@ -25,6 +25,7 @@ $r.webview2 = [ordered]@{ registryPv = $wv; evergreenDirs = @($wvDir) }
 
 # 2. app data from a scenario created in the guest (D1); the deploy carries only the app
 $r.dataFiles = [ordered]@{}
+$scenRefusal = $null
 if ($Cenario) {
   $why = Get-LabGuestScenarioRefusal $Cenario
   $item = Get-Item -LiteralPath $Cenario -Force -ErrorAction SilentlyContinue
@@ -40,7 +41,7 @@ if ($Cenario) {
     if ($cjItem -and -not $cjItem.PSIsContainer -and -not ($cjItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { try { $json = Get-Content -LiteralPath $cj -Raw -ErrorAction Stop } catch { $json = $null } }
     $why = Get-LabGuestScenarioJsonRefusal $json
   }
-  if ($why) { $r.errors += "cenario: $why" }
+  if ($why) { $scenRefusal = "cenario: $why"; $r.errors += $scenRefusal; $r.refused = $true }
   else {
     foreach ($pair in @(@('appdata', $env:APPDATA), @('localappdata', $env:LOCALAPPDATA))) {
       $src = Join-Path $item.FullName $pair[0]
@@ -70,10 +71,14 @@ try {
   if (-not $NoStart) {
     $cfgG = $null; try { $cfgG = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
     $fwText = $null; try { $fwText = Get-Content -LiteralPath (Join-Path $Out 'firewall.txt') -Raw -ErrorAction Stop } catch { }
-    $refusal = Get-LabAppStartRefusal -InternetPermitida (Get-LabGuestInternetPermitida $cfgG) -FirewallText $fwText
+    # The id of THIS boot (made by bootstrap.ps1 on the guest disk): firewall.txt survives between Sandboxes, so only the one that
+    # carries this id was written by guest-firewall.ps1 in this guest.
+    $bootId = $null; try { $bootId = (Get-Content -LiteralPath 'C:\labdata\boot-id.txt' -Raw -ErrorAction Stop).Trim() } catch { }
+    $refusal = Get-LabAppStartRefusal -InternetPermitida (Get-LabGuestInternetPermitida $cfgG) -FirewallText $fwText -ExpectedBootId $bootId
     if ($refusal) { $r.errors += "app not started: $refusal"; $r.refused = $true }
+    elseif ($scenRefusal) { $r.errors += 'app not started: the scenario was refused' }
   }
-  if (-not $NoStart -and -not $refusal) {
+  if (-not $NoStart -and -not $refusal -and -not $scenRefusal) {
     $name = [IO.Path]::GetFileNameWithoutExtension($exePath)
     Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $p = Start-Process $exePath -PassThru
@@ -85,5 +90,6 @@ try {
   }
 } catch { $r.errors += "app: $_" }
 [IO.File]::WriteAllText((Join-Path $Out 'guest-run.json'), ($r | ConvertTo-Json -Depth 5), $utf8)
+# Every refusal (firewall, scenario) leaves a non-zero exit code, so the caller does not have to read errors in guest-run.json.
 if ($r.Contains('refused')) { $r | ConvertTo-Json -Depth 5; exit 1 }
 $r | ConvertTo-Json -Depth 5

@@ -20,6 +20,7 @@ function Log([string]$m) {
 $status = [ordered]@{
   bootstrap        = 'running'
   phase            = 'starting'
+  bootId           = $null
   computerName     = $env:COMPUTERNAME
   user             = $env:USERNAME
   outWritable      = $false
@@ -57,6 +58,19 @@ if (-not $cfg) {
   $cfg = [pscustomobject]@{ startUrl = 'http://localhost:8080/test-page.html'; testServerPort = 8080; remoteDebuggingPort = 9222;
                             extensions = @('C:\lab\extensions\lab-ext'); chromeExe = 'C:\lab\tools\chrome\chrome-win64\chrome.exe'; mcpPort = 8000 }
 }
+
+# --- 0b. id of THIS boot of the guest ---
+# C:\labdata is on the guest disk, so it does not survive the Sandbox (unlike C:\labwork\run = .sandbox-work\guest-rw\run on the PC).
+# guest-firewall.ps1 writes this id in the first line of firewall.txt and guest-run.ps1 accepts only a firewall.txt with the same id,
+# so a firewall.txt left by an earlier Sandbox never counts as proof that the internet is blocked here. Kept if already there
+# (the same guest running the bootstrap twice); if it cannot be written, guest-run refuses to open the app with the internet blocked.
+$bootIdFile = Join-Path $DataDir 'boot-id.txt'
+try {
+  New-Item -ItemType Directory -Force $DataDir | Out-Null
+  $existingId = $null; try { $existingId = (Get-Content -LiteralPath $bootIdFile -Raw -ErrorAction Stop).Trim() } catch { }
+  if ($existingId -cmatch '\A[0-9a-f]{32}\z') { $status.bootId = $existingId }
+  else { $status.bootId = [guid]::NewGuid().ToString('N'); [IO.File]::WriteAllText($bootIdFile, $status.bootId, $utf8) }
+} catch { $status.errors += "boot-id: $_" }
 
 # --- 1. pasta de saida gravavel ---
 try { [IO.File]::WriteAllText((Join-Path $Out '.write-test'), 'ok', $utf8); Remove-Item (Join-Path $Out '.write-test') -Force; $status.outWritable = $true }

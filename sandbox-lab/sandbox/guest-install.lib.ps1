@@ -97,14 +97,32 @@ function Get-LabGuestInternetPermitida($Cfg) {
   return (-not $p.Value)
 }
 
+function Test-LabBootId([string]$Id) {
+  # The id of THIS boot of the guest: 32 lowercase hex digits (a GUID in the "N" format), made by bootstrap.ps1 and kept in
+  # C:\labdata\boot-id.txt, a folder of the guest disk that does not survive the Sandbox.
+  return ($Id -cmatch '\A[0-9a-f]{32}\z')
+}
+
+function Format-LabFirewallBootLine([string]$Id) {
+  # The first line guest-firewall.ps1 writes in firewall.txt; Get-LabAppStartRefusal wants exactly this line.
+  return "BOOTID: $Id"
+}
+
 function Get-LabAppStartRefusal {
   # guest-run.ps1: why the app must NOT be opened, or $null. Where the ambiente keeps the internet blocked, the app opens only
   # when C:\labwork\run\firewall.txt (written by guest-firewall.ps1 AFTER it applied the rule and tested it) carries the block
   # mark: the 3 profiles on, exactly 1 lab-block-internet-out rule, both internet probes blocked, none reachable.
-  param([bool]$InternetPermitida, [string]$FirewallText)
+  # C:\labwork\run is the PC folder .sandbox-work\guest-rw\run and survives between Sandboxes, so the file may be from an OLDER
+  # guest. It counts only with the boot id of THIS guest (-ExpectedBootId, read from C:\labdata\boot-id.txt) on its BOOTID line.
+  # The clock is not used. Missing or malformed expected id = refuse (the guest was not bootstrapped).
+  param([bool]$InternetPermitida, [string]$FirewallText, [string]$ExpectedBootId = $null)
   if ($InternetPermitida) { return $null }
+  if (-not (Test-LabBootId $ExpectedBootId)) { return 'the boot id of this guest is missing or malformed (C:\labdata\boot-id.txt): cannot tell whether firewall.txt is from this boot' }
   if ([string]::IsNullOrWhiteSpace($FirewallText)) { return 'firewall.txt is missing or empty: guest-firewall.ps1 did not finish, the internet may be open' }
   $lines = @($FirewallText -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  $idLines = @($lines | Where-Object { $_ -clike 'BOOTID:*' })
+  if ($idLines.Count -eq 0) { return 'firewall.txt has no BOOTID line: it is from an older guest, guest-firewall.ps1 did not run in this one' }
+  if ($idLines.Count -ne 1 -or $idLines[0] -cne (Format-LabFirewallBootLine $ExpectedBootId)) { return 'firewall.txt is from another boot of the guest (BOOTID differs): guest-firewall.ps1 did not run in this one' }
   if (@($lines | Where-Object { $_ -match 'ACESSIVEL' }).Count) { return 'firewall.txt says the internet is reachable' }
   foreach ($prof in 'Domain', 'Private', 'Public') {
     if (@($lines | Where-Object { $_ -ceq "$prof enabled=True" }).Count -ne 1) { return "firewall.txt does not show the $prof profile enabled" }
