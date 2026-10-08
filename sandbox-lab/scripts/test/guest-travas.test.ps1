@@ -380,5 +380,48 @@ Check 'native pipes: Select-Object -First after a non-native source stays allowe
   $ok = '$a = Get-ChildItem x | Select-Object -First 1; $b = @(1,2) | Select-Object -First 1'
   if ((Get-NativeTruncationProblems $ok 'ok').Count) { throw 'false positive on a cmdlet pipe' }
 }
+# [IO.File]::Replace(src, dst, backup): PowerShell passes $null (and '') to a .NET string parameter as "", which File.Replace
+# refuses ("The path is not of a legal form"). The no-backup form must be [NullString]::Value. Checked on the syntax tree.
+function Get-FileReplaceNullProblems([string]$Text, [string]$Label) {
+  $tokens = $null; $errs = $null
+  $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tokens, [ref]$errs)
+  $problems = New-Object System.Collections.Generic.List[string]
+  $calls = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Static -and
+      $n.Member -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Member.Value -ieq 'Replace' -and
+      $n.Expression -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.Expression.TypeName.FullName -match '^(?i)(system\.)?io\.file$' }, $true)
+  foreach ($c in $calls) {
+    foreach ($a in @($c.Arguments)) {
+      $bad = ($a -is [System.Management.Automation.Language.VariableExpressionAst] -and $a.VariablePath.UserPath -ieq 'null') -or
+        ($a -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -eq '')
+      if ($bad) { $problems.Add("${Label}:$($c.Extent.StartLineNumber): [IO.File]::Replace with `$null or '' as an argument ($($c.Extent.Text)): use [NullString]::Value") }
+    }
+  }
+  return @($problems)
+}
+$replaceFiles = @(Get-ChildItem -LiteralPath (Join-Path $scan 'scripts'), (Join-Path $scan 'sandbox') -Filter *.ps1 -Recurse)
+Check 'File.Replace: no script of the lab passes $null or an empty string to [IO.File]::Replace' {
+  $all = New-Object System.Collections.Generic.List[string]
+  foreach ($f in $replaceFiles) { foreach ($x in @(Get-FileReplaceNullProblems ([IO.File]::ReadAllText($f.FullName)) $f.Name)) { $all.Add([string]$x) } }
+  if ($all.Count) { throw ($all -join ' | ') }
+  if ($replaceFiles.Count -lt 20) { throw "only $($replaceFiles.Count) script(s) scanned: the scan is not looking at the scripts" }
+}
+$replaceDisco = [IO.File]::ReadAllText((Join-Path $scan 'scripts/lib/disco.ps1'))
+$replaceGood = '[IO.File]::Replace($tmp, $p.File, [NullString]::Value)'
+if (-not $replaceDisco.Contains($replaceGood)) { Check 'File.Replace mutations need the NullString call in disco.ps1' { throw 'disco.ps1 does not have the expected call' } }
+$replaceMutants = [ordered]@{
+  'disco: the old $null argument'         = '[IO.File]::Replace($tmp, $p.File, $null)'
+  'disco: an empty string argument'       = "[IO.File]::Replace(`$tmp, `$p.File, '')"
+  'disco: fully qualified System.IO.File' = '[System.IO.File]::Replace($tmp, $p.File, $null)'
+}
+foreach ($k in $replaceMutants.Keys) {
+  Check "File.Replace mutation must be caught: $k" {
+    $text = $replaceDisco.Replace($replaceGood, $replaceMutants[$k])
+    if ($text -ceq $replaceDisco) { throw 'the mutation did not change the text (harness bug)' }
+    if (-not @(Get-FileReplaceNullProblems $text 'disco.ps1').Count) { throw 'NOT detected: the analysis accepted the mutated script' }
+  }
+}
+Check 'File.Replace: the NullString form stays allowed' {
+  if ((Get-FileReplaceNullProblems '[IO.File]::Replace($a, $b, [NullString]::Value); [IO.File]::Replace($a, $b, $c)' 'ok').Count) { throw 'false positive' }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

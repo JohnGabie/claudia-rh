@@ -157,7 +157,7 @@ function Copy-LabCredential {
   try {
     try {
       [IO.File]::Copy($src, $tmp)
-      if (Test-Path -LiteralPath $p.File) { [IO.File]::Replace($tmp, $p.File, $null) } else { [IO.File]::Move($tmp, $p.File) }
+      if (Test-Path -LiteralPath $p.File) { [IO.File]::Replace($tmp, $p.File, [NullString]::Value) } else { [IO.File]::Move($tmp, $p.File) }
     } catch { throw '[credential] copy failed (the login file could not be read or written)' }
   } finally {
     if (Test-Path -LiteralPath $tmp) { Remove-LabCredentialFile -File $tmp -RepoRoot $RepoRoot }
