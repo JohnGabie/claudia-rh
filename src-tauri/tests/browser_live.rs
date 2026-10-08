@@ -998,7 +998,15 @@ async fn set_window(l: &Live, w: i64, h: i64) {
     let id = win["windowId"].as_i64().unwrap();
     l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "windowState": "normal" } })).await.unwrap();
     l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "width": w, "height": h } })).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Wait for the window to HAVE the size (up to 5 s) instead of a fixed sleep: on a loaded machine
+    // the next step used to run against the old window (CLA-36/38).
+    for _ in 0..50 {
+        let win = l.client.call("Browser.getWindowForTarget", json!({})).await.unwrap();
+        if (win["bounds"]["width"].as_i64(), win["bounds"]["height"].as_i64()) == (Some(w), Some(h)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 /// (body, next_offset) of a browser_text result.
@@ -1294,6 +1302,8 @@ async fn the_wheel_does_not_change_a_focused_number_field() {
     assert_eq!(eval(&a, "document.activeElement && document.activeElement.id").await, "anos", "the field is focused");
     let r = t.scroll("down", Some(1.0), None).await.unwrap();
     assert!(r.contains("Rolou down"), "{r}");
+    // CLA-38: the tool must wait for the scroll to start, so it never reports a page that did scroll as unmoved.
+    assert!(!r.contains("A posição do documento não mudou"), "the tool read the position before the wheel took effect: {r}");
     let a = agent_client(&l).await;
     assert_eq!(eval(&a, "document.getElementById('anos').value").await, "5", "the value was not changed by the wheel");
     assert!(eval(&a, "scrollY").await.as_f64().unwrap() > 0.0, "and the page did scroll");
@@ -1576,6 +1586,19 @@ async fn failed_upload_does_not_call_attached() {
     assert!(e.contains("seletor de arquivo"), "upload failed as expected: {e}");
     let calls = tracked.get_calls();
     assert_eq!(calls.len(), 0, "no attached() calls on failure");
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_file_the_field_refuses_is_not_recorded_as_attached() {
+    let l = launch().await;
+    let tracked = TrackedDocs::new("docx");
+    let t = tools(&l, Ctx::candidatando(7)).with_documents(tracked.clone());
+    t.open(&fixture_file("upload-form.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let out = t.upload(&ref_of(&list, "button", "Só PDF"), None, None).await.unwrap();
+    assert!(out.contains("o campo aceita só .pdf"), "{out}");
+    assert!(tracked.get_calls().is_empty(), "a refused format is not recorded in anexos");
 }
 
 // ───────────── D6 (CLA-37): form-submit buttons with a non-navigation name ─────────────

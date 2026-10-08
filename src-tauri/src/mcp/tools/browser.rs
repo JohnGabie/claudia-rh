@@ -189,6 +189,14 @@ impl ScrollPos {
     }
 }
 
+/// Polls (60 ms apart) a wheel is given to start moving the document before it is taken as not moving it.
+const SCROLL_START_POLLS: u32 = 8;
+
+/// Pure: did the document move (or change height) between two readings?
+fn scroll_moved(before: &ScrollPos, now: &ScrollPos) -> bool {
+    (now.y - before.y).abs() >= 1.0 || (now.content_h - before.content_h).abs() >= 1.0
+}
+
 /// What the page's element says about itself, read from an ISOLATED world (see `INFO_FN`).
 #[derive(Debug, Default, Deserialize, PartialEq)]
 pub(crate) struct Info {
@@ -1057,8 +1065,19 @@ impl BrowserTools {
     }
 
     /// Waits until the scroll position and the page height stop changing (smooth scrolling animates).
-    async fn settle(c: &CdpClient) -> Result<ScrollPos, String> {
+    /// `before` is the position when the wheel was sent: the wheel is handled asynchronously by the
+    /// browser (and on a loaded machine the animation can start late), so a position that has not moved
+    /// yet is first given up to ~0.5 s to START moving. Without this the "still" check below read the
+    /// not-yet-started scroll as a finished one and the tool reported the page unmoved (CLA-38).
+    async fn settle(c: &CdpClient, before: &ScrollPos) -> Result<ScrollPos, String> {
         let mut last = Self::scroll_pos(c).await?;
+        for _ in 0..SCROLL_START_POLLS {
+            if scroll_moved(before, &last) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            last = Self::scroll_pos(c).await?;
+        }
         for _ in 0..12 {
             tokio::time::sleep(Duration::from_millis(80)).await;
             let now = Self::scroll_pos(c).await?;
@@ -1125,7 +1144,7 @@ impl BrowserTools {
                 let (before, before_top) = (pos, top);
                 let delta = if to_the_end { start.client_h.max(200.0) * 3.0 } else { one_step };
                 Self::wheel(&c, x, y, sign * delta).await?;
-                pos = Self::settle(&c).await?;
+                pos = Self::settle(&c, &before).await?;
                 top = match &element {
                     Some(n) => Self::box_top(&c, n.backend_node_id).await,
                     None => None,
@@ -1226,8 +1245,10 @@ impl BrowserTools {
             } else if held != file_name && !on_page {
                 message.push_str(" Atenção: o campo não ficou com o arquivo e a página não mostrou o nome dele; confira com browser_read ou browser_text antes de seguir.");
             }
-            // Success path only (every failure above returned): remember which document went to this vaga.
-            self.docs.attached(vaga, tipo, att.id);
+            // Remember which document went to this vaga, unless the field's own accept rule refuses its format.
+            if accept_allows(&accept, &att.formato) {
+                self.docs.attached(vaga, tipo, att.id);
+            }
             // Add the state line after constructing the message.
             if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
                 message.push('\n');
@@ -2134,6 +2155,15 @@ mod tests {
         assert!(end.at_end(), "within 2px of the end counts as the end");
         let fits = ScrollPos { y: 0.0, client_w: 1200.0, client_h: 800.0, content_h: 500.0 };
         assert_eq!((fits.max_y(), fits.percent(), fits.at_end()), (0.0, 100, true), "a page that fits has nothing to scroll");
+    }
+
+    #[test]
+    fn a_scroll_counts_as_started_once_the_document_moved_or_changed_height() {
+        let at = ScrollPos { y: 0.0, client_w: 1200.0, client_h: 800.0, content_h: 3000.0 };
+        assert!(!scroll_moved(&at, &at), "the same reading: the wheel has not taken effect yet");
+        assert!(!scroll_moved(&at, &ScrollPos { y: 0.4, ..at }), "sub-pixel noise is not movement");
+        assert!(scroll_moved(&at, &ScrollPos { y: 120.0, ..at }), "the page moved");
+        assert!(scroll_moved(&at, &ScrollPos { content_h: 3400.0, ..at }), "a page that grew (infinite scroll) counts");
     }
 
     #[test]
