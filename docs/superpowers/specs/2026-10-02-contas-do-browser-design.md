@@ -2,6 +2,8 @@
 
 > Spec de design. Não é o plano de implementação. Ciclo 2 de 3. Depende do motor do browser (`2026-10-02-browser-cdp-motor-design.md`).
 
+> **Status: NÃO INICIADA.** Ciclo 2, branch própria `feat/browser-contas`, depois do merge desta. Precisa de aprovação.
+
 **Data:** 2026-10-02
 **Branch:** `feat/browser-contas` (a partir da branch do ciclo 1, depois que ela estiver integrada)
 **Issue:** a criar no Linear, ligada à CLA-31

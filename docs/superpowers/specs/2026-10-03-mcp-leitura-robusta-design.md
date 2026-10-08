@@ -2,6 +2,8 @@
 
 > Spec de design. Não é o plano de implementação. Corrige o que a sessão 150 (2026-10-03) mostrou. Complementa `2026-10-02-browser-cdp-motor-design.md`.
 
+> **Status: implementada em `feat/browser-cdp-mcp`.** Pendências: `docs/superpowers/evidencias/2026-10-feat-browser-cdp-mcp.md`.
+
 **Data:** 2026-10-03
 **Branch:** `feat/browser-cdp-mcp` (continuação do ciclo 1)
 
@@ -59,7 +61,7 @@ No processo MCP, por sessão: se a mesma ferramenta com o mesmo alvo se repete *
 
 - Parâmetros: `direction` (`down` | `up` | `top` | `bottom`), `pages` (padrão 0.8 do viewport), `ref` opcional (rola o contêiner daquele elemento).
 - Implementação por evento de roda do mouse no ponto central do viewport ou do elemento (`Input.dispatchMouseEvent` tipo `mouseWheel`), com `DOM.scrollIntoViewIfNeeded` quando há `ref`. Sem JS na página.
-- Resultado: posição aproximada (`porcentagem`), `fim_da_pagina` verdadeiro/falso, e `refs` invalidadas (as refs valem só até a página mudar, como hoje).
+- Resultado (texto real, `mcp/tools/browser.rs`): sem `ref`, `Rolou <direção> <N> tela(s). Posição: <N>% (y=<y> de <máx>). fim_da_pagina: <true|false>.` mais, quando a posição do documento não mudou, `A posição do documento não mudou; um painel interno pode ter rolado.`; com `ref`, `Rolou o contêiner de <ref> <direção>. moveu: <true|false>` e, sem movimento, `(já está no limite nessa direção)`. Nos dois casos termina com `Chame browser_read para ver o que apareceu.` Não há campo `porcentagem` nem lista de refs invalidadas: a mensagem manda reler com `browser_read`, e as refs valem só até a página mudar, como antes.
 - Existe para listas de carregamento infinito (feed, resultados). Ler texto é com `browser_text`.
 - Não conta como envio; não passa pela guarda de envio.
 

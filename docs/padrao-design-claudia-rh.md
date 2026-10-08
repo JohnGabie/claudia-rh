@@ -87,14 +87,15 @@ Sidebar fixa à esquerda, 220px de largura, fundo `--bg-surface`, borda direita 
 1. **Logotipo (óculos, seção 1.1) + nome** ("Claudia RH"), área de cabeçalho da sidebar, 56px de altura, logo à esquerda do nome com 10px de gap.
 2. **Dashboard**
 3. **Perfil** (aba conversacional — seção 5)
-4. **Histórico** (tabela de vagas processadas — seção 6)
-5. **Feedback** (item da sidebar; layout desta aba não é especificado neste ciclo)
-6. **Pendências** — com badge numérico vermelho (`--danger`) sempre que existir pelo menos uma pendência não resolvida. O badge mostra a contagem; acima de 9, mostra "9+".
-7. **Terminal**
-8. Espaço flexível (empurra o item seguinte para o fundo)
-9. **Configurações** + **ícone de engrenagem** (configurações rápidas/globais — tema, toggle de notificações), no fundo da sidebar, visualmente distinto dos itens de navegação principal.
+4. **Currículos** (ícone `FileText`; biblioteca de currículos e cartas — seção 13)
+5. **Histórico** (tabela de vagas processadas — seção 6)
+6. **Feedback** (item da sidebar; layout desta aba não é especificado neste ciclo)
+7. **Pendências** — com badge numérico vermelho (`--danger`) sempre que existir pelo menos uma pendência não resolvida. O badge mostra a contagem; acima de 9, mostra "9+".
+8. **Terminal**
+9. Espaço flexível (empurra o item seguinte para o fundo)
+10. **Configurações** + **ícone de engrenagem** (configurações rápidas/globais — tema, toggle de notificações), no fundo da sidebar, visualmente distinto dos itens de navegação principal.
 
-Cada item de navegação principal (2–7) é uma linha de 40px de altura, ícone (Lucide ou Tabler outline, 18px) mais label, padding horizontal de 16px. O item ativo tem fundo `--accent-soft` e texto/ícone em `--accent-strong`; os restantes têm texto `--text-secondary`, mudando para `--text-primary` no hover.
+Cada item de navegação principal (2–8) é uma linha de 40px de altura, ícone (Lucide ou Tabler outline, 18px) mais label, padding horizontal de 16px. O item ativo tem fundo `--accent-soft` e texto/ícone em `--accent-strong`; os restantes têm texto `--text-secondary`, mudando para `--text-primary` no hover.
 
 ## 4. Dashboard
 
@@ -184,14 +185,15 @@ Organizada em seções dentro de uma única tela com scroll, cada seção com um
 2. **Disparo automático** — toggle "Ativar disparo por inatividade", e, quando ativo, um input numérico para o limiar em minutos (default 15).
 3. **Pasta de aplicações** — caminho onde os arquivos gerados são guardados, com botão para escolher pasta via diálogo nativo do Windows.
 4. **Pré-requisitos do sistema** — bloco de estado (não editável), mostrando se o browser da Claudia está pronto (baixado e aberto pelo app, sem extensão), a versão do Claude Code detectada, e se a conta tem o plano necessário. Cada item com um indicador verde/vermelho e, se vermelho, uma frase curta de como resolver.
+5. **Activity log** — uma descrição curta e o botão "Ver registros", que abre a tela própria da seção 14.
 
 ## 11. Configurações rápidas (engrenagem)
 
-Acionada pelo ícone de engrenagem no fundo da sidebar (item 9). Abre como um popover pequeno (280px), ancorado à engrenagem, não uma tela cheia — estas são definições que se ajustam com frequência, por isso não merecem o custo de navegação de uma aba inteira:
+Acionada pelo ícone de engrenagem no fundo da sidebar (item 10). Abre como um popover pequeno (280px), ancorado à engrenagem, não uma tela cheia — estas são definições que se ajustam com frequência, por isso não merecem o custo de navegação de uma aba inteira:
 
 - **Tema**: claro / escuro / seguir o sistema (ainda que o padrão visual deste documento seja claro, o toggle de tema fica disponível desde já como preferência pessoal, não como decisão de design pendente).
 - **Notificações**: toggle geral de notificações Windows, e o input do intervalo de repetição (5 / 10 / 15 minutos, conforme seção 6.5 do documento de arquitetura).
-- Nenhuma outra opção vive aqui — qualquer coisa que precise de mais espaço ou contexto pertence à aba Configurações (item 9), não a este popover.
+- Nenhuma outra opção vive aqui — qualquer coisa que precise de mais espaço ou contexto pertence à aba Configurações (item 10), não a este popover.
 
 ## 12. Resolução das referências provisórias
 
@@ -202,3 +204,29 @@ Este documento substitui, de forma definitiva, as seguintes referências marcada
 - O componente `PendenciaCard` da fase 6 corresponde à seção 9 deste documento.
 - O dashboard e histórico da fase 7 correspondem às seções 4 e 6 deste documento.
 - Qualquer identidade visual (cores, tipografia) a partir de agora segue exclusivamente a seção 2 deste documento — não a paleta padrão de nenhuma biblioteca de componentes usada.
+
+## 13. Currículos
+
+Item 4 da sidebar (`FileText`, label "Currículos"; "Résumés" em inglês). Código em `src/components/documentos/`. É a biblioteca de documentos (arquitetura 3.7).
+
+**Tela principal.** Título de seção "Currículos e cover letters" (20px / 600), sobre uma barra de duas abas (**Currículos** e **Cover letters**): aba ativa com texto `--accent-strong` e sublinhado de 2px em `--accent`, as outras em `--text-secondary`. Padding de 24px.
+
+- **Barra de ferramentas**, acima da grade: à esquerda, um `select` por tipo de tag (**Variante**, **Template**, **Cor**, **Idioma**), cada um com a opção "<Rótulo>: Todos" e os valores que existem nos documentos; aparecem só quando há pelo menos um documento. À direita, **Gerar** (botão cheio em `--accent`, texto branco) e **Adicionar o meu** (botão com borda, para importar um PDF ou DOCX pelo seletor do sistema).
+- **Grade:** `repeat(auto-fill, minmax(190px, 1fr))`, 16px de espaço. Cada **cartão** é uma superfície com borda de 1px em `--border`, raio de 8px e padding de 12px; a borda vai a `--accent` no hover. Dentro: a **miniatura** (a folha A4 escalada, no mesmo HTML da pré-visualização, carregada só quando o cartão aparece; documento importado mostra o ícone de arquivo e o formato), o nome (14px / 500, uma linha com reticências), a origem ("Gerado" ou "Importado", 12px), uma estrela cheia em `--accent` quando é o **preferido geral**, a linha "Preferido da variante: ..." em `--accent-strong` quando é o preferido de alguma variante, e as **tags** como pills de 11px em `--bg-sunken` (a tag de cor leva uma bolinha da própria cor).
+- **Estados:** carregando ("Carregando…"); erro com borda e texto `--danger` e botão "Tentar de novo"; vazio (cartão tracejado: "Nenhum currículo ainda." / "Nenhuma cover letter ainda." e a dica "Gere um com a Claudia ou adicione o seu PDF ou DOCX."); filtros sem resultado ("Nenhum documento combina com esses filtros.").
+- **Gerar** abre um painel acima da grade (título "Gerar currículo" ou "Nova cover letter", com X para fechar): na cover letter, empresa e cargo (obrigatórios), descrição da vaga e nota extra (opcionais); nas duas, o idioma (PT ou EN), a cor de destaque, a variante e, no currículo, os cartões de template. Quando o perfil não tem e-mail, a carta é salva e o painel mostra o aviso "Carta salva. Aviso: ..." com um botão OK.
+
+**Página do documento** (substitui a grade; botão **Voltar** no topo). Duas colunas que quebram em telas estreitas:
+- **Folha A4** à esquerda, até 794px de largura, escalada à coluna, num `iframe` sem permissões (`sandbox` vazio: sem scripts), com sombra única do documento (seção 2.3). Documento importado: um cartão com ícone, nome, formato, tamanho, data, a frase "Arquivo importado. Abra no visualizador do sistema." e o botão **Abrir**.
+- **Coluna lateral** (280 a 360px) com três painéis (borda de 1px, raio de 10px): **Detalhes** (origem, formato, tamanho, criado em), **Tags** (pills removíveis com "x", mais um `select` do tipo — variante, template, cor, idioma, livre — um campo e **Adicionar**) e **Preferido** (uma caixa "Preferido geral" e uma por variante ativa). Abaixo, os botões **Renomear** (edita o título no lugar), **Abrir** e **Excluir** (`--danger`); excluir pede confirmação e avisa quando o documento é um preferido.
+
+A aba recarrega sozinha quando o backend muda os documentos (geração, migração, o agente salvando uma carta). No Perfil, um `select` escolhe a variante principal.
+
+## 14. Activity log (tela de Configurações)
+
+Não é item da sidebar: abre a partir de **Configurações → Activity log → Ver registros**, ocupando a área principal, com **← Voltar** no topo (volta às Configurações). Somente leitura: não existe "Limpar tudo" nem outra escrita; a retenção é automática (30 dias ou 1 GB).
+
+- **Filtros** numa linha acima da lista: tipo (**todos, ação, falha, navegação, browser**), sessão e vaga.
+- **Lista** cronológica, mais novo primeiro, em tabela de colunas fixas: hora local, ferramenta (ou o tipo, quando não há ferramenta), alvo, resultado e duração, com "Carregar mais" a cada 100 linhas. Falhas em `--danger`, só como estado.
+- **Detalhe** ao clicar numa linha, ao lado: o print **antes** e o **depois** (carregados só do registro aberto), os campos nomeados (hora, tipo, passo, alvo, papel, texto, endereço, resultado, erro, duração, sessão, vaga) e os dados técnicos num bloco secundário. As linhas do tipo **browser** são os eventos do próprio browser (download, lançamento, queda, queda de aba, diálogo).
+- Os prints podem mostrar dados pessoais; ficam só nesta máquina.

@@ -1,4 +1,6 @@
-# Propostas para cortar a dependência do Claude (Tarefa 5.1): NADA aqui foi aplicado
+# Propostas para cortar a dependência do Claude (Tarefa 5.1): APLICADAS no commit beaeb33
+
+> O texto abaixo é o registro histórico de quando as propostas ainda não estavam aplicadas. A sessão de execução hoje roda com `--no-chrome` e o prompt manda usar as ferramentas `browser_*` do app.
 
 O código das Fases 0 a 4 está pronto e testado, mas a sessão de execução **ainda** sobe com `--chrome` e o prompt ainda manda o agente usar a extensão. Remover `--chrome` sem trocar o prompt deixaria o agente sem browser. Estes dois arquivos mandam parar e perguntar:
 
