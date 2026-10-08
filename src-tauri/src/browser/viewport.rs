@@ -151,8 +151,8 @@ async fn set_bounds(c: &CdpClient, window_id: i64, bounds: Value) -> Result<(), 
 /// The window takes a moment to lay the page out again after a resize, and the first reading that
 /// differs can be an intermediate one (deciding on it would maximize a window that was just about to
 /// be big enough). So wait until two consecutive readings agree, and the reading changed, or until
-/// half a second passed with no change at all (the browser refused or clamped the request).
-async fn measure_settled(c: &CdpClient, previous: &Measure) -> Result<(Measure, i64), String> {
+/// a patience limit passed with no change at all (the browser refused or clamped the request).
+async fn measure_settled(c: &CdpClient, previous: &Measure, wanted_outer: Option<(u32, u32)>) -> Result<(Measure, i64), String> {
     let mut last = measure(c).await?;
     let mut stable = 0;
     for i in 0..20 {
@@ -164,11 +164,27 @@ async fn measure_settled(c: &CdpClient, previous: &Measure) -> Result<(Measure, 
             stable = 0;
             last = now;
         }
-        if stable >= 2 && (last.0 != *previous || i >= 5) {
+        let missed = wanted_outer.is_some_and(|w| last.0.outer != w);
+        if settle_done(stable, last.0 != *previous, i, missed) {
             break;
         }
     }
     Ok(last)
+}
+
+/// Polls with no change after which a request that nothing answered is taken as refused.
+const PATIENCE_POLLS: u32 = 5;
+/// Same, when we asked for a window size and the window does not have it yet: a loaded machine can
+/// take much longer than half a second to apply `setWindowBounds` (CLA-36), and giving up too early
+/// would maximize a window that was about to be big enough.
+const PATIENCE_POLLS_SIZE_NOT_REACHED: u32 = 15;
+
+/// Pure: may the settling loop stop? `stable` = consecutive equal readings, `changed` = the reading
+/// differs from before the request, `poll` = how many polls passed (0-based), `missed` = a size was
+/// requested and the window does not have it.
+pub(crate) fn settle_done(stable: u32, changed: bool, poll: u32, missed: bool) -> bool {
+    let patience = if missed { PATIENCE_POLLS_SIZE_NOT_REACHED } else { PATIENCE_POLLS };
+    stable >= 2 && ((changed && !missed) || poll >= patience)
 }
 
 /// Makes sure the tab's window gives the page at least MIN_W x MIN_H. Never panics: a failure is
@@ -201,6 +217,8 @@ pub async fn ensure_min_viewport_with(c: &CdpClient, gave_up_at: Option<(u32, u3
     let mut below_minimum = false;
     // At most restore + resize + maximize, each followed by a measurement.
     for _ in 0..4 {
+        // The outer size the window should have once this step is applied (only a resize names one).
+        let mut wanted_outer = None;
         match next_step(&current, &tried) {
             Step::Enough => break,
             Step::BelowMinimum => {
@@ -213,6 +231,7 @@ pub async fn ensure_min_viewport_with(c: &CdpClient, gave_up_at: Option<(u32, u3
             }
             Step::Resize { outer } => {
                 tried.resize = true;
+                wanted_outer = Some(outer);
                 set_bounds(c, window_id, json!({ "windowState": "normal", "width": outer.0, "height": outer.1 })).await?;
             }
             Step::Maximize => {
@@ -220,7 +239,7 @@ pub async fn ensure_min_viewport_with(c: &CdpClient, gave_up_at: Option<(u32, u3
                 set_bounds(c, window_id, json!({ "windowState": "maximized" })).await?;
             }
         }
-        current = measure_settled(c, &current).await?.0;
+        current = measure_settled(c, &current, wanted_outer).await?.0;
     }
     let after = current.viewport;
     let known = after.0 > 0 && after.1 > 0;
@@ -307,6 +326,18 @@ mod tests {
         assert_eq!(next_step(&clamped, &t1), Step::Maximize);
         let t2 = Tried { resize: true, maximize: true, ..Tried::default() };
         assert_eq!(next_step(&clamped, &t2), Step::BelowMinimum);
+    }
+
+    #[test]
+    fn a_requested_size_that_the_window_does_not_have_yet_is_waited_for_longer() {
+        // CLA-36: on a loaded machine the window took longer than half a second to take the new size,
+        // and the loop gave up and maximized a window that was about to be big enough.
+        assert!(!settle_done(2, false, 5, true), "asked for a size, not there after 0.6 s: keep waiting");
+        assert!(!settle_done(2, true, 5, true), "an intermediate reading that is not the size asked for is not final");
+        assert!(settle_done(2, false, 15, true), "but not forever: a clamped request ends");
+        assert!(settle_done(2, true, 3, false), "the size was reached (or none was asked for) and the reading changed");
+        assert!(settle_done(2, false, 5, false), "nothing asked and nothing changed for half a second: refused");
+        assert!(!settle_done(1, true, 9, false), "two equal readings are always required");
     }
 
     #[test]

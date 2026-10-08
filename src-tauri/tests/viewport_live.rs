@@ -62,7 +62,20 @@ async fn state(c: &cdp::CdpClient) -> (u32, u32, u32, u32, String) {
 async fn set_window(c: &cdp::CdpClient, bounds: serde_json::Value) {
     let w = c.call("Browser.getWindowForTarget", json!({})).await.unwrap();
     c.call("Browser.setWindowBounds", json!({ "windowId": w["windowId"], "bounds": bounds })).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    // Wait for the window to HAVE what was asked (up to 5 s) instead of sleeping a fixed time: on a
+    // loaded machine a fixed sleep let the next measurement see the old window (CLA-36).
+    for _ in 0..50 {
+        let s = state(c).await;
+        let state_ok = bounds["windowState"].as_str().is_none_or(|want| want == s.4);
+        let size_ok = match (bounds["width"].as_u64(), bounds["height"].as_u64()) {
+            (Some(w), Some(h)) => (s.2 as u64, s.3 as u64) == (w, h),
+            _ => true,
+        };
+        if state_ok && size_ok {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -103,6 +116,8 @@ async fn an_already_big_window_is_left_exactly_as_it_is() {
 async fn a_wide_but_short_window_grows_in_height_only() {
     let l = launch().await;
     set_window(&l.client, json!({ "windowState": "normal", "width": 1600, "height": 500 })).await;
+    let setup = state(&l.client).await;
+    assert!((setup.2, setup.3, setup.4.as_str()) == (1600, 500, "normal"), "the setup really made the window wide and short: {setup:?}");
     let report = ensure_min_viewport(&l.client).await.unwrap();
     let after = state(&l.client).await;
     assert!(report.adjusted, "{report:?}");
