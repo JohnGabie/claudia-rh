@@ -114,7 +114,7 @@ fn url_has_segment(url: &str, pat: &str) -> bool {
         }
         match url[end..].chars().next() {
             None => return true,
-            Some(c) if matches!(c, '/' | '?' | '#' | '.' | '&' | '=') => return true,
+            Some('/' | '?' | '#' | '.' | '&' | '=') => return true,
             Some(_) => {}
         }
         from = end;
