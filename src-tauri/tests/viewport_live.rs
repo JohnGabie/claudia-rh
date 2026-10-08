@@ -1,6 +1,8 @@
 //! Live tests for the minimum viewport: a real Chrome (headless=new has real window bounds) with a
 //! temporary profile and no site. Run:
 //! CLAUDIA_TEST_CHROME="C:/path/chrome.exe" cargo test --test viewport_live -- --ignored --test-threads=1
+mod support;
+
 use claudia_rh_lib::browser::cdp;
 use claudia_rh_lib::browser::manager::{self, LaunchOptions};
 use claudia_rh_lib::browser::viewport::{ensure_min_viewport, MIN_H, MIN_W};
@@ -8,34 +10,39 @@ use serde_json::json;
 use std::path::PathBuf;
 
 fn chrome() -> PathBuf {
-    PathBuf::from(std::env::var("CLAUDIA_TEST_CHROME").expect("set CLAUDIA_TEST_CHROME to chrome.exe"))
+    support::test_chrome()
 }
 
 struct Live {
     client: cdp::CdpClient,
     pid: u32,
+    port: u16,
     profile: PathBuf,
 }
 
 impl Drop for Live {
     fn drop(&mut self) {
-        let _ = std::process::Command::new("taskkill").args(["/PID", &self.pid.to_string(), "/T", "/F"]).output();
-        let _ = std::fs::remove_dir_all(&self.profile);
+        support::kill_our_chrome(self.pid, self.port, &self.profile);
+        support::remove_profile_dir(&self.profile);
     }
 }
 
 async fn launch() -> Live {
-    let profile = std::env::temp_dir().join(format!(
-        "claudia-viewport-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-    ));
+    let profile = support::new_profile_dir("viewport");
     let o = LaunchOptions::headless_for_tests(chrome(), profile.join("p"));
     let st = manager::ensure_running(&o, "", &profile.join("state.json")).await.expect("chrome launches");
-    let page = cdp::first_page(st.port).await.unwrap();
+    let page = match support::first_page_with_retry(st.port).await {
+        Ok(p) => p,
+        Err(e) => {
+            // No Live exists yet, so nothing else would close this Chrome: do it before failing.
+            support::kill_our_chrome(st.pid, st.port, &profile);
+            support::remove_profile_dir(&profile);
+            panic!("chrome started without a page: {e}");
+        }
+    };
     let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
     client.call("Page.enable", json!({})).await.unwrap();
-    Live { client, pid: st.pid, profile }
+    Live { client, pid: st.pid, port: st.port, profile }
 }
 
 /// (viewport width, viewport height, outer width, outer height, window state)

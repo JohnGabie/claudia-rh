@@ -319,6 +319,11 @@ mod tests {
         d
     }
 
+    /// A launcher that never starts anything: these tests must not spawn or kill a real process.
+    fn no_spawn(_: &LaunchOptions, _: u16) -> Result<u32, String> {
+        Err("spawn refused (test: no browser is ever started)".to_string())
+    }
+
     /// Fake /json/version endpoint answering with the given Browser string.
     async fn fake_version(browser: &'static str) -> u16 {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -387,7 +392,7 @@ mod tests {
         let state_path = dir.join("state.json");
         write_state(&state_path, &BrowserState { port, pid: 1, version: "154.0.1.2".into() }).unwrap();
         let o = LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("p"));
-        let s = ensure_running(&o, "154.0.1.2", &state_path).await.unwrap();
+        let s = ensure_running_with(&o, "154.0.1.2", &state_path, no_spawn, |_| {}, Duration::from_secs(1)).await.unwrap();
         assert_eq!(s.port, port);
     }
 
@@ -400,7 +405,7 @@ mod tests {
         write_state(&state_path, &BrowserState { port, pid: 1, version: "154.0.1.2".into() }).unwrap();
         let o = LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("p"));
         // It must try to launch ours (and fail here, because the exe does not exist).
-        let e = ensure_running(&o, "154.0.1.2", &state_path).await.unwrap_err();
+        let e = ensure_running_with(&o, "154.0.1.2", &state_path, no_spawn, |_| {}, Duration::from_secs(1)).await.unwrap_err();
         assert!(e.contains("spawn") || e.contains("launch"), "{e}");
     }
 
@@ -410,7 +415,7 @@ mod tests {
         let state_path = dir.join("state.json");
         write_state(&state_path, &BrowserState { port: 1, pid: 1, version: "154.0.1.2".into() }).unwrap();
         let o = LaunchOptions::visible(dir.join("no-such-chrome.exe"), dir.join("p"));
-        assert!(ensure_running(&o, "154.0.1.2", &state_path).await.is_err());
+        assert!(ensure_running_with(&o, "154.0.1.2", &state_path, no_spawn, |_| {}, Duration::from_secs(1)).await.is_err());
     }
 }
 

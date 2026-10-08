@@ -145,6 +145,7 @@ pub(crate) async fn prepare(
     publish: &(dyn Fn(Status) + Send + Sync),
     events: &(dyn Fn(BrowserEvent) + Send + Sync),
     spawn: impl Fn(&LaunchOptions, u16) -> Result<u32, String>,
+    kill: impl Fn(u32),
 ) -> Result<BrowserState, String> {
     let exe = install(local, pin, publish, events).await?;
 
@@ -156,7 +157,7 @@ pub(crate) async fn prepare(
             log::warn!("browser theme not applied: {e}");
         }
     };
-    match manager::ensure_running_full(&opts, &pin.version, &super::state_file(local), prepare_profile, spawn, manager::kill_tree, Duration::from_secs(20)).await {
+    match manager::ensure_running_full(&opts, &pin.version, &super::state_file(local), prepare_profile, spawn, kill, Duration::from_secs(20)).await {
         Ok(state) => {
             publish(Status::at("ready"));
             events(BrowserEvent::Launched { version: state.version.clone(), port: state.port });
@@ -273,7 +274,7 @@ pub async fn start(app: AppHandle) {
     };
     let pin = super::pin::pin();
     let events = event_sink(&app);
-    if let Ok(state) = prepare(&local, &pin, &publish, &events, manager::spawn_chrome).await {
+    if let Ok(state) = prepare(&local, &pin, &publish, &events, manager::spawn_chrome, manager::kill_tree).await {
         // The orange logo on the window (taskbar, Alt+Tab): the window opens a moment after the launch.
         until_window(60, Duration::from_millis(250), || super::icon::apply_to_process(state.pid)).await;
         let active = || agent_session_active(&app);
@@ -334,7 +335,7 @@ async fn watch(
                     return;
                 }
                 log::warn!("browser is gone, relaunching");
-                match prepare(local, pin, publish, events, manager::spawn_chrome).await {
+                match prepare(local, pin, publish, events, manager::spawn_chrome, manager::kill_tree).await {
                     Ok(state) => events(BrowserEvent::Relaunched { version: state.version, port: state.port }),
                     Err(_) => return,
                 }
@@ -498,7 +499,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("alive-live");
         let (_l, publish) = recorder();
-        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
+        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn, |_| {}).await.unwrap();
         let file = super::super::state_file(&local);
         assert!(is_alive(&file, "154.0.1.2").await);
         assert!(!is_alive(&file, "999.0.0.1").await, "the port answers, but not as the pinned version");
@@ -580,7 +581,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("first");
         let (log, publish) = recorder();
-        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
+        let st = prepare(&local, &pin, &publish, &noop_events, fake_spawn, |_| {}).await.unwrap();
         let stages: Vec<String> = {
             let mut v: Vec<String> = log.lock().unwrap().iter().map(|x| x.stage.clone()).collect();
             v.dedup();
@@ -603,7 +604,7 @@ mod tests {
             let prefs = std::fs::read_to_string(o.profile_dir.join("Default").join("Preferences")).unwrap_or_default();
             *seen.lock().unwrap() = prefs;
             fake_spawn(o, port)
-        })
+        }, |_| {})
         .await
         .unwrap();
         assert!(seen_at_spawn.lock().unwrap().contains("-2525353"), "the orange theme must already be in Preferences when Chrome starts");
@@ -615,12 +616,12 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("second");
         let (_l, publish) = recorder();
-        let first = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
+        let first = prepare(&local, &pin, &publish, &noop_events, fake_spawn, |_| {}).await.unwrap();
         let spawns = std::sync::atomic::AtomicUsize::new(0);
         let again = prepare(&local, &pin, &publish, &noop_events, |_, _| {
             spawns.fetch_add(1, Ordering::SeqCst);
             Err("must not spawn".into())
-        })
+        }, |_| {})
         .await
         .unwrap();
         assert_eq!(first.port, again.port);
@@ -634,7 +635,7 @@ mod tests {
         pin.sha256 = "0".repeat(64); // the download will not match
         let local = temp("bad-hash");
         let (log, publish) = recorder();
-        let e = prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap_err();
+        let e = prepare(&local, &pin, &publish, &noop_events, fake_spawn, |_| {}).await.unwrap_err();
         assert!(e.contains("confere"), "{e}");
         let last = log.lock().unwrap().last().cloned().unwrap();
         assert_eq!(last.stage, "error");
@@ -647,7 +648,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("bad-launch");
         let (log, publish) = recorder();
-        let e = prepare(&local, &pin, &publish, &noop_events, |_, _| Err("não abriu".to_string())).await.unwrap_err();
+        let e = prepare(&local, &pin, &publish, &noop_events, |_, _| Err("não abriu".to_string()), |_| {}).await.unwrap_err();
         assert!(e.contains("não abriu"));
         assert_eq!(log.lock().unwrap().last().unwrap().stage, "error");
     }
@@ -660,10 +661,10 @@ mod tests {
         let local = temp("ev-first");
         let (_l, publish) = recorder();
         let (events, ev) = event_recorder();
-        prepare(&local, &pin, &publish, &ev, fake_spawn).await.unwrap();
+        prepare(&local, &pin, &publish, &ev, fake_spawn, |_| {}).await.unwrap();
         assert_eq!(*events.lock().unwrap(), vec!["download_started", "installed", "launched"]);
         events.lock().unwrap().clear();
-        prepare(&local, &pin, &publish, &ev, |_, _| Err("must not spawn".into())).await.unwrap();
+        prepare(&local, &pin, &publish, &ev, |_, _| Err("must not spawn".into()), |_| {}).await.unwrap();
         assert_eq!(*events.lock().unwrap(), vec!["launched"], "already installed: no download events");
     }
 
@@ -674,7 +675,7 @@ mod tests {
         pin.sha256 = "0".repeat(64);
         let (_l, publish) = recorder();
         let (events, ev) = event_recorder();
-        prepare(&temp("ev-hash"), &pin, &publish, &ev, fake_spawn).await.unwrap_err();
+        prepare(&temp("ev-hash"), &pin, &publish, &ev, fake_spawn, |_| {}).await.unwrap_err();
         assert_eq!(*events.lock().unwrap(), vec!["download_started", "install_failed"]);
     }
 
@@ -684,7 +685,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let (_l, publish) = recorder();
         let (events, ev) = event_recorder();
-        prepare(&temp("ev-launch"), &pin, &publish, &ev, |_, _| Err("não abriu".to_string())).await.unwrap_err();
+        prepare(&temp("ev-launch"), &pin, &publish, &ev, |_, _| Err("não abriu".to_string()), |_| {}).await.unwrap_err();
         assert_eq!(events.lock().unwrap().last().copied(), Some("launch_failed"));
     }
 
@@ -715,7 +716,7 @@ mod tests {
         let pin = pin_for(serve(zip.clone()).await, &zip);
         let local = temp("throttle");
         let (log, publish) = recorder();
-        prepare(&local, &pin, &publish, &noop_events, fake_spawn).await.unwrap();
+        prepare(&local, &pin, &publish, &noop_events, fake_spawn, |_| {}).await.unwrap();
         let downloading = log.lock().unwrap().iter().filter(|x| x.stage == "downloading").count();
         assert!(downloading <= 110, "at most ~1 update per percent, got {downloading}");
         assert!(downloading >= 2);
