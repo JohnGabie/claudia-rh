@@ -102,6 +102,11 @@ LogonCommand sem privilégio de administrador (não verificado) e `Z:` que não 
 | `C:\lab\out\status.json` | novos campos `elevated` (bool), `discoZ` (`ok`/`failed`/`needs-system`), `conta` (`presente`/`ausente`/`falhou`/`nao-pedida`), `instalar` (`nada`/`iniciado`/`needs-system`) | |
 | `C:\lab\out\disco-z.json` | `{ok, letra, imagem, segundos, erro}` | |
 | `C:\lab\out\instalar.json` | `{inicio, fim, ok, elevado, erro, pacotes:[{nome,versao,exit,segundos,binDir,vcvars,versaoVista,erro}]}` | |
+| `sandbox-lab/scripts/lib/travas.ps1` (adendo 9) | `$script:LabHostTools`, `ConvertTo-LabRustToolchainDir -RustcPath`, `New-LabHostToolMount -Nome -HostPath`, `Get-LabHostToolRefusal -Nome -HostPath -ReadOnly -UserProfile -Links -MarkerCount` | puras; `$null` ou motivo (sem caminho na mensagem); mount `[ordered]@{nome;host;sandbox;readOnly}` |
+| `compose.ps1` (adendo 9) | `$script:LabHostToolNames`, `Get-LabHostToolsRefusal`, `Get-LabComposeHostTools -Compose -Ambiente` | puras; só os nomes `rust,node,msvc,winkits` |
+| `disco.ps1` (adendo 9) | `Get-LabRustcPathFromRustup -ProjectDir`, `Get-LabHostToolCandidate -Nome -ProjectDir` | só leem; `[ordered]@{HostPath;MarkerCount}` ou `$null` |
+| `guest-install.lib.ps1` (adendo 9) | `Get-LabLatestVersionDir`, `ConvertTo-LabHostToolsLayout`, `Test-LabHostToolUsable`, `Test-LabInstallNeed ... -HostLayout`, `Get-LabGuestToolEnv ... -HostLayout` (devolve `paths`, `vcvars`, `env`, `hostTools`), `Get-LabHostToolsLayout` (leitor fino) | puras (menos o leitor) |
+| `guest.config.json` (adendo 9) | `hostTools` | só os nomes montados em `C:\hosttools\{rust,node,msvc,winkits}` (RO) |
 | Guest | `C:\labcred` (credencial, RO), `C:\labdadosreais` (dados reais do app, RO, só com `-DadosReais`), `C:\labcachesaida` (saída do layout, RW, só no `cache-msvc`), `C:\labtools\{msvc,node,claude}`, `C:\labdata\z.vhdx`, `Z:\tmp`, `Z:\claudia-teste-sandbox` | |
 
 ## Ondas de execução
@@ -2793,3 +2798,12 @@ Comandos a partir da raiz do checkout principal (`onde.mjs` → `lab`, `projeto`
 - **Correção, pelo id da subida (não pelo relógio):** o `bootstrap.ps1` gera um GUID e o grava em `C:\labdata\boot-id.txt` (disco do guest, some com o Sandbox) e em `status.json` (`bootId`). O `guest-firewall.ps1` grava `BOOTID: <id>` como primeira linha do `firewall.txt` e não aplica nada sem id válido. O `guest-run.ps1` passa o id lido a `Get-LabAppStartRefusal -ExpectedBootId` (decisão pura em `guest-install.lib.ps1`, com `Test-LabBootId` e `Format-LabFirewallBootLine`): recusa id esperado ausente/malformado, `firewall.txt` sem linha `BOOTID:`, mais de uma, ou diferente do esperado. O id foi preferido à data de `LastBootUpTime` porque não depende de relógio. O `firewall.txt` antigo não é apagado.
 - **Exit code:** o `guest-run.ps1` sai com 1 em toda recusa (firewall e cenário; a de cenário antes saía com 0) e a recusa de cenário não inicia o app. Nenhum script do repositório dependia do 0.
 - **Testes:** `guest-install.test.ps1` (pura + 5 mutações da lib) e `guest-travas.test.ps1` (fiação pelo parser + 9 mutações), em pwsh e Windows PowerShell 5.1. **Não verificado:** nada rodou no Sandbox; a subida real com um `firewall.txt` de outro Sandbox fica para a próxima rodada ao vivo. Item 17 de `.claude/skills/claudia-teste-sandbox/references/limites.md`.
+
+## Adendo de 2026-10-08 (9): o `testes` volta às ferramentas do PC, só leitura (decidido pelo usuário; spec §9)
+
+- **Decisão (palavras do usuário):** "Ah, volta, volta. Pelo amor de Deus, volta. É muito tempo, tipo, muito tempo mesmo. Usa o modo leitura somente, né?" O MSVC instalado no guest levou 3 h 08 min por subida. Reverte a A3 **só para o `testes`**; `Z:`, travas, `compose.json`, conta, cenários e dados reais ficam.
+- **`compose.json`:** `testes` = `instalar: ["claude-code"]` (4 s; escolhido por ser o mais simples e manter a conta e o `claude -p`) + `hostTools: ["rust","node","msvc","winkits"]` (nomes; nenhum caminho). O antigo `testes` virou `testes-limpo` (instala tudo, `instalarTimeoutSec` 14400).
+- **`test-up.ps1`:** acha cada pasta na hora (`rustup which rustc` na pasta do projeto, `ProgramFiles\nodejs`, `BuildTools\...\MSVC` ou `vswhere`, `Windows Kits\10`), decide por `Get-LabHostToolRefusal` no objeto que vira o `<MappedFolder>` (ReadOnly=true) e grava no `guest.config.json` só os nomes. A decisão não imprime caminho.
+- **Guest:** `Get-LabGuestToolEnv`/`Test-LabInstallNeed` ganham `-HostLayout`; cada ferramenta vem do PC se o ambiente a declara, senão do `instalar.json`. `guest-build.ps1` e `guest-cenario.ps1` leem o layout (`Get-LabHostToolsLayout`).
+- **Testes:** novo `scripts/test/host-tools.test.ps1` (no CI), mais casos em `compose.test.ps1`, `guest-install.test.ps1` e `guest-travas.test.ps1`; todos com mutação (linhas `FAILED` em `references/limites.md`, item 18).
+- **Não verificado:** nada rodou no Sandbox; ver spec §9.5.

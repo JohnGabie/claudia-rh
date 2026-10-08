@@ -45,8 +45,13 @@
       "instalar": [], "montar": ["projeto:ro", "cache-saida:rw"]
     },
     "testes": {
-      "$comment": "Testes de Sandbox (testes-no-guest.mjs), cargo test e Claude Code com a conta logada no PC. Internet aberta (cargo e npm).",
-      "rede": true, "memoriaMB": 8192, "bootTimeoutSec": 300, "instalarTimeoutSec": 3600, "conta": true,
+      "$comment": "Testes de Sandbox (testes-no-guest.mjs), cargo test e Claude Code com a conta logada no PC. Internet aberta (cargo e npm). Rust, Node, MSVC e Windows SDK vem do PC, montados SO LEITURA em C:\\hosttools (hostTools, por NOME: test-up acha cada pasta na hora da subida); so o Claude Code e instalado no guest (cerca de 4 s). Decisao do usuario em 2026-10-08: a instalacao do MSVC levava ~3 h por subida.",
+      "rede": true, "memoriaMB": 8192, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": true,
+      "instalar": ["claude-code"], "hostTools": ["rust", "node", "msvc", "winkits"], "montar": ["projeto:ro", "trabalho:rw"]
+    },
+    "testes-limpo": {
+      "$comment": "Como o testes, mas instala TUDO no guest a partir do cache (MSVC, Rust, Node, Claude Code): simula um PC novo de verdade, sem nenhuma ferramenta do PC. Leva cerca de 3 h por subida (o gargalo e o Windows SDK do MSVC; limites.md item 14).",
+      "rede": true, "memoriaMB": 8192, "bootTimeoutSec": 300, "instalarTimeoutSec": 14400, "conta": true,
       "instalar": ["msvc", "rust", "node", "claude-code"], "montar": ["projeto:ro", "trabalho:rw"]
     }
   },

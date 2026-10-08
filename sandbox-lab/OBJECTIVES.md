@@ -7,7 +7,7 @@ controlado por IA (winapp CLI + Windows-MCP). Nada toca o sistema/banco reais.
 
 ```
 win-sandbox-lab/
-├─ compose.json           ← ambientes nomeados (exemplo, app, app-winapp, cache-msvc, testes) com suas dependências e montagens
+├─ compose.json           ← ambientes nomeados (exemplo, app, app-winapp, cache-msvc, testes, testes-limpo) com suas dependências e montagens
 ├─ OBJECTIVES.md          ← este arquivo
 ├─ scripts/
 │  ├─ test-up.ps1         ← lê compose.json → gera sandbox/sandbox.generated.wsb → sobe o Sandbox
@@ -20,7 +20,7 @@ win-sandbox-lab/
 │  ├─ sandbox.template.wsb
 │  ├─ bootstrap.ps1       ← roda no LogonCommand dentro do Sandbox
 │  ├─ bootstrap-mcp.ps1   ← sobe o Windows-MCP no guest
-│  ├─ instalar.ps1        ← instala MSVC, Rust, Node, Claude Code no guest (ambiente testes)
+│  ├─ instalar.ps1        ← instala no guest o que o ambiente pede (testes: só Claude Code; testes-limpo: MSVC, Rust, Node, Claude Code)
 │  ├─ layout-msvc.ps1     ← monta o layout offline do MSVC (ambiente cache-msvc)
 │  └─ app/                ← scripts do guest para os ambientes
 ├─ shared/                ← mapeado no Sandbox em C:\lab (somente leitura, exceto out/)

@@ -3,6 +3,9 @@
   Sobe o lab a partir de um ambiente de compose.json: valida (Get-LabComposeRefusal), recusa se o PC tiver Z:, gera
   sandbox\sandbox.generated.wsb e sandbox\guest.config.json, limpa shared\out, copia a credencial do Claude quando o
   ambiente pede (conta: true), inicia o Sandbox pelo wsb CLI e espera status.json, disco-z.json e instalar.json.
+  Ambiente com hostTools (ex.: testes): acha na hora a pasta de cada ferramenta do PC (rust pelo rustup do projeto, node,
+  MSVC, Windows SDK), recusa pela Get-LabHostToolRefusal e monta SO LEITURA em C:\hosttools\<nome>; nenhum caminho e gravado
+  em arquivo versionado e o guest.config.json leva so os NOMES.
 .PARAMETER Ambiente     Nome do ambiente em compose.json (padrao: exemplo).
 .PARAMETER Project      Pasta do projeto montada read-only em C:\labproject (absoluta). Padrao: sandbox-lab\sample-project.
 .PARAMETER TimeoutSec   Espera maxima pelo status.json (padrao: bootTimeoutSec do ambiente).
@@ -101,6 +104,21 @@ if ($DadosReais) {
   $LatestLink = Test-LabLatestLinkApproved -Source $src -LinksInside $inside -FileLinksInside @(ConvertTo-LabLinkList (Get-LabFileLinks $inside)) -LinkTargets (Get-LabLinkTargets $inside)
   Write-Host '[test-up] dados reais do app: montados SO LEITURA em C:\labdadosreais (so com autorizacao do usuario nesta rodada)'
 }
+# --- host toolchains (ambiente hostTools, spec addendum 9): folders found at run time, mounted READ-ONLY, never written in a file ---
+# compose.json names the tools; Get-LabHostToolCandidate finds each folder on this PC (reads only) and the pure
+# Get-LabHostToolRefusal decides on the REAL path, on the very object that becomes the .wsb mount (readOnly included).
+$hostToolNames = @(Get-LabComposeHostTools -Compose $compose -Ambiente $Ambiente)
+$hostToolMounts = @()
+foreach ($n in $hostToolNames) {
+  $cand = Get-LabHostToolCandidate -Nome $n -ProjectDir $ProjectDir
+  if (-not $cand) { throw "[test-up] host tool '$n' not found on this PC (for rust: rustup missing, or it printed no toolchain). No Sandbox was started." }
+  $realTool = Resolve-LabRealPath $cand.HostPath
+  $toolMount = New-LabHostToolMount -Nome $n -HostPath $realTool
+  $toolWhy = Get-LabHostToolRefusal -Nome $n -HostPath $toolMount.host -ReadOnly $toolMount.readOnly -UserProfile ([Environment]::GetFolderPath('UserProfile')) -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $realTool)) -MarkerCount $cand.MarkerCount
+  if ($toolWhy) { throw "[test-up] $toolWhy. No Sandbox was started." }
+  $hostToolMounts += $toolMount
+}
+if ($hostToolMounts.Count) { Write-Host "[test-up] ferramentas do PC montadas SO LEITURA em C:\hosttools: $((@($hostToolMounts | ForEach-Object { $_.nome })) -join ', ')" }
 $msvcLayout = $(if (@($mounts | Where-Object { $_.nome -eq 'cache-saida' }).Count) { ConvertTo-LabGuestMsvcLayout -Compose $compose } else { $null })
 
 if (-not $GenerateOnly) {
@@ -131,6 +149,8 @@ $guest = [ordered]@{
   chromeExe = To-Guest $cfg.chrome.exe; extensions = $extList; dbBackup = To-Guest $cfg.dbBackup; workDb = 'C:\labdata\app.sqlite'
   mcpPort = [int]$cfg.mcp.port; mcpAuthKeyEnv = $cfg.mcp.authKeyEnv; mcpAuthKeyFile = $(if ($cfg.mcp.authKeyFile) { To-Guest $cfg.mcp.authKeyFile } else { $null })
   outDir = 'C:\lab\out'; conta = $conta; dadosReais = [bool]$RealData; dadosReaisLatestLink = [bool]$LatestLink; internetBloqueada = [bool](Test-LabAmbienteInternetBlocked -Compose $compose -Ambiente $Ambiente); instalar = $install; msvc = $msvcLayout
+  # Only the NAMES of the host tools mounted read-only at C:\hosttools (the guest scripts find the versions there).
+  hostTools = @($hostToolMounts | ForEach-Object { [string]$_.nome })
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $SandboxDir 'guest.config.json'), ($guest | ConvertTo-Json -Depth 6), $utf8)
@@ -149,6 +169,7 @@ function New-LabMappedFolderXml([string]$HostDir, [string]$Sandbox, [bool]$ReadO
 }
 $extra = ''
 foreach ($m in $mounts) { $extra += New-LabMappedFolderXml $HostOf[$m.nome] $m.sandbox $m.readOnly }
+foreach ($t in $hostToolMounts) { $extra += New-LabMappedFolderXml $t.host $t.sandbox $t.readOnly }   # host toolchains, read-only (validated above)
 if ($conta) { $extra += New-LabMappedFolderXml $cred.Dir 'C:\labcred' $true }
 if ($RealData) { $extra += New-LabMappedFolderXml $RealData 'C:\labdadosreais' $true }   # always read-only
 if ($extra) { $tpl = $tpl.Replace('  </MappedFolders>', $extra + '  </MappedFolders>') }

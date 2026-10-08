@@ -16,9 +16,13 @@ Laboratório Windows Sandbox do claudia-rh: um Windows limpo e descartável para
 
 `shared/tools/` (Chrome for Testing, Python portátil, `uv`, wheels do `windows-mcp`, `sqlite`) não está no git. A lista de arquivos com tamanho e SHA-256 está em `shared/tools.sha256`. Se faltar algo, o `test-up.ps1` para antes de subir o Sandbox e diz o quê. Para obter: copiar da pasta antiga do laboratório para `shared/tools/` (destino novo, sem `/MIR`) e conferir com `node .claude/skills/claudia-teste-sandbox/scripts/conferir-copia.mjs --manifesto sandbox-lab/shared/tools.sha256 --copia sandbox-lab/shared/tools`. Um script que baixa as ferramentas é trabalho futuro (Linear).
 
+## Ferramentas do PC, só leitura (ambiente `testes`)
+
+O ambiente `testes` não instala MSVC, Rust nem Node no guest (levava cerca de 3 h): o `test-up.ps1` acha na hora, no PC, a pasta de cada ferramenta declarada em `hostTools` no `compose.json` (por nome; nenhum caminho fica no arquivo) e a monta **só leitura** em `C:\hosttools\{rust,node,msvc,winkits}`: `rust` pelo `rustup which rustc` rodado na pasta do projeto (recusa toolchain sem libstd), `node` em `ProgramFiles\nodejs`, `msvc` no BuildTools do Visual Studio 2022 (ou `vswhere`), `winkits` em `ProgramFilesX86\Windows Kits\10`. Se algo faltar ou a pasta for recusada, o `test-up.ps1` para antes de subir. Para um "PC novo de verdade" use `-Ambiente testes-limpo`, que instala tudo no guest a partir do cache e leva cerca de 3 h.
+
 ## Cache de instaladores
 
-`shared/cache/` guarda os instaladores dos pacotes que o guest instala (Rust, Node, Claude Code, MSVC bootstrapper e layout), baixados uma vez pelo `scripts\cache-up.ps1` e nunca apagados. Tamanho aproximado por pacote:
+`shared/cache/` guarda os instaladores dos pacotes que o guest instala (Claude Code no `testes`; Rust, Node, MSVC bootstrapper e layout só no `testes-limpo`), baixados uma vez pelo `scripts\cache-up.ps1` e nunca apagados. Tamanho aproximado por pacote:
 - Rust 1.95.0: 304 MB
 - Node 22.23.3: 36 MB
 - Claude Code 2.1.285: 244 MB

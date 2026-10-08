@@ -38,33 +38,103 @@ function Get-LabInstallDone($Instalar) {
   return @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -eq 0 } | ForEach-Object { [string]$_.nome })
 }
 
+# Host toolchains the PC mounted READ-ONLY at C:\hosttools (ambiente "testes", spec addendum 9, decided by the user on 2026-10-08).
+# guest.config.json carries only the NAMES (hostTools); the versions are the folders found under C:\hosttools\msvc and
+# C:\hosttools\winkits\Include. A tool comes from the host when the ambiente declares it, otherwise from instalar.json.
+$script:LabGuestHostToolRoot = 'C:\hosttools'
+$script:LabGuestHostToolNames = @('rust', 'node', 'msvc', 'winkits')
+
+function Get-LabLatestVersionDir {
+  # The highest folder name that is a plain version (digits and dots, 2 to 4 parts), compared as versions and not as text
+  # ('9.0' < '10.0'). $null when none.
+  param([string[]]$Dirs = @())
+  $ok = @(@($Dirs) | Where-Object { $_ -match '^\d+(\.\d+){1,3}$' })
+  if (-not $ok.Count) { return $null }
+  return [string](@($ok | Sort-Object { [version]$_ })[-1])
+}
+
+function ConvertTo-LabHostToolsLayout {
+  # What the guest knows about the host tools: the declared names (guest.config.json hostTools, known names only) and the
+  # latest MSVC and SDK version folders. Pure; Get-LabHostToolsLayout (end of the file) is the thin reader of the folders.
+  param($Cfg, [string[]]$MsvcDirs = @(), [string[]]$SdkDirs = @())
+  $names = @()
+  if ($Cfg -is [System.Management.Automation.PSCustomObject]) {
+    $p = $Cfg.PSObject.Properties['hostTools']
+    if ($p) { $names = @(@($p.Value) | Where-Object { $_ -is [string] -and $script:LabGuestHostToolNames -ccontains $_ }) }
+  }
+  return [ordered]@{ nomes = $names; msvc = (Get-LabLatestVersionDir $MsvcDirs); sdk = (Get-LabLatestVersionDir $SdkDirs) }
+}
+
+function Test-LabHostToolUsable {
+  # Is this tool available from the host mounts? msvc also needs winkits declared and one version folder of each found.
+  param($HostLayout, [string]$Tool)
+  if ($null -eq $HostLayout) { return $false }
+  $has = @($HostLayout.nomes)
+  switch ($Tool) {
+    'node' { return ($has -contains 'node') }
+    'rust' { return ($has -contains 'rust') }
+    'msvc' { return (($has -contains 'msvc') -and ($has -contains 'winkits') -and [bool]$HostLayout.msvc -and [bool]$HostLayout.sdk) }
+  }
+  return $false
+}
+
 function Test-LabInstallNeed {
-  # What a guest script needs from instalar.json ($Precisa): 'todos' = every package ok (Instalar.ok), 'node' = Node ok
-  # (the Sandbox-only tests and the scenarios), 'cargo' = MSVC, Rust and Node ok (the Rust build links with MSVC; the documented command also runs npm). The partial
-  # modes also need the install to have finished (fim), so a run never starts while a package is still being installed.
-  param($Instalar, [string]$Precisa = 'todos')
-  if ($null -eq $Instalar) { return $false }
+  # What a guest script needs ($Precisa): 'todos' = every package of instalar.json ok (Instalar.ok) and every declared host tool
+  # usable, 'node' = Node (the Sandbox-only tests and the scenarios), 'cargo' = MSVC, Rust and Node (the Rust build links with
+  # MSVC; the documented command also runs npm). Each tool comes from the host mounts when the ambiente declares it
+  # ($HostLayout, ConvertTo-LabHostToolsLayout), otherwise from instalar.json: there it must be ok AND the install must have
+  # finished (fim), so a run never starts while a package is still being installed.
+  param($Instalar, [string]$Precisa = 'todos', $HostLayout = $null)
+  $tools = $null
   switch ($Precisa) {
-    'todos' { return [bool]$Instalar.ok }
-    'node' { if (-not $Instalar.fim) { return $false }; return ((Get-LabInstallDone $Instalar) -contains 'node') }
-    'cargo' {
-      if (-not $Instalar.fim) { return $false }
-      $done = Get-LabInstallDone $Instalar
-      return (($done -contains 'msvc') -and ($done -contains 'rust') -and ($done -contains 'node'))
+    'node' { $tools = @('node') }
+    'cargo' { $tools = @('msvc', 'rust', 'node') }
+    'todos' {
+      if ($null -eq $Instalar -or -not [bool]$Instalar.ok) { return $false }
+      # rust and node are usable as soon as they are declared; msvc and winkits need each other and a version folder of each.
+      $declared = @($HostLayout.nomes)
+      if (($declared -contains 'msvc' -or $declared -contains 'winkits') -and -not (Test-LabHostToolUsable $HostLayout 'msvc')) { return $false }
+      return $true
     }
     default { return $false }
   }
+  $done = $null
+  foreach ($t in $tools) {
+    if (Test-LabHostToolUsable $HostLayout $t) { continue }
+    if ($null -eq $Instalar -or -not $Instalar.fim) { return $false }
+    if ($null -eq $done) { $done = Get-LabInstallDone $Instalar }
+    if ($done -notcontains $t) { return $false }
+  }
+  return $true
 }
 
 function Get-LabGuestToolEnv {
-  # From instalar.json: folders to put first on PATH and the vcvars64.bat to import, taken only from packages that
-  # finished ok. $null when the install does not satisfy $Precisa (see Test-LabInstallNeed).
-  param($Instalar, [string]$Precisa = 'todos')
-  if (-not (Test-LabInstallNeed -Instalar $Instalar -Precisa $Precisa)) { return $null }
-  $good = @(@($Instalar.pacotes) | Where-Object { $_ -and $_.exit -eq 0 })
+  # PATH folders, environment variables and the vcvars64.bat to import. Installed tools come from instalar.json (only
+  # packages that finished ok); host tools come from C:\hosttools when $HostLayout declares them (INCLUDE/LIB as a developer
+  # prompt would set them, from the mounted MSVC and Windows SDK). $null when the sources do not satisfy $Precisa (see
+  # Test-LabInstallNeed). The cargo home and target stay on the guest disk, set by the caller, never in the mounted folders.
+  param($Instalar, [string]$Precisa = 'todos', $HostLayout = $null)
+  if (-not (Test-LabInstallNeed -Instalar $Instalar -Precisa $Precisa -HostLayout $HostLayout)) { return $null }
+  $good = @(@($(if ($Instalar) { $Instalar.pacotes })) | Where-Object { $_ -and $_.exit -eq 0 })
   $paths = @($good | Where-Object { $_.binDir } | ForEach-Object { [string]$_.binDir })
   $vc = @($good | Where-Object { $_.vcvars } | ForEach-Object { [string]$_.vcvars }) | Select-Object -First 1
-  return [ordered]@{ paths = $paths; vcvars = $vc }
+  $vars = [ordered]@{}
+  $used = @()
+  $root = $script:LabGuestHostToolRoot
+  if (Test-LabHostToolUsable $HostLayout 'node') { $paths += "$root\node"; $used += 'node' }
+  if (Test-LabHostToolUsable $HostLayout 'rust') { $paths += "$root\rust\bin"; $used += 'rust' }
+  if (Test-LabHostToolUsable $HostLayout 'msvc') {
+    $m = "$root\msvc\$($HostLayout.msvc)"; $k = "$root\winkits"; $sdk = [string]$HostLayout.sdk
+    $paths += "$m\bin\Hostx64\x64", "$k\bin\$sdk\x64"
+    $vars['INCLUDE'] = "$m\include;$k\Include\$sdk\ucrt;$k\Include\$sdk\um;$k\Include\$sdk\shared;$k\Include\$sdk\winrt;$k\Include\$sdk\cppwinrt"
+    $vars['LIB'] = "$m\lib\x64;$k\Lib\$sdk\ucrt\x64;$k\Lib\$sdk\um\x64"
+    $vars['VCINSTALLDIR'] = "$root\"   # cc-rs/rustc use this environment (PATH/INCLUDE/LIB) instead of looking for Visual Studio in the registry
+    $vars['VSCMD_ARG_TGT_ARCH'] = 'x64'
+    $vars['WindowsSdkDir'] = "$k\"
+    $vars['WindowsSDKVersion'] = "$sdk\"
+    $used += 'msvc', 'winkits'
+  }
+  return [ordered]@{ paths = $paths; vcvars = $vc; env = $vars; hostTools = $used }
 }
 
 function Test-LabGuestScriptDecision {
@@ -86,6 +156,18 @@ function Test-LabInGuest {
   return Test-LabGuestScriptDecision -Identity $id.Name -IsSystem $id.IsSystem `
     -HasBootstrap (Test-Path -LiteralPath 'C:\labsandbox\bootstrap.ps1' -PathType Leaf) `
     -HasWdagProfile (Test-Path -LiteralPath 'C:\Users\WDAGUtilityAccount' -PathType Container)
+}
+
+function Get-LabHostToolsLayout {
+  # Thin reader, like Test-LabInGuest: guest.config.json (the declared host tool names) and the version folder names under
+  # C:\hosttools. Lists folders only; the decision is the pure ConvertTo-LabHostToolsLayout. A missing file or folder gives a
+  # layout with no tools.
+  param($Cfg = $null)
+  if ($null -eq $Cfg) { try { $Cfg = Get-Content -LiteralPath 'C:\labsandbox\guest.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json } catch { } }
+  $r = $script:LabGuestHostToolRoot
+  $msvc = @(Get-ChildItem -LiteralPath "$r\msvc" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  $sdk = @(Get-ChildItem -LiteralPath "$r\winkits\Include" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  return ConvertTo-LabHostToolsLayout -Cfg $Cfg -MsvcDirs $msvc -SdkDirs $sdk
 }
 
 function Get-LabGuestInternetPermitida($Cfg) {

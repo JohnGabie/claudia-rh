@@ -178,6 +178,37 @@ Check 'testes-no-guest.mjs and guest-cenario.ps1 ask only for node (-Precisa nod
   if ($js -notmatch '-Precisa node') { throw 'testes-no-guest.mjs does not pass -Precisa node' }
   if ($cen -notmatch 'Get-LabGuestToolEnv\s+\$inst\s+-Precisa node') { throw 'guest-cenario.ps1 does not use -Precisa node' }
 }
+$bld = Get-Content -LiteralPath (Join-Path $lab 'sandbox/app/guest-build.ps1') -Raw
+function Get-HostToolsWiringProblem([string]$Build, [string]$Scenario) {
+  # The tools of guest-build/guest-cenario come from Get-LabGuestToolEnv with the host layout (the PC toolchains mounted
+  # read-only, spec addendum 9); the variables it returns are applied; cargo home and target stay on the guest disk.
+  if ($Build -notmatch 'Get-LabHostToolsLayout') { return 'guest-build.ps1 does not read the host tools layout' }
+  if ($Build -notmatch 'Get-LabGuestToolEnv\s+\$inst\s+-Precisa\s+\$Precisa\s+-HostLayout\s+\$hostLayout') { return 'guest-build.ps1 does not pass -HostLayout to Get-LabGuestToolEnv' }
+  if ($Scenario -notmatch 'Get-LabHostToolsLayout') { return 'guest-cenario.ps1 does not read the host tools layout' }
+  if ($Scenario -notmatch 'Get-LabGuestToolEnv\s+\$inst\s+-Precisa node\s+-HostLayout\s+\$hostLayout') { return 'guest-cenario.ps1 does not pass -HostLayout to Get-LabGuestToolEnv' }
+  if ($Build -notmatch 'foreach \(\$k in @\(\$toolEnv\.env\.Keys\)\) \{ Set-Item -Path "Env:\$k" -Value') { return 'guest-build.ps1 does not apply the environment variables of the tools (INCLUDE, LIB...)' }
+  if ($Build -notmatch "\`$env:CARGO_HOME = 'C:\\labdata\\cargo-home'") { return 'CARGO_HOME is not on the guest disk (C:\labdata)' }
+  if ($Build -notmatch "\`$env:CARGO_TARGET_DIR = 'C:\\labdata\\cargo-target'") { return 'CARGO_TARGET_DIR is not on the guest disk (C:\labdata)' }
+  if ($Build -match '(CARGO_HOME|CARGO_TARGET_DIR|RUSTUP_HOME|npm_config_cache)[^\r\n]*hosttools') { return 'a cargo/npm folder points into the read-only host tools' }
+  return $null
+}
+Check 'guest-build.ps1 and guest-cenario.ps1 use the PC toolchains (hostTools) through Get-LabGuestToolEnv; cargo home and target stay on the guest disk' {
+  $why = Get-HostToolsWiringProblem $bld $cen
+  if ($why) { throw $why }
+  # Mutations of the same check, in memory (nothing is written).
+  $mut = [ordered]@{
+    'layout not read'          = @($bld.Replace('Get-LabHostToolsLayout', 'Get-Date'), $cen)
+    'layout not passed'        = @($bld.Replace(' -HostLayout $hostLayout', ''), $cen)
+    'scenario ignores the host' = @($bld, $cen.Replace(' -HostLayout $hostLayout', ''))
+    'env not applied'          = @($bld.Replace('foreach ($k in @($toolEnv.env.Keys)) { Set-Item', 'foreach ($k in @()) { Set-Item'), $cen)
+    'cargo home on the host'   = @($bld.Replace("`$env:CARGO_HOME = 'C:\labdata\cargo-home'", "`$env:CARGO_HOME = 'C:\hosttools\rust\cargo-home'"), $cen)
+    'cargo target on the host' = @($bld.Replace("`$env:CARGO_TARGET_DIR = 'C:\labdata\cargo-target'", "`$env:CARGO_TARGET_DIR = 'C:\hosttools\target'"), $cen)
+  }
+  foreach ($k in $mut.Keys) {
+    if ($mut[$k][0] -ceq $bld -and $mut[$k][1] -ceq $cen) { throw "mutation '$k' changed nothing (harness bug)" }
+    if (-not (Get-HostToolsWiringProblem $mut[$k][0] $mut[$k][1])) { throw "mutation '$k' NOT detected" }
+  }
+}
 Check 'test-up.ps1 wires the account check, the links check (with targets), the firewall flag and the early credential removal' {
   if ($up -notmatch 'Get-LabUpVerdict[^\r\n]*-PrecisaConta \$conta') { throw 'Get-LabUpVerdict without -PrecisaConta $conta' }
   if ($up -notmatch '\$inside = @\(ConvertTo-LabLinkList \(Get-LabReparsePoints \$src\)\)[\r\n]') { throw '$inside = @(ConvertTo-LabLinkList (Get-LabReparsePoints $src)) not found' }

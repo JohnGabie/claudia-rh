@@ -10,6 +10,9 @@ $script:LabMountTargets = [ordered]@{
   # Output of the MSVC layout built in the guest (ambiente cache-msvc, spec addendum 8.2).
   'cache-saida' = @{ sandbox = 'C:\labcachesaida'; modo = 'rw' }
 }
+# Host toolchains an ambiente may mount read-only by NAME (spec addendum 9). Never a path: test-up finds each folder at run
+# time. travas.ps1 ($script:LabHostTools) holds the guest targets; host-tools.test.ps1 pins that both lists agree.
+$script:LabHostToolNames = @('rust', 'node', 'msvc', 'winkits')
 $script:LabPackageTypes = @{ 'msvc' = 'vs-layout'; 'rust' = 'msi'; 'node' = 'zip'; 'claude-code' = 'exe' }
 # shared\ is mapped to C:\lab in the guest, so the cache needs no mount of its own.
 $script:LabCacheGuestDir = 'C:\lab\cache'
@@ -122,7 +125,40 @@ function Get-LabComposeRefusal {
     $why = Get-LabPackageRefusal -Nome $nome -Pacote (Get-LabProp $pacotes $nome)
     if ($why) { return $why }
   }
+  # Read the raw property: a function returns a one-element array as the bare element (Get-LabProp would turn ["node"] into
+  # the string 'node'), and hostTools must be checked as a list.
+  $htRaw = $a.PSObject.Properties['hostTools']
+  $ht = $null
+  if ($htRaw) { $ht = $htRaw.Value }   # plain assignment keeps a one-element array as an array
+  $why = Get-LabHostToolsRefusal -Ambiente $Ambiente -HostTools $ht -Instalar (Get-LabList (Get-LabProp $a 'instalar'))
+  if ($why) { return $why }
   return $null
+}
+
+function Get-LabHostToolsRefusal {
+  # ambiente.hostTools: a list of known tool NAMES (rust, node, msvc, winkits), each once. msvc and winkits go together (the
+  # compiler needs the Windows SDK headers and libraries). A tool is either mounted from the PC or installed in the guest,
+  # never both. $null when the key is absent.
+  param([string]$Ambiente, $HostTools, $Instalar = @())
+  if ($null -eq $HostTools) { return $null }
+  if ($HostTools -isnot [System.Array]) { return "ambiente ${Ambiente}: hostTools must be a list of names" }
+  $seen = @{}
+  foreach ($n in $HostTools) {
+    if ($n -isnot [string] -or $script:LabHostToolNames -cnotcontains $n) { return "ambiente ${Ambiente}: unknown hostTools entry '$n' (one of: $($script:LabHostToolNames -join ', '))" }
+    if ($seen.ContainsKey($n)) { return "ambiente ${Ambiente}: hostTools lists '$n' twice" }
+    $seen[$n] = $true
+    if (@($Instalar) -contains $n) { return "ambiente ${Ambiente}: '$n' is in both hostTools and instalar (pick one source)" }
+  }
+  if ($seen.ContainsKey('msvc') -ne $seen.ContainsKey('winkits')) { return "ambiente ${Ambiente}: hostTools msvc and winkits go together" }
+  return $null
+}
+
+function Get-LabComposeHostTools {
+  # The ambiente's hostTools names in the fixed order of $script:LabHostToolNames (rust, node, msvc, winkits). Names only.
+  param($Compose, [string]$Ambiente)
+  $a = Get-LabProp (Get-LabProp $Compose 'ambientes') $Ambiente
+  $want = Get-LabList (Get-LabProp $a 'hostTools')
+  return @($script:LabHostToolNames | Where-Object { $want -contains $_ })
 }
 
 function Test-LabAmbienteInternetBlocked {

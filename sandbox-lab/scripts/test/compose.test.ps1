@@ -16,6 +16,7 @@ function New-Compose {
   "comum": { "dbBackup": "shared/db/backup.sqlite", "vGPU": "Enable" },
   "ambientes": {
     "testes": { "rede": true, "memoriaMB": 8192, "conta": true, "instalar": ["claude-code", "node", "rust", "msvc"], "montar": ["projeto:ro", "trabalho:rw"] },
+    "host":   { "rede": true, "memoriaMB": 8192, "conta": true, "instalar": ["claude-code"], "hostTools": ["rust", "node", "msvc", "winkits"], "montar": ["projeto:ro", "trabalho:rw"] },
     "app":    { "rede": false, "memoriaMB": 6144, "conta": false, "instalar": [], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"] }
   },
   "pacotes": {
@@ -237,7 +238,45 @@ Check 'the versioned compose.json passes for every ambiente and pins the researc
   if ($c.pacotes.rust.versao -ne '1.95.0' -or $c.pacotes.rust.sha256 -ne '08d228850565cfe421da6faeac029fb1f0c8341219d0dd9490d42a8355aa0703') { throw 'rust pin' }
   if ($c.pacotes.node.versao -ne '22.23.3' -or $c.pacotes.node.sha256 -ne '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71') { throw 'node pin' }
   if ($c.pacotes.'claude-code'.versao -ne '2.1.285' -or $c.pacotes.'claude-code'.sha256 -ne '121fc8151ed40bd9c144d68aa1cea23427803628ffab65e23da1cceda155697e') { throw 'claude-code pin' }
-  if ((@($c.ambientes.testes.instalar) -join ',') -ne 'msvc,rust,node,claude-code' -or $c.ambientes.testes.conta -ne $true) { throw 'testes ambiente' }
+  # Decision of the user (2026-10-08, spec addendum 9): testes uses the PC toolchains read-only; testes-limpo installs everything.
+  if ((@($c.ambientes.testes.instalar) -join ',') -ne 'claude-code' -or $c.ambientes.testes.conta -ne $true) { throw 'testes ambiente installs only claude-code' }
+  if ((@($c.ambientes.testes.hostTools) -join ',') -ne 'rust,node,msvc,winkits') { throw 'testes ambiente must declare the host tools by name' }
+  if ((@($c.ambientes.'testes-limpo'.instalar) -join ',') -ne 'msvc,rust,node,claude-code' -or $c.ambientes.'testes-limpo'.conta -ne $true -or $null -ne $c.ambientes.'testes-limpo'.hostTools) { throw 'testes-limpo ambiente installs everything and mounts nothing' }
+  if ([int]$c.ambientes.'testes-limpo'.instalarTimeoutSec -lt 11400) { throw 'testes-limpo waits at least the 3 h 08 min the MSVC install took' }
+  if ((@($c.ambientes.testes.montar) -join ',') -ne (@($c.ambientes.'testes-limpo'.montar) -join ',')) { throw 'testes and testes-limpo mount the same names' }
+}
+Check 'hostTools: known names only, once, a list; msvc and winkits together; never also in instalar' {
+  $c = New-Compose
+  Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente 'host')
+  foreach ($bad in @(@('rust', 'perl'), @('rust', 'rust'), @('Rust'), @('msvc'), @('winkits'), @('node', 'msvc'), @('C:\x'), @('%ProgramFiles%\nodejs'), @($null), @(5))) {
+    $c = New-Compose; $c.ambientes.host.hostTools = $bad
+    if (-not (Get-LabComposeRefusal -Compose $c -Ambiente 'host')) { throw "must refuse $($bad -join ',')" }
+  }
+  $c = New-Compose; $c.ambientes.host.hostTools = 'node'
+  Should-Match (Get-LabComposeRefusal -Compose $c -Ambiente 'host') 'must be a list'
+  $c = New-Compose; $c.ambientes.host.instalar = @('claude-code', 'node')
+  Should-Match (Get-LabComposeRefusal -Compose $c -Ambiente 'host') 'both hostTools and instalar'
+  $c = New-Compose; $c.ambientes.host.hostTools = @('node', 'rust')
+  Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente 'host')
+  $c = New-Compose; $c.ambientes.host.hostTools = @()
+  Should-BeNull (Get-LabComposeRefusal -Compose $c -Ambiente 'host')
+  # Parsed from JSON, a one-element list must stay a list (a function returns it as the bare element).
+  $one = '{"ambientes":{"x":{"rede":true,"memoriaMB":4096,"hostTools":["node"],"montar":["projeto:ro"]}}}' | ConvertFrom-Json
+  Should-BeNull (Get-LabComposeRefusal -Compose $one -Ambiente 'x')
+  if ((@(Get-LabComposeHostTools -Compose $one -Ambiente 'x') -join ',') -ne 'node') { throw 'one-element list' }
+}
+Check 'hostTools: no host path anywhere, even as a name (rule A5 keeps working)' {
+  foreach ($v in @('D:\Program Files\nodejs', 'c:/rust', '%USERPROFILE%\.rustup', '\\srv\share')) {
+    $c = New-Compose; $c.ambientes.host.hostTools = @('node', $v)
+    $why = Get-LabComposeRefusal -Compose $c -Ambiente 'host'
+    if (-not $why) { throw "must refuse $v" }
+  }
+}
+Check 'hostTools: Get-LabComposeHostTools returns names in the fixed order; none for an ambiente without the key' {
+  $c = New-Compose; $c.ambientes.host.hostTools = @('winkits', 'msvc', 'node', 'rust')
+  if ((@(Get-LabComposeHostTools -Compose $c -Ambiente 'host') -join ',') -ne 'rust,node,msvc,winkits') { throw "order: $(@(Get-LabComposeHostTools -Compose $c -Ambiente 'host') -join ',')" }
+  if (@(Get-LabComposeHostTools -Compose $c -Ambiente 'testes').Count) { throw 'testes of the sample has no hostTools' }
+  if (@(Get-LabComposeHostTools -Compose $c -Ambiente 'nope').Count) { throw 'unknown ambiente has none' }
 }
 
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }

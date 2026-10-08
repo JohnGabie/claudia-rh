@@ -347,3 +347,73 @@ function Get-LabLayoutManifestProblems {
   # No unary comma: callers wrap the call in @() (an empty result must count 0).
   return $problems.ToArray()
 }
+
+# --- Host toolchains mounted READ-ONLY into the guest (ambiente "testes", spec addendum 9, decided by the user on 2026-10-08) ---
+# compose.json names the tools (hostTools); test-up finds each folder at run time and nothing here holds a host path. The
+# guest-side targets and the folder shape each name must have are fixed below. Pure: string checks only, no disk.
+$script:LabHostTools = [ordered]@{
+  rust    = @{ sandbox = 'C:\hosttools\rust' }
+  node    = @{ sandbox = 'C:\hosttools\node' }
+  msvc    = @{ sandbox = 'C:\hosttools\msvc' }
+  winkits = @{ sandbox = 'C:\hosttools\winkits' }
+}
+
+function ConvertTo-LabRustToolchainDir {
+  # `rustup which rustc` prints <toolchain>\bin\rustc.exe; the folder to mount is two levels up. $null when the text is
+  # anything else (empty, relative, another exe, more than one line), so a surprising rustup answer never becomes a mount.
+  param([string]$RustcPath)
+  if ([string]::IsNullOrWhiteSpace($RustcPath)) { return $null }
+  $t = $RustcPath.Trim()
+  if ($t -match '[\r\n]') { return $null }
+  if ($t -notmatch '^[A-Za-z]:\\.+\\bin\\rustc\.exe$') { return $null }
+  return $t.Substring(0, $t.Length - '\bin\rustc.exe'.Length)
+}
+
+function New-LabHostToolMount {
+  # The one place a host tool mount is described. ReadOnly is always true here; Get-LabHostToolRefusal checks it again on
+  # the very object test-up turns into the .wsb, so a later edit that flips it is refused.
+  param([string]$Nome, [string]$HostPath)
+  $sandbox = $null
+  if (@($script:LabHostTools.Keys) -ccontains $Nome) { $sandbox = $script:LabHostTools[$Nome].sandbox }
+  return [ordered]@{ nome = $Nome; host = $HostPath; sandbox = $sandbox; readOnly = $true }
+}
+
+function Get-LabHostToolRefusal {
+  # Decision for ONE host tool folder before it is mounted. $null = allowed. Callers pass the REAL path, the reparse points
+  # found in it and above it ($Links), the user folder, and $MarkerCount = how many of the tool's required files were found
+  # (rust: libstd* under lib\rustlib\x86_64-pc-windows-msvc\lib; node: node.exe; msvc: version folders with
+  # bin\Hostx64\x64\cl.exe; winkits: Include\10.* folders). Messages never print the host path.
+  param([string]$Nome, [string]$HostPath, $ReadOnly = $false, [string]$UserProfile, [string[]]$Links = @(), [int]$MarkerCount = 0)
+  if ([string]::IsNullOrWhiteSpace($Nome) -or @($script:LabHostTools.Keys) -cnotcontains $Nome) { return "unknown host tool '$Nome' (one of: $(@($script:LabHostTools.Keys) -join ', '))" }
+  if ($ReadOnly -isnot [bool] -or $ReadOnly -ne $true) { return "host tool '$Nome' must be mounted read-only" }
+  if ([string]::IsNullOrWhiteSpace($HostPath)) { return "host tool '$Nome': folder not found (empty path)" }
+  $p = $HostPath.TrimEnd('\')
+  $why = Get-LabRootProblem $p
+  if ($why) { return "host tool '$Nome': folder $why" }
+  if (Test-LabShortNameSegment $p) { return "host tool '$Nome': folder has an 8.3 short name segment (use the long path)" }
+  $l = @($Links | Where-Object { $_ })
+  if ($l.Count) { return "host tool '$Nome': link (symlink/junction/subst) in or under the folder path" }
+  if ([string]::IsNullOrWhiteSpace($UserProfile)) { return 'user folder is unknown' }
+  $pk = ConvertTo-LabPathKey $p
+  $uk = ConvertTo-LabPathKey $UserProfile
+  if ($pk -eq $uk) { return "host tool '$Nome': the folder is the whole user folder" }
+  if ($uk.StartsWith("$pk\", [StringComparison]::Ordinal)) { return "host tool '$Nome': the folder contains the user folder" }
+  $segs = @($pk -split '\\')
+  $last = $segs[$segs.Count - 1]
+  $parent = $(if ($segs.Count -ge 2) { $segs[$segs.Count - 2] } else { '' })
+  switch ($Nome) {
+    'rust'    { if ($parent -ne 'toolchains') { return "host tool 'rust': the folder is not a toolchain (<...>\toolchains\<name>)" } }
+    'node'    { if ($last -ne 'nodejs') { return "host tool 'node': the folder is not named nodejs" } }
+    'msvc'    { if ($last -ne 'msvc' -or $parent -ne 'tools') { return "host tool 'msvc': the folder is not <...>\Tools\MSVC" } }
+    'winkits' { if ($last -ne '10' -or $parent -ne 'windows kits') { return "host tool 'winkits': the folder is not <...>\Windows Kits\10" } }
+  }
+  if ($MarkerCount -lt 1) {
+    switch ($Nome) {
+      'rust'    { return "host tool 'rust': the toolchain has no libstd (lib\rustlib\x86_64-pc-windows-msvc\lib\libstd*): it is broken, so it is not mounted" }
+      'node'    { return "host tool 'node': node.exe not found in the folder" }
+      'msvc'    { return "host tool 'msvc': no MSVC version folder with bin\Hostx64\x64\cl.exe" }
+      'winkits' { return "host tool 'winkits': no Include\10.* SDK folder" }
+    }
+  }
+  return $null
+}

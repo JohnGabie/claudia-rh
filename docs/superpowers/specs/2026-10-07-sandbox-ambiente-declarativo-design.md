@@ -2,6 +2,8 @@
 
 **Estado:** APROVADA pelo usuário em 2026-10-07 ("Aprovo"), com A1, A2, A4 (conta logada), A6 (VHD como Z:) e A7. **Implementada** em `feat/sandbox-ambiente` e integrada nesta branch (`66cd60f`); a rodada ao vivo está em `.claude/skills/claudia-teste-sandbox/references/limites.md`, itens 13 a 17.
 
+**Adendo 9 (2026-10-08, decidido pelo usuário):** o ambiente `testes` volta a usar as ferramentas do PC montadas só leitura (reverte a A3 para ele); a instalação completa no guest fica no ambiente `testes-limpo`. Ver §9.
+
 **A4, resposta do usuário (2026-10-07):** "não, tudo na mesma env". As contas não ficam em pastas separadas: ele troca de conta com `/login` no mesmo Claude Code. Então a conta usada no guest é **a que está logada no PC na hora do `test-up`**. Saem o `-Conta` e o `contas.json`. O resto da proposta A4 continua valendo: copiar só o arquivo de credencial, achar o caminho em tempo de execução, montar só leitura e apagar a cópia no `test-down` com recusa pura. O risco da renovação do token continua **não verificado** e é o primeiro teste no Sandbox.
 **Branch:** `feat/sandbox-ambiente` (a partir de `feat/browser-cdp-mcp`, depois do merge do laboratório).
 **Bloqueia:** a T9 do plano de fechamento do browser na parte de testes em Rust dentro do Sandbox (`cargo test`, testes ao vivo).
@@ -174,3 +176,43 @@ Origem: ao escrever o plano, apareceu um ponto em que a spec, ao pé da letra, q
   - confere de novo e só então renomeia para `msvc-<versão>`.
 - Regra de disco no host: o `cache-up.ps1` continua **só criando**. Nunca apaga nem sobrescreve, nem no `shared\cache\`, nem no `.sandbox-work\cache-saida\`. Limpar a `cache-saida` é tarefa manual do usuário.
 - **Não verificado:** se o layout montado no guest depende de algo da máquina; quanto tempo leva e quanto ocupa; se o `--layout` precisa de administrador (por isso o passo roda como System).
+
+## 9. Adendo de 2026-10-08: o ambiente `testes` volta a usar as ferramentas do PC, só leitura (reverte a A3 para o `testes`) — DECIDIDO pelo usuário em 2026-10-08
+
+### 9.1 Pedido do usuário, nas palavras dele
+
+Contexto: o ambiente `testes` instalando o MSVC no guest levou **3 h 08 min** por subida (`references/limites.md`, item 14: o gargalo é o Windows SDK).
+
+> "Ah, volta, volta. Pelo amor de Deus, volta. É muito tempo, tipo, muito tempo mesmo. Usa o modo leitura somente, né?"
+
+### 9.2 Leitura do pedido
+
+1. **Voltar** = o ambiente `testes` deixa de instalar MSVC, Rust e Node no guest e volta a montar as ferramentas do PC em `C:\hosttools`, como era antes da A3 (`e242f28`).
+2. **Modo leitura somente** = toda montagem de ferramenta do PC é `ReadOnly=true`, sem exceção.
+3. **Mantém** as melhorias da spec: `Z:`, travas, `compose.json`, conta, cenários e dados reais.
+4. Isto **substitui, só para o ambiente `testes`**, a preferência de 2026-10-07 ("Eu prefiro que instale as dependencias dentro da sandbox", §1) e a A3. A instalação no guest continua existindo e fica num ambiente à parte (9.4).
+
+### 9.3 Como fica (decisões de desenho tomadas para cumprir o pedido; o usuário não escolheu estes detalhes)
+
+- **`compose.json`:** o ambiente `testes` declara `"hostTools": ["rust", "node", "msvc", "winkits"]`, por **nome**. O arquivo não tem nenhum caminho do host (regra A5; `Get-LabComposeRefusal` aceita só esses quatro nomes, cada um uma vez, exige `msvc` e `winkits` juntos e recusa o mesmo nome em `hostTools` e em `instalar`).
+- **`instalar` do `testes` = só `claude-code`** (cerca de 4 s). Motivo: é a opção mais simples. Mantém o Claude Code do guest para a conta logada (`claude -p`), não muda o `bootstrap.ps1` nem o `instalar.ps1` (o `instalar.json` continua sendo escrito e esperado, agora só com um pacote) e o cache do Claude Code já existe. O cache do MSVC, do Rust e do Node deixa de ser exigido para subir o `testes`.
+- **Como cada ferramenta é achada no PC (na hora da subida, pelo `test-up.ps1`; nunca escrita em arquivo versionado):**
+  - `rust`: `rustup which rustc` rodado **na pasta do projeto** (lê; o toolchain que o projeto usa, hoje o 1.95.0); sobe dois níveis (`<toolchain>\bin\rustc.exe` → `<toolchain>`). Recusa se o toolchain não tiver `lib\rustlib\x86_64-pc-windows-msvc\lib\libstd*` (o `stable` do PC está quebrado: libstd = 0).
+  - `node`: `[Environment]::GetFolderPath('ProgramFiles')\nodejs`.
+  - `msvc`: `<ProgramFilesX86>\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC`; se não existir, o `vswhere` (só lê). Monta a pasta `MSVC` inteira, como antes (o guest escolhe a versão mais recente); exige ao menos uma versão com `bin\Hostx64\x64\cl.exe`.
+  - `winkits`: `<ProgramFilesX86>\Windows Kits\10`; exige ao menos uma pasta `Include\10.*`.
+  - Cada uma é montada **ReadOnly=true** em `C:\hosttools\{rust,node,msvc,winkits}`.
+- **Recusa pura, antes de montar (`Get-LabHostToolRefusal`, `travas.ps1`):** nome desconhecido, montagem que não seja ReadOnly, caminho vazio, relativo ou com `.`/`..`, raiz de disco, nome curto 8.3, link/junction/subst no caminho ou acima, a pasta do usuário inteira ou uma pasta que a contenha, pasta com forma errada para a ferramenta (`...\toolchains\<nome>`, `nodejs`, `...\Tools\MSVC`, `Windows Kits\10`) e toolchain sem libstd (ou ferramenta sem seus arquivos). A decisão é tomada sobre o **mesmo objeto** que vira o `<MappedFolder>`, e a mensagem nunca imprime o caminho.
+- **Sem caminho em lugar nenhum:** o `guest.config.json` (gerado, fora do git) leva só os **nomes** montados (`hostTools`); o `.wsb` gerado já era ignorado pelo git; nenhum log versionado recebe o caminho.
+- **Guest:** `guest-build.ps1` e `guest-cenario.ps1` usam `Get-LabGuestToolEnv ... -HostLayout`: PATH com `node`, `rust\bin`, `msvc\<ver>\bin\Hostx64\x64`, `winkits\bin\<sdk>\x64`; `INCLUDE`/`LIB`/`VCINSTALLDIR`/`WindowsSdkDir`/`WindowsSDKVersion` como no `guest-build.ps1` de `e242f28`; `CARGO_HOME` e `CARGO_TARGET_DIR` no disco do guest (`C:\labdata`), nunca na pasta montada. `-Precisa node` e `-Precisa cargo` aceitam qualquer das duas fontes (cada ferramenta vem do PC se o ambiente a declara, senão do `instalar.json`).
+
+### 9.4 Ambiente `testes-limpo` (instalação no guest, opcional)
+
+O que era o `testes` antes (`instalar`: `msvc`, `rust`, `node`, `claude-code`, sem `hostTools`) passa a se chamar `testes-limpo`, para quando for preciso um "PC novo de verdade". Leva cerca de 3 h por subida; `instalarTimeoutSec` = 14400 (4 h), porque o limite antigo (3600 s) não cobria os 3 h 08 min medidos. Exige o cache completo (`cache-up.ps1`, mais o layout do MSVC pelo `cache-msvc`).
+
+### 9.5 Não verificado
+
+- Nada disto rodou no Sandbox: só testes puros e estáticos (pwsh e Windows PowerShell 5.1), o parser e leitura do PC (o resultado de `rustup which rustc` e as pastas do Node, do MSVC e do Windows Kits).
+- Se o Sandbox aceita as quatro montagens `ReadOnly=true` em `C:\hosttools` e se o `cargo test --lib` passa com elas nesta versão (funcionou antes de `e242f28`, com outro Rust e o `stable` montado).
+- Se o `rustc` do toolchain montado só leitura encontra a própria biblioteca padrão sem o `rustup` no guest.
+- O tempo real da subida do `testes` (esperado: minutos).

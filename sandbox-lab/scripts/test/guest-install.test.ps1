@@ -246,5 +246,89 @@ Check 'version probe: the version is the first non-empty line of the whole outpu
   $p = ConvertTo-LabVersionProbe -Output @($rec, 'v1') -ExitCode 0
   if ($p.versao -ne 'warn line') { throw 'a stderr ErrorRecord is read as text' }
 }
+
+# --- host toolchains mounted read-only at C:\hosttools (ambiente testes; spec addendum 9, decided by the user on 2026-10-08) ---
+function Hl([string[]]$Nomes, [string[]]$Msvc = @('14.44.35207'), [string[]]$Sdk = @('10.0.19041.0', '10.0.26100.0')) {
+  return ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = $Nomes }) -MsvcDirs $Msvc -SdkDirs $Sdk
+}
+$allHost = @('rust', 'node', 'msvc', 'winkits')
+Check 'host layout: latest version folder compared as versions, names filtered, no config = no tools' {
+  if ((Get-LabLatestVersionDir @('9.0.1', '10.0.2', '10.0.10', 'x64', 'Hostx64', '')) -ne '10.0.10') { throw 'numeric order' }
+  if ((Get-LabLatestVersionDir @('10.0.19041.0', '10.0.26100.0')) -ne '10.0.26100.0') { throw 'sdk order' }
+  if ($null -ne (Get-LabLatestVersionDir @('x64', 'arm64'))) { throw 'no version folder -> null' }
+  if ($null -ne (Get-LabLatestVersionDir @())) { throw 'empty -> null' }
+  $l = Hl @('node', 'perl', 'Rust', 'msvc', 5)
+  if (($l.nomes -join ',') -ne 'node,msvc') { throw "names: $($l.nomes -join ',')" }
+  $none = ConvertTo-LabHostToolsLayout -Cfg $null
+  if ($none.nomes.Count -or $none.msvc -or $none.sdk) { throw 'null config' }
+  $fromJson = ConvertTo-LabHostToolsLayout -Cfg ('{"hostTools":["rust"]}' | ConvertFrom-Json) -MsvcDirs @() -SdkDirs @()
+  if (($fromJson.nomes -join ',') -ne 'rust') { throw 'a one-name list parsed from JSON' }
+  if ((ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ outro = 1 })).nomes.Count) { throw 'no hostTools key' }
+}
+Check 'host tools: node-only need is met by the mounted Node, even while claude-code is still installing' {
+  $e = Get-LabGuestToolEnv ([pscustomobject]@{ ok = $false; fim = $null; pacotes = @() }) -Precisa node -HostLayout (Hl $allHost)
+  if ($null -eq $e) { throw 'host node must be enough' }
+  if ($e.paths -notcontains 'C:\hosttools\node') { throw "paths: $($e.paths -join '|')" }
+  if ($null -eq (Get-LabGuestToolEnv $null -Precisa node -HostLayout (Hl @('node')))) { throw 'no instalar.json at all is fine for a host Node' }
+  if ($null -ne (Get-LabGuestToolEnv $null -Precisa node -HostLayout (Hl @('rust')))) { throw 'rust alone is not node' }
+  if ($null -ne (Get-LabGuestToolEnv $null -Precisa node -HostLayout (Hl @()))) { throw 'no tools -> nothing' }
+}
+Check 'host tools: the cargo environment is PATH + INCLUDE + LIB from C:\hosttools, the latest MSVC and SDK versions' {
+  $e = Get-LabGuestToolEnv $null -Precisa cargo -HostLayout (Hl $allHost)
+  if ($null -eq $e) { throw 'all four host tools -> cargo environment' }
+  $want = 'C:\hosttools\node|C:\hosttools\rust\bin|C:\hosttools\msvc\14.44.35207\bin\Hostx64\x64|C:\hosttools\winkits\bin\10.0.26100.0\x64'
+  if (($e.paths -join '|') -ne $want) { throw "paths: $($e.paths -join '|')" }
+  $inc = 'C:\hosttools\msvc\14.44.35207\include;C:\hosttools\winkits\Include\10.0.26100.0\ucrt;C:\hosttools\winkits\Include\10.0.26100.0\um;C:\hosttools\winkits\Include\10.0.26100.0\shared;C:\hosttools\winkits\Include\10.0.26100.0\winrt;C:\hosttools\winkits\Include\10.0.26100.0\cppwinrt'
+  $lib = 'C:\hosttools\msvc\14.44.35207\lib\x64;C:\hosttools\winkits\Lib\10.0.26100.0\ucrt\x64;C:\hosttools\winkits\Lib\10.0.26100.0\um\x64'
+  if ($e.env['INCLUDE'] -ne $inc) { throw "INCLUDE: $($e.env['INCLUDE'])" }
+  if ($e.env['LIB'] -ne $lib) { throw "LIB: $($e.env['LIB'])" }
+  if ($e.env['VCINSTALLDIR'] -ne 'C:\hosttools\' -or $e.env['VSCMD_ARG_TGT_ARCH'] -ne 'x64' -or $e.env['WindowsSdkDir'] -ne 'C:\hosttools\winkits\' -or $e.env['WindowsSDKVersion'] -ne '10.0.26100.0\') { throw 'SDK variables' }
+  if ($e.vcvars) { throw 'no vcvars for host tools' }
+  if (($e.hostTools -join ',') -ne 'node,rust,msvc,winkits') { throw "hostTools: $($e.hostTools -join ',')" }
+  foreach ($k in @('INCLUDE', 'LIB', 'VCINSTALLDIR', 'WindowsSdkDir')) { foreach ($part in ($e.env[$k] -split ';')) { if ($part -notmatch '^C:\\hosttools\\') { throw "${k} leaves C:\hosttools: $part" } } }
+  foreach ($p in $e.paths) { if ($p -notmatch '^C:\\hosttools\\') { throw "PATH entry outside C:\hosttools: $p" } }
+}
+Check 'host tools: cargo needs rust, node, msvc AND winkits with a version folder of each; a missing piece fails closed' {
+  $cases = [ordered]@{
+    'no rust'          = (Hl @('node', 'msvc', 'winkits'))
+    'no node'          = (Hl @('rust', 'msvc', 'winkits'))
+    'no msvc'          = (Hl @('rust', 'node', 'winkits'))
+    'no winkits'       = (Hl @('rust', 'node', 'msvc'))
+    'no msvc version'  = (Hl $allHost -Msvc @('x64'))
+    'no sdk version'   = (Hl $allHost -Sdk @())
+    'no layout at all' = $null
+  }
+  foreach ($k in $cases.Keys) { if ($null -ne (Get-LabGuestToolEnv $null -Precisa cargo -HostLayout $cases[$k])) { throw "$k must not satisfy cargo" } }
+  if ($null -eq (Get-LabGuestToolEnv $null -Precisa cargo -HostLayout (Hl $allHost))) { throw 'complete layout must satisfy cargo' }
+}
+Check 'host tools: todos needs instalar.json ok AND every declared host tool usable' {
+  $ok = [pscustomobject]@{ ok = $true; fim = 'x'; pacotes = @((Pk 'claude-code' 0 'C:\labtools\claude')) }
+  $e = Get-LabGuestToolEnv $ok -HostLayout (Hl $allHost)
+  if ($null -eq $e) { throw 'claude-code ok + all host tools -> todos' }
+  if (($e.paths -join '|') -notmatch '^C:\\labtools\\claude\|C:\\hosttools\\node\|') { throw "installed paths first, then host: $($e.paths -join '|')" }
+  if ($null -ne (Get-LabGuestToolEnv ([pscustomobject]@{ ok = $false; fim = 'x'; pacotes = @((Pk 'claude-code' 1)) }) -HostLayout (Hl $allHost))) { throw 'a failed install keeps todos false' }
+  if ($null -ne (Get-LabGuestToolEnv $ok -HostLayout (Hl $allHost -Sdk @()))) { throw 'a declared msvc without an SDK version keeps todos false' }
+  if ($null -ne (Get-LabGuestToolEnv $ok -HostLayout (Hl @('rust', 'node', 'msvc')))) { throw 'a declared msvc without winkits keeps todos false' }
+  if ($null -ne (Get-LabGuestToolEnv $ok -HostLayout (Hl @('rust', 'node', 'winkits')))) { throw 'a declared winkits without msvc keeps todos false' }
+  if ($null -eq (Get-LabGuestToolEnv $ok -HostLayout (Hl @('rust', 'node')))) { throw 'rust and node alone satisfy todos' }
+  if ($null -ne (Get-LabGuestToolEnv $null -HostLayout (Hl $allHost))) { throw 'no instalar.json: todos stays closed' }
+}
+Check 'host tools and installed packages: each tool comes from its own source (a mix works; a tool in neither fails)' {
+  # node installed in the guest (finished ok), rust + msvc + winkits from the host
+  $inst = [pscustomobject]@{ ok = $true; fim = 'x'; pacotes = @((Pk 'node' 0 'C:\labtools\node')) }
+  $e = Get-LabGuestToolEnv $inst -Precisa cargo -HostLayout (Hl @('rust', 'msvc', 'winkits'))
+  if ($null -eq $e) { throw 'installed node + host rust/msvc must satisfy cargo' }
+  if (($e.paths -join '|') -notmatch '^C:\\labtools\\node\|C:\\hosttools\\rust\\bin\|') { throw "paths: $($e.paths -join '|')" }
+  $running = [pscustomobject]@{ ok = $false; fim = $null; pacotes = @() }
+  if ($null -ne (Get-LabGuestToolEnv $running -Precisa cargo -HostLayout (Hl @('rust', 'msvc', 'winkits')))) { throw 'an installed node that is still installing must not count' }
+  $failed = [pscustomobject]@{ ok = $false; fim = 'x'; pacotes = @((Pk 'node' 1)) }
+  if ($null -ne (Get-LabGuestToolEnv $failed -Precisa node -HostLayout (Hl @('rust')))) { throw 'node in neither source' }
+}
+Check 'host tools: without a layout the answers are the ones the installed packages gave before (no regression)' {
+  $allOk = [pscustomobject]@{ ok = $true; fim = 'x'; pacotes = @((Pk 'msvc' 0 '' 'C:\labtools\msvc\vcvars64.bat'), (Pk 'rust' 0 'C:\rust\bin'), (Pk 'node' 0 'C:\labtools\node')) }
+  $e = Get-LabGuestToolEnv $allOk -Precisa cargo
+  if ($null -eq $e -or ($e.paths -join '|') -ne 'C:\rust\bin|C:\labtools\node' -or $e.vcvars -ne 'C:\labtools\msvc\vcvars64.bat' -or $e.env.Count -or $e.hostTools.Count) { throw 'installed cargo environment changed' }
+  if ($null -eq (Get-LabGuestToolEnv $allOk -Precisa cargo -HostLayout (Hl @()))) { throw 'an empty host layout leaves the installed answer alone' }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

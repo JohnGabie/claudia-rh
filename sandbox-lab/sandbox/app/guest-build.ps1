@@ -1,5 +1,6 @@
 # guest-build.ps1 - runs INSIDE the Sandbox (PowerShell 5.1). Environment "testes" of compose.json.
-# Builds the project inside the guest with what instalar.ps1 installed (C:\lab\out\instalar.json): MSVC, Rust, Node.
+# Builds the project inside the guest with the PC toolchains mounted read-only at C:\hosttools (ambiente testes) or with what
+# instalar.ps1 installed (C:\lab\out\instalar.json, ambiente testes-limpo): MSVC, Rust, Node.
 # Fonte: C:\labproject (RO, projectPath do perfil) -> copiada para C:\labdata\project.
 # Saida: C:\labwork\build\ (pasta gravavel mapeada pelo perfil): guest-build.log, result.json.
 # O target do cargo fica no disco do guest (C:\labdata\cargo-target): em pasta mapeada os build scripts falham (os error 1392).
@@ -36,12 +37,14 @@ function Step([string]$name, [string]$cmd) {
   return ($ec -eq 0)
 }
 
-# --- environment: what instalar.ps1 installed in this guest (C:\lab\out\instalar.json, ambiente 'testes') ---
+# --- environment: the PC toolchains mounted read-only at C:\hosttools (ambiente 'testes', guest.config.json hostTools) and/or
+# what instalar.ps1 installed in this guest (C:\lab\out\instalar.json, ambiente 'testes-limpo') ---
 $inst = $null
 try { $inst = Get-Content -LiteralPath 'C:\lab\out\instalar.json' -Raw | ConvertFrom-Json } catch { }
-$toolEnv = Get-LabGuestToolEnv $inst -Precisa $Precisa
+$hostLayout = Get-LabHostToolsLayout
+$toolEnv = Get-LabGuestToolEnv $inst -Precisa $Precisa -HostLayout $hostLayout
 if (-not $toolEnv) {
-  Log "instalar.json missing, unfinished, or the packages '$Precisa' needs did not install ok: start the lab with -Ambiente testes and wait for test-up to finish"
+  Log "the tools '$Precisa' needs are neither mounted from the PC (hostTools in guest.config.json, folders in C:\hosttools) nor installed ok (instalar.json missing or unfinished): start the lab with -Ambiente testes (or testes-limpo) and wait for test-up to finish"
   # The host waits for a "build" step carrying its nonce: report the failure there instead of letting it time out.
   $res.steps['build'] = [ordered]@{ cmd = $Build; exit = 1; seconds = 0 }
   $res.end = (Get-Date).ToString('o'); Save
@@ -51,12 +54,15 @@ if ($toolEnv.vcvars) {
   # Import the MSVC environment (PATH, INCLUDE, LIB) the way a developer prompt does.
   foreach ($line in (cmd.exe /d /c "`"$($toolEnv.vcvars)`" >nul 2>&1 && set")) { if ($line -match '^([^=]+)=(.*)$') { Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2] } }
 }
+foreach ($k in @($toolEnv.env.Keys)) { Set-Item -Path "Env:$k" -Value ([string]$toolEnv.env[$k]) }   # INCLUDE, LIB, ... from the host MSVC and SDK
 $env:PATH = ((@($toolEnv.paths) + $env:PATH) -join ';')
 $env:DISABLE_AUTOUPDATER = '1'
+# Cargo's home and target stay on the guest disk, never inside a mounted folder (the host tools are read-only; in a mapped
+# folder the build scripts fail with os error 1392).
 $env:CARGO_HOME = 'C:\labdata\cargo-home'
 $env:CARGO_TARGET_DIR = 'C:\labdata\cargo-target'
 $env:npm_config_cache = 'C:\labdata\npm-cache'
-$res.env = [ordered]@{ pacotes = @(@($inst.pacotes) | ForEach-Object { "$($_.nome) $($_.versao)" }); cargoTarget = $env:CARGO_TARGET_DIR }
+$res.env = [ordered]@{ pacotes = @(@($inst.pacotes) | Where-Object { $_ } | ForEach-Object { "$($_.nome) $($_.versao)" }); hostTools = @($toolEnv.hostTools); cargoTarget = $env:CARGO_TARGET_DIR }
 Log "node=$(cmd /c node -v 2>&1) cargo=$(cmd /c cargo -V 2>&1) cl=$(@(cmd /c where cl.exe 2>&1)[0])"
 Save
 

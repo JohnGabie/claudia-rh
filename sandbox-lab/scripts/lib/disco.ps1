@@ -117,6 +117,69 @@ function Test-LabTools([string]$LabDir) {
   return ,(Get-LabMissingTools -ManifestText (Get-Content -LiteralPath $manifest -Raw) -FoundSizes $found)
 }
 
+function Get-LabRustcPathFromRustup([string]$ProjectDir) {
+  # `rustup which rustc` run IN the project folder, so the toolchain the project uses (rust-toolchain file or an override) is
+  # the one found. Read-only: rustup only prints. $null when rustup is missing, fails, times out or prints nothing.
+  $rustup = Get-Command rustup -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $rustup) { return $null }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $rustup.Source
+  $psi.Arguments = 'which rustc'
+  $psi.WorkingDirectory = $ProjectDir
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $errTask = $proc.StandardError.ReadToEndAsync()
+  $outTask = $proc.StandardOutput.ReadToEndAsync()
+  if (-not $proc.WaitForExit(30000)) { try { $proc.Kill() } catch { }; return $null }
+  $proc.WaitForExit()   # flushes the redirected output after the timed wait
+  if ($proc.ExitCode -ne 0) { return $null }
+  return $outTask.Result.Trim()
+}
+
+function Get-LabHostToolCandidate {
+  # Where one host tool lives on THIS PC, found at run time (no path is ever written in a versioned file), and how many of its
+  # required files exist there. Reads only. Returns [ordered]@{ HostPath; MarkerCount } or $null when the tool is not found.
+  # The decision to mount is Get-LabHostToolRefusal (travas.ps1), taken by the caller on the REAL path.
+  param([string]$Nome, [string]$ProjectDir)
+  $pf = [Environment]::GetFolderPath('ProgramFiles')
+  $pfx86 = [Environment]::GetFolderPath('ProgramFilesX86')
+  switch ($Nome) {
+    'node' {
+      $dir = Join-Path $pf 'nodejs'
+      return [ordered]@{ HostPath = $dir; MarkerCount = [int](Test-Path -LiteralPath (Join-Path $dir 'node.exe') -PathType Leaf) }
+    }
+    'winkits' {
+      $dir = Join-Path $pfx86 'Windows Kits\10'
+      $n = @(Get-ChildItem -LiteralPath (Join-Path $dir 'Include') -Directory -Filter '10.*' -ErrorAction SilentlyContinue).Count
+      return [ordered]@{ HostPath = $dir; MarkerCount = $n }
+    }
+    'msvc' {
+      # The BuildTools folder first; vswhere (Microsoft's own locator, read-only) when it is not there.
+      $dir = Join-Path $pfx86 'Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC'
+      if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+        $vswhere = Join-Path $pfx86 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+          $found = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null)
+          $first = @($found | Where-Object { $_ })
+          if ($first.Count) { $dir = Join-Path ([string]$first[0]) 'VC\Tools\MSVC' }
+        }
+      }
+      $n = @(Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'bin\Hostx64\x64\cl.exe') -PathType Leaf }).Count
+      return [ordered]@{ HostPath = $dir; MarkerCount = $n }
+    }
+    'rust' {
+      $tc = ConvertTo-LabRustToolchainDir (Get-LabRustcPathFromRustup $ProjectDir)
+      if (-not $tc) { return $null }
+      $n = @(Get-ChildItem -LiteralPath (Join-Path $tc 'lib\rustlib\x86_64-pc-windows-msvc\lib') -Filter 'libstd*' -File -ErrorAction SilentlyContinue).Count
+      return [ordered]@{ HostPath = $tc; MarkerCount = $n }
+    }
+  }
+  return $null
+}
+
 function Remove-LabCredentialFile {
   # Deletes ONE file, only after Get-LabCredentialCleanRefusal says yes. Never -Recurse.
   param([string]$File, [string]$RepoRoot)

@@ -78,6 +78,7 @@ jobs:
           ./sandbox-lab/scripts/test/guest-z.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./sandbox-lab/scripts/test/guest-install.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./sandbox-lab/scripts/test/guest-travas.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./sandbox-lab/scripts/test/host-tools.test.ps1; if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
   cargo-test:
     name: cargo test

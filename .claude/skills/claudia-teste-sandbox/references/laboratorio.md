@@ -83,7 +83,8 @@ pagina de teste servida em `http://localhost:8080/test-page.html` no guest.
 | `app` | rodar um app desktop sem rede; controle via `wsb exec` | desligada | Node 22.23.3 |
 | `app-winapp` | rodar um app desktop controlado pelo winapp; rede ligada para winapp e CDP, internet bloqueada por `guest-firewall.ps1` (System) | ligada | Node 22.23.3 |
 | `cache-msvc` | montar o layout offline do MSVC: `wsb exec -r System` + `layout-msvc.ps1`; depois `cache-up.ps1 -ImportarMsvc <id>` | ligada | nenhuma |
-| `testes` | testes no Sandbox, `cargo test --lib` e Claude Code com a conta do PC; MSVC 17.14, Rust 1.95.0, Node 22.23.3 e Claude Code 2.1.285 instalados no guest a partir do cache; resultado em `C:\lab\out\instalar.json` | ligada | MSVC, Rust, Node, Claude Code |
+| `testes` | testes no Sandbox, `cargo test --lib` e Claude Code com a conta do PC; **Rust, Node, MSVC e Windows SDK do PC montados SÓ LEITURA** em `C:\hosttools\{rust,node,msvc,winkits}` (achados na hora da subida pelo `test-up.ps1`; `hostTools` no `compose.json`, por nome) e Claude Code 2.1.285 instalado no guest (cerca de 4 s); sobe em minutos (decisão do usuário, 2026-10-08); resultado da instalação em `C:\lab\out\instalar.json` | ligada | Claude Code (o resto vem do PC) |
+| `testes-limpo` | como o `testes`, mas instala **tudo** no guest a partir do cache (MSVC 17.14, Rust 1.95.0, Node 22.23.3, Claude Code 2.1.285), sem ferramenta do PC: simula um PC novo de verdade; cerca de **3 h** por subida (`instalarTimeoutSec` 14400) | ligada | MSVC, Rust, Node, Claude Code |
 
 Projeto e pasta de trabalho:
 - Projeto: `test-up.ps1 -Project <pasta>` (a skill passa o checkout atual; montado read-only em `C:\labproject`). Pasta de trabalho: `.sandbox-work/` do checkout principal (`deploy\` vira `C:\appdeploy` read-only, `guest-rw\` vira `C:\labwork` gravável). Sem variável de ambiente.
@@ -96,9 +97,10 @@ Dados no guest:
 - Saídas em `C:\labwork\...` (= `.sandbox-work\guest-rw\...` no host).
 
 Pastas no guest (além de `C:\lab`, `C:\labsandbox`, `C:\appdeploy`, `C:\labwork`):
-- `C:\labcred` - login do Claude copiado do PC (read-only, só no ambiente `testes`).
+- `C:\labcred` - login do Claude copiado do PC (read-only, só nos ambientes `testes` e `testes-limpo`).
+- `C:\hosttools\{rust,node,msvc,winkits}` - ferramentas do PC montadas **SÓ LEITURA** (só no ambiente `testes`): `rust` = toolchain que o projeto usa (`rustup which rustc` na pasta do projeto; recusa toolchain sem `libstd`), `node` = `ProgramFiles\nodejs`, `msvc` = `...\BuildTools\VC\Tools\MSVC` (o guest usa a versão mais recente), `winkits` = `ProgramFilesX86\Windows Kits\10`. O `guest-build.ps1` monta PATH, `INCLUDE` e `LIB` a partir delas; `CARGO_HOME` e target ficam no `C:\labdata`. O `guest.config.json` só tem os nomes.
 - `C:\labdadosreais` - pasta Roaming do app copiada (read-only, só com `-DadosReais`, só nos ambientes `app` e `app-winapp`; link dentro da pasta recusa).
-- `C:\labtools` - ferramentas instaladas (`msvc`, `node`, `claude`).
+- `C:\labtools` - ferramentas instaladas no guest (`claude` no `testes`; `msvc`, `node` e `claude` no `testes-limpo`).
 - `C:\labdata` - workspace do guest (disco C).
 - `Z:\claudia-teste-sandbox` - cenários de dados (disco Z, só para testes).
 - `Z:\tmp` - temporário (disco Z).
