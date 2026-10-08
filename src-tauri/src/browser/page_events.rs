@@ -120,13 +120,30 @@ pub fn classify(ev: &Value, ctx: DialogContext, last_url: &mut Option<String>) -
 }
 
 /// `scheme://host[:port]` of a URL, lowercase; None when it has no host part.
+///
+/// A `file:` page has no host (its browser origin is opaque), so its key is the whole document address
+/// (`file://` + path, without query or fragment): an approval on one local file covers that file only,
+/// which is stricter than an origin. Without a key, an approved send on such a page could never accept
+/// the page's own `confirm()`.
 pub fn origin_of(url: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split(['/', '?', '#']).next()?;
-    if scheme.is_empty() || host.is_empty() {
+    if scheme.is_empty() {
         return None;
     }
-    Some(format!("{}://{}", scheme.to_ascii_lowercase(), host.to_ascii_lowercase()))
+    let scheme = scheme.to_ascii_lowercase();
+    if scheme == "file" {
+        let doc = rest.split(['?', '#']).next()?;
+        let path = doc.trim_start_matches('/');
+        if path.is_empty() {
+            return None;
+        }
+        return Some(format!("file://{}", doc.to_ascii_lowercase()));
+    }
+    let host = rest.split(['/', '?', '#']).next()?;
+    if host.is_empty() {
+        return None;
+    }
+    Some(format!("{}://{}", scheme, host.to_ascii_lowercase()))
 }
 
 /// A send the guard let through. It covers the site's own `confirm()` once, on the page that was clicked.
@@ -516,6 +533,36 @@ mod tests {
         assert_ne!(origin_of("https://a.example/"), origin_of("http://a.example/"));
         assert_eq!(origin_of("about:blank"), None);
         assert_eq!(origin_of(""), None);
+    }
+
+    #[test]
+    fn a_local_file_page_is_keyed_by_the_whole_document_address() {
+        // The live tests open the fixtures as file:///...: with no key, an approved send there could never
+        // accept the page's own confirm (the D8 live test failed with "O app respondeu: Cancelar").
+        let page = "file:///C:/fake/fixtures/dialogs.html";
+        assert_eq!(origin_of(page).as_deref(), Some("file:///c:/fake/fixtures/dialogs.html"));
+        assert_eq!(origin_of("file:///C:/fake/fixtures/dialogs.html?x=1#y"), origin_of(page), "query and fragment are not part of it");
+        assert_ne!(origin_of("file:///C:/fake/fixtures/other.html"), origin_of(page), "another file is another key");
+        assert_eq!(origin_of("file:///"), None, "no document, no key");
+        assert_eq!(origin_of("file://"), None);
+    }
+
+    #[test]
+    fn an_approval_on_a_local_file_covers_that_file_only_once() {
+        let s = PageState::default();
+        let t0 = Instant::now();
+        s.begin("browser_click");
+        s.approve_click_at(t0, "file:///C:/fake/fixtures/dialogs.html");
+        let here = origin_of("file:///C:/fake/fixtures/dialogs.html");
+        let other = origin_of("file:///C:/fake/fixtures/other.html");
+        assert!(s.context_at(t0, here.as_deref()).approved_click, "the clicked file");
+        assert!(!s.context_at(t0, other.as_deref()).approved_click, "another local file");
+        assert!(!s.context_at(t0, Some("https://fake.example")).approved_click, "a web origin");
+        s.end_at(t0);
+        assert!(!s.context_at(t0 + APPROVAL_GRACE + Duration::from_millis(1), here.as_deref()).approved_click, "the 2 s window still ends");
+        s.approve_click_at(t0, "file:///C:/fake/fixtures/dialogs.html");
+        s.consume_approval();
+        assert!(!s.context_at(t0, here.as_deref()).approved_click, "single use");
     }
 
     #[test]
