@@ -112,5 +112,24 @@ Check 'app start: every missing or contradicting piece of the mark refuses' {
   }
   foreach ($k in $bad.Keys) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $bad[$k])) { throw "must refuse: $k" } }
 }
+Check 'vs_layout verdict: completed layout, tolerating only the exit-time console finalizer crash' {
+  # Texts as seen live in the Sandbox (2026-10-08), trimmed.
+  $done = "[1094:0001][2026-10-08T11:02:16] END: Deleting directory: C:\Windows\SystemTemp\x10pg1pd, recursive: True`r`n[1094:0001][2026-10-08T11:02:16] Completed 'Layout' operation`r`nA instalacao foi concluida com exito.`r`n"
+  $finalizer = "`r`nUnhandled Exception: System.IO.IOException: Parametro incorreto.`r`n`r`n   at System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)`r`n   at System.Console.ControlCHooker.Unhook()`r`n   at System.Console.ControlCHooker.Finalize()`r`n"
+  $writeLine = "`r`nUnhandled Exception: System.IO.IOException`r`n   at System.IO.__ConsoleStream.Write(Byte[], Int32, Int32)`r`n   at System.Console.WriteLine(System.String)`r`n"
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode 0 -StdOut $done -StdErr '')) { throw 'exit 0 + completed must pass' }
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode -532462766 -StdOut $done -StdErr $finalizer)) { throw 'completed + finalizer crash must pass' }
+  $bad = [ordered]@{
+    'null exit' = @($null, $done, '')
+    'exit 0 without completion' = @(0, "[x] Catalog load operation correlation`r`n", '')
+    'finalizer crash without completion' = @(-532462766, "[x] Downloading package`r`n", $finalizer)
+    'WriteLine crash' = @(-532462766, $done, $writeLine)
+    'two crashes' = @(-532462766, $done, ($finalizer + $finalizer))
+    'finalizer crash in another frame' = @(-532462766, $done, $finalizer.Replace('ControlCHooker.Unhook()', 'ConsoleStream.Write(Byte[], Int32, Int32)'))
+    'other exit, empty stderr' = @(1, $done, '')
+    'completion only quoted mid-line' = @(0, "not Completed 'Layout' operation yet, retrying`r`n", '')
+  }
+  foreach ($k in $bad.Keys) { $v = $bad[$k]; if (-not (Get-LabVsLayoutRefusal -ExitCode $v[0] -StdOut $v[1] -StdErr $v[2])) { throw "must refuse: $k" } }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

@@ -101,6 +101,21 @@ function Get-LabAppStartRefusal {
   return $null
 }
 
+function Get-LabVsLayoutRefusal {
+  # layout-msvc.ps1: did vs_layout.exe (run directly, stdout/stderr in files) finish the layout? $null = yes.
+  # Seen live in the Sandbox (2026-10-08): with no console, vs_layout finishes the layout, logs "Completed 'Layout' operation",
+  # and only then dies in a finalizer (System.Console.ControlCHooker.Unhook, IOException), so its exit code is not 0.
+  # That single exit-time crash is tolerated; any other exception, a missing completion line or a null code refuses.
+  param($ExitCode, [string]$StdOut, [string]$StdErr)
+  if ($null -eq $ExitCode) { return 'vs_layout exit code unknown' }
+  if ("$StdOut" -notmatch "(?m)Completed 'Layout' operation\s*$") { return "vs_layout did not log Completed 'Layout' operation (exit $ExitCode)" }
+  if ([int]$ExitCode -eq 0) { return $null }
+  $crashes = [regex]::Matches("$StdErr", 'Unhandled Exception').Count
+  if ($crashes -ne 1) { return "vs_layout exit $ExitCode with $crashes unhandled exceptions" }
+  if ("$StdErr" -notmatch 'System\.Console\.ControlCHooker\.Unhook\(\)' -or "$StdErr" -notmatch 'ControlCHooker\.Finalize\(\)') { return "vs_layout exit $ExitCode with an exception other than the exit-time console finalizer" }
+  return $null
+}
+
 function Get-LabGuestScenarioRefusal([string]$Path) {
   # guest-run.ps1 -Cenario: a scenario folder created by the scenario scripts in the guest (D1), nothing else.
   if ([string]::IsNullOrWhiteSpace($Path)) { return 'scenario folder is required' }

@@ -14,7 +14,7 @@ $Image = $script:LabZImage
 $OutFile = 'C:\lab\out\disco-z.json'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$res = [ordered]@{ ok = $false; letra = $script:LabZLetter; imagem = $Image; segundos = $null; erro = $null }
+$res = [ordered]@{ ok = $false; letra = $script:LabZLetter; imagem = $Image; disco = $null; fs = $null; segundos = $null; erro = $null }
 
 function Save-Result { $res.segundos = [math]::Round($sw.Elapsed.TotalSeconds, 1); [IO.File]::WriteAllText($OutFile, ($res | ConvertTo-Json), $utf8) }
 function Invoke-DiskPart([string[]]$Lines) {
@@ -24,18 +24,34 @@ function Invoke-DiskPart([string[]]$Lines) {
   $out = & diskpart.exe /s $f 2>&1
   if ($LASTEXITCODE -ne 0) { throw "diskpart failed ($LASTEXITCODE): $($out -join ' | ')" }
 }
+function Get-ZLogicalDisk { return Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($script:LabZLetter):'" -ErrorAction SilentlyContinue }
 function Get-State {
+  # Facts only (the decisions are in guest-z.lib.ps1). Get-Disk/Get-Partition list nothing in the Sandbox: CIMv2 instead.
   $img = Get-DiskImage -ImagePath $Image -ErrorAction SilentlyContinue
-  $part = Get-Partition -DriveLetter $script:LabZLetter -ErrorAction SilentlyContinue
-  $imgDisk = $(if ($img -and $img.Attached) { $img.Number } else { $null })
-  $partDisk = $(if ($part) { $part.DiskNumber } else { $null })
-  return @{ img = $img; part = $part; refusal = (Get-LabZFormatRefusal -ImageAttached ([bool]($img -and $img.Attached)) -ImageDiskNumber $imgDisk -PartitionDiskNumber $partDisk) }
+  $attached = [bool]($img -and $img.Attached)
+  $ld = Get-ZLogicalDisk
+  $parts = @(if ($ld) { Get-CimAssociatedInstance -InputObject $ld -ResultClassName Win32_DiskPartition -ErrorAction SilentlyContinue })
+  $drives = @($parts | ForEach-Object { Get-CimAssociatedInstance -InputObject $_ -ResultClassName Win32_DiskDrive -ErrorAction SilentlyContinue })
+  $f = @{
+    ImageAttached = $attached
+    ImageDiskNumber = $(if ($attached) { $img.Number } else { $null })
+    ImageDevicePath = $(if ($attached) { [string]$img.DevicePath } else { '' })
+    ZDiskNumbers = @($parts | ForEach-Object { $_.DiskIndex })
+    ZDiskDevicePaths = @($drives | ForEach-Object { [string]$_.DeviceID })
+  }
+  $fs = $(if ($ld) { [string]$ld.FileSystem } else { '' })
+  $onImage = $(if ($attached -and "$($img.Number)" -match '^\d+$') { @(Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$([int]$img.Number)" -ErrorAction SilentlyContinue).Count } else { $null })
+  $res.disco = $f.ImageDiskNumber; $res.fs = $fs
+  return @{
+    format = (Get-LabZFormatRefusal @f -PartitionsOnImageDisk $onImage -ZFileSystem $fs)
+    ready = (Get-LabZReadyRefusal @f -ZFileSystem $fs)
+  }
 }
 
 try {
-  $zExists = Test-Path -LiteralPath 'Z:\'
-  $s = $(if ($zExists) { Get-State } else { @{ refusal = $null } })
-  $action = Get-LabZStartAction -ZExists $zExists -ImageExists (Test-Path -LiteralPath $Image) -FormatRefusal $s.refusal
+  $zExists = [bool](Get-ZLogicalDisk) -or (Test-Path -LiteralPath 'Z:\')
+  $s = $(if ($zExists) { Get-State } else { @{ ready = $null } })
+  $action = Get-LabZStartAction -ZExists $zExists -ImageExists (Test-Path -LiteralPath $Image) -ReadyRefusal $s.ready
   if ($action -like 'refuse*') { throw $action }
   if ($action -eq 'create') {
     New-Item -ItemType Directory -Force 'C:\labdata' | Out-Null
@@ -47,8 +63,10 @@ try {
       "assign letter=$($script:LabZLetter)"
     )
     $s = Get-State
-    if ($s.refusal) { throw "nothing formatted: $($s.refusal)" }
-    $s.part | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'LABZ' -Confirm:$false | Out-Null
+    if ($s.format) { throw "nothing formatted: $($s.format)" }
+    Invoke-DiskPart (Get-LabZFormatDiskPart)
+    $s = Get-State
+    if ($s.ready) { throw "Z: not ready after format: $($s.ready)" }
   }
   New-Item -ItemType Directory -Force 'Z:\tmp', 'Z:\claudia-teste-sandbox' | Out-Null
   $item = Get-Item -LiteralPath 'Z:\claudia-teste-sandbox' -Force
