@@ -106,9 +106,27 @@ function Get-LabVsLayoutRefusal {
   # Seen live in the Sandbox (2026-10-08): with no console, vs_layout finishes the layout, logs "Completed 'Layout' operation",
   # and only then dies in a finalizer (System.Console.ControlCHooker.Unhook, IOException), so its exit code is not 0.
   # That single exit-time crash is tolerated; any other exception, a missing completion line or a null code refuses.
-  param($ExitCode, [string]$StdOut, [string]$StdErr)
+  # Because the completion line is the only success signal, it is not enough alone (limites.md item 14):
+  #   * the stdout must carry no package-failure marker. Chosen against the real success log (6925 lines): it has ZERO
+  #     matches for every marker below. NOT markers: "error" alone (package Microsoft.VisualStudio.ErrorList) and
+  #     "corrupt" (every run logs "Cache: Skipping layout with missing or corrupt payload <id>" while it fills an empty layout).
+  #   * the layout folder must hold the bootstrapper (vs_buildtools.exe or vs_setup.exe) and Catalog.json.
+  # $LayoutFiles = names relative to the layout folder (top level) that exist there; $null = not listed = refuse.
+  param($ExitCode, [string]$StdOut, [string]$StdErr, [string[]]$LayoutFiles = $null)
   if ($null -eq $ExitCode) { return 'vs_layout exit code unknown' }
   if ("$StdOut" -notmatch "(?m)Completed 'Layout' operation\s*$") { return "vs_layout did not log Completed 'Layout' operation (exit $ExitCode)" }
+  $markers = [ordered]@{
+    'failed/failure'            = '(?i)\bfail(ed|ure|ures)?\b'
+    'error-level log line (e:)' = '(?m)^\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\]\[[^\]\r\n]*\]e:'
+    'exception (any *Exception)'  = '(?i)exception'
+    'error: / error 0x'         = '(?i)\berror(:|\s+0x)'
+    'HRESULT 0x8xxxxxxx'        = '(?i)\b0x8[0-9a-f]{7}\b'
+  }
+  foreach ($k in $markers.Keys) { if ("$StdOut" -match $markers[$k]) { return "vs_layout log has a failure marker ($k) although it logged completion (exit $ExitCode)" } }
+  if ($null -eq $LayoutFiles) { return 'layout files not listed' }
+  $have = @($LayoutFiles | ForEach-Object { "$_".ToLowerInvariant() })
+  if ($have -notcontains 'catalog.json') { return 'layout folder has no Catalog.json' }
+  if ($have -notcontains 'vs_buildtools.exe' -and $have -notcontains 'vs_setup.exe') { return 'layout folder has neither vs_buildtools.exe nor vs_setup.exe' }
   if ([int]$ExitCode -eq 0) { return $null }
   $crashes = [regex]::Matches("$StdErr", 'Unhandled Exception').Count
   if ($crashes -ne 1) { return "vs_layout exit $ExitCode with $crashes unhandled exceptions" }

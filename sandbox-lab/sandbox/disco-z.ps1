@@ -55,13 +55,8 @@ try {
   if ($action -like 'refuse*') { throw $action }
   if ($action -eq 'create') {
     New-Item -ItemType Directory -Force 'C:\labdata' | Out-Null
-    Invoke-DiskPart @(
-      "create vdisk file=`"$Image`" maximum=$MaxMB type=expandable",
-      "select vdisk file=`"$Image`"",
-      'attach vdisk',
-      'create partition primary',
-      "assign letter=$($script:LabZLetter)"
-    )
+    Invoke-DiskPart (Get-LabZCreateDiskPart -MaxMB $MaxMB)
+
     $s = Get-State
     if ($s.format) { throw "nothing formatted: $($s.format)" }
     Invoke-DiskPart (Get-LabZFormatDiskPart)

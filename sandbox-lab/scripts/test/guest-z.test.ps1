@@ -48,6 +48,19 @@ Check 'format diskpart: selects the vdisk by our file, never a disk by number' {
   if ($l[2] -notmatch '^format fs=ntfs quick label=LABZ$') { throw "third line: $($l[2])" }
   if (@($l | Where-Object { $_ -match '(?i)select\s+(disk|volume)|clean|delete' }).Count) { throw 'selects a disk/volume by number or wipes' }
 }
+Check 'create diskpart: creates only our image file and the partition, selected by file, never a disk by number' {
+  $l = @(Get-LabZCreateDiskPart -MaxMB 20480)
+  if ($l.Count -ne 5) { throw "lines: $($l.Count)" }
+  if ($l[0] -cne 'create vdisk file="C:\labdata\z.vhdx" maximum=20480 type=expandable') { throw "line 1: $($l[0])" }
+  if ($l[1] -cne 'select vdisk file="C:\labdata\z.vhdx"') { throw "line 2: $($l[1])" }
+  if ($l[2] -cne 'attach vdisk') { throw "line 3: $($l[2])" }
+  if ($l[3] -cne 'create partition primary') { throw "line 4: $($l[3])" }
+  if ($l[4] -cne 'assign letter=Z') { throw "line 5: $($l[4])" }
+  if (@($l | Where-Object { $_ -match '(?i)select\s+(disk|volume|partition)|clean|format|delete|convert|offline|online' }).Count) { throw 'selects a disk/volume/partition, formats or wipes' }
+  foreach ($line in $l) { if ($line -match '(?i)file=' -and $line -notmatch [regex]::Escape('file="C:\labdata\z.vhdx"')) { throw "another file: $line" } }
+  if (@(Get-LabZCreateDiskPart)[0] -notmatch 'maximum=20480 ') { throw 'default size' }
+  foreach ($bad in 0, 63, -1, 2000000) { $threw = $false; try { Get-LabZCreateDiskPart -MaxMB $bad | Out-Null } catch { $threw = $true }; if (-not $threw) { throw "MaxMB $bad must be refused" } }
+}
 Check 'start: create only when neither Z: nor the image exist; reuse only our own ready Z:' {
   if ((Get-LabZStartAction -ZExists $false -ImageExists $false -ReadyRefusal $null) -ne 'create') { throw 'create' }
   if ((Get-LabZStartAction -ZExists $true -ImageExists $true -ReadyRefusal $null) -ne 'reuse') { throw 'reuse' }

@@ -112,24 +112,51 @@ Check 'app start: every missing or contradicting piece of the mark refuses' {
   }
   foreach ($k in $bad.Keys) { if (-not (Get-LabAppStartRefusal -InternetPermitida $false -FirewallText $bad[$k])) { throw "must refuse: $k" } }
 }
-Check 'vs_layout verdict: completed layout, tolerating only the exit-time console finalizer crash' {
-  # Texts as seen live in the Sandbox (2026-10-08), trimmed.
-  $done = "[1094:0001][2026-10-08T11:02:16] END: Deleting directory: C:\Windows\SystemTemp\x10pg1pd, recursive: True`r`n[1094:0001][2026-10-08T11:02:16] Completed 'Layout' operation`r`nA instalacao foi concluida com exito.`r`n"
+Check 'vs_layout verdict: completed layout, no failure marker, layout files present; tolerating only the exit-time console finalizer crash' {
+  # Texts as seen live in the Sandbox (2026-10-08), trimmed: the real success log, with lines that MUST NOT count as failure
+  # ("Skipping layout with missing or corrupt payload" is logged on every run; ErrorList is a package name).
+  $done = @"
+[31e4:0001][2026-10-08T11:06:20] Cache: Skipping layout with missing or corrupt payload Microsoft.VisualStudio.VC.Icons at 'C:\labdata\msvc-layout'.
+[31e4:0012][2026-10-08T11:06:21] BEGIN: Downloading package "Microsoft.VisualStudio.ErrorList,version=17.14.305.26414,productarch=neutral"
+[31e4:0012][2026-10-08T11:06:22] Checking SHA256 for path: C:\labdata\msvc-layout\Microsoft.VisualStudio.ErrorList,version=17.14.305.26414,productarch=neutral\payload.vsix
+[31e4:0012][2026-10-08T11:06:22] SHA256 verification for 'C:\labdata\msvc-layout\Microsoft.VisualStudio.ErrorList,version=17.14.305.26414,productarch=neutral\payload.vsix' succeeded. Hash: 6FD4A573BA7FC002A4EFE4C5567B78C58EE1B58BC8ED322E28944638F72A380C
+Layout progress: 98%
+[31e4:0012][2026-10-08T11:07:00] END: Downloading package "Microsoft.WebView2,version=131.0.2903.86,productarch=neutral,machinearch=ARM64"
+[31e4:0001][2026-10-08T11:07:00] BEGIN: Deleting directory: C:\Windows\SystemTemp\ss1odrvu, recursive: True
+[31e4:0001][2026-10-08T11:07:00] C:\Windows\SystemTemp\ss1odrvu directory deleted successfully.
+[31e4:0001][2026-10-08T11:07:00] END: Deleting directory: C:\Windows\SystemTemp\ss1odrvu, recursive: True
+[31e4:0001][2026-10-08T11:07:00] Completed 'Layout' operation
+A instalacao foi concluida com exito.
+
+"@ -replace "`r?`n", "`r`n"
   $finalizer = "`r`nUnhandled Exception: System.IO.IOException: Parametro incorreto.`r`n`r`n   at System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)`r`n   at System.Console.ControlCHooker.Unhook()`r`n   at System.Console.ControlCHooker.Finalize()`r`n"
   $writeLine = "`r`nUnhandled Exception: System.IO.IOException`r`n   at System.IO.__ConsoleStream.Write(Byte[], Int32, Int32)`r`n   at System.Console.WriteLine(System.String)`r`n"
-  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode 0 -StdOut $done -StdErr '')) { throw 'exit 0 + completed must pass' }
-  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode -532462766 -StdOut $done -StdErr $finalizer)) { throw 'completed + finalizer crash must pass' }
+  $files = @('Catalog.json', 'ChannelManifest.json', 'Layout.json', 'Response.json', 'vs_buildtools.exe', 'vs_installer.opc', 'vs_setup.exe')
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode 0 -StdOut $done -StdErr '' -LayoutFiles $files)) { throw 'exit 0 + completed + files must pass' }
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode -532462766 -StdOut $done -StdErr $finalizer -LayoutFiles $files)) { throw 'completed + finalizer crash must pass' }
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode 0 -StdOut $done -StdErr '' -LayoutFiles @('catalog.JSON', 'VS_SETUP.EXE'))) { throw 'names compare case-insensitively; vs_setup.exe alone is enough' }
+  if ($null -ne (Get-LabVsLayoutRefusal -ExitCode 0 -StdOut $done -StdErr '' -LayoutFiles @('Catalog.json', 'vs_buildtools.exe'))) { throw 'vs_buildtools.exe alone is enough' }
   $bad = [ordered]@{
-    'null exit' = @($null, $done, '')
-    'exit 0 without completion' = @(0, "[x] Catalog load operation correlation`r`n", '')
-    'finalizer crash without completion' = @(-532462766, "[x] Downloading package`r`n", $finalizer)
-    'WriteLine crash' = @(-532462766, $done, $writeLine)
-    'two crashes' = @(-532462766, $done, ($finalizer + $finalizer))
-    'finalizer crash in another frame' = @(-532462766, $done, $finalizer.Replace('ControlCHooker.Unhook()', 'ConsoleStream.Write(Byte[], Int32, Int32)'))
-    'other exit, empty stderr' = @(1, $done, '')
-    'completion only quoted mid-line' = @(0, "not Completed 'Layout' operation yet, retrying`r`n", '')
+    'null exit' = @($null, $done, '', $files)
+    'exit 0 without completion' = @(0, "[x] Catalog load operation correlation`r`n", '', $files)
+    'finalizer crash without completion' = @(-532462766, "[x] Downloading package`r`n", $finalizer, $files)
+    'WriteLine crash' = @(-532462766, $done, $writeLine, $files)
+    'two crashes' = @(-532462766, $done, ($finalizer + $finalizer), $files)
+    'finalizer crash in another frame' = @(-532462766, $done, $finalizer.Replace('ControlCHooker.Unhook()', 'ConsoleStream.Write(Byte[], Int32, Int32)'), $files)
+    'other exit, empty stderr' = @(1, $done, '', $files)
+    'completion only quoted mid-line' = @(0, "not Completed 'Layout' operation yet, retrying`r`n", '', $files)
+    'package failed to download, then completion' = @(0, ("[31e4:0012][2026-10-08T11:06:30] Failed to download package Microsoft.VisualCpp.Redist.14`r`n" + $done), '', $files)
+    'SHA256 verification failed, then completion' = @(0, ("[31e4:0012][2026-10-08T11:06:30] SHA256 verification for 'C:\labdata\msvc-layout\x\payload.vsix' failed. Hash: AB`r`n" + $done), '', $files)
+    'error-level log line (e:), then completion' = @(0, ("[31e4:0012][2026-10-08T11:06:30]e: Package x could not be installed`r`n" + $done), '', $files)
+    'exception in the log, then completion' = @(0, ("[31e4:0012][2026-10-08T11:06:30] System.Net.WebException: The remote server returned an error`r`n" + $done), '', $files)
+    'HRESULT in the log, then completion' = @(0, ("[31e4:0012][2026-10-08T11:06:30] Operation returned 0x80070570`r`n" + $done), '', $files)
+    'layout files not listed' = @(0, $done, '', $null)
+    'layout folder empty' = @(0, $done, '', @())
+    'no Catalog.json' = @(0, $done, '', @('vs_buildtools.exe', 'vs_setup.exe', 'Layout.json'))
+    'no bootstrapper in the layout' = @(0, $done, '', @('Catalog.json', 'Layout.json', 'vs_installer.opc'))
+    'finalizer crash tolerated only with a complete layout' = @(-532462766, $done, $finalizer, @('Layout.json'))
   }
-  foreach ($k in $bad.Keys) { $v = $bad[$k]; if (-not (Get-LabVsLayoutRefusal -ExitCode $v[0] -StdOut $v[1] -StdErr $v[2])) { throw "must refuse: $k" } }
+  foreach ($k in $bad.Keys) { $v = $bad[$k]; if (-not (Get-LabVsLayoutRefusal -ExitCode $v[0] -StdOut $v[1] -StdErr $v[2] -LayoutFiles $v[3])) { throw "must refuse: $k" } }
 }
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

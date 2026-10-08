@@ -251,5 +251,82 @@ Check 'link lists: the check fails on the old comma return and on a raw .Count (
   $p2 = (Get-LinkListProblems $m2 'test-up').Problems
   if (-not $p2.Count -or $p2[0] -notmatch 'without ConvertTo-LabLinkList') { throw 'a raw @(Get-LabLinksInPath ...).Count was not caught' }
 }
+# disco-z.ps1 wiring (static, nothing is run): the diskpart input is only ever produced by the two pure builders, the format
+# comes after the refusal check, and no other way to touch a disk exists in the script. Mutations are parsed in memory.
+function Get-DiscoZProblems($Ast) {
+  $p = New-Object System.Collections.Generic.List[string]
+  $cmds = @($Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+  $dp = @($cmds | Where-Object { "$($_.GetCommandName())" -ieq 'Invoke-DiskPart' })
+  if (-not $dp.Count) { $p.Add('no Invoke-DiskPart call found (the check would prove nothing)') }
+  $createCall = $null; $formatCall = $null
+  foreach ($c in $dp) {
+    $arg = @($c.CommandElements | Select-Object -Skip 1)
+    $inner = $null
+    if ($arg.Count -eq 1 -and $arg[0] -is [System.Management.Automation.Language.ParenExpressionAst]) {
+      $pl = $arg[0].Pipeline
+      if ($pl -is [System.Management.Automation.Language.PipelineAst] -and $pl.PipelineElements.Count -eq 1 -and $pl.PipelineElements[0] -is [System.Management.Automation.Language.CommandAst]) { $inner = $pl.PipelineElements[0] }
+    }
+    $name = $(if ($inner) { "$($inner.GetCommandName())" } else { '' })
+    if ($name -ceq 'Get-LabZCreateDiskPart') { if ($createCall) { $p.Add("line $($c.Extent.StartLineNumber): second create call") }; $createCall = $c }
+    elseif ($name -ceq 'Get-LabZFormatDiskPart' -and $inner.CommandElements.Count -eq 1) { if ($formatCall) { $p.Add("line $($c.Extent.StartLineNumber): second format call") }; $formatCall = $c }
+    else { $p.Add("line $($c.Extent.StartLineNumber): Invoke-DiskPart gets something other than Get-LabZCreateDiskPart / Get-LabZFormatDiskPart: $($c.Extent.Text)") }
+  }
+  if (-not $createCall) { $p.Add('Invoke-DiskPart (Get-LabZCreateDiskPart ...) not found') }
+  if (-not $formatCall) { $p.Add('Invoke-DiskPart (Get-LabZFormatDiskPart) not found') }
+  if ($createCall -and $formatCall) {
+    $stmtOf = { param($n) $x = $n; while ($x.Parent -and $x.Parent -isnot [System.Management.Automation.Language.StatementBlockAst]) { $x = $x.Parent }; $x }
+    $cs = & $stmtOf $createCall; $fs = & $stmtOf $formatCall
+    if ($cs.Parent -ne $fs.Parent -or $cs.Parent -isnot [System.Management.Automation.Language.StatementBlockAst]) { $p.Add('create and format are not statements of the same block') }
+    else {
+      $st = @($cs.Parent.Statements); $ci = [array]::IndexOf($st, $cs); $fi = [array]::IndexOf($st, $fs)
+      $ifi = -1
+      for ($i = $ci + 1; $i -lt $fi; $i++) {
+        $s = $st[$i]
+        if ($s -is [System.Management.Automation.Language.IfStatementAst] -and $s.Clauses.Count -eq 1 -and -not $s.ElseClause -and $s.Clauses[0].Item1.Extent.Text -ceq '$s.format' -and @($s.Clauses[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.ThrowStatementAst] }, $true)).Count -eq 1) { $ifi = $i }
+      }
+      if ($ci -ge $fi) { $p.Add('format comes before create') }
+      elseif ($ifi -lt 0) { $p.Add('no  if ($s.format) { throw ... }  between create and format') }
+      else {
+        $fresh = $false
+        for ($i = $ci + 1; $i -lt $ifi; $i++) { if ($st[$i].Extent.Text -match '^\$s\s*=\s*Get-State\s*$') { $fresh = $true } }
+        if (-not $fresh) { $p.Add('the state is not re-read ($s = Get-State) between create and the refusal check') }
+      }
+    }
+  }
+  $bad = @('Format-Volume', 'Clear-Disk', 'Initialize-Disk', 'New-Partition', 'Remove-Partition', 'Resize-Partition', 'Set-Partition', 'Set-Disk')
+  foreach ($c in $cmds) { if ($bad -contains "$($c.GetCommandName())") { $p.Add("line $($c.Extent.StartLineNumber): forbidden command $($c.GetCommandName())") } }
+  $strs = @($Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }, $true))
+  foreach ($s in $strs) { if ("$($s.Extent.Text)" -match '(?i)select\s+(disk|volume)|(^|[\s''"`])clean\b|\bformat\s+fs=') { $p.Add("line $($s.Extent.StartLineNumber): literal diskpart command in the script: $($s.Extent.Text)") } }
+  return @($p)
+}
+$discoPath = Join-Path $scan 'sandbox/disco-z.ps1'
+Check 'disco-z.ps1: every Invoke-DiskPart gets only the pure builders; format only after the refusal check; no other disk command' {
+  $why = @(Get-DiscoZProblems (Read-Ast $discoPath))
+  if ($why.Count) { throw ($why -join ' | ') }
+}
+$discoText = ([IO.File]::ReadAllText($discoPath)) -replace "`r`n", "`n"
+$fmtCall = 'Invoke-DiskPart (Get-LabZFormatDiskPart)'
+$refuse = '    if ($s.format) { throw "nothing formatted: $($s.format)" }'
+$createCallText = 'Invoke-DiskPart (Get-LabZCreateDiskPart -MaxMB $MaxMB)'
+Check 'disco-z mutation harness: the real script has the lines the mutations replace' {
+  foreach ($x in @($fmtCall, $refuse.Trim(), $createCallText, ('    $s = Get-State' + "`n" + $refuse))) { if ($discoText.IndexOf($x) -lt 0) { throw "line not found (update the harness): $x" } }
+}
+$discoMutants = [ordered]@{
+  'format before the refusal check'        = $discoText.Replace($refuse + "`n", '').Replace($fmtCall, "$fmtCall`n    if (`$s.format) { throw 'late' }")
+  'refusal check does not throw'           = $discoText.Replace($refuse.Trim(), 'if ($s.format) { Write-Host "ignored" }')
+  'format without any check'               = $discoText.Replace($refuse + "`n", '')
+  'Format-Volume directly'                 = $discoText.Replace($fmtCall, "'Z' | Format-Volume -FileSystem NTFS")
+  'literal select disk 1'                  = $discoText.Replace($createCallText, "Invoke-DiskPart @('select disk 1', 'clean')")
+  'literal select disk in the format call' = $discoText.Replace($fmtCall, "Invoke-DiskPart @('select disk 1', 'format fs=ntfs quick')")
+  'Clear-Disk added'                       = $discoText.Replace($createCallText, "$createCallText`n    Clear-Disk -Number 1 -RemoveData")
+  'state not re-read before the check'     = $discoText.Replace(('    $s = Get-State' + "`n" + $refuse), $refuse)
+}
+foreach ($k in $discoMutants.Keys) {
+  Check "disco-z mutation must be caught: $k" {
+    $text = $discoMutants[$k]
+    if ($text -ceq $discoText) { throw 'the mutation did not change the text (harness bug)' }
+    if (-not @(Get-DiscoZProblems (Read-AstText $text)).Count) { throw 'NOT detected: the analysis accepted the mutated script' }
+  }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

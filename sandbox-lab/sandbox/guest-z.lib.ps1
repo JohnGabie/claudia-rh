@@ -48,6 +48,14 @@ function Get-LabZReadyRefusal {
   return $null
 }
 
+function Get-LabZCreateDiskPart {
+  # The diskpart lines that create Z:'s disk. Only OUR image file is created, selected (by its file, never by number),
+  # attached, given one primary partition and the letter. No clean, no format, no 'select disk': an existing disk is never touched.
+  param([int]$MaxMB = 20480)
+  if ($MaxMB -lt 64 -or $MaxMB -gt 1048576) { throw "MaxMB out of range: $MaxMB" }
+  return @("create vdisk file=`"$($script:LabZImage)`" maximum=$MaxMB type=expandable", "select vdisk file=`"$($script:LabZImage)`"",
+          'attach vdisk', 'create partition primary', "assign letter=$($script:LabZLetter)")
+}
 function Get-LabZFormatDiskPart {
   # The diskpart lines that format Z:. The disk is selected by OUR image file, never by number; partition 1 is the only
   # partition on it (checked by Get-LabZFormatRefusal right before).
