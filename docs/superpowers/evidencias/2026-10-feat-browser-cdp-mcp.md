@@ -1,6 +1,6 @@
 # Evidência da branch `feat/browser-cdp-mcp`
 
-> **Estado em 2026-10-08, HEAD `a8f9f24`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
+> **Estado em 2026-10-08, HEAD `a8f9f24`; a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
 
 Fontes: os ledgers `.superpowers/sdd/2026-10-02-browser-cdp-motor/progress.md` e `.superpowers/sdd/2026-10-04-anexar-curriculo/progress.md` (fora do git; só caminhos relativos aqui, nenhum dado pessoal copiado), `docs/pesquisa/2026-10-02-validacao-execucao.md`, `docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`, `.claude/skills/claudia-teste-sandbox/references/limites.md` (itens 13 a 17) e o `git log dev..HEAD`.
 
@@ -122,7 +122,7 @@ As correções K, L, L2 e M vieram depois da revisão da Parte 2 e **nunca tiver
 | D10 CLA-40 (carta sem nome) | `8f5c5e2`, `848810f`, `76f6992`, `7e5ec14` | implementado; CLA-35 **ignorado nesta branch por decisão do usuário** |
 | D11 protótipo Playwright fora da branch | `309dc56` | feito; o histórico antigo continua com os caminhos pessoais |
 | Laboratório do Sandbox dentro do repositório e ambientes declarativos | merges `e242f28`, `486007b`, `f009c91`, `2097b3a`, `2836146`, `966e6c0`, `5963ea1`, `33e0627` e as correções até `a8f9f24` | seção 7 |
-| Tarefa 1 (CLA-39, CLA-36, CLA-38: harness live) | nenhum ainda | **pendente** (D2: impedem o merge) |
+| Tarefa 1 (CLA-39, CLA-36, CLA-38: harness live) | `c048439`, `b71317d`, `52f90f6` | Step 5 rodado no Sandbox em 2026-10-08 (seção 8.1): CLA-38 e CLA-39 ok; **CLA-36 falha no guest** (janela limitada a 800×600); **o perfil de teste não é apagado** (achado novo) |
 
 ## 7. Provado no laboratório do Sandbox (rodada de 2026-10-08)
 
@@ -150,7 +150,7 @@ Fonte: `.claude/skills/claudia-teste-sandbox/references/limites.md`, itens 13 a 
 - o risco da renovação do token (A4): o usuário trocou de conta no PC depois da subida e o `claude -p` não rodou no PC, então a comparação não prova nada;
 - a subida real com o `BOOTID` (id gerado no guest, `firewall.txt` novo com a primeira linha, `guest-run` aceitando e recusando um `firewall.txt` de outro Sandbox): só testes puros e estáticos;
 - qual commit do projeto o `cargo test --lib` de 578 testes cobriu;
-- Chrome de teste dentro do guest: o `compose.json` declara o Chrome em `shared/tools/chrome/`, mas nenhuma rodada de teste live (`browser_live`, `viewport_live`) foi feita no guest.
+- Chrome de teste dentro do guest: o `compose.json` declara o Chrome em `shared/tools/chrome/`, mas nenhuma rodada de teste live (`browser_live`, `viewport_live`) foi feita no guest (feita depois, em 2026-10-08: seção 8.1).
 
 Próximo ciclo do laboratório (decidido, não feito): o MSVC leva 3 h no ambiente `testes` por causa do SDK; a saída é um MSVC/SDK enxuto pré-instalado no cache, e um ambiente `testes-node` (só Node) para o que não precisa compilar.
 
@@ -162,16 +162,52 @@ Todas rodam **no Sandbox**, pela regra de 2026-10-07 (nenhum teste que apaga rod
 
 | Rodada | Resultado |
 |---|---|
-| `npx tsc --noEmit` | pendente |
-| testes de front (`tests/front/*.test.ts`, lista explícita) | pendente |
-| `npm run build` e conferência de que nenhum mock vai para o bundle | pendente |
-| `cargo test --lib` no HEAD final | pendente (o 578 da seção 7 é de outro momento) |
-| `cargo clippy --all-targets` contra o baseline de 3 avisos | pendente |
-| suíte live `browser_live` e `viewport_live`, três vezes | pendente (depende da Tarefa 1) |
-| 3 testes de ícone (janela visível), uma vez | pendente |
-| smoke do MCP (`tests/mcp-browser-smoke.mjs`) | pendente |
-| mutações da leitura robusta (viewport, texto sem valor digitado, `login_wall`, loop, scroll em contêiner) | pendente |
-| testes live novos de D6, D7 e D8 (guarda de formulário, eventos do browser, diálogos, queda de aba) | pendente |
+| `npx tsc --noEmit` | pendente (roda no PC, pelo orquestrador) |
+| testes de front (`tests/front/*.test.ts`, lista explícita) | pendente (roda no PC, pelo orquestrador) |
+| `npm run build` e conferência de que nenhum mock vai para o bundle | pendente (roda no PC, pelo orquestrador); no guest, `npm run build` exit 0 (abaixo) |
+| `cargo test --lib` no HEAD `22c2854` | **exit 0, 580 passed, 0 failed, 0 ignored**, 20,8 s (Sandbox) |
+| `cargo clippy --all-targets` contra o baseline de 3 avisos | exit 0; os 3 do baseline + **2 novos** (abaixo) |
+| suíte live `browser_live` e `viewport_live`, três vezes | **exit 101 nas três**: `browser_live` 90/92, 90/92 e 89/92; `viewport_live` 2/5 nas três (rodado à parte). Detalhe abaixo |
+| 3 testes de ícone (janela visível), uma vez | **exit 0, 3 passed** |
+| smoke do MCP (`tests/mcp-browser-smoke.mjs`) | **exit 0, última linha `TUDO OK`** (32 verificações) |
+| mutações da leitura robusta (viewport, texto sem valor digitado, `login_wall`, loop, scroll em contêiner) | **feitas**, com as das Tarefas 1 e 3 e das correções: 13 de 13 falham no teste nomeado e voltam a passar restauradas (abaixo) |
+| testes live novos de D6, D7 e D8 (guarda de formulário, eventos do browser, diálogos, queda de aba) | rodaram dentro da suíte live: **2 falham nas três rodadas** (`a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form`, `a_confirm_during_a_send_the_guard_approved_is_accepted_and_only_then`); os demais passam |
+
+#### Rodada de 2026-10-08 no Sandbox (HEAD `22c2854`, ambiente `testes`)
+
+Tudo rodou **dentro do Windows Sandbox**, nada no PC. Ambiente `testes` com as ferramentas do PC montadas só leitura em `C:\hosttools` (node v24.17.0, cargo 1.95.0, `cl.exe` 14.44.35207). Projeto copiado de `C:\labproject` para `C:\labdata\project` pelo `guest-build.ps1`; `CARGO_HOME` e `CARGO_TARGET_DIR` em `C:\labdata`; `TEMP`/`TMP` = `Z:\tmp`; `CLAUDIA_TEST_CHROME=C:\lab\tools\chrome\chrome-win64\chrome.exe` (Chrome for Testing 154.0.8037.92 do laboratório). Cada comando rodou por `wsb exec -r ExistingLogin` num script da rodada (`.sandbox-work\guest-rw\t4\`, fora do git), com saída e exit em arquivo.
+
+- **Compilação (`guest-build.ps1 -Precisa cargo`):** `npm.cmd ci --no-audit --no-fund` exit 0 em 18,4 s; `npm.cmd run build && cd src-tauri && cargo test --lib --no-run` exit 0 em 243,7 s. A primeira tentativa, com `wsb exec ... -File guest-build.ps1 -Install '...'`, não rodou nada: o `-File` não respeita aspas simples e o `-Install` chegou como `'npm.cmd` (exit 1 em 0 s). Com `-EncodedCommand` funcionou.
+- **`cargo test --lib`:** exit 0 em 20,8 s, `580 passed; 0 failed; 0 ignored` (a Correção C da Tarefa 3 tirou o único ignorado).
+- **`cargo clippy --all-targets`:** exit 0 em 127,4 s. Do baseline (`clippy-baseline.txt` do ledger do motor, só `--lib`): `new` e `write_both` nunca usados (`diagnostics/mod.rs`), `LASTINPUTINFO` (`idle_watcher.rs`). **Novos:** `redundant guard` em `src/browser/pagestate.rs:117` (código de 2026-10-03, desta branch, no alvo lib) e `items after a test module` em `src/prompt.rs:16` (código anterior à branch; só aparece no alvo de teste, que o baseline não cobria). Não corrigidos (nenhum código foi editado nesta rodada): **registrar no Linear**.
+- **Suíte live, três vezes** (`cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`): exit 101 nas três (295 s, 226 s, 281 s). O cargo para no primeiro binário que falha, então o `viewport_live` não rodou nesse comando; rodou à parte, três vezes (`cargo test --test viewport_live -- --ignored --test-threads=2`, exit 101, 16 a 18 s).
+  - `browser_live`: rodada 1 `90 passed; 2 failed`, rodada 2 `90 passed; 2 failed`, rodada 3 `89 passed; 3 failed`. Falham nas três: `a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form` (`unwrap_err()` em `Ok`: `"Clicou em (600, 469.5)."`, o `browser_click_at` sobre o shadow root não foi recusado) e `a_confirm_during_a_send_the_guard_approved_is_accepted_and_only_then` (com `confirm_submit` válido, o app respondeu `Cancelar` ao `confirm` "Enviar?"). Só na rodada 3: `a_tool_call_restores_the_minimum_viewport_and_says_so` (a resposta não trouxe `viewport ajustado:`).
+  - **CLA-38** (`the_wheel_does_not_change_a_focused_number_field`): ok nas três. **Tarefa 3** (`a_file_the_field_refuses_is_not_recorded_as_attached`): ok nas três; `failed_upload_does_not_call_attached` e `scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is_at_the_limit` também.
+  - **CLA-36** (`a_wide_but_short_window_grows_in_height_only`): **falha nas três**, junto com `a_shrunk_window_is_corrected_to_the_minimum` e `an_already_big_window_is_left_exactly_as_it_is` (2 de 5 passam). Mensagens: `ViewportReport { before: (762, 428), after: (767, 439), adjusted: true, below_minimum: true }` e `the height reaches the minimum: (767, 439, 800, 600, "maximized")`. No guest a janela do Chrome de teste não passa de **800×600**, nem maximizada, então o mínimo de 1200×800 é inalcançável ali. Parece limite da tela do Sandbox (sessão aberta por `wsb connect` com janela oculta), **não verificado**; na rodada 3 o `a_tool_call_restores_the_minimum_viewport_and_says_so` caiu pela mesma razão. CLA-36 continua **sem prova verde**.
+  - **CLA-39 / Chrome órfão:** depois de cada rodada (e de ícones, smoke e mutações), `Get-CimInstance Win32_Process` no guest: **0** `chrome.exe` com `claudia-live-` ou `claudia-smoke-` na linha de comando (11 `chrome.exe` no total, todos do Chrome que o `bootstrap.ps1` do laboratório abre).
+  - **Achado novo: o perfil de teste nunca é apagado.** Pastas `claudia-live-*` deixadas em `Z:\tmp`: 89 depois da rodada 1, 178 depois da 2, 266 depois da 3 (cerca de uma por teste que usa `launch()`), 298 no fim; cada uma com o perfil Chrome inteiro (163 a 183 arquivos, cerca de 3,8 MB). Diagnóstico com `--nocapture` num teste só (`a_file_the_field_refuses_is_not_recorded_as_attached`): nenhuma linha `refusing to delete` nem `not killing pid`, e a pasta continuou. Ou seja: as travas aceitaram o caminho e o kill rodou, mas o `remove_dir_all` falhou em silêncio (`let _ =` em `tests/support/mod.rs:63`). Hipótese **não verificada**: o Chrome ainda segura arquivos logo depois do `taskkill /F`. No PC isso encheria o `%TEMP%`. A smoke (`claudia-smoke-*`) apagou a própria pasta. **Registrar no Linear.**
+- **Ícones** (`cargo test --test browser_live -- --ignored icon --test-threads=1`): exit 0 em 10,9 s, `3 passed`.
+- **Smoke MCP:** `cargo build` exit 0 em 92,6 s; `CLAUDIA_ALLOW_LOCAL_URLS=1 node tests/mcp-browser-smoke.mjs C:\labdata\cargo-target\debug\claudia-rh.exe` exit 0 em 7 s, 32 linhas `OK`, última linha `TUDO OK`.
+- **Mutações** (cada uma só na cópia do guest; aplicada por regex com exatamente 1 ocorrência; restaurada copiando o arquivo de `C:\labproject`, SHA-256 igual ao do PC; o teste nomeado rodado de novo):
+
+| Mutação | Teste nomeado | Linha `FAILED` |
+|---|---|---|
+| `support::is_removable_profile_dir`: `p.parent() == Some(temp_root)` → `true` | `support::tests::anything_else_is_refused` | `test support::tests::anything_else_is_refused ... FAILED` ("two levels down") |
+| sem `name.len() > PROFILE_PREFIX.len()` | o mesmo | `test support::tests::anything_else_is_refused ... FAILED` ("prefix only") |
+| `chrome_path_problem` sem `eq_ignore_ascii_case("chrome.exe")` | `only_an_absolute_chrome_exe_is_accepted_as_the_test_chrome` | `test support::tests::only_an_absolute_chrome_exe_is_accepted_as_the_test_chrome ... FAILED` ("another program") |
+| `is_our_chrome_cmdline` sem `--remote-debugging-port=` | `a_pid_is_killed_only_when_its_command_line_is_our_chrome` | `test support::tests::a_pid_is_killed_only_when_its_command_line_is_our_chrome ... FAILED` ("another port") |
+| `browser.rs`: `self.docs.attached(...)` sem `accept_allows` (live) | `a_file_the_field_refuses_is_not_recorded_as_attached` | `test a_file_the_field_refuses_is_not_recorded_as_attached ... FAILED` ("a refused format is not recorded in anexos") |
+| `update_variante` de volta com `search_variants.yaml.bak-1` | `update_variante_writes_with_a_backup_and_keeps_one_principal` | `test mcp::tools::variantes::tests::update_variante_writes_with_a_backup_and_keeps_one_principal ... FAILED` |
+| `settle_done`: `(changed && !missed)` → `changed` | `a_requested_size_that_the_window_does_not_have_yet_is_waited_for_longer` | `test browser::viewport::tests::a_requested_size_that_the_window_does_not_have_yet_is_waited_for_longer ... FAILED` |
+| `scroll_moved` sem o termo `content_h` | `a_scroll_counts_as_started_once_the_document_moved_or_changed_height` | `test mcp::tools::browser::tests::a_scroll_counts_as_started_once_the_document_moved_or_changed_height ... FAILED` ("a page that grew (infinite scroll) counts") |
+| viewport mínimo: `if vw >= MIN_W && vh >= MIN_H` → `if vw >= 1 && vh >= 1` (live) | `viewport_live.rs` | `test a_minimized_window_is_restored_and_sized ... FAILED` e `test resizing_never_fakes_the_device ... FAILED`, além dos 3 que já falham no guest (1 de 5 passa; sem a mutação, 2 de 5) |
+| `browser_text`: `is_field` sempre falso | `what_was_typed_into_a_field_never_comes_out_not_even_a_password` | `test browser::text::tests::what_was_typed_into_a_field_never_comes_out_not_even_a_password ... FAILED` |
+| `login_wall`: `if login {` → `if false && login {` | testes de `pagestate` | `test browser::pagestate::tests::a_login_url_is_a_login_wall_but_only_at_a_path_boundary ... FAILED`, `a_dialog_that_asks_to_sign_in_is_a_login_wall ... FAILED` (e mais 2) |
+| `loopguard.rs`: `THRESHOLD = 4` → `40` | teste de loop | `test browser::loopguard::tests::the_fourth_equal_call_gets_the_hint_and_the_first_three_do_not ... FAILED` (e mais 3) |
+| `browser_scroll` em contêiner: a referência resolvida é descartada (rola a página) (live) | `scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is_at_the_limit` | `test scroll_with_a_ref_moves_that_elements_own_container_and_says_when_it_is_at_the_limit ... FAILED` |
+
+  Restauradas, todas voltam a passar (exit 0; o `viewport_live` volta a 2 de 5, o estado do guest sem mutação). Armadilha vista: o `Copy-Item` preserva a data antiga do arquivo, e o cargo reaproveitou o binário com a mutação (as 13 "restauradas" falharam na primeira tentativa, com o SHA-256 já igual ao do PC). Depois de pôr a data atual nos arquivos restaurados (só a data, conteúdo conferido), recompilou e passou.
+- **Fim:** `test-down.ps1` exit 0, `wsb list` vazio, nenhuma cópia da credencial no PC. `git status` no PC igual ao do início (nenhum código editado).
 
 ### 8.2 Tarefa 5: smoke de uso real (bloqueada)
 
