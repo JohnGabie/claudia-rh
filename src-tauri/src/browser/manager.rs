@@ -24,6 +24,12 @@ impl LaunchOptions {
     }
 }
 
+/// Virtual screen of the headless test browser (a common desktop resolution, above the 1200x800 minimum).
+pub const HEADLESS_SCREEN_W: u32 = 1920;
+pub const HEADLESS_SCREEN_H: u32 = 1080;
+// Room for the minimum viewport plus the window frame, checked at compile time.
+const _: () = assert!(HEADLESS_SCREEN_W > super::viewport::MIN_W && HEADLESS_SCREEN_H > super::viewport::MIN_H);
+
 pub fn build_args(o: &LaunchOptions, port: u16) -> Vec<String> {
     let mut a = vec![
         format!("--remote-debugging-port={port}"),
@@ -33,6 +39,10 @@ pub fn build_args(o: &LaunchOptions, port: u16) -> Vec<String> {
     ];
     if o.headless {
         a.push("--headless=new".to_string());
+        // Headless Chrome has no monitor: its virtual screen is 800x600 unless told otherwise, so a maximized
+        // window could never reach the 1200x800 minimum (CLA-36 failed in the Sandbox at exactly 800x600).
+        // Give the test browser the screen of an ordinary desktop instead.
+        a.push(format!("--screen-info={{0,0 {HEADLESS_SCREEN_W}x{HEADLESS_SCREEN_H}}}"));
     } else {
         // The user sees this window and the agent reads pages in it: open it as large as the screen allows.
         // (viewport::ensure_min_viewport keeps it from being too small later; Chrome keeps the last size otherwise.)
@@ -357,6 +367,14 @@ mod tests {
         let a = build_args(&o, 1);
         assert!(a.iter().any(|x| x.starts_with("--headless")));
         assert!(!a.iter().any(|x| x == "--start-maximized"), "headless has no window to maximize");
+    }
+
+    #[test]
+    fn the_headless_test_browser_gets_a_screen_above_the_minimum_and_the_visible_one_does_not() {
+        let a = build_args(&LaunchOptions::headless_for_tests("c".into(), "p".into()), 1);
+        assert!(a.contains(&"--screen-info={0,0 1920x1080}".to_string()), "{a:?}");
+        let v = build_args(&LaunchOptions::visible("c".into(), "p".into()), 1);
+        assert!(!v.iter().any(|x| x.starts_with("--screen-info")), "the user's browser uses the real monitor: {v:?}");
     }
 
     #[test]

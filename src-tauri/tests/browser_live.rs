@@ -126,6 +126,22 @@ async fn a_second_ensure_running_reuses_the_same_chrome() {
 
 #[tokio::test]
 #[ignore]
+async fn the_profile_folder_is_deleted_when_the_live_session_ends() {
+    // 2026-10-08 Sandbox round: 298 claudia-live-* folders were left in TEMP, because a single
+    // remove_dir_all right after `taskkill /F` met files Chrome had not closed yet, and the error was dropped.
+    // Mutation: one attempt with the error ignored (`let _ = remove_dir_all`) -> the folder is still there.
+    let l = launch().await;
+    let profile = l.profile.clone();
+    assert!(profile.join("p").is_dir(), "Chrome made its profile in {}", profile.display());
+    assert!(!support::chrome_on_profile(&profile).is_empty(), "the lookup sees the running Chrome of this profile");
+    drop(l);
+    assert!(!profile.exists(), "the profile folder must be gone after the session ends: {}", profile.display());
+    let left = support::chrome_on_profile(&profile);
+    assert!(left.is_empty(), "no Chrome process of this profile is left behind: {left:?}");
+}
+
+#[tokio::test]
+#[ignore]
 async fn the_chrome_we_launched_reports_itself_visible() {
     let l = launch().await;
     let page = cdp::first_page(l.port).await.unwrap();
@@ -1006,6 +1022,11 @@ async fn set_window(l: &Live, w: i64, h: i64) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // The bounds change at once, each visible page's viewport a moment later: wait for every tab of the window.
+    for p in cdp::list_targets(l.port).await.unwrap().into_iter().filter(|t| t.kind == "page") {
+        let c = cdp::CdpClient::connect(&p.ws_url).await.unwrap();
+        assert!(support::wait_until_viewport_follows_window(&c).await, "the viewport of tab {} never followed the window", p.id);
     }
 }
 
@@ -1933,9 +1954,20 @@ async fn enter_finds_the_default_button_even_when_it_sits_outside_the_form_tag()
 #[tokio::test]
 #[ignore]
 async fn a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form() {
+    // The point must be over the button INSIDE the shadow root. The host <div> is a full-width block and the
+    // button only 160 px wide at its left, so the centre of the host is empty space: a click there presses
+    // nothing, and the guard rightly let it through (the 2026-10-08 Sandbox failure was this test aiming there).
+    // Mutation: climb only parentElement in INFO_FN (stop at the shadow root) -> no form is found -> it passes.
     let l = launch().await;
     let (t, a, _list) = open_guard_form(&l, Ctx::candidatando(7)).await;
-    let (x, y) = center_of(&a, "#shadow-host").await;
+    let v = eval(
+        &a,
+        "(()=>{const host=document.getElementById('shadow-host');const sr=host.shadowRoot;const on=(x,y)=>{const h=sr.elementFromPoint(x,y);return !!h&&!!h.closest('#shadow-btn')};const r=sr.getElementById('shadow-btn').getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;const hr=host.getBoundingClientRect();return [x,y,on(x,y),on(hr.x+hr.width/2,hr.y+hr.height/2)]})()",
+    )
+    .await;
+    let (x, y) = (v[0].as_f64().unwrap(), v[1].as_f64().unwrap());
+    assert_eq!(v[2], true, "the point really is over the shadow button: {v}");
+    assert_eq!(v[3], false, "the centre of the host is NOT over the button (why aiming there proved nothing): {v}");
     let e = t.click_at(x, y, None).await.unwrap_err();
     assert!(e.starts_with("RECUSADO"), "{e}");
     assert!(!sent(&a, "shadow").await);

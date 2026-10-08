@@ -164,12 +164,22 @@ async fn measure_settled(c: &CdpClient, previous: &Measure, wanted_outer: Option
             stable = 0;
             last = now;
         }
-        let missed = wanted_outer.is_some_and(|w| last.0.outer != w);
-        if settle_done(stable, last.0 != *previous, i, missed) {
+        let changed = page_changed(previous, &last.0);
+        // A size was asked for: it is reached when the window has it AND the page was laid out again.
+        let missed = wanted_outer.is_some_and(|w| last.0.outer != w || !changed);
+        if settle_done(stable, changed, i, missed) {
             break;
         }
     }
     Ok(last)
+}
+
+/// Pure: did the PAGE change since before the request? Only the viewport counts: the window's bounds and
+/// state change the moment `setWindowBounds` returns, but the page is laid out again a few hundred ms later.
+/// Counting the bounds settled on the old page (Sandbox 2026-10-08: a 1600x500 window asked to grow to
+/// 1600x952 was measured with its old 348 px page and then maximized), the CLA-36 failure.
+pub(crate) fn page_changed(previous: &Measure, now: &Measure) -> bool {
+    now.viewport != previous.viewport
 }
 
 /// Polls with no change after which a request that nothing answered is taken as refused.
@@ -338,6 +348,18 @@ mod tests {
         assert!(settle_done(2, true, 3, false), "the size was reached (or none was asked for) and the reading changed");
         assert!(settle_done(2, false, 5, false), "nothing asked and nothing changed for half a second: refused");
         assert!(!settle_done(1, true, 9, false), "two equal readings are always required");
+    }
+
+    #[test]
+    fn new_window_bounds_over_the_old_page_are_not_a_change() {
+        // Sandbox 2026-10-08: right after the resize the window already said 1600x952, the page still 1567x348.
+        let before = m((1567, 348), (1600, 500), WindowState::Normal);
+        let stale = m((1567, 348), (1600, 952), WindowState::Normal);
+        let laid_out = m((1567, 800), (1600, 952), WindowState::Normal);
+        assert!(!page_changed(&before, &stale), "only the window moved: the page was not laid out again yet");
+        assert!(page_changed(&before, &laid_out));
+        let maximized_stale = m((1567, 348), (1920, 1080), WindowState::Maximized);
+        assert!(!page_changed(&before, &maximized_stale), "a new window state over the old page is not a change either");
     }
 
     #[test]

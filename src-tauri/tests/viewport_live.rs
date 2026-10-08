@@ -72,10 +72,33 @@ async fn set_window(c: &cdp::CdpClient, bounds: serde_json::Value) {
             _ => true,
         };
         if state_ok && size_ok {
-            return;
+            break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    // The bounds are there; the page's viewport follows a moment later (a minimized window has none to wait for).
+    if bounds["windowState"] != "minimized" {
+        assert!(support::wait_until_viewport_follows_window(c).await, "the page viewport never followed the window: {:?}", state(c).await);
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_test_browser_has_a_screen_where_the_minimum_fits() {
+    // CLA-36 in the Sandbox: headless Chrome's virtual screen is 800x600 by default, so maximizing never
+    // reached 1200x800 there. The test browser gets a desktop-sized virtual screen (manager::build_args).
+    // Mutation: drop the --screen-info argument -> this test reports 800x600.
+    let l = launch().await;
+    let r = l
+        .client
+        .call("Runtime.evaluate", json!({ "expression": "JSON.stringify([screen.width, screen.height])", "returnByValue": true }))
+        .await
+        .unwrap();
+    let v: Vec<u32> = serde_json::from_str(r["result"]["value"].as_str().unwrap()).unwrap();
+    assert!(v[0] > MIN_W && v[1] > MIN_H, "the screen of the test browser is {}x{}", v[0], v[1]);
+    set_window(&l.client, json!({ "windowState": "maximized" })).await;
+    let s = state(&l.client).await;
+    assert!(s.0 >= MIN_W && s.1 >= MIN_H, "a maximized window gives the page the minimum: {s:?}");
 }
 
 #[tokio::test]
