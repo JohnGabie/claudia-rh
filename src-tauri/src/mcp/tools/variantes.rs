@@ -51,7 +51,7 @@ pub fn update_variante(data_dir: &Path, id: &str, campos: &serde_json::Value, se
     let yaml = variantes::editar_campos(data_dir, id, obj)?;
     super::profile::write_yaml_atomically(data_dir, "search_variants.yaml", &yaml)?;
     Ok(format!(
-        "Variante {id} atualizada ({}). A versão anterior fica em search_variants.yaml.bak-1.",
+        "Variante {id} atualizada ({}). A versão anterior fica guardada como cópia de segurança.",
         obj.keys().cloned().collect::<Vec<_>>().join(", ")
     ))
 }
@@ -92,7 +92,8 @@ mod tests {
     #[test]
     fn update_variante_writes_with_a_backup_and_keeps_one_principal() {
         let d = dir();
-        update_variante(&d, "backend", &serde_json::json!({ "peso": 70, "principal": true }), SessionKind::Interactive).unwrap();
+        let msg = update_variante(&d, "backend", &serde_json::json!({ "peso": 70, "principal": true }), SessionKind::Interactive).unwrap();
+        assert!(!msg.contains(".yaml") && !msg.contains(".bak"), "no file name in the answer: {msg}");
         assert_eq!(std::fs::read_to_string(d.join("search_variants.yaml.bak-1")).unwrap(), SV, "the previous file is kept");
         let sv = crate::documentos::variantes::ler(&d).unwrap();
         assert_eq!(sv.variantes[0].peso, 70.0);

@@ -810,22 +810,6 @@ experiencia:
         assert!(line.contains("English (C1)"));
         assert!(line.contains("&middot;"));
     }
-
-    /// Writes a sample CV (fake profile) for the PDF proof. Run by hand:
-    /// CLAUDIA_PDF_PROVA_DIR=<scratchpad> cargo test --lib write_sample_cv_for_the_pdf_proof -- --ignored
-    #[test]
-    #[ignore]
-    fn write_sample_cv_for_the_pdf_proof() {
-        let dir = std::path::PathBuf::from(std::env::var("CLAUDIA_PDF_PROVA_DIR").expect("set CLAUDIA_PDF_PROVA_DIR"));
-        std::fs::create_dir_all(&dir).unwrap();
-        for (id, html) in [
-            ("classic-ats", template_classic_ats(&perfil_simples(), "#D97757", pick_lang("pt"))),
-            ("hybrid-skills", template_hybrid_skills(&perfil_simples(), "#2E6DB4", pick_lang("en"))),
-            ("dev-compact", template_dev_compact(&perfil_simples(), "#3A7D44", pick_lang("pt"))),
-        ] {
-            std::fs::write(dir.join(format!("amostra-{id}.html")), html).unwrap();
-        }
-    }
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
