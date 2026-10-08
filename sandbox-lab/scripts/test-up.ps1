@@ -66,7 +66,7 @@ $ProjectDir = $(if ($Project) {
 } else { Resolve-LabPath 'sample-project' })
 # Real path first, then the reparse points in it and above it (junction, symlink, subst), then the pure decision.
 $ProjectDir = Resolve-LabRealPath $ProjectDir
-$projectRefusal = Get-LabProjectRefusal -Project $ProjectDir -UserProfile ([Environment]::GetFolderPath('UserProfile')) -Links (Get-LabLinksAboveRoot $ProjectDir)
+$projectRefusal = Get-LabProjectRefusal -Project $ProjectDir -UserProfile ([Environment]::GetFolderPath('UserProfile')) -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $ProjectDir))
 if ($projectRefusal) { throw "[test-up] project folder refused ($ProjectDir): $projectRefusal" }
 $ExtDir     = Resolve-LabPath $cfg.extensionsDir
 foreach ($d in @($SharedDir, $SandboxDir, $ProjectDir, $ExtDir)) { if (-not (Test-Path -LiteralPath $d -PathType Container)) { throw "Pasta nao encontrada: $d" } }
@@ -78,7 +78,7 @@ $HostOf = @{ trabalho = (Join-Path $Work 'guest-rw'); deploy = (Join-Path $Work 
 foreach ($m in $mounts) {
   $h = $HostOf[$m.nome]
   if ($m.nome -in @('trabalho', 'cache-saida') -and -not $GenerateOnly) { New-Item -ItemType Directory -Force -Path $h | Out-Null }   # creates only
-  $links = @(Get-LabLinksInPath $h $RepoRoot)
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $h $RepoRoot))
   if ($links.Count) { throw "[test-up] link (junction/symlink) in the path of mount '$($m.nome)': $($links[0])" }
   if (-not (Test-Path -LiteralPath $h -PathType Container)) { throw "[test-up] folder for mount '$($m.nome)' not found$(if ($m.nome -eq 'deploy') { ': publish first (publicar.mjs)' })" }
 }
@@ -90,9 +90,9 @@ if ($DadosReais) {
   $roaming = [Environment]::GetFolderPath('ApplicationData')
   $src = Join-Path $roaming $script:LabAppId
   # Links above the source AND any link inside it: a link in the data folder refuses the whole mount.
-  $inside = Get-LabReparsePoints $src
+  $inside = @(ConvertTo-LabLinkList (Get-LabReparsePoints $src))
   # Only the file link diagnostics\latest (Claude Code's debug logger) is tolerated: skipped, never followed.
-  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links (Get-LabLinksAboveRoot $src) -LinksInside $inside -FileLinksInside (Get-LabFileLinks $inside) -LinkTargets (Get-LabLinkTargets $inside)
+  $why = Get-LabRealDataSourceRefusal -Source $src -RoamingAppData $roaming -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $src)) -LinksInside $inside -FileLinksInside @(ConvertTo-LabLinkList (Get-LabFileLinks $inside)) -LinkTargets (Get-LabLinkTargets $inside)
   if ($why) { throw "[test-up] -DadosReais refused: $why" }
   if (-not (Test-Path -LiteralPath $src -PathType Container)) { throw '[test-up] -DadosReais: the app has no data folder on this PC (%APPDATA%\io.github.johngabie.claudia-rh)' }
   $RealData = $src

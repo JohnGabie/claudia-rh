@@ -180,8 +180,8 @@ Check 'testes-no-guest.mjs and guest-cenario.ps1 ask only for node (-Precisa nod
 }
 Check 'test-up.ps1 wires the account check, the links check (with targets), the firewall flag and the early credential removal' {
   if ($up -notmatch 'Get-LabUpVerdict[^\r\n]*-PrecisaConta \$conta') { throw 'Get-LabUpVerdict without -PrecisaConta $conta' }
-  if ($up -notmatch '\$inside = Get-LabReparsePoints \$src[\r\n]') { throw '$inside = Get-LabReparsePoints $src (no @()) not found' }
-  if ($up -notmatch 'Get-LabRealDataSourceRefusal[^\r\n]*-LinksInside \$inside -FileLinksInside \(Get-LabFileLinks \$inside\) -LinkTargets \(Get-LabLinkTargets \$inside\)') { throw 'the real-data check does not get -LinksInside, -FileLinksInside and -LinkTargets' }
+  if ($up -notmatch '\$inside = @\(ConvertTo-LabLinkList \(Get-LabReparsePoints \$src\)\)[\r\n]') { throw '$inside = @(ConvertTo-LabLinkList (Get-LabReparsePoints $src)) not found' }
+  if ($up -notmatch 'Get-LabRealDataSourceRefusal[^\r\n]*-LinksInside \$inside -FileLinksInside @\(ConvertTo-LabLinkList \(Get-LabFileLinks \$inside\)\) -LinkTargets \(Get-LabLinkTargets \$inside\)') { throw 'the real-data check does not get -LinksInside, -FileLinksInside and -LinkTargets' }
   if ($up -notmatch 'internetBloqueada = \[bool\]\(Test-LabAmbienteInternetBlocked -Compose \$compose -Ambiente \$Ambiente\)') { throw 'guest.config.json does not carry internetBloqueada' }
   if ($up -notmatch 'if \(Test-LabCredentialRemovableNow [^\r\n]*\{') { throw 'the early removal does not use Test-LabCredentialRemovableNow' }
   if ($up -notmatch 'Test-LabCredentialRemovableNow[^\r\n]*\{\s*[\r\n]+\s*Remove-LabCredential') { throw 'Remove-LabCredential does not follow the condition' }
@@ -200,6 +200,56 @@ Check 'guest-run.ps1: the app starts only after Get-LabAppStartRefusal says no, 
   $t = $ast.Extent.Text
   if ($t -notmatch 'guest\.config\.json' -or $t -notmatch "'firewall\.txt'") { throw 'guest-run.ps1 does not read guest.config.json and firewall.txt' }
   if ($t -notmatch 'Get-LabGuestInternetPermitida') { throw 'guest-run.ps1 does not decide the internet from the config' }
+}
+
+# Link lists: 'return ,$list' in the functions below once made @(Get-LabLinksInPath ...).Count 1 with no link (test-up refused every
+# mount). Rule over the syntax tree, nothing is run: (1) every call of these functions sits inside ConvertTo-LabLinkList, so no
+# .Count/[0]/+ ever sees the raw return; (2) their definitions never use the unary comma (a one-element array literal) (return ,$x / ,@(...)).
+$linkFns = @('Get-LabLinksInPath', 'Get-LabLinksAboveRoot', 'Get-LabReparsePoints', 'Get-LabFileLinks')
+function Get-LinkListProblems([string]$Text, [string]$Label) {
+  $tok = $null; $err = $null
+  $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tok, [ref]$err)
+  if ($err.Count) { return @("${Label}: does not parse: $($err[0].Message)") }
+  $problems = New-Object System.Collections.Generic.List[string]
+  $lines = $Text -split "`r?`n"   # a call may stay raw only with the marker comment at the end of its line (the Sandbox regression test)
+  $calls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $linkFns -contains "$($n.GetCommandName())" }, $true))
+  foreach ($c in $calls) {
+    $p = $c.Parent; $wrapped = $false
+    while ($p) { if ($p -is [System.Management.Automation.Language.CommandAst] -and "$($p.GetCommandName())" -eq 'ConvertTo-LabLinkList') { $wrapped = $true; break }; $p = $p.Parent }
+    if (-not $wrapped -and $lines[$c.Extent.StartLineNumber - 1] -notmatch '# raw-call-on-purpose\s*$') { $problems.Add("${Label}:$($c.Extent.StartLineNumber): $($c.GetCommandName()) is used without ConvertTo-LabLinkList (raw return)") }
+  }
+  $defs = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $linkFns -contains $n.Name }, $true))
+  foreach ($d in $defs) {
+    $commas = @($d.FindAll({ param($n) $n -is [System.Management.Automation.Language.ArrayLiteralAst] -and $n.Elements.Count -eq 1 }, $true))   # ,$x parses as a one-element array literal
+    foreach ($u in $commas) { $problems.Add("${Label}:$($u.Extent.StartLineNumber): $($d.Name) wraps a value in a unary comma (return `,`$x) ($($u.Extent.Text))") }
+  }
+  return @(, @{ Problems = $problems.ToArray(); Calls = $calls.Count; Defs = $defs.Count })
+}
+$linkFiles = @(Get-ChildItem -LiteralPath (Join-Path $scan 'scripts'), (Join-Path $scan 'scripts/lib'), (Join-Path $scan 'scripts/test'), (Join-Path $scan 'sandbox'), (Join-Path $scan 'sandbox/app') -Filter *.ps1 |
+  Where-Object { $_.Name -notlike '*.test.ps1' })
+Check 'link lists: every call of the link finders goes through ConvertTo-LabLinkList and none returns a comma-wrapped list' {
+  $all = New-Object System.Collections.Generic.List[string]; $calls = 0; $defs = 0
+  foreach ($f in $linkFiles) {
+    $r = Get-LinkListProblems ([IO.File]::ReadAllText($f.FullName)) $f.Name
+    if ($r -is [string] -or $r -is [array] -and $r.Count -and $r[0] -is [string]) { $all.Add([string]$r[0]); continue }
+    foreach ($x in $r.Problems) { $all.Add($x) }; $calls += $r.Calls; $defs += $r.Defs
+  }
+  if ($all.Count) { throw ($all -join ' | ') }
+  if ($calls -lt 10) { throw "only $calls call(s) found: the scan is not looking at the scripts" }
+  if ($defs -ne 4) { throw "expected the 4 definitions in disco.ps1, found $defs" }
+}
+Check 'link lists: the check fails on the old comma return and on a raw .Count (mutations, in memory)' {
+  $disco = [IO.File]::ReadAllText((Join-Path $scan 'scripts/lib/disco.ps1'))
+  $up = [IO.File]::ReadAllText((Join-Path $scan 'scripts/test-up.ps1'))
+  if ((Get-LinkListProblems $disco 'disco').Problems.Count) { throw 'the unmutated disco.ps1 must be clean' }
+  $m1 = $disco.Replace('return $links ', 'return ,$links ')
+  if ($m1 -eq $disco) { throw 'mutation 1 did not change the text' }
+  if (-not (Get-LinkListProblems $m1 'disco').Problems.Count) { throw 'return ,$links was not caught' }
+  $good = '@(ConvertTo-LabLinkList (Get-LabLinksInPath $h $RepoRoot))'
+  if (-not $up.Contains($good)) { throw 'test-up.ps1 call not found' }
+  $m2 = $up.Replace($good, '@(Get-LabLinksInPath $h $RepoRoot)')
+  $p2 = (Get-LinkListProblems $m2 'test-up').Problems
+  if (-not $p2.Count -or $p2[0] -notmatch 'without ConvertTo-LabLinkList') { throw 'a raw @(Get-LabLinksInPath ...).Count was not caught' }
 }
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

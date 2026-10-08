@@ -11,7 +11,7 @@ if (-not (Test-LabInSandbox)) { Write-Host 'REFUSED: this test runs only inside 
 $RootReal = $null
 try { New-Item -ItemType Directory -Force -Path $script:LabGuestTestRoot | Out-Null; $RootReal = (Get-Item -LiteralPath $script:LabGuestTestRoot -Force).FullName } catch { }
 $why = $(if ($RootReal) { Get-LabGuestTestRootRefusal $RootReal } else { 'the Z: test root could not be created (is Z: mounted? see C:\lab\out\disco-z.json)' })
-if (-not $why -and @(Get-LabLinksAboveRoot $RootReal).Count) { $why = 'link (junction/symlink) above the test root' }
+if (-not $why -and @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $RootReal)).Count) { $why = 'link (junction/symlink) above the test root' }
 if ($why) { Write-Host "REFUSED: $why"; exit 3 }
 $Base = Join-Path $RootReal ('travas-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Base | Out-Null
@@ -119,9 +119,9 @@ Check 'robocopy /XJ: a junction inside the app source is not followed' {
   if (-not (Test-Path -LiteralPath (Join-Path $target 'keep.txt'))) { throw 'target changed' }
 }
 Check 'Get-LabReparsePoints: an absent root is fine and a plain tree has no links' {
-  if (@(Get-LabReparsePoints (Join-Path $Base 'nao-existe')).Count) { throw 'absent root should give no links' }
+  if (@(ConvertTo-LabLinkList (Get-LabReparsePoints (Join-Path $Base 'nao-existe'))).Count) { throw 'absent root should give no links' }
   $plain = Join-Path $Base 'plain-n'; $null = New-Sentinel (Join-Path $plain 'a\b')
-  if (@(Get-LabReparsePoints $plain).Count) { throw 'plain tree should have no links' }
+  if (@(ConvertTo-LabLinkList (Get-LabReparsePoints $plain)).Count) { throw 'plain tree should have no links' }
 }
 Check 'a source reached through a junction ancestor is refused, nothing is published' {
   $r = New-FakeRepo 'k2'
@@ -135,8 +135,8 @@ Check 'Resolve-LabRealPath and Get-LabLinksAboveRoot see a junction ancestor' {
   $realDir = Join-Path $Base 'real-l'; New-Item -ItemType Directory -Path $realDir | Out-Null
   $link = Join-Path $Base 'link-l'; New-Item -ItemType Junction -Path $link -Target $realDir | Out-Null
   if ((Resolve-LabRealPath $realDir) -ne $realDir) { throw 'real path changed' }
-  if (@(Get-LabLinksAboveRoot (Join-Path $link 'x')).Count -ne 1) { throw 'junction not found above a missing child' }
-  if (@(Get-LabLinksAboveRoot $realDir).Count -ne 0) { throw 'false positive on a real folder' }
+  if (@(ConvertTo-LabLinkList (Get-LabLinksAboveRoot (Join-Path $link 'x'))).Count -ne 1) { throw 'junction not found above a missing child' }
+  if (@(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $realDir)).Count -ne 0) { throw 'false positive on a real folder' }
 }
 Check 'Test-LabInSandbox is true here (identity + guest bootstrap)' {
   if (-not (Test-LabInSandbox)) { throw 'expected true inside the guest' }
@@ -226,5 +226,21 @@ Check 'credential: credencial folder as a junction is refused, target kept' {
   if (-not (Test-Path -LiteralPath $keep) -or -not (Test-Path -LiteralPath (Join-Path $target '.credentials.json'))) { throw 'target changed' }
 }
 
+Check 'regression: Get-LabLinksInPath counts 0 on a folder with no link and 1 on a junction (the old comma return counted 1 for both)' {
+  $plain = Join-Path $Base 'plain-o\sub'; $null = New-Sentinel $plain
+  $rawList = @(Get-LabLinksInPath $plain $Base)   # raw-call-on-purpose
+  if (@(ConvertTo-LabLinkList $rawList).Count -ne 0) { throw 'plain folder: expected 0 links' }
+  if (@(ConvertTo-LabLinkList (Get-LabLinksInPath $plain $Base)).Count -ne 0) { throw 'plain folder, direct call: expected 0 links' }
+  # The raw return itself must already be flat: nothing, or plain strings, never an array inside the result.
+  foreach ($e in $rawList) { if ($e -isnot [string]) { throw "raw return holds a $($e.GetType().Name), not a path string" } }
+  if ($rawList.Count -ne 0) { throw 'raw return of a plain folder should be empty' }
+  $realDir = Join-Path $Base 'real-o'; $null = New-Sentinel $realDir
+  $link = Join-Path $Base 'link-o'; New-Item -ItemType Junction -Path $link -Target $realDir | Out-Null
+  $found = @(ConvertTo-LabLinkList (Get-LabLinksInPath $link $Base))
+  if ($found.Count -ne 1) { throw "junction: expected 1 link, got $($found.Count)" }
+  if ($found[0] -ne $link) { throw 'junction: [0] is not the link path' }
+  if (@(Get-LabLinksInPath $link $Base).Count -ne 1) { throw 'junction: even the raw call must count 1' }   # raw-call-on-purpose
+  if (@(Get-LabLinksInPath $plain $Base).Count -ne 0) { throw 'plain folder: even the raw call must count 0' }   # raw-call-on-purpose
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

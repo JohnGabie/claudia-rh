@@ -14,6 +14,20 @@ function ConvertTo-LabPathKey([string]$Path) {
   return $Path.TrimEnd('\').ToLowerInvariant()
 }
 
+function ConvertTo-LabLinkList {
+  # Turns whatever Get-LabLinksInPath / Get-LabLinksAboveRoot / Get-LabReparsePoints / Get-LabFileLinks returned (nothing, $null,
+  # a string, an array, an array inside an array such as ',@()' or ',@(path)') into a FLAT list of non-empty path strings.
+  # Why: 'return ,$list' makes @(f).Count 1 even with no link at all (the one element is the empty array), which refused every
+  # mount in test-up. Callers write @(ConvertTo-LabLinkList (Get-Lab...)); the result is unrolled, so @(...).Count is the number
+  # of links. Pure: no disk.
+  param($Raw)
+  foreach ($x in @($Raw)) {
+    if ($null -eq $x) { continue }
+    if ($x -is [System.Collections.IEnumerable] -and $x -isnot [string]) { ConvertTo-LabLinkList $x; continue }
+    if (-not [string]::IsNullOrWhiteSpace([string]$x)) { [string]$x }
+  }
+}
+
 function Get-LabRootProblem([string]$Root) {
   if ($Root -notmatch '^[A-Za-z]:\\[^\\]') { return 'must be an absolute local path below a drive root' }
   if ($Root -match '(^|\\)\.{1,2}(\\|$)') { return "has '.' or '..' segments" }

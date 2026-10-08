@@ -20,7 +20,7 @@ function Get-LabLinksInPath([string]$Dir, [string]$StopAt) {
     if (-not $parent -or $parent -eq $cur) { throw "$Dir is not inside $StopAt" }
     $cur = $parent
   }
-  return ,$links
+  return $links   # flat on purpose (no leading comma): callers wrap it in ConvertTo-LabLinkList (travas.ps1)
 }
 
 function ConvertTo-LabFullPath([string]$Path, [string]$Base) {
@@ -44,7 +44,7 @@ function Resolve-LabRealPath([string]$FullPath) {
 
 function Get-LabLinksAboveRoot([string]$FullPath) {
   # Reparse points in the path or any ancestor up to the drive root (junction, symlink, subst folder). SANDBOX ONLY.
-  return ,@(Get-LabLinksInPath $FullPath ([IO.Path]::GetPathRoot($FullPath)))
+  return ConvertTo-LabLinkList (Get-LabLinksInPath $FullPath ([IO.Path]::GetPathRoot($FullPath)))
 }
 
 function Get-LabReparsePoints([string]$Dir) {
@@ -62,7 +62,7 @@ function Get-LabReparsePoints([string]$Dir) {
     if (-not $item.PSIsContainer) { continue }
     foreach ($e in [IO.Directory]::EnumerateFileSystemEntries($d)) { $stack.Push($e) }
   }
-  return ,$found
+  return $found   # flat on purpose, see Get-LabLinksInPath
 }
 
 function Read-LabLinkTarget([string]$LinkPath) {
@@ -94,11 +94,11 @@ function Get-LabFileLinks([string[]]$Paths) {
     # A target that cannot be read leaves the link out of the list, so it stays a refusing link.
     if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($item.Attributes -band [IO.FileAttributes]::Directory) -and ($null -ne (Read-LabLinkTarget $p))) { $r += $p }
   }
-  return ,$r
+  return $r   # flat on purpose, see Get-LabLinksInPath
 }
 
 function Clear-LabOut([string]$OutDir, [string]$LabDir) {
-  $links = @(Get-LabLinksInPath $OutDir $LabDir) + @(Get-LabReparsePoints $OutDir)
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $OutDir $LabDir)) + @(ConvertTo-LabLinkList (Get-LabReparsePoints $OutDir))
   $refusal = Get-LabOutCleanRefusal -OutDir $OutDir -LabDir $LabDir -Links $links
   if ($refusal) { throw "Refusing to clean ${OutDir}: $refusal" }
   Get-ChildItem -LiteralPath $OutDir -Force | Where-Object { $_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force
@@ -121,7 +121,7 @@ function Remove-LabCredentialFile {
   # Deletes ONE file, only after Get-LabCredentialCleanRefusal says yes. Never -Recurse.
   param([string]$File, [string]$RepoRoot)
   $p = Get-LabCredentialPaths $RepoRoot
-  $links = @(Get-LabLinksInPath $p.Dir $RepoRoot)
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $p.Dir $RepoRoot))
   $item = Get-Item -LiteralPath $File -Force -ErrorAction SilentlyContinue
   if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $links += $File }
   if ($item -and $item.PSIsContainer) { throw "[credential] refusing to delete a folder: $File" }
@@ -146,12 +146,12 @@ function Copy-LabCredential {
   # read into a variable, printed or logged; errors never carry the user folder.
   param([string]$RepoRoot, [string]$UserProfile, [string]$ConfigDir)
   $src = Join-Path $UserProfile '.claude\.credentials.json'
-  $refusal = Get-LabCredentialSourceRefusal -Source $src -UserProfile $UserProfile -ConfigDir $ConfigDir -Links (Get-LabLinksAboveRoot $src)
+  $refusal = Get-LabCredentialSourceRefusal -Source $src -UserProfile $UserProfile -ConfigDir $ConfigDir -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $src))
   if ($refusal) { throw "[credential] refused: $refusal" }
   if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw '[credential] no account is signed in on this PC (%USERPROFILE%\.claude\.credentials.json is missing): run claude and /login, then test-up again' }
   $p = Get-LabCredentialPaths $RepoRoot
   New-Item -ItemType Directory -Force -Path $p.Dir | Out-Null
-  $links = @(Get-LabLinksInPath $p.Dir $RepoRoot)
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $p.Dir $RepoRoot))
   if ($links.Count) { throw "[credential] refused: link (symlink/junction) in $($links[0])" }
   $tmp = "$($p.Dir)\.credentials.json.$([guid]::NewGuid().ToString('N')).tmp"
   try {

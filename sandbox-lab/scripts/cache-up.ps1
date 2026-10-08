@@ -18,7 +18,7 @@ $ProgressPreference = 'SilentlyContinue'
 $Lab = Split-Path $PSScriptRoot -Parent
 $RepoRoot = Split-Path $Lab -Parent
 $Cache = Join-Path $Lab 'shared\cache'
-$refusal = Get-LabCacheDirRefusal -CacheDir $Cache -LabDir $Lab -Links @(Get-LabLinksInPath $Cache $Lab)
+$refusal = Get-LabCacheDirRefusal -CacheDir $Cache -LabDir $Lab -Links @(ConvertTo-LabLinkList (Get-LabLinksInPath $Cache $Lab))
 if ($refusal) { throw "[cache-up] refusing to write in ${Cache}: $refusal" }
 $compose = Get-Content -LiteralPath (Join-Path $Lab 'compose.json') -Raw | ConvertFrom-Json
 $msvc = $compose.pacotes.PSObject.Properties['msvc'].Value
@@ -45,7 +45,7 @@ if ($ImportarMsvc) {
   $why = Get-LabPackageRefusal -Nome 'msvc' -Pacote $msvc
   if ($why) { throw "[cache-up] compose.json: $why" }
   $src = Join-Path $RepoRoot ".sandbox-work\cache-saida\$ImportarMsvc\msvc-$($msvc.versao)"
-  $links = @(Get-LabLinksInPath $src $RepoRoot) + @(Get-LabReparsePoints $src)
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $src $RepoRoot)) + @(ConvertTo-LabLinkList (Get-LabReparsePoints $src))
   $why = Get-LabLayoutImportRefusal -Source $src -RepoRoot $RepoRoot -Versao $msvc.versao -Links $links
   if ($why) { throw "[cache-up] refusing to import ${src}: $why" }
   if (-not (Test-Path -LiteralPath (Join-Path $src 'layout.sha256') -PathType Leaf)) { throw "[cache-up] $src has no layout.sha256: run layout-msvc.ps1 again" }

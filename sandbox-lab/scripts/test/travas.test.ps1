@@ -282,5 +282,51 @@ Check 'layout manifest: same files, sizes and hashes pass; missing, extra, diffe
   Should-Match ((Get-LabLayoutManifestProblems -ManifestText "lixo`n" -Found @{}) -join ';') 'malformed'
 }
 
+# Regression: 'return ,$links' in Get-LabLinksInPath made @(Get-LabLinksInPath ...).Count 1 with no link (the one element was the
+# empty array) and refused every mount in test-up. These fakes imitate the real return shapes; no disk.
+function Get-FakeOldNone { return ,@() }                       # the defective shape: no link
+function Get-FakeOldOne { return ,@('Y:\inventado\a') }        # the defective shape: one link
+function Get-FakeOldTwo { return ,@('Y:\inventado\a', 'Y:\inventado\b') }
+function Get-FakeFlatNone { $l = @(); return $l }              # the fixed shape
+function Get-FakeFlatOne { $l = @('Y:\inventado\a'); return $l }
+function Get-FakeFlatTwo { $l = @('Y:\inventado\a', 'Y:\inventado\b'); return $l }
+function Get-FakeNull { return $null }
+function Get-FakeNested { return ,@(, @('Y:\inventado\a'), '', $null, @()) }
+Check 'regression: the old comma shape really miscounts (proves the fakes imitate the bug)' {
+  if (@(Get-FakeOldNone).Count -ne 1) { throw 'fake of the old shape should count 1 for no link' }
+  if (@(Get-FakeOldTwo).Count -ne 1) { throw 'fake of the old shape should count 1 for two links' }
+}
+Check 'link list: the raw return of every shape becomes a flat list of the right size' {
+  $cases = @(
+    @{ n = 'old none';  v = (Get-FakeOldNone);  c = 0 },
+    @{ n = 'old one';   v = (Get-FakeOldOne);   c = 1 },
+    @{ n = 'old two';   v = (Get-FakeOldTwo);   c = 2 },
+    @{ n = 'flat none'; v = (Get-FakeFlatNone); c = 0 },
+    @{ n = 'flat one';  v = (Get-FakeFlatOne);  c = 1 },
+    @{ n = 'flat two';  v = (Get-FakeFlatTwo);  c = 2 },
+    @{ n = 'null';      v = $null;              c = 0 },
+    @{ n = 'nested';    v = (Get-FakeNested);   c = 1 },
+    @{ n = 'string';    v = 'Y:\inventado\a';   c = 1 },
+    @{ n = 'blank';     v = @('', '  ', $null); c = 0 }
+  )
+  foreach ($k in $cases) {
+    $list = @(ConvertTo-LabLinkList $k.v)
+    if ($list.Count -ne $k.c) { throw "$($k.n): expected $($k.c) link(s), got $($list.Count)" }
+    foreach ($e in $list) { if ($e -isnot [string] -or [string]::IsNullOrWhiteSpace($e)) { throw "$($k.n): element is not a plain non-empty string" } }
+  }
+  # Straight from the command, without going through a variable (the way the scripts call it).
+  if (@(ConvertTo-LabLinkList (Get-FakeOldNone)).Count -ne 0) { throw 'direct call: old none must be 0' }
+  if (@(ConvertTo-LabLinkList (Get-FakeOldTwo)).Count -ne 2) { throw 'direct call: old two must be 2' }
+  if ((@(ConvertTo-LabLinkList (Get-FakeOldOne)))[0] -ne 'Y:\inventado\a') { throw 'direct call: [0] must be the path' }
+  if (@(ConvertTo-LabLinkList (Get-FakeNull)).Count -ne 0) { throw 'direct call: null must be 0' }
+}
+Check 'link list: what the scripts do with it (count, [0], concatenation, the pure guards)' {
+  $none = @(ConvertTo-LabLinkList (Get-FakeOldNone)) + @(ConvertTo-LabLinkList (Get-FakeOldNone))
+  if ($none.Count) { throw 'two empty lists must concatenate to an empty list' }
+  $two = @(ConvertTo-LabLinkList (Get-FakeOldOne)) + @(ConvertTo-LabLinkList (Get-FakeFlatOne))
+  if ($two.Count -ne 2) { throw 'one link plus one link must be two' }
+  Should-BeNull (Get-LabOutCleanRefusal -OutDir $O -LabDir $L -Links @(ConvertTo-LabLinkList (Get-FakeOldNone)))
+  Should-Match (Get-LabOutCleanRefusal -OutDir $O -LabDir $L -Links @(ConvertTo-LabLinkList (Get-FakeOldOne))) 'link'
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0

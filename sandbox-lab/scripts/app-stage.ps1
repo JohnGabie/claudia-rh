@@ -31,7 +31,7 @@ $WorkDir = $Expected
 $Deploy = Join-Path $WorkDir 'deploy'
 # robocopy /MIR below also deletes inside deploy, so the guard runs with or without -Clean.
 $exists = Test-Path -LiteralPath $Deploy
-$links = @(Get-LabLinksInPath $Deploy $RepoRoot) + @(Get-LabReparsePoints $Deploy)
+$links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $Deploy $RepoRoot)) + @(ConvertTo-LabLinkList (Get-LabReparsePoints $Deploy))
 $refusal = Get-LabCleanRefusal -Deploy $Deploy -RepoRoot $RepoRoot -Exists $exists `
   -HasMarker ($exists -and (Test-Path -LiteralPath (Join-Path $Deploy $script:LabDeployMarker))) -Links $links
 if ($refusal) { throw "Refusing to touch ${Deploy}: $refusal" }
@@ -39,7 +39,7 @@ if ($refusal) { throw "Refusing to touch ${Deploy}: $refusal" }
 # value is what the guard checks and what Test-Path / Copy-Tree / Copy-Item use below. Links anywhere in the path refuse.
 function Resolve-Source([string]$src) {
   $full = Resolve-LabRealPath (ConvertTo-LabFullPath $src $RepoRoot)
-  $srcRefusal = Get-LabSourceRefusal -Source $full -Deploy $Deploy -Links (Get-LabLinksAboveRoot $full)
+  $srcRefusal = Get-LabSourceRefusal -Source $full -Deploy $Deploy -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $full))
   if ($srcRefusal) { throw "Refusing source ${src}: $srcRefusal" }
   return $full
 }
