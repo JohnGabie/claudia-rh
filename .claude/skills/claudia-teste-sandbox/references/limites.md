@@ -176,6 +176,11 @@ Comandos de host a partir do `lab` do `onde.mjs` (`sandbox-lab/` do checkout pri
   - `compose.json` com `msvc` de volta em `instalar` do `testes` → `FAILED - the versioned compose.json passes for every ambiente and pins the researched versions: expected null, got 'ambiente testes: 'msvc' is in both hostTools and instalar (pick one source)'`.
   - O buscador (`Get-LabHostToolCandidate`) só lê: o teste confere, pela árvore do parser, que ele só chama comandos de leitura, e que uma cópia com `Remove-Item` é pega.
 - **Não verificado:** a subida real do `testes` com as quatro montagens `ReadOnly=true`; `cargo test --lib` no guest com o toolchain montado (a versão do Rust mudou desde `e242f28`); o `rustc` montado achar a biblioteca padrão sem o `rustup`; o tempo da subida (esperado: minutos). Se o `rustup which rustc` na pasta do projeto devolver um toolchain sem `libstd` (por exemplo, numa worktree sem o override), o `test-up` recusa antes de subir.
+- **Revisão Opus do `22c2854` (2026-10-08), três ajustes e um risco aceito:**
+  - **`rustup which rustc` só lê:** o processo filho roda com `RUSTUP_AUTO_INSTALL=0` e sem `RUSTUP_TOOLCHAIN`, para o rustup não baixar toolchain no PC nem obedecer a uma variável herdada. `host-tools.test.ps1` exige as duas linhas antes do `Process::Start` (mutações: `FAILED - missing before Process::Start: ...RUSTUP_AUTO_INSTALL...` e `...Remove('RUSTUP_TOOLCHAIN')`).
+  - **Argumentos da recusa em `test-up.ps1` agora têm teste:** `-Links` (links acima do caminho REAL, via `ConvertTo-LabLinkList`), `-MarkerCount $cand.MarkerCount`, `-UserProfile` de `GetFolderPath('UserProfile')` e `$realTool` vindo de `Resolve-LabRealPath`, pela árvore do parser, com uma mutação para cada.
+  - **Versão escolhida só se estiver completa:** MSVC com `bin\Hostx64\x64\cl.exe`; SDK com `Include\<v>`, `Lib\<v>` e `bin\<v>`. O leitor lista o disco e a decisão pura `Get-LabLatestCompleteVersionDir` escolhe; nenhuma versão completa = sem versão (o `cargo` fica indisponível, falha fechada).
+  - **Risco aceito, a confirmar com o usuário:** links DENTRO das pastas de ferramenta montadas NÃO são verificados; só o caminho da pasta e o que está acima dela. Motivo: a montagem é só leitura (nada é escrito pelo guest) e um link de dentro resolve no guest, não no PC. O código não mudou.
 
 ## Evals de disparo
 

@@ -130,6 +130,10 @@ function Get-LabRustcPathFromRustup([string]$ProjectDir) {
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
   $psi.CreateNoWindow = $true
+  # rustup may DOWNLOAD and install a toolchain to satisfy a rust-toolchain file or an override. This call must only read:
+  # no auto-install, and no inherited RUSTUP_TOOLCHAIN (it would override the project's own choice).
+  $psi.EnvironmentVariables['RUSTUP_AUTO_INSTALL'] = '0'
+  $psi.EnvironmentVariables.Remove('RUSTUP_TOOLCHAIN')
   $proc = [System.Diagnostics.Process]::Start($psi)
   $errTask = $proc.StandardError.ReadToEndAsync()
   $outTask = $proc.StandardOutput.ReadToEndAsync()

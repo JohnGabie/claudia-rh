@@ -53,16 +53,25 @@ function Get-LabLatestVersionDir {
   return [string](@($ok | Sort-Object { [version]$_ })[-1])
 }
 
+function Get-LabLatestCompleteVersionDir {
+  # The highest plain version folder (Get-LabLatestVersionDir rules) that is ALSO in $Complete, the names the caller found
+  # with every required piece (MSVC: bin\Hostx64\x64\cl.exe; SDK: Include\<v>, Lib\<v> and bin\<v>). Pure: the caller lists
+  # the disk, this only decides. $null when none is complete (fail closed: a half-copied newest version is never picked).
+  param([string[]]$Dirs = @(), [string[]]$Complete = @())
+  $ok = @(@($Dirs) | Where-Object { @($Complete) -ccontains $_ })
+  return Get-LabLatestVersionDir $ok
+}
+
 function ConvertTo-LabHostToolsLayout {
   # What the guest knows about the host tools: the declared names (guest.config.json hostTools, known names only) and the
-  # latest MSVC and SDK version folders. Pure; Get-LabHostToolsLayout (end of the file) is the thin reader of the folders.
-  param($Cfg, [string[]]$MsvcDirs = @(), [string[]]$SdkDirs = @())
+  # latest COMPLETE MSVC and SDK version folders. Pure; Get-LabHostToolsLayout (end of the file) is the thin reader of the folders.
+  param($Cfg, [string[]]$MsvcDirs = @(), [string[]]$SdkDirs = @(), [string[]]$MsvcComplete = @(), [string[]]$SdkComplete = @())
   $names = @()
   if ($Cfg -is [System.Management.Automation.PSCustomObject]) {
     $p = $Cfg.PSObject.Properties['hostTools']
     if ($p) { $names = @(@($p.Value) | Where-Object { $_ -is [string] -and $script:LabGuestHostToolNames -ccontains $_ }) }
   }
-  return [ordered]@{ nomes = $names; msvc = (Get-LabLatestVersionDir $MsvcDirs); sdk = (Get-LabLatestVersionDir $SdkDirs) }
+  return [ordered]@{ nomes = $names; msvc = (Get-LabLatestCompleteVersionDir $MsvcDirs $MsvcComplete); sdk = (Get-LabLatestCompleteVersionDir $SdkDirs $SdkComplete) }
 }
 
 function Test-LabHostToolUsable {
@@ -167,7 +176,10 @@ function Get-LabHostToolsLayout {
   $r = $script:LabGuestHostToolRoot
   $msvc = @(Get-ChildItem -LiteralPath "$r\msvc" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
   $sdk = @(Get-ChildItem -LiteralPath "$r\winkits\Include" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
-  return ConvertTo-LabHostToolsLayout -Cfg $Cfg -MsvcDirs $msvc -SdkDirs $sdk
+  # Which versions have every piece (this lists the disk; Get-LabLatestCompleteVersionDir decides).
+  $msvcOk = @($msvc | Where-Object { Test-Path -LiteralPath "$r\msvc\$_\bin\Hostx64\x64\cl.exe" -PathType Leaf })
+  $sdkOk = @($sdk | Where-Object { (Test-Path -LiteralPath "$r\winkits\Include\$_" -PathType Container) -and (Test-Path -LiteralPath "$r\winkits\Lib\$_" -PathType Container) -and (Test-Path -LiteralPath "$r\winkits\bin\$_" -PathType Container) })
+  return ConvertTo-LabHostToolsLayout -Cfg $Cfg -MsvcDirs $msvc -SdkDirs $sdk -MsvcComplete $msvcOk -SdkComplete $sdkOk
 }
 
 function Get-LabGuestInternetPermitida($Cfg) {

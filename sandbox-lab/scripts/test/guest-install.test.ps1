@@ -249,7 +249,7 @@ Check 'version probe: the version is the first non-empty line of the whole outpu
 
 # --- host toolchains mounted read-only at C:\hosttools (ambiente testes; spec addendum 9, decided by the user on 2026-10-08) ---
 function Hl([string[]]$Nomes, [string[]]$Msvc = @('14.44.35207'), [string[]]$Sdk = @('10.0.19041.0', '10.0.26100.0')) {
-  return ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = $Nomes }) -MsvcDirs $Msvc -SdkDirs $Sdk
+  return ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = $Nomes }) -MsvcDirs $Msvc -SdkDirs $Sdk -MsvcComplete $Msvc -SdkComplete $Sdk
 }
 $allHost = @('rust', 'node', 'msvc', 'winkits')
 Check 'host layout: latest version folder compared as versions, names filtered, no config = no tools' {
@@ -261,9 +261,53 @@ Check 'host layout: latest version folder compared as versions, names filtered, 
   if (($l.nomes -join ',') -ne 'node,msvc') { throw "names: $($l.nomes -join ',')" }
   $none = ConvertTo-LabHostToolsLayout -Cfg $null
   if ($none.nomes.Count -or $none.msvc -or $none.sdk) { throw 'null config' }
-  $fromJson = ConvertTo-LabHostToolsLayout -Cfg ('{"hostTools":["rust"]}' | ConvertFrom-Json) -MsvcDirs @() -SdkDirs @()
+  $fromJson = ConvertTo-LabHostToolsLayout -Cfg ('{"hostTools":["rust"]}' | ConvertFrom-Json)
   if (($fromJson.nomes -join ',') -ne 'rust') { throw 'a one-name list parsed from JSON' }
   if ((ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ outro = 1 })).nomes.Count) { throw 'no hostTools key' }
+}
+$completeCases = {
+  $l = ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = @('msvc', 'winkits') }) -MsvcDirs @('14.43.1', '14.44.2') -SdkDirs @('10.0.19041.0', '10.0.26100.0') -MsvcComplete @('14.43.1') -SdkComplete @('10.0.19041.0')
+  if ($l.msvc -ne '14.43.1') { throw "msvc without cl.exe on the newest: $($l.msvc)" }
+  if ($l.sdk -ne '10.0.19041.0') { throw "sdk missing Lib or bin on the newest: $($l.sdk)" }
+  $l = ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = @('msvc') }) -MsvcDirs @('14.43.1', '14.44.2') -SdkDirs @('10.0.26100.0') -MsvcComplete @('14.44.2', '14.43.1') -SdkComplete @('10.0.26100.0')
+  if ($l.msvc -ne '14.44.2') { throw 'all complete: the newest wins' }
+  if ($null -ne (Get-LabLatestCompleteVersionDir @('14.44.2') @())) { throw 'no complete version -> null' }
+  if ($null -ne (Get-LabLatestCompleteVersionDir @('14.44.2') @('14.43.1'))) { throw 'a complete name that is not a listed folder is ignored' }
+  if ((Get-LabLatestCompleteVersionDir @('9.0.1', '10.0.2', '10.0.10') @('9.0.1', '10.0.2')) -ne '10.0.2') { throw 'numeric order among the complete ones' }
+  if ($null -ne (Get-LabLatestCompleteVersionDir @('x64', 'Hostx64') @('x64', 'Hostx64'))) { throw 'non-version names are never picked' }
+  $none = ConvertTo-LabHostToolsLayout -Cfg ([pscustomobject]@{ hostTools = @('msvc', 'winkits') }) -MsvcDirs @('14.44.2') -SdkDirs @('10.0.26100.0')
+  if ($null -ne $none.msvc -or $null -ne $none.sdk) { throw 'folders without a complete list must give no version' }
+
+}
+Check 'host layout: the latest version WITH every piece wins; an incomplete newest one is skipped; none complete = null' $completeCases
+function Invoke-CompleteCases { try { & $completeCases; return @() } catch { return @($_.Exception.Message) } }
+$completeMut = [ordered]@{
+  'the completeness list is ignored (newest folder wins even without cl.exe / Lib / bin)' = @(, @('Where-Object { @($Complete) -ccontains $_ }', 'Where-Object { $true }'))
+  'msvc ignores its completeness list'                                                      = @(, @('(Get-LabLatestCompleteVersionDir $MsvcDirs $MsvcComplete)', '(Get-LabLatestVersionDir $MsvcDirs)'))
+  'sdk ignores its completeness list'                                                       = @(, @('(Get-LabLatestCompleteVersionDir $SdkDirs $SdkComplete)', '(Get-LabLatestVersionDir $SdkDirs)'))
+  'versions compared as text'                                                               = @(, @('return Get-LabLatestVersionDir $ok', 'return [string](@($ok | Sort-Object)[-1])'))
+}
+foreach ($m in $completeMut.Keys) {
+  Check "complete-version mutation must be caught: $m" {
+    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../sandbox/guest-install.lib.ps1'))
+    foreach ($pair in $completeMut[$m]) { if (-not $text.Contains($pair[0])) { throw "harness bug: '$($pair[0])' not found in the lib" }; $text = $text.Replace($pair[0], $pair[1]) }
+    $fails = @(& { . ([scriptblock]::Create($text)); Invoke-CompleteCases })
+    if (-not $fails.Count) { throw 'NOT detected: the mutated lib passed the complete-version cases' }
+    foreach ($x in $fails) { Write-Host "    mutation '$m' -> FAILED - $x" }
+  }
+}
+# The thin reader must ask for every piece (static, nothing runs): cl.exe for MSVC; Include, Lib and bin for the SDK.
+$readerNeeds = @('\\msvc\\\$_\\bin\\Hostx64\\x64\\cl\.exe" -PathType Leaf', '\\winkits\\Include\\\$_"', '\\winkits\\Lib\\\$_"', '\\winkits\\bin\\\$_"', '-MsvcComplete \$msvcOk -SdkComplete \$sdkOk')
+function Get-ReaderGaps([string]$Text) { return @($readerNeeds | Where-Object { -not [regex]::IsMatch($Text, $_) }) }
+Check 'host layout reader: asks for cl.exe, Include, Lib and bin, and passes both completeness lists' {
+  $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../sandbox/guest-install.lib.ps1'))
+  $reader = $text.Substring($text.IndexOf('function Get-LabHostToolsLayout'))
+  $gaps = Get-ReaderGaps $reader
+  if ($gaps.Count) { throw "the reader misses: $($gaps -join ' ; ')" }
+  foreach ($cut in @('Hostx64\x64\cl.exe', 'winkits\Lib\$_', 'winkits\bin\$_', '-MsvcComplete $msvcOk')) {
+    if (-not $reader.Contains($cut)) { throw "harness bug: '$cut' not in the reader" }
+    if ((Get-ReaderGaps $reader.Replace($cut, 'x')).Count -eq 0) { throw "NOT detected: reader without '$cut'" }
+  }
 }
 Check 'host tools: node-only need is met by the mounted Node, even while claude-code is still installing' {
   $e = Get-LabGuestToolEnv ([pscustomobject]@{ ok = $false; fim = $null; pacotes = @() }) -Precisa node -HostLayout (Hl $allHost)

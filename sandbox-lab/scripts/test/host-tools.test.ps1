@@ -170,5 +170,77 @@ Check 'static check catches its mutations (read-only flag flipped, refusal skipp
   if ($m3 -ceq $up -or [regex]::IsMatch($m3, 'hostTools = @\(\$hostToolMounts \| ForEach-Object \{ \[string\]\$_\.nome \}\)')) { throw 'host paths in guest.config.json are not detected' }
 }
 
+Check 'rustup call: the child process gets RUSTUP_AUTO_INSTALL=0 and no RUSTUP_TOOLCHAIN before it starts (so it only reads)' {
+  $need = @('\$psi\.EnvironmentVariables\[''RUSTUP_AUTO_INSTALL''\]\s*=\s*''0''', '\$psi\.EnvironmentVariables\.Remove\(''RUSTUP_TOOLCHAIN''\)')
+  function Get-RustupGaps([string]$Text) {
+    $fn = @((Get-AstOf $Text).FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Get-LabRustcPathFromRustup' }, $true))
+    if ($fn.Count -ne 1) { throw 'Get-LabRustcPathFromRustup not found exactly once' }
+    $body = $fn[0].Extent.Text
+    $start = $body.IndexOf('[System.Diagnostics.Process]::Start($psi)')
+    if ($start -lt 0) { throw 'the Process::Start call is gone' }
+    $before = $body.Substring(0, $start)
+    return @($need | Where-Object { -not [regex]::IsMatch($before, $_) })
+  }
+  $gaps = Get-RustupGaps $disco
+  if ($gaps.Count) { throw "missing before Process::Start: $($gaps -join ' ; ')" }
+  $m1 = $disco.Replace('$psi.EnvironmentVariables[''RUSTUP_AUTO_INSTALL''] = ''0''', '')
+  if ($m1 -ceq $disco -or (Get-RustupGaps $m1).Count -ne 1) { throw 'NOT detected: RUSTUP_AUTO_INSTALL line removed' }; Write-Host "    mutation 'RUSTUP_AUTO_INSTALL line removed' -> FAILED - missing before Process::Start: $((Get-RustupGaps $m1) -join ' ; ')"
+  $m2 = $disco.Replace('$psi.EnvironmentVariables.Remove(''RUSTUP_TOOLCHAIN'')', '')
+  if ($m2 -ceq $disco -or (Get-RustupGaps $m2).Count -ne 1) { throw 'NOT detected: RUSTUP_TOOLCHAIN removal removed' }; Write-Host "    mutation 'RUSTUP_TOOLCHAIN removal removed' -> FAILED - missing before Process::Start: $((Get-RustupGaps $m2) -join ' ; ')"
+  $m3 = $disco.Replace('$psi.EnvironmentVariables[''RUSTUP_AUTO_INSTALL''] = ''0''', '$psi.EnvironmentVariables[''RUSTUP_AUTO_INSTALL''] = ''1''')
+  if ($m3 -ceq $disco -or (Get-RustupGaps $m3).Count -ne 1) { throw 'NOT detected: RUSTUP_AUTO_INSTALL set to 1' }; Write-Host "    mutation 'RUSTUP_AUTO_INSTALL set to 1' -> FAILED - missing before Process::Start: $((Get-RustupGaps $m3) -join ' ; ')"
+  # Setting them after the process started is as good as not setting them.
+  $m4 = $disco.Replace('  $psi.EnvironmentVariables.Remove(''RUSTUP_TOOLCHAIN'')' + "`n", '').Replace('  $psi.EnvironmentVariables.Remove(''RUSTUP_TOOLCHAIN'')' + "`r`n", '').Replace('$errTask = $proc.StandardError', '$psi.EnvironmentVariables.Remove(''RUSTUP_TOOLCHAIN''); $errTask = $proc.StandardError')
+  if ($m4 -ceq $disco -or (Get-RustupGaps $m4).Count -ne 1) { throw 'NOT detected: RUSTUP_TOOLCHAIN removed only after Start' }; Write-Host "    mutation 'RUSTUP_TOOLCHAIN removed only after Start' -> FAILED - missing before Process::Start: $((Get-RustupGaps $m4) -join ' ; ')"
+}
+Check 'test-up: the refusal call passes -Links (links above the REAL path), -MarkerCount from the finder, -UserProfile from the OS, and the path is the resolved one' {
+  function Get-RefusalFacts([string]$Text) {
+    $ast = Get-AstOf $Text
+    $calls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Get-LabHostToolRefusal' }, $true))
+    if ($calls.Count -ne 1) { throw "Get-LabHostToolRefusal is called $($calls.Count) times in test-up, expected 1" }
+    $args = @{}
+    $els = @($calls[0].CommandElements)
+    for ($i = 0; $i -lt $els.Count; $i++) {
+      if ($els[$i] -is [System.Management.Automation.Language.CommandParameterAst]) {
+        $p = $els[$i].ParameterName
+        $v = $(if ($els[$i].Argument) { $els[$i].Argument.Extent.Text } elseif ($i + 1 -lt $els.Count) { $els[$i + 1].Extent.Text } else { '' })
+        $args[$p] = ($v -replace '\s+', ' ')
+      }
+    }
+    $assign = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$realTool' }, $true))
+    $real = $(if ($assign.Count -eq 1) { ($assign[0].Right.Extent.Text -replace '\s+', ' ') } else { "<$($assign.Count) assignments>" })
+    return @{ args = $args; real = $real }
+  }
+  $want = [ordered]@{
+    Links       = '@(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $realTool))'
+    MarkerCount = '$cand.MarkerCount'
+    UserProfile = '([Environment]::GetFolderPath(''UserProfile''))'
+  }
+  function Get-RefusalGaps([string]$Text) {
+    $facts = Get-RefusalFacts $Text
+    $gaps = @()
+    foreach ($k in $want.Keys) { if ($facts.args[$k] -cne $want[$k]) { $gaps += "-$k is '$($facts.args[$k])'" } }
+    if ($facts.real -cne 'Resolve-LabRealPath $cand.HostPath') { $gaps += "`$realTool comes from '$($facts.real)'" }
+    return $gaps
+  }
+  $gaps = Get-RefusalGaps $up
+  if ($gaps.Count) { throw ($gaps -join ' ; ') }
+  $muts = [ordered]@{
+    'no -Links'                      = @('-Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $realTool))', '')
+    '-Links of the unresolved path'  = @('(Get-LabLinksAboveRoot $realTool)', '(Get-LabLinksAboveRoot $cand.HostPath)')
+    '-Links without the list helper' = @('@(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $realTool))', '@()')
+    '-MarkerCount fixed'             = @('-MarkerCount $cand.MarkerCount', '-MarkerCount 1')
+    '-UserProfile empty'             = @('([Environment]::GetFolderPath(''UserProfile''))', '''''')
+    '$realTool not resolved'         = @('$realTool = Resolve-LabRealPath $cand.HostPath', '$realTool = $cand.HostPath')
+  }
+  foreach ($k in $muts.Keys) {
+    $pair = $muts[$k]
+    $m = $up.Replace($pair[0], $pair[1])
+    if ($m -ceq $up) { throw "harness bug: mutation '$k' did not apply" }
+    $g = Get-RefusalGaps $m
+    if (-not $g.Count) { throw "NOT detected: $k" }
+    Write-Host "    mutation '$k' -> FAILED - $($g -join ' ; ')"
+  }
+}
 if ($script:failed) { Write-Host "$script:failed FAILED"; exit 1 }
 Write-Host 'all passed'; exit 0
