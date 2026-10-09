@@ -1012,11 +1012,14 @@ fn fixture_file(name: &str) -> String {
 async fn set_window(l: &Live, w: i64, h: i64) {
     let win = l.client.call("Browser.getWindowForTarget", json!({})).await.unwrap();
     let id = win["windowId"].as_i64().unwrap();
-    l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "windowState": "normal" } })).await.unwrap();
-    l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "width": w, "height": h } })).await.unwrap();
-    // Wait for the window to HAVE the size (up to 5 s) instead of a fixed sleep: on a loaded machine
-    // the next step used to run against the old window (CLA-36/38).
-    for _ in 0..50 {
+    // Wait for the window to HAVE the size (up to 10 s) instead of a fixed sleep: on a loaded machine
+    // the next step used to run against the old window (CLA-36/38). The request is sent again every second
+    // (a request right after launch was seen dropped in the Sandbox).
+    for i in 0..100 {
+        if i % 10 == 0 {
+            l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "windowState": "normal" } })).await.unwrap();
+            l.client.call("Browser.setWindowBounds", json!({ "windowId": id, "bounds": { "width": w, "height": h } })).await.unwrap();
+        }
         let win = l.client.call("Browser.getWindowForTarget", json!({})).await.unwrap();
         if (win["bounds"]["width"].as_i64(), win["bounds"]["height"].as_i64()) == (Some(w), Some(h)) {
             break;

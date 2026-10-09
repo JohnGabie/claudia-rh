@@ -61,10 +61,14 @@ async fn state(c: &cdp::CdpClient) -> (u32, u32, u32, u32, String) {
 
 async fn set_window(c: &cdp::CdpClient, bounds: serde_json::Value) {
     let w = c.call("Browser.getWindowForTarget", json!({})).await.unwrap();
-    c.call("Browser.setWindowBounds", json!({ "windowId": w["windowId"], "bounds": bounds })).await.unwrap();
-    // Wait for the window to HAVE what was asked (up to 5 s) instead of sleeping a fixed time: on a
-    // loaded machine a fixed sleep let the next measurement see the old window (CLA-36).
-    for _ in 0..50 {
+    // Wait for the window to HAVE what was asked (up to 10 s) instead of sleeping a fixed time: on a
+    // loaded machine a fixed sleep let the next measurement see the old window (CLA-36). The request is
+    // sent again every second: in the Sandbox (2026-10-08, second suite in a row) a request made right
+    // after launch was dropped and the window kept its first size and state for the whole wait.
+    for i in 0..100 {
+        if i % 10 == 0 {
+            c.call("Browser.setWindowBounds", json!({ "windowId": w["windowId"], "bounds": bounds })).await.unwrap();
+        }
         let s = state(c).await;
         let state_ok = bounds["windowState"].as_str().is_none_or(|want| want == s.4);
         let size_ok = match (bounds["width"].as_u64(), bounds["height"].as_u64()) {
@@ -76,6 +80,13 @@ async fn set_window(c: &cdp::CdpClient, bounds: serde_json::Value) {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    let s = state(c).await;
+    let state_ok = bounds["windowState"].as_str().is_none_or(|want| want == s.4);
+    let size_ok = match (bounds["width"].as_u64(), bounds["height"].as_u64()) {
+        (Some(w), Some(h)) => (s.2 as u64, s.3 as u64) == (w, h),
+        _ => true,
+    };
+    assert!(state_ok && size_ok, "the window never took the setup {bounds}: {s:?}");
     // The bounds are there; the page's viewport follows a moment later (a minimized window has none to wait for).
     if bounds["windowState"] != "minimized" {
         assert!(support::wait_until_viewport_follows_window(c).await, "the page viewport never followed the window: {:?}", state(c).await);
