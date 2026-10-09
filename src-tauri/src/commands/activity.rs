@@ -91,7 +91,7 @@ mod tests {
         let d = temp("bad");
         std::fs::write(d.join("activity-log.db"), b"secret rows").unwrap();
         std::fs::write(d.join("capturas/20261002/1-before.jpg"), b"x").unwrap();
-        for bad in ["../x.jpg", "activity-log.db", "capturas/../activity-log.db", "/etc/passwd", "C:/Windows/win.ini"] {
+        for bad in ["../x.jpg", "activity-log.db", "capturas/../activity-log.db", "/etc/passwd", "Y:/inventado/arquivo.txt"] {
             assert!(image_data_url(&d, bad).is_err(), "{bad}");
         }
         assert!(image_data_url(&d, "capturas/20261002/missing.jpg").is_err());

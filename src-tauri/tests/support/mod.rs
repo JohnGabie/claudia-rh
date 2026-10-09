@@ -195,6 +195,35 @@ pub fn kill_tree(pid: u32) {
 /// 700x400 still had a 927x908 page for 250-500 ms, and the tests measured that stale page. Inner is never
 /// bigger than outer, and the frame (borders, tab strip, scrollbar) is a few dozen pixels wide and at most a
 /// couple hundred tall.
+/// Cleanup guard to create RIGHT AFTER the launch: if anything panics before the real `Live` guard
+/// exists (an `unwrap` on the first CDP call, say), this one closes our Chrome and drops the folder.
+/// Call `disarm()` once the `Live` takes over.
+pub struct Pending {
+    pid: u32,
+    port: u16,
+    profile: PathBuf,
+    armed: bool,
+}
+
+impl Pending {
+    pub fn new(pid: u32, port: u16, profile: &Path) -> Self {
+        Self { pid, port, profile: profile.to_path_buf(), armed: true }
+    }
+
+    pub fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        if self.armed {
+            kill_our_chrome(self.pid, self.port, &self.profile);
+            remove_profile_dir(&self.profile);
+        }
+    }
+}
+
 pub fn viewport_follows_window(inner: (i64, i64), outer: (i64, i64)) -> bool {
     let (dw, dh) = (outer.0 - inner.0, outer.1 - inner.1);
     inner.0 > 0 && inner.1 > 0 && (0..=60).contains(&dw) && (0..=250).contains(&dh)

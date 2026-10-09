@@ -31,17 +31,12 @@ async fn launch() -> Live {
     let profile = support::new_profile_dir("viewport");
     let o = LaunchOptions::headless_for_tests(chrome(), profile.join("p"));
     let st = manager::ensure_running(&o, "", &profile.join("state.json")).await.expect("chrome launches");
-    let page = match support::first_page_with_retry(st.port).await {
-        Ok(p) => p,
-        Err(e) => {
-            // No Live exists yet, so nothing else would close this Chrome: do it before failing.
-            support::kill_our_chrome(st.pid, st.port, &profile);
-            support::remove_profile_dir(&profile);
-            panic!("chrome started without a page: {e}");
-        }
-    };
+    // No Live exists yet: this guard closes our Chrome and drops the folder if anything below panics.
+    let mut pending = support::Pending::new(st.pid, st.port, &profile);
+    let page = support::first_page_with_retry(st.port).await.unwrap_or_else(|e| panic!("chrome started without a page: {e}"));
     let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
     client.call("Page.enable", json!({})).await.unwrap();
+    pending.disarm(); // from here on `Live` cleans up
     Live { client, pid: st.pid, port: st.port, profile }
 }
 

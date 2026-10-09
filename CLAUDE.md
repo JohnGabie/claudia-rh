@@ -181,9 +181,9 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 ## Build
 
 - Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.
-- Backend: em `src-tauri/`, `cargo check` / `cargo test` / `cargo clippy`.
+- Backend: em `src-tauri/`, `cargo check` / `cargo clippy --all-targets` / `cargo test --no-run` no PC. **`cargo test` (qualquer um, inclusive `--lib`) roda só no Sandbox**: vários testes criam e apagam pastas, e um deles já apagou o disco do usuário.
 - App: `npm run tauri dev`.
-- Testes live (Chrome real, `#[ignore]`): `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`. Os de ícone abrem janela visível e rodam à parte.
+- Testes live (Chrome real, `#[ignore]`; **só no Sandbox, nunca no PC**): `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`. Os de ícone abrem janela visível e rodam à parte.
 - Se o app estiver aberto, use `CARGO_TARGET_DIR` fora do `target/` do repo: o Windows trava o `.exe` em uso.
 
 ## Teste em máquina limpa

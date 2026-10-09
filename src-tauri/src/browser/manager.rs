@@ -258,19 +258,43 @@ pub async fn close_browser_on(port: u16) -> Result<(), String> {
     Err(format!("the browser on port {port} did not quit"))
 }
 
-/// Stops the browser the app started: kills its process tree and forgets it. Only if the port
-/// still answers as OUR pinned Chrome, so a recycled pid is never killed by mistake.
-pub async fn shutdown_with(state_path: &Path, kill: impl Fn(u32)) {
-    if let Some(s) = read_state(state_path) {
-        if probe(s.port).await.is_some_and(|b| is_pinned(&b, &s.version)) {
+/// Stops the browser the app started, only if the port still answers as OUR pinned Chrome (so a
+/// recycled pid is never killed by mistake). It asks politely first (`close`, i.e. `Browser.close`,
+/// which works even for a Chrome adopted without a known pid); `kill` is only the fallback and is
+/// NEVER called with pid 0 (a Chrome adopted through DevToolsActivePort has no known pid).
+/// state.json is removed only once the port is quiet: while a browser of ours still answers, the
+/// file stays so the next run can still find and stop it.
+pub async fn shutdown_with<C, Fut>(state_path: &Path, close: C, kill: impl Fn(u32))
+where
+    C: Fn(u16) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let Some(s) = read_state(state_path) else {
+        let _ = std::fs::remove_file(state_path); // unreadable: nothing to stop
+        return;
+    };
+    let ours = |b: String| is_pinned(&b, &s.version);
+    if probe(s.port).await.is_some_and(ours) {
+        let _ = close(s.port).await;
+        if probe(s.port).await.is_some_and(ours) && s.pid != 0 {
             kill(s.pid);
+            for _ in 0..20 {
+                if probe(s.port).await.is_none() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        if probe(s.port).await.is_some_and(ours) {
+            log::warn!("the browser on port {} did not quit; keeping state.json so it can be stopped later", s.port);
+            return;
         }
     }
     let _ = std::fs::remove_file(state_path);
 }
 
 pub async fn shutdown(state_path: &Path) {
-    shutdown_with(state_path, kill_tree).await;
+    shutdown_with(state_path, close_browser_on, kill_tree).await;
 }
 
 /// What the watcher wants done after one health check.
@@ -870,14 +894,73 @@ mod lifecycle_tests {
 
     #[tokio::test]
     async fn shutdown_kills_our_browser_and_forgets_it() {
-        let (port, _) = fake_chrome("Chrome/154.0.1.2", false).await;
+        // `close` is refused, so the pid kill is the fallback; the kill makes the fake browser quit.
+        let (port, closed) = fake_chrome("Chrome/154.0.1.2", true).await;
         let dir = temp("down");
         let state = dir.join("state.json");
         write_state(&state, &BrowserState { port, pid: 4242, version: VER.into() }).unwrap();
         let killed = AtomicU32::new(0);
-        shutdown_with(&state, |pid| killed.store(pid, Ordering::SeqCst)).await;
+        shutdown_with(&state, |_| async { Err("refused".to_string()) }, |pid| {
+            killed.store(pid, Ordering::SeqCst);
+            *closed.lock().unwrap() = true;
+        })
+        .await;
         assert_eq!(killed.load(Ordering::SeqCst), 4242);
         assert!(!state.exists(), "the state file is removed");
+    }
+
+    #[tokio::test]
+    async fn shutdown_closes_politely_and_does_not_kill_when_the_browser_quits() {
+        let (port, closed) = fake_chrome("Chrome/154.0.1.2", true).await;
+        let dir = temp("down-polite");
+        let state = dir.join("state.json");
+        write_state(&state, &BrowserState { port, pid: 4242, version: VER.into() }).unwrap();
+        let asked = AtomicU32::new(0);
+        shutdown_with(
+            &state,
+            |p| {
+                asked.store(p as u32, Ordering::SeqCst);
+                *closed.lock().unwrap() = true;
+                async { Ok(()) }
+            },
+            |_| panic!("the browser quit by itself: no kill"),
+        )
+        .await;
+        assert_eq!(asked.load(Ordering::SeqCst), port as u32);
+        assert!(!state.exists());
+    }
+
+    #[tokio::test]
+    async fn an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0() {
+        // I1: state.json was lost, the Chrome was adopted through DevToolsActivePort and stored with pid 0.
+        let (port, closed) = fake_chrome("Chrome/154.0.1.2", true).await;
+        let dir = temp("down-pid0");
+        let state = dir.join("state.json");
+        write_state(&state, &BrowserState { port, pid: 0, version: VER.into() }).unwrap();
+        // Close does not work and the browser stays up: no kill(0), and the state file stays.
+        let close_calls = AtomicUsize::new(0);
+        shutdown_with(
+            &state,
+            |_| {
+                close_calls.fetch_add(1, Ordering::SeqCst);
+                async { Err("did not quit".to_string()) }
+            },
+            |pid| panic!("kill({pid}) must never run for an adopted browser"),
+        )
+        .await;
+        assert_eq!(close_calls.load(Ordering::SeqCst), 1, "Browser.close is tried first");
+        assert!(state.exists(), "the browser still answers: state.json must stay");
+        // Now close works: the port goes quiet and the file goes away, still without any kill.
+        shutdown_with(
+            &state,
+            |_| {
+                *closed.lock().unwrap() = true;
+                async { Ok(()) }
+            },
+            |pid| panic!("kill({pid}) must never run for an adopted browser"),
+        )
+        .await;
+        assert!(!state.exists());
     }
 
     #[tokio::test]
@@ -888,7 +971,7 @@ mod lifecycle_tests {
         let state = dir.join("state.json");
         write_state(&state, &BrowserState { port: other_port, pid: 4242, version: VER.into() }).unwrap();
         let killed = AtomicUsize::new(0);
-        shutdown_with(&state, |_| {
+        shutdown_with(&state, |_| async { panic!("not our browser: do not even ask it to close") }, |_| {
             killed.fetch_add(1, Ordering::SeqCst);
         })
         .await;
@@ -896,7 +979,7 @@ mod lifecycle_tests {
         assert!(!state.exists());
         // And with a dead port.
         write_state(&state, &BrowserState { port: 1, pid: 4242, version: VER.into() }).unwrap();
-        shutdown_with(&state, |_| {
+        shutdown_with(&state, |_| async { panic!("dead port: nothing to close") }, |_| {
             killed.fetch_add(1, Ordering::SeqCst);
         })
         .await;
@@ -906,7 +989,7 @@ mod lifecycle_tests {
     #[tokio::test]
     async fn shutdown_without_a_state_file_is_a_no_op() {
         let dir = temp("down-none");
-        shutdown_with(&dir.join("missing.json"), |_| panic!("nothing to kill")).await;
+        shutdown_with(&dir.join("missing.json"), |_| async { panic!("nothing to close") }, |_| panic!("nothing to kill")).await;
     }
 
     // ── closing a Chrome of another version ───────────────────────────────
