@@ -201,7 +201,12 @@ mod data_dir_tests {
 
     #[test]
     fn an_absolute_data_dir_is_accepted_without_touching_the_disk() {
-        assert_eq!(resolver_data_dir(Some(r"Z:\nao-existe\dados")).unwrap(), PathBuf::from(r"Z:\nao-existe\dados"));
+        // Absolute on the platform under test (a drive letter is not absolute on Linux, where CI runs this).
+        #[cfg(windows)]
+        const ABS: &str = r"Z:\nao-existe\dados";
+        #[cfg(unix)]
+        const ABS: &str = "/nao-existe/dados";
+        assert_eq!(resolver_data_dir(Some(ABS)).unwrap(), PathBuf::from(ABS));
     }
 }
 

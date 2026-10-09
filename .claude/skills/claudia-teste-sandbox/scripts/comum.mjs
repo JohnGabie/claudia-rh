@@ -13,8 +13,8 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 
 /** Check if path b is inside path a. Works across different drives. */
 export function dentroDe(a, b) {
-  const rel = path.relative(a, b);
-  return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(".." + path.sep));
+  const rel = path.win32.relative(a, b);
+  return rel === "" || (!path.win32.isAbsolute(rel) && rel !== ".." && !rel.startsWith("..\\"));
 }
 
 export function sair(msg, code = 1) {
@@ -54,7 +54,7 @@ export function labDir({ cwd = REPO_ROOT, git = gitLer, existe = fs.existsSync }
 }
 
 const NOME_BASE = "claudia-teste-sandbox";
-const minusculas = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
+const minusculas = (p) => p.toLowerCase(); // the lab is Windows-only: paths are case-insensitive on every platform
 
 /** Same as dentroDe, but case-insensitive on Windows. */
 function dentroDeCI(a, b) {
@@ -69,20 +69,20 @@ function dentroDeCI(a, b) {
 export function motivoRecusa(dir, { repoRoot, tempRoot, ancestoresComGit = [] }) {
   if (typeof dir !== "string" || dir.trim() === "") return "empty path";
   if (dir.startsWith("\\\\") || dir.startsWith("//")) return "UNC or extended-length path";
-  if (!path.isAbsolute(dir)) return "relative path";
+  if (!path.win32.isAbsolute(dir)) return "relative path";
   const segmentos = dir.split(/[\\/]+/);
   if (segmentos.includes("..")) return "path contains '..'";
   // Win32 strips trailing dots/spaces ("<base>\..." resolves to "<base>"), so a lexical check would be fooled.
   if (segmentos.some((s) => /[. ]$/.test(s))) return "path has a segment ending in '.' or space";
-  if (path.normalize(dir) !== dir) return "path is not normalized";
-  if (path.parse(dir).root === dir) return "path is a filesystem root";
+  if (path.win32.normalize(dir) !== dir) return "path is not normalized";
+  if (path.win32.parse(dir).root === dir) return "path is a filesystem root";
   if (typeof repoRoot !== "string" || repoRoot === "" || typeof tempRoot !== "string" || tempRoot === "") {
     return "repoRoot and tempRoot are required";
   }
   if (dentroDeCI(dir, repoRoot)) return "path is the repository or an ancestor of it";
   if (dentroDeCI(repoRoot, dir)) return "path is inside the repository";
   if (ancestoresComGit.some((g) => dentroDeCI(g, dir))) return "path is inside a git checkout";
-  const base = path.join(tempRoot, NOME_BASE);
+  const base = path.win32.join(tempRoot, NOME_BASE);
   if (minusculas(dir) === minusculas(base)) return "path is the sandbox base folder itself";
   if (!dentroDeCI(base, dir)) return `path is outside the sandbox base folder (${base})`;
   return null;
@@ -96,8 +96,8 @@ export function ancestoresComGit(dir, existe = fs.existsSync) {
   const achados = [];
   let atual = dir;
   for (;;) {
-    if (existe(path.join(atual, ".git"))) achados.push(atual);
-    const pai = path.dirname(atual);
+    if (existe(path.win32.join(atual, ".git"))) achados.push(atual);
+    const pai = path.win32.dirname(atual);
     if (pai === atual) break;
     atual = pai;
   }
@@ -108,7 +108,7 @@ export { MARCADOR_DEPLOY, podeLimparDeploy } from "./caminhos-lab.mjs";
 
 /** PURE. Default scenario folder for a given tempRoot. cenario-copia uses it for its overlap check. */
 export function saidaPadraoCenario(nome, tempRoot) {
-  return path.join(tempRoot, NOME_BASE, nome);
+  return path.win32.join(tempRoot, NOME_BASE, nome);
 }
 
 /** Z:\ inside the guest (two factors). On the PC it throws: scenarios run only in the Sandbox (D1). */
