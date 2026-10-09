@@ -121,7 +121,7 @@ try {
   const wrongVaga = await call("browser_click", { reference: submit, confirm_submit: 12345 });
   check(wrongVaga.isError === true && /RECUSADO/.test(text(wrongVaga)), "submit with an unknown vaga is refused: " + text(wrongVaga).slice(0, 70));
 
-  const bad = await call("browser_open", { url: "file:///c:/windows/win.ini" });
+  const bad = await call("browser_open", { url: "file:///y:/inventado/arquivo.txt" });
   check(bad.isError === true && /http/.test(text(bad)), "a file:// URL is refused: " + text(bad).slice(0, 60));
 } catch (e) {
   check(false, "unexpected error: " + e.message);

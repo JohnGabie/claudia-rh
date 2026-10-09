@@ -1,6 +1,6 @@
 # Evidência da branch `feat/browser-cdp-mcp`
 
-> **Estado em 2026-10-08, HEAD `a8f9f24`; a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
+> **Estado em 2026-10-08, HEAD `45172f9` (antes das correções da revisão final, Tarefa 9); a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
 
 Fontes: os ledgers `.superpowers/sdd/2026-10-02-browser-cdp-motor/progress.md` e `.superpowers/sdd/2026-10-04-anexar-curriculo/progress.md` (fora do git; só caminhos relativos aqui, nenhum dado pessoal copiado), `docs/pesquisa/2026-10-02-validacao-execucao.md`, `docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`, `.claude/skills/claudia-teste-sandbox/references/limites.md` (itens 13 a 17) e o `git log dev..HEAD`.
 
@@ -114,7 +114,7 @@ As correções K, L, L2 e M vieram depois da revisão da Parte 2 e **nunca tiver
 |---|---|---|
 | Auditoria de deleção | `316a088` (`docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`) | 7 `BLOQUEIA` (B1 a B7) achados; decisões do usuário em `78e8c4b` e `05c1254` |
 | Regras duras: nenhum caminho real em teste, tudo que apaga só no Sandbox, nunca o Chrome pessoal | `0ce8cfb`, `9805ffe`, `05c1254` | em `CLAUDE.md` |
-| Correções B1 a B6 (travas das skills de teste) e P1/P3 (versão do browser, pasta de dados do MCP) | `595bada`, `db06c88`, `9418510`, `0cdd31a`, `f359672`, `10931d8`, `86cc713`, merges `4245c6b` e `04de093` | integradas; **a revisão Opus final que confirma "nenhum `BLOQUEIA` sobrou" não está registrada aqui: pendente**. B7 (kill injetado em `prepare`): não localizei commit pelo assunto, **não verificado** |
+| Correções B1 a B6 (travas das skills de teste) e P1/P3 (versão do browser, pasta de dados do MCP) | `595bada`, `db06c88`, `9418510`, `0cdd31a`, `f359672`, `10931d8`, `86cc713`, merges `4245c6b` e `04de093` | integradas; **a revisão Opus final que confirma "nenhum `BLOQUEIA` sobrou" não está registrada aqui: pendente**. B7 (kill injetado em `prepare`): **feito**, confirmado no código de `browser/service.rs` (`prepare` recebe o kill por parâmetro; a produção passa `manager::kill_tree` e os testes passam `|_| {}`); commit não localizado pelo assunto |
 | D6 guarda de envio, opção C (CLA-37) | `0dfe876`, `1f0119d`, `0021fbf`, `cebb58c`, `14e90a6` | implementada; testes live **pendentes no Sandbox** |
 | D7 eventos do próprio browser no Activity log (11 eventos) | `7e9ab91` | implementado; teste live e tela **pendentes** |
 | D8 diálogos nativos (política P2) e queda de aba | `bfa5aa6`, `0102e81` | implementado; o commit `0102e81` diz "pending Sandbox": testes live **pendentes** |

@@ -1893,10 +1893,10 @@ mod tests {
         assert!(url_refusal("http://127.0.0.1:9222/json/list", false, false).is_some(), "the browser's own debug endpoint");
         assert!(url_refusal("http://localhost:1420/", false, false).is_some());
         assert!(url_refusal("http://127.0.0.1:9222/", false, true).is_none(), "a debug build may opt in to local hosts");
-        for bad in ["file:///c:/windows/win.ini", "javascript:alert(1)", "chrome://settings", "data:text/html,x", "ftp://x/", "about:blank"] {
+        for bad in ["file:///y:/inventado/arquivo.txt", "javascript:alert(1)", "chrome://settings", "data:text/html,x", "ftp://x/", "about:blank"] {
             assert!(url_refusal(bad, false, false).is_some(), "{bad}");
         }
-        assert!(url_refusal("file:///c:/x.html", true, false).is_none(), "file URLs only when explicitly allowed (tests)");
+        assert!(url_refusal("file:///y:/inventado/x.html", true, false).is_none(), "file URLs only when explicitly allowed (tests)");
         let long = format!("https://example.com/{}", "a".repeat(MAX_URL_BYTES));
         assert!(url_refusal(&long, false, false).unwrap().contains("grande"));
         assert!(url_refusal("http://", false, false).is_some());

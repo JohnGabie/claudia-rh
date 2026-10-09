@@ -41,15 +41,9 @@ async fn launch() -> Live {
     let state_path = profile.join("state.json");
     let o = LaunchOptions::headless_for_tests(chrome(), profile.join("p"));
     let st = manager::ensure_running(&o, "", &state_path).await.expect("chrome launches");
-    let page = match support::first_page_with_retry(st.port).await {
-        Ok(p) => p,
-        Err(e) => {
-            // No Live exists yet, so nothing else would close this Chrome: do it before failing.
-            support::kill_our_chrome(st.pid, st.port, &profile);
-            support::remove_profile_dir(&profile);
-            panic!("chrome started without a page: {e}");
-        }
-    };
+    // No Live exists yet: this guard closes our Chrome and drops the folder if anything below panics.
+    let mut pending = support::Pending::new(st.pid, st.port, &profile);
+    let page = support::first_page_with_retry(st.port).await.unwrap_or_else(|e| panic!("chrome started without a page: {e}"));
     let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
     for m in &["Page.enable", "DOM.enable", "Accessibility.enable"] {
         client.call(m, json!({})).await.unwrap();
@@ -65,6 +59,7 @@ async fn launch() -> Live {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    pending.disarm(); // from here on `Live` cleans up
     Live {
         client,
         tab_id: page.id.clone(),
@@ -547,7 +542,7 @@ async fn urls_that_are_not_http_are_refused_before_touching_the_browser() {
     let l = launch().await;
     // file URLs are NOT allowed here (no allow_file_urls)
     let t = BrowserTools::new(l.profile.join("state.json"), Ctx::candidatando(7), Arc::new(NoSink));
-    for bad in ["file:///c:/windows/win.ini", "javascript:alert(1)", "chrome://settings", "data:text/html,<b>x</b>", "ftp://x/"] {
+    for bad in ["file:///y:/inventado/arquivo.txt", "javascript:alert(1)", "chrome://settings", "data:text/html,<b>x</b>", "ftp://x/"] {
         let e = t.open(bad).await.unwrap_err();
         assert!(e.contains("http"), "{bad}: {e}");
     }
@@ -912,15 +907,10 @@ async fn launch_visible() -> Live {
     let state_path = profile.join("state.json");
     let o = LaunchOptions::visible(chrome(), profile.join("p"));
     let st = manager::ensure_running(&o, "", &state_path).await.expect("a visible chrome launches");
-    let page = match support::first_page_with_retry(st.port).await {
-        Ok(p) => p,
-        Err(e) => {
-            support::kill_our_chrome(st.pid, st.port, &profile);
-            support::remove_profile_dir(&profile);
-            panic!("the visible chrome started without a page: {e}");
-        }
-    };
+    let mut pending = support::Pending::new(st.pid, st.port, &profile);
+    let page = support::first_page_with_retry(st.port).await.unwrap_or_else(|e| panic!("the visible chrome started without a page: {e}"));
     let client = cdp::CdpClient::connect(&page.ws_url).await.unwrap();
+    pending.disarm();
     Live { client, tab_id: page.id.clone(), port: st.port, pid: st.pid, profile }
 }
 

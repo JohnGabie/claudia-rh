@@ -176,7 +176,7 @@ pub enum Verdict {
 pub fn check_confirmation(page_url: &str, confirm: Option<i64>, ctx: &dyn GuardContext) -> Verdict {
     let Some(vaga_id) = confirm else {
         return Verdict::Refuse(
-            "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga>              (a vaga precisa estar em 'candidatando')."
+            "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga> (a vaga precisa estar em 'candidatando')."
                 .into(),
         );
     };

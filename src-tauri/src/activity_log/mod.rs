@@ -563,7 +563,7 @@ mod tests {
         for bad in [
             "../secret.txt",
             "capturas/../../x",
-            "C:/Windows/win.ini",
+            "Y:/inventado/arquivo.txt",
             "/etc/passwd",
             "capturas/../activity-log.db",
             "capturas\\..\\x",
