@@ -1976,3 +1976,73 @@ async fn a_click_at_on_a_label_of_a_submit_button_is_refused() {
     assert!(e.starts_with("RECUSADO"), "{e}");
     assert!(!sent(&a, "label").await);
 }
+
+// ───────────── D4 (2026-10-09): job links on a scrolled list, tests/fixtures/job-list.html ─────────────
+// A real Ashby list refused a click on a job LINK ("RECUSADO: este botão envia a candidatura"): the guard's hit
+// test took the box centre in VIEWPORT coordinates and handed it to DOM.getNodeForLocation, which reads DOCUMENT
+// coordinates. On a scrolled page it found nothing (structural: refused) or another element.
+
+#[tokio::test]
+#[ignore]
+async fn a_job_link_far_down_a_scrolled_list_opens_without_a_refusal() {
+    // Mutation: hit-test the viewport point without the scroll offset -> "RECUSADO: este botão envia a candidatura".
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let t = tools(&l, ctx.clone());
+    t.open(&fixture_file("job-list.html")).await.unwrap();
+    let list = t.read(None).await.unwrap();
+    let link = ref_of(&list, "link", "Software Engineer 25, Data Team Engineering • Remote; Lisbon; Copenhagen • Full time");
+    let r = t.click(&link, None).await;
+    assert!(r.is_ok(), "a job link only opens the posting: {r:?}");
+    let a = agent_client(&l).await;
+    assert!(eval(&a, "window.scrollY").await.as_f64().unwrap() > 1000.0, "the page really had to scroll to reach the link");
+    assert_eq!(eval(&a, "location.hash").await, "#job-25", "the click opened the posting");
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "a navigation link never spends the send");
+}
+
+#[tokio::test]
+#[ignore]
+async fn the_send_button_on_a_scrolled_page_is_still_refused_by_ref() {
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("job-list.html")).await.unwrap();
+    let a = agent_client(&l).await;
+    // Scroll first, as the agent would have, so the button is somewhere in the middle of the screen.
+    eval(&a, "window.scrollTo(0, 300); true").await;
+    let list = t.read(None).await.unwrap();
+    let e = t.click(&ref_of(&list, "button", "Submit application"), None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO") && e.contains("confirm_submit"), "{e}");
+    assert_eq!(eval(&a, "window.__sent").await, false);
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_click_at_the_send_button_of_a_scrolled_page_is_refused() {
+    // The page is scrolled by S so that the send button's screen y equals posting 6's DOCUMENT y. Before the fix
+    // the guard hit-tested the screen point as a document point: it judged posting 6 (a harmless link, on screen
+    // at y - S) and the click pressed "Submit application" without any confirmation.
+    // Mutation: hit-test the viewport point without the scroll offset -> the form is submitted.
+    let l = launch().await;
+    let t = tools(&l, Ctx::candidatando(7));
+    t.open(&fixture_file("job-list.html")).await.unwrap();
+    // The long page brings a scrollbar and the viewport guarantee widens the window once: let it settle before
+    // measuring, or click_at stops with "the window was resized" instead of reaching the guard.
+    t.read(None).await.unwrap();
+    let a = agent_client(&l).await;
+    let v = eval(
+        &a,
+        "(()=>{const doc=(id)=>{const r=document.getElementById(id).getBoundingClientRect();return r.y+window.scrollY+r.height/2};\
+         window.scrollTo(0,Math.round(doc('send')-doc('job-link-6')));\
+         const r=document.getElementById('send').getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;\
+         const old=document.elementFromPoint(x,y-window.scrollY);\
+         return [x,y,window.scrollY,!!document.elementFromPoint(x,y).closest('#send'),!!old&&!!old.closest('#job-link-6')]})()",
+    )
+    .await;
+    let (x, y) = (v[0].as_f64().unwrap(), v[1].as_f64().unwrap());
+    assert!(v[2].as_f64().unwrap() > 100.0, "the page scrolled: {v}");
+    assert_eq!(v[3], true, "the point is over the send button: {v}");
+    assert_eq!(v[4], true, "read as a document point it falls on posting 6 (what the old guard judged): {v}");
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert_eq!(eval(&a, "window.__sent").await, false, "the application must not have been sent");
+}
