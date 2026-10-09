@@ -1,6 +1,6 @@
 # Evidência da branch `feat/browser-cdp-mcp`
 
-> **Estado em 2026-10-08, HEAD `45172f9` (antes das correções da revisão final, Tarefa 9); a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`, e a 8.3 (Tarefa 6, menos o Step 3) com a rodada sobre o HEAD `45172f9`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
+> **Estado em 2026-10-09, HEAD `bf5a0f8` (com as correções da revisão final, Tarefa 9: `5a99436` e `bf5a0f8`); a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`, a 8.3 (Tarefa 6, menos o Step 3) com a rodada sobre o HEAD `45172f9`, e a 8.3.1 com a rodada sobre o HEAD `bf5a0f8` (I1, I2 e M2).** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
 
 Fontes: os ledgers `.superpowers/sdd/2026-10-02-browser-cdp-motor/progress.md` e `.superpowers/sdd/2026-10-04-anexar-curriculo/progress.md` (fora do git; só caminhos relativos aqui, nenhum dado pessoal copiado), `docs/pesquisa/2026-10-02-validacao-execucao.md`, `docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`, `.claude/skills/claudia-teste-sandbox/references/limites.md` (itens 13 a 17) e o `git log dev..HEAD`.
 
@@ -297,6 +297,46 @@ Observação (não é falha): um processo MCP novo começa numa aba própria, em
 - **7, a tela do Activity log:** **não verificado**, pela mesma razão da rodada A (sem WebView2 no guest `testes`, o app não tem janela; o CDP do app no guest também não funciona, `references/limites.md` item 9).
 
 **Fim:** depois de tudo, no guest: 0 `chrome.exe` com perfil de teste ou de `\t6\`, 0 `claudia-rh.exe`; só a pasta do smoke acima em `Z:\tmp`. `test-down.ps1` exit 0, `wsb list` vazio, sem `.credentials.json` em `.sandbox-work\credencial` no PC. Nenhum código editado.
+
+### 8.3.1 Rodada de 2026-10-09 no Sandbox sobre as correções da revisão final (HEAD `bf5a0f8`, ambiente `testes`)
+
+Prova das correções `5a99436` (I1: `shutdown_with` fecha o Chrome adotado com `Browser.close`, nunca `kill(0)`, e mantém o `state.json` enquanto a porta responde; M2: guarda `Pending` nos testes live) e `bf5a0f8` (I2: `abrir_pasta` só abre pasta existente dentro da pasta de dados, validador puro `commands/pasta_segura.rs`). Tudo rodou **dentro do Windows Sandbox**, nada no PC; nenhum código foi editado no PC. Uma primeira tentativa foi interrompida pelo fim da sessão; o Sandbox foi derrubado e a rodada foi refeita **do zero** (os números abaixo são só da segunda). Mesmo padrão das rodadas `t4\`/`t6\`: scripts da rodada em `.sandbox-work\guest-rw\t7\` (fora do git; `run-job.ps1`, `mutate.ps1`, `orphans.ps1`, `mutations.json`, `jobs\*.cmd`), chamados por `wsb exec -r ExistingLogin`, com `TEMP`/`TMP` = `Z:\tmp`, `CLAUDIA_TEST_CHROME=C:\lab\tools\chrome\chrome-win64\chrome.exe`, `CARGO_HOME`/`CARGO_TARGET_DIR` em `C:\labdata`; saída e exit em `C:\labwork\t7\out\*-r2*`.
+
+- **Subida:** `test-up.ps1 -Ambiente testes -Project <projeto do onde.mjs>` → exit 0 em 81,8 s (`bootstrap ok, Z: ready, packages installed`; Claude Code 2.1.285 exit 0 em 1,8 s).
+- **Build (`guest-build.ps1 -Precisa cargo`, por `-EncodedCommand`):** `npm.cmd ci` exit 0 em 11,9 s; `npm.cmd run build && cd src-tauri && cargo build && cargo test --lib --no-run` exit 0 em 197,7 s. 69,2 GB livres no `C:` do guest.
+- **`cargo test --lib`:** exit 0, **595 passed, 0 failed, 0 ignored**.
+- **`cargo test --lib pasta_segura`:** exit 0, **9 passed** (`aceita_pasta_dentro`, `aceita_a_propria_raiz_de_dados`, `recusa_arquivo_exe`, `recusa_prefixo_de_texto`, `recusa_link_para_fora`, `recusa_unc_e_verbatim`, `recusa_relativo_vazio_e_ponto_ponto`, `recusa_raiz_de_disco`, `recusa_inexistente`).
+- **Shutdown (`browser::manager::lifecycle_tests`):** `shutdown_closes_politely_and_does_not_kill_when_the_browser_quits`, `an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0`, `shutdown_kills_our_browser_and_forgets_it`, `shutdown_never_kills_a_pid_whose_port_is_not_our_browser` → exit 0, **4 passed**.
+- **Suíte live, uma vez** (`cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`): exit 0 em 335 s, `browser_live` **93 passed, 0 failed**, `viewport_live` **6 passed, 0 failed**.
+- **Ícones** (`cargo test --test browser_live -- --ignored icon --test-threads=1`): exit 0, **3 passed**.
+- **Smoke MCP** (`CLAUDIA_ALLOW_LOCAL_URLS=1 node tests/mcp-browser-smoke.mjs <exe debug>`): exit 0, 32 linhas `OK`, última `TUDO OK`.
+- **Órfãos** (`orphans.ps1`, só lista, antes da suíte e depois de cada uma das três): **0** pastas `claudia-live-*`/`claudia-smoke-*` em `Z:\tmp` e no `%TEMP%` do guest, **0** `chrome.exe` com perfil de teste na linha de comando (11 `chrome.exe` no total, todos do `bootstrap.ps1`). A pasta `claudia-smoke-*` que tinha sobrado na rodada de `45172f9` não apareceu desta vez.
+
+**Mutações** (só na cópia do guest `C:\labdata\project`, uma por vez; regex com exatamente 1 ocorrência; restauradas copiando o arquivo de `C:\labproject`, SHA-256 igual ao do PC, e com a data posta em "agora"; o cargo recompilou `claudia-rh` em todas, linha `Compiling` no log):
+
+| Mutação | Teste esperado | Resultado (linha `FAILED`) |
+|---|---|---|
+| I1a: `shutdown_with` sem `&& s.pid != 0` | `an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0` | `test browser::manager::lifecycle_tests::an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0 ... FAILED` (`kill(0) must never run for an adopted browser`); 3 de 4 passam |
+| I1b: sem o `return` do bloco "did not quit" | o mesmo | `test browser::manager::lifecycle_tests::an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0 ... FAILED` (`the browser still answers: state.json must stay`) |
+| I1c: sem o `close(s.port).await` | `shutdown_closes_politely_and_does_not_kill_when_the_browser_quits` (e o de pid 0) | `test browser::manager::lifecycle_tests::shutdown_closes_politely_and_does_not_kill_when_the_browser_quits ... FAILED` e `test browser::manager::lifecycle_tests::an_adopted_browser_without_a_pid_is_closed_never_killed_as_pid_0 ... FAILED` (`Browser.close is tried first`, left 0); 2 de 4 passam |
+| I1d: sem o fallback `kill(s.pid)` | `shutdown_kills_our_browser_and_forgets_it` | `test browser::manager::lifecycle_tests::shutdown_kills_our_browser_and_forgets_it ... FAILED` (left 0, right 4242) |
+| I2-1: `real.starts_with(&raiz)` → comparação de texto (`to_string_lossy().starts_with`) | `recusa_prefixo_de_texto` | `test commands::pasta_segura::tests::recusa_prefixo_de_texto ... FAILED` |
+| I2-2: sem o bloco `if !eh_pasta(&real)` | `recusa_arquivo_exe` | `test commands::pasta_segura::tests::recusa_arquivo_exe ... FAILED` |
+| I2-3: `bruto` no lugar de `real` no `starts_with` | `recusa_link_para_fora` | `test commands::pasta_segura::tests::recusa_link_para_fora ... FAILED` |
+| I2-4: sem o `if texto.starts_with("\\\\") \|\| texto.starts_with("//")` | `recusa_unc_e_verbatim` | **sobreviveu**: exit 0, 9 de 9 passam |
+| I2-5: sem o `if !tem_nome(&real) \|\| !tem_nome(&raiz)` | `recusa_raiz_de_disco` | `test commands::pasta_segura::tests::recusa_raiz_de_disco ... FAILED` |
+| I2-6: sem o `any(ParentDir \| CurDir)` | `recusa_relativo_vazio_e_ponto_ponto` | **sobreviveu**: exit 0, 9 de 9 passam |
+
+Restauradas: os 4 de shutdown voltam a passar (exit 0, 4 passed), os 9 de `pasta_segura` também (exit 0), e um `cargo test --lib` final com tudo restaurado deu exit 0, **595 passed**.
+
+**Por que I2-4 e I2-6 sobrevivem (lacuna do teste, não do código):** nos testes, o `canonicalize` é falso e devolve `NotFound` para qualquer caminho fora do mapa. `\\servidor\share\x`, `\\?\Y:\inventado\dados\vaga1`, `//servidor/share` e `Y:\inventado\dados\vaga1\..\..\..` não estão no mapa, então, sem a checagem própria, são recusados mesmo assim por "A pasta não existe." e o `is_err()` continua verdadeiro. Os dois testes provam que o caminho é recusado, mas não que é recusado **pela regra certa**. Para a mutação pegar, o teste precisa conferir a mensagem de erro, ou o mapa falso precisa resolver esses caminhos para uma pasta dentro da raiz (o caso perigoso: `canonicalize` real aceita UNC e resolve `..`). Não corrigido nesta rodada (nenhum código foi editado): **registrar no Linear**.
+
+**M2, guarda `Pending` (verificado):** um pânico forçado entre o lançamento do Chrome e o `Live`, só na cópia do guest, ligado por uma variável da rodada. Em `browser_live.rs::launch()`, logo depois de `first_page_with_retry` (com o `Pending` já criado), foi inserido `if std::env::var("CLAUDIA_T7_PANIC").is_ok() { panic!(...) }`. Depois rodou um teste só, que usa `launch()` (`urls_that_are_not_http_are_refused_before_touching_the_browser`, `--exact --nocapture`), com a variável ligada:
+- **Com a guarda:** `test urls_that_are_not_http_are_refused_before_touching_the_browser ... FAILED` (`t7: forced panic between launch and Live`), exit 101. Logo depois: **0** `chrome.exe` com perfil de teste e **0** pastas `claudia-live-*` (antes do teste também eram 0).
+- **Controle (guarda desarmada antes do mesmo pânico, `pending.disarm(); panic!(...)`):** `... FAILED` (`t7: forced panic, guard disarmed (control)`). Logo depois: **13** `chrome.exe` com `--user-data-dir=Z:\tmp\claudia-live-browser-...` na linha de comando e **1** pasta `claudia-live-browser-*` em `Z:\tmp`. Isso mostra que quem limpa no primeiro caso é a guarda. O Chrome e a pasta do controle ficaram no guest (os scripts da rodada não matam nem apagam nada) e sumiram no `test-down`.
+- **Restaurado** (SHA-256 igual ao do PC, data atual) e sem a variável: o mesmo teste deu exit 0, 1 passed, e não deixou Chrome nem pasta novos (a varredura seguinte mostrou só os 12 processos e a pasta do controle, que já estavam lá).
+
+**Fim:** `test-down.ps1` → exit 0, `wsb list` vazio, sem `.sandbox-work\credencial\.credentials.json` no PC. `git status` no PC igual ao do início (só o `src-tauri/Cargo.toml` com fim de linha, que já estava assim, e pastas não versionadas que já existiam).
 
 ### 8.4 Investigação de `tailor-application` (Tarefa 7, Step 1, só leitura)
 
