@@ -367,3 +367,15 @@ Feita em 2026-10-08. A skill **não foi encontrada**: não existe em `~/.claude/
 ### 8.5 Outros itens sem destino fechado nesta evidência
 
 Revisão final Opus da branch (Tarefa 9), issues do Linear (Tarefa 10, ver `linear-pendente.md`) e a entrega ao usuário (Tarefa 11): pendentes. As decisões D12 e D13 do usuário estão no plano.
+
+## D4 — uso real no LinkedIn (2026-10-09, HEAD `d580768`, com o usuário presente)
+
+- **Preparação:** backup só de cópia dos dados do app em `Documentos\ClaudiaRH-backup-20261009-1135` (Roaming 161 arquivos, Local 269 arquivos sem `browser\`; o banco está na cópia; a única diferença de tamanho é o `diagnostics\latest`, que o robocopy copiou como o arquivo apontado). App da branch aberto por `claudia-teste-e2e/scripts/subir.mjs` (`tauri dev`, CDP 9333, automação desligada nesta execução); banco carregado (332 vagas, 28 candidaturas, 19 documentos, 0 em `candidatando`).
+- **Chrome do app incompleto (dano local):** "Abrir o browser" falhou com `os error 14001` (SideBySide: assembly `154.0.8037.92` não encontrado); a pasta da versão tinha só 9 arquivos. A pasta foi movida para `_quebrado-154.0.8037.92-20261009` (nada apagado) e o próprio app reinstalou (306 arquivos) e abriu o Chrome **sem** `--no-sandbox`. O usuário fez o login no LinkedIn no Chrome do Claudia-RH. CLA-66 registra que a instalação incompleta não é detectada.
+- **Trava do envio:** como o agente envia sozinho (`skip_permissions: true`, orçamento 5/dia) e a guarda lê o `limite_diario` do `disparo.json` a cada envio, o limite foi posto em 0 antes de "Search jobs now" (guarda recusa todo envio) e devolvido a 5 no fim. Um vigia só de leitura acompanhou o banco e o Activity log.
+- **Resultado:** a sessão analisou 11 vagas em 8 min, criou pendências (48–51) e **não enviou nada** (28 candidaturas antes e depois). Ficou a vaga 381 (Direct Agents) em `candidatando`.
+- **Achados do uso real:**
+  - **Falso positivo da guarda em links de vaga** de sites de ATS (Ashby `jobs.ashbyhq.com/chainlink-labs`; segundo o agente também Teamtailor e Benzinga): o link que só abre a página da vaga é recusado como "este botão envia a candidatura". O agente não contornou nem usou `confirm_submit` e abriu pendência. **Bloqueia o merge**; correção em andamento.
+  - O "Candidatar-se" do LinkedIn de vagas com candidatura externa abre o site da empresa noutra aba, fora do alcance do agente.
+  - A sessão continua buscando depois de o orçamento do dia acabar (CLA-67); o Dashboard não relê o `disparo.json`.
+- **Não verificado:** um envio real com "pode enviar" (nenhuma vaga chegou ao envio com o fluxo destravado nesta rodada).
