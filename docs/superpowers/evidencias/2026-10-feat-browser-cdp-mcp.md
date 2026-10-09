@@ -1,6 +1,6 @@
 # Evidência da branch `feat/browser-cdp-mcp`
 
-> **Estado em 2026-10-08, HEAD `a8f9f24`; a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
+> **Estado em 2026-10-08, HEAD `a8f9f24`; a seção 8.1 foi preenchida com a rodada do Sandbox sobre o HEAD `22c2854`, e a 8.3 (Tarefa 6, menos o Step 3) com a rodada sobre o HEAD `45172f9`.** Este arquivo é a prova da branch dentro do repositório (a pasta `.superpowers/`, onde ficam os ledgers, não é versionada). Ele separa três coisas: o que **já está provado** (seções 1 a 6), o que foi **provado só no laboratório do Sandbox** (seção 7) e o que está **pendente** (seção 8). O que não foi rodado está escrito como "pendente" ou "não verificado", sem número inventado.
 
 Fontes: os ledgers `.superpowers/sdd/2026-10-02-browser-cdp-motor/progress.md` e `.superpowers/sdd/2026-10-04-anexar-curriculo/progress.md` (fora do git; só caminhos relativos aqui, nenhum dado pessoal copiado), `docs/pesquisa/2026-10-02-validacao-execucao.md`, `docs/superpowers/evidencias/2026-10-06-auditoria-delecao.md`, `.claude/skills/claudia-teste-sandbox/references/limites.md` (itens 13 a 17) e o `git log dev..HEAD`.
 
@@ -168,8 +168,8 @@ Todas rodam **no Sandbox**, pela regra de 2026-10-07 (nenhum teste que apaga rod
 | `cargo test --lib` no HEAD `22c2854` | **exit 0, 580 passed, 0 failed, 0 ignored**, 20,8 s (Sandbox) |
 | `cargo clippy --all-targets` contra o baseline de 3 avisos | exit 0; os 3 do baseline + **2 novos** (abaixo) |
 | suíte live `browser_live` e `viewport_live`, três vezes | depois das correções (abaixo, HEAD `70d16c5`): **exit 0 duas vezes seguidas, 93/93 e 6/6**. Na rodada original: **exit 101 nas três**: `browser_live` 90/92, 90/92 e 89/92; `viewport_live` 2/5 nas três (rodado à parte). Detalhe abaixo |
-| 3 testes de ícone (janela visível), uma vez | **exit 0, 3 passed** |
-| smoke do MCP (`tests/mcp-browser-smoke.mjs`) | **exit 0, última linha `TUDO OK`** (32 verificações) |
+| 3 testes de ícone (janela visível), uma vez | **exit 0, 3 passed**; de novo no HEAD `45172f9` (seção 8.3): exit 0, 3 passed |
+| smoke do MCP (`tests/mcp-browser-smoke.mjs`) | **exit 0, última linha `TUDO OK`** (32 verificações); de novo no HEAD `45172f9` (seção 8.3): exit 0, 32 OK, `TUDO OK` |
 | mutações da leitura robusta (viewport, texto sem valor digitado, `login_wall`, loop, scroll em contêiner) | **feitas**, com as das Tarefas 1 e 3 e das correções: 13 de 13 falham no teste nomeado e voltam a passar restauradas (abaixo) |
 | testes live novos de D6, D7 e D8 (guarda de formulário, eventos do browser, diálogos, queda de aba) | depois das correções: **todos passam** nas 2 rodadas finais. Na rodada original: **2 falham nas três rodadas** (`a_click_at_inside_a_shadow_root_finds_the_submit_button_and_its_form`, `a_confirm_during_a_send_the_guard_approved_is_accepted_and_only_then`); os demais passam |
 
@@ -224,7 +224,7 @@ Tudo rodou **dentro do Windows Sandbox** (ambiente `testes`, projeto = worktree 
 - **Suíte final no guest (HEAD `70d16c5`), duas vezes seguidas, mesmo Sandbox:** `cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon` → rodada 1 exit 0 (429 s): `browser_live` **93 passed, 0 failed**, `viewport_live` **6 passed, 0 failed**; rodada 2 exit 0 (408 s): os mesmos 93/93 e 6/6. Depois de cada rodada: **0** pastas `claudia-live-*`/`claudia-smoke-*` em `Z:\tmp` e no `%TEMP%` do guest, **0** `chrome.exe` com perfil de teste na linha de comando (11 no total, todos do `bootstrap.ps1`). Uma tentativa anterior (HEAD `0483517`, antes do reenvio no `set_window`) teve a rodada 1 verde e a rodada 2 com `a_minimized_window_is_restored_and_sized` e `a_shrunk_window_is_corrected_to_the_minimum` falhando **no setup** (janela ficou `945x1060 normal`): daí o commit `70d16c5`.
 - **`cargo test --lib` no guest:** exit 0, **584 passed, 0 failed, 0 ignored**.
 - **`cargo clippy --all-targets` no guest:** exit 0; restam os 3 do baseline (`new`, `write_both`, `LASTINPUTINFO`) e `items after a test module` em `src/prompt.rs:16` (anterior à branch, fora do escopo); o `redundant guard` sumiu.
-- **Não verificado nesta correção:** os 3 testes de ícone (janela visível) e o smoke do MCP não rodaram de novo; o `ensure_min_viewport` com o Chrome visível (o do usuário) só por raciocínio: a mudança deixa a espera mais estrita (só conta a página relaida), não muda a decisão.
+- **Não verificado nesta correção:** os 3 testes de ícone (janela visível) e o smoke do MCP não rodaram de novo (rodaram depois, no HEAD `45172f9`: seção 8.3); o `ensure_min_viewport` com o Chrome visível (o do usuário) só por raciocínio: a mudança deixa a espera mais estrita (só conta a página relaida), não muda a decisão.
 - **Fim:** `test-down` exit 0, `wsb list` vazio, sem `.credentials.json` no PC.
 
 ### 8.2 Tarefa 5: smoke de uso real (bloqueada)
@@ -244,12 +244,59 @@ Bloqueada até a branch dos dados falsos completos (`feat/dados-falsos-teste`) e
 
 | Item | Resultado |
 |---|---|
-| rodada de agente da Parte 2 (variantes, documentos, carta, upload com variante, escrita recusada na execução, e aceita no Perfil), observada pelo Opus | pendente |
-| upload em `the-internet.herokuapp.com/upload`, sem enviar candidatura (D3) | pendente |
-| `activity-log-validate.mjs` depois de uma sessão | pendente |
-| validações 6.2 do motor, segunda execução (rodadas A, B estendida e C) | pendente |
-| validações 6.4 do motor, cenários 4 a 7 (retenção, dois processos MCP, `dev/` só leitura, viewer) | pendente |
+| rodada de agente da Parte 2 (variantes, documentos, carta, upload com variante, escrita recusada na execução, e aceita no Perfil), observada pelo Opus | **OK** (Sandbox, HEAD `45172f9`): 54 de 55 verificações; a única falha era do critério do script, não do app (abaixo) |
+| upload em `the-internet.herokuapp.com/upload`, sem enviar candidatura (D3) | **OK**: 11 de 11; o campo do site recebeu o PDF e nada foi enviado |
+| `activity-log-validate.mjs` depois de uma sessão (Step 3) | **pendente**: depende do smoke da Tarefa 5, bloqueada. Rodado sobre as rodadas B e C da fixture: exit 0 nas duas |
+| validações 6.2 do motor, segunda execução (rodadas A, B estendida e C) | B e C **OK**; A **parcial**: download, instalação e "reabrir não baixa de novo" OK; banner, Chrome visível, tema e "matar o Chrome e o app religa" **não verificados** (sem WebView2 no guest) |
+| validações 6.4 do motor, cenários 4 a 7 (retenção, dois processos MCP, `dev/` só leitura, viewer) | 4, 5 e 6 **OK**; 7 (tela) **não verificado** (sem WebView2 no guest) |
 | candidatura real no LinkedIn (D4), com o usuário presente e dizendo "pode enviar" | pendente |
+
+#### Rodada de 2026-10-08, noite, no Sandbox (HEAD `45172f9`, ambiente `testes`)
+
+Tudo rodou **dentro do Windows Sandbox**, nada no PC. `test-up.ps1 -Ambiente testes` exit 0 em 90 s. `guest-build.ps1 -Precisa cargo` (por `-EncodedCommand`): `npm.cmd ci` exit 0 em 22,6 s; `npm.cmd run build && cd src-tauri && cargo build` exit 0 em 272,5 s. Cada passo rodou por `wsb exec -r ExistingLogin` num script da rodada (`.sandbox-work\guest-rw\t6\`, fora do git; mesmo padrão de `t4\`), com `TEMP=Z:\tmp` e `CLAUDIA_TEST_CHROME=C:\lab\tools\chrome\chrome-win64\chrome.exe`. As rodadas de agente usam um script Node no guest que fala com `claudia-rh --mcp-serve` por stdio (como o smoke), um Chrome de teste headless com **perfil novo** e uma **pasta de dados nova** em `Z:\t6\<rodada>-<ts>\` (perfil fictício "Ana Teste Ficticia", duas variantes, dois currículos gerados fictícios). Os scripts não apagam nada; o banco e o Activity log foram lidos só leitura (`node:sqlite`, `readOnly`) depois de cada processo MCP fechar. A página foi observada por uma conexão CDP própria (só `Runtime.evaluate` de leitura).
+
+- **Ícones (de novo, o código mudou depois da rodada anterior):** `cargo test --test browser_live -- --ignored icon --test-threads=1` exit 0 em 200,4 s (com a compilação do binário de teste), `3 passed; 0 failed`.
+- **Smoke MCP (de novo):** `CLAUDIA_ALLOW_LOCAL_URLS=1 node tests/mcp-browser-smoke.mjs <exe debug>` exit 0 em 36,8 s, 32 linhas `OK`, última `TUDO OK`.
+- **Achado menor:** depois do smoke sobrou `Z:\tmp\claudia-smoke-eMn4Oq` (o `rmSync` final do smoke falha em silêncio, `try {} catch {}`; mesma causa provável do `os error 32` do harness live: o Chrome ainda segura arquivos 1 s depois do `taskkill`). Na rodada anterior a pasta tinha saído. Os dois smokes paralelos do cenário 5 não deixaram pasta. **Registrar no Linear.**
+
+**Tarefa 6 Step 1, rodada de agente da Parte 2** (`agent.mjs`, fixture `upload-form.html` em `127.0.0.1`, `CLAUDIA_ALLOW_LOCAL_URLS=1`). Sessão de execução (`--session-kind autonomous`), na ordem:
+
+| Chamada | Resposta | Banco / arquivo / Activity log |
+|---|---|---|
+| `tools/list` | as 8 tools da Parte 2 listadas, inclusive `update_variante` e `set_documento_preferido` | — |
+| `list_variantes` | `backend` e `devops`, sem caminho nem `cv_gerado` | — |
+| `register_vaga` + `update_vaga_status candidatando` | `Vaga registada (ID 1)`, `Vaga 1 → candidatando` | `vagas`: 1 linha `candidatando` |
+| `set_vaga_variante devops` | `Vaga 1: variante devops.` | `vagas.variante_id = devops` |
+| `set_vaga_variante inventada-t6` | erro: `variante desconhecida: inventada-t6. Variantes existentes: backend, devops` | continua `devops` |
+| `list_documentos curriculo` | os 2 currículos, sem nome de arquivo nem caminho | — |
+| `get_documento 2` | o texto do currículo devops, sem caminho | — |
+| `browser_open`, `browser_read`, `browser_upload e1` ("Currículo") | `Anexou "CV T6 devops" (arquivo CV-T6-devops.pdf, pdf, 79 bytes) pela regra: gerado mais recente da variante (variante devops, gravada na vaga).` | página (CDP próprio): `#cv` com 1 arquivo, `CV-T6-devops.pdf`, 79 bytes, `__submitted = false`; `anexos`: 1 linha (vaga 1, curriculo, documento 2); Activity log: `navigation` 200, `browser_open`, `browser_read` e `browser_upload` `ok` com `vaga_id = 1`, alvo `Currículo`, texto `documento 2 \| CV T6 devops \| pdf \| 79 bytes \| sha256 938c28cae57e`, todos com print |
+| `save_cover_letter` (vaga 1, pt, devops) | `Carta salva; o PDF fica pronto quando o app processar (abra o app).` (sem caminho) | fila `documentos\pendentes\`: 1 `.html` e 1 `.json`; nenhuma carta em `documentos` (esperado: o app não estava aberto para gerar o PDF) |
+| `update_variante backend {peso: 10}` | **recusada**: `As variantes só podem ser alteradas numa sessão de Perfil...` | `search_variants.yaml` byte a byte igual, sem `.bak-1` |
+| `set_documento_preferido 1 backend` | **recusado**: `Marcar o documento preferido só numa sessão de Perfil...` | `preferidos` vazia |
+
+Sessão de Perfil (`--session-kind interactive`, mesma pasta de dados): `update_variante backend {peso: 55}` → `Variante backend atualizada (peso). A versão anterior fica guardada como cópia de segurança.` (sem nome de arquivo); `set_documento_preferido 1 backend` → `Documento 1 é o preferido da variante backend.`; `set_documento_preferido 2` → `Documento 2 é o preferido geral.`; `get_variante backend` com `peso: 55` e as chaves desconhecidas. No arquivo: `peso: 55` e **mantidos** `descricao`, o mapa aninhado `campo_futuro_t6` (`nivel: 3`, `notas: [manter, isto]`), a chave de raiz `extra_raiz_t6`, `foco_competencias`, a variante `devops` e `principal: true`; `.bak-1` igual à versão anterior. `preferidos`: (curriculo, backend, 1) e (curriculo, '', 2).
+
+Cruzamento: as respostas, o banco, os arquivos e o Activity log **batem** em todas as chamadas. O Activity log só tem as ações do browser (as tools de dados não são do log, como desenhado); todas as chamadas, de dados e do browser, aparecem no `diagnostics\events.jsonl` (`tool_ok`/`tool_err`): 17 eventos para 17 chamadas, e `tool_err` exatamente para `set_vaga_variante` (inventada), `update_variante` e `set_documento_preferido` na execução. Resultado do script: 54 de 55; a única linha `FALHOU` ("17 eventos mcp para 14 chamadas de dados") era do meu critério, que esqueceu que as tools do browser também emitem `tool_ok`. **Sem divergência.**
+
+Observação (não é falha): um processo MCP novo começa numa aba própria, em branco (`browser_read` sem `browser_open` antes → `(nenhum elemento interativo encontrado)`, `estado: vazio`), mesmo com o mesmo Chrome. Visto na retenção e no cenário 6; uma sessão real sempre começa por `browser_open`.
+
+**Tarefa 6 Step 2, upload no site real (D3 = sim, autorizado pelo usuário nesta rodada)** (`heroku.mjs`, sem `CLAUDIA_ALLOW_LOCAL_URLS`): vaga fictícia com a URL do site em `candidatando`, variante `devops`. `browser_open https://the-internet.herokuapp.com/upload` → `estado: carregando` (a página ainda carregava); `browser_read` → `e2 button "Escolher arquivo"`, `e3 button "Upload"`; `browser_upload e2` → `Anexou "CV T6 devops" (arquivo CV-T6-devops.pdf, pdf, 79 bytes) pela regra: gerado mais recente da variante (variante devops, gravada na vaga).` Página (CDP próprio): antes `files = 0`; depois `#file-upload` com 1 arquivo `CV-T6-devops.pdf`, 79 bytes, ainda em `/upload` e **sem** `File Uploaded!`. O botão `Upload` **nunca foi tocado**: nenhum `browser_click` no Activity log, nenhuma candidatura no banco, 1 linha em `anexos` (documento 2). 11 de 11.
+
+**Tarefa 6 Step 3, `activity-log-validate.mjs` depois do smoke da Tarefa 5:** **pendente** (a Tarefa 5 está bloqueada).
+
+**Tarefa 6 Step 4, validações 6.2, segunda execução (uma vez cada):**
+- **Rodada B estendida** (`roundb.mjs b`, `apply-form.html`): `read` com `Avançar`, `Nome` e `Sim`; clique em `Avançar` pela ref; novo `read` com `Avaliar`; `browser_type` "Ana Teste" no Nome; clique em `Avaliar`; clique em "Enviar candidatura" **sem** `confirm_submit` → `RECUSADO: este botão envia a candidatura...`. Página: `__submitted = false`, `__formSubmitted = false`, Nome = "Ana Teste". Activity log: 8 linhas de ação/falha para 8 chamadas, o envio recusado como `failure`/`refused` com print, `activity-log-validate.mjs` exit 0 (9 registros, prints antes/depois dos cliques, 0 órfãos). 13 de 13.
+- **Rodada C:** o "modo desenvolvedor" não existe mais (o Activity log está sempre ligado), então a C é a B de novo: 13 de 13, validador exit 0. **A parte do visualizador não foi verificada** (abaixo).
+- **Rodada A** (`app-a.ps1`, o app **debug** de verdade no guest, com `vite` servindo o `devUrl` e `CLAUDIA_SEM_AUTOMACAO=1`; o app não aceita pasta de dados própria, então usou o `%APPDATA%`/`%LOCALAPPDATA%` **novos** do próprio guest, descartados no `test-down`, nunca dados do usuário): na primeira abertura (sem pasta do app antes) o Activity log do app registrou `download_started` (205.614.867 bytes, versão 154.0.8037.92) e `installed` 23 s depois; `browser\154.0.8037.92\chrome-win64\chrome.exe` presente; **nenhum Chrome subiu** (o browser só roda quando a IA é chamada ou pelo botão: correto); sem `state.json` (coerente). Fechar (`CloseMainWindow`, saiu sozinho) e abrir de novo: **não baixou de novo** (o mesmo `chrome.exe`, mesma data; o log continuou com 2 eventos). **Não verificado:** o banner "Preparando o browser", o Chrome visível e o tema, e "matar o `chrome.exe` e o app religa". Motivo: o guest `testes` não tem o runtime WebView2 (console do app: `Could not find the webview runtime, make sure it is installed`), então o app sobe só o backend, sem janela; não há como clicar "Abrir o browser" nem observar a tela. Instalar o WebView2 no guest mudaria o laboratório no meio do teste; o caminho é o ambiente `app-winapp` com o instalador NSIS (que traz o WebView2), em outra rodada.
+
+**Tarefa 6 Step 5, validações 6.4 (cenários 4 a 7)**, tudo em pastas novas em `Z:\t6\`, nunca no `%LOCALAPPDATA%` real:
+- **4, retenção** (`retention.mjs`): um processo MCP criou o `activity-log.db` temporário (3 linhas de hoje); com nenhum processo rodando, entraram 20 linhas com `ts` de 40 dias, cada uma com um arquivo próprio em `capturas/20260829/`; um processo novo fez uma ação (a primeira gravação do processo purga). Sobraram **0** linhas antigas e **0** arquivos antigos; as 3 linhas de hoje e seus prints ficaram; total 4. 7 de 7.
+- **5, concorrência:** (a) dois `mcp-browser-smoke.mjs` ao mesmo tempo, cada um com a sua pasta temporária: os dois exit 0, 32 `OK`, `TUDO OK`, nenhum `locked`. (b) dois processos MCP ao mesmo tempo no **mesmo** `activity-log.db` temporário (pastas de dados e Chromes separados), 30 chamadas cada: 0 erros de tool, **60** linhas de ação no log, 0 `write_failed` e 0 `locked` no `events.jsonl` e no stderr. 4 de 4 em cada.
+- **6, `dev/` só leitura** (`readonly.mjs`): depois de um processo gravar 3 linhas, `attrib +R` na pasta `dev\` e nos arquivos dela (`.db`, `-wal`, `-shm`); num processo novo, `browser_open`, `browser_read`, `browser_click` em Avançar e `browser_read` funcionaram (o botão virou Avaliar); o log ficou com 3 linhas; o `events.jsonl` ganhou 5 `activity_log`/`write_failed` (`attempt to write a readonly database`), uma por gravação; nada disso apareceu nas respostas ao agente. 5 de 5. (A primeira execução do script falhou por erro dele: chamou `browser_read` num processo novo sem `browser_open`, ver a observação acima; corrigido e repetido.)
+- **7, a tela do Activity log:** **não verificado**, pela mesma razão da rodada A (sem WebView2 no guest `testes`, o app não tem janela; o CDP do app no guest também não funciona, `references/limites.md` item 9).
+
+**Fim:** depois de tudo, no guest: 0 `chrome.exe` com perfil de teste ou de `\t6\`, 0 `claudia-rh.exe`; só a pasta do smoke acima em `Z:\tmp`. `test-down.ps1` exit 0, `wsb list` vazio, sem `.credentials.json` em `.sandbox-work\credencial` no PC. Nenhum código editado.
 
 ### 8.4 Investigação de `tailor-application` (Tarefa 7, Step 1, só leitura)
 
