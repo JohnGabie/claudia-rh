@@ -1985,7 +1985,8 @@ async fn a_click_at_on_a_label_of_a_submit_button_is_refused() {
 #[tokio::test]
 #[ignore]
 async fn a_job_link_far_down_a_scrolled_list_opens_without_a_refusal() {
-    // Mutation: hit-test the viewport point without the scroll offset -> "RECUSADO: este botão envia a candidatura".
+    // Mutation: hit-test the viewport point without the scroll offset -> "RECUSADO: ..." (since the review of
+    // d5d8639, the structural refusal: "não foi possível confirmar que este elemento não envia a candidatura").
     let l = launch().await;
     let ctx = Ctx::candidatando(7);
     let t = tools(&l, ctx.clone());
@@ -2022,8 +2023,12 @@ async fn a_click_at_the_send_button_of_a_scrolled_page_is_refused() {
     // the guard hit-tested the screen point as a document point: it judged posting 6 (a harmless link, on screen
     // at y - S) and the click pressed "Submit application" without any confirmation.
     // Mutation: hit-test the viewport point without the scroll offset -> the form is submitted.
+    // I3 (review of d5d8639): the refusal must be the SEND class (the hit test found the button), not "nothing found":
+    // the refusal text is the send one, and a confirmed click sends and SPENDS the vaga's send (a structural target
+    // never spends). Mutation: node_at_point always None -> this test fails on its own.
     let l = launch().await;
-    let t = tools(&l, Ctx::candidatando(7));
+    let ctx = Ctx::candidatando(7);
+    let t = tools(&l, ctx.clone());
     t.open(&fixture_file("job-list.html")).await.unwrap();
     // The long page brings a scrollbar and the viewport guarantee widens the window once: let it settle before
     // measuring, or click_at stops with "the window was resized" instead of reaching the guard.
@@ -2043,6 +2048,128 @@ async fn a_click_at_the_send_button_of_a_scrolled_page_is_refused() {
     assert_eq!(v[3], true, "the point is over the send button: {v}");
     assert_eq!(v[4], true, "read as a document point it falls on posting 6 (what the old guard judged): {v}");
     let e = t.click_at(x, y, None).await.unwrap_err();
-    assert!(e.starts_with("RECUSADO"), "{e}");
+    assert_send_refusal(&e);
     assert_eq!(eval(&a, "window.__sent").await, false, "the application must not have been sent");
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "a refusal never spends the send");
+    // The same point with a valid confirmation: the hit test found the SEND button, so the click sends and spends.
+    let r = t.click_at(x, y, Some(7)).await;
+    assert!(r.is_ok(), "a confirmed send goes through: {r:?}");
+    assert_eq!(eval(&a, "window.__sent").await, true, "the confirmed click pressed the send button");
+    assert_eq!(*ctx.claimed.lock().unwrap(), HashSet::from([7]), "judged by its send name, the click spent the vaga's send");
+}
+
+/// The refusal of the SEND class (a send name), not the structural one ("não foi possível confirmar...").
+fn assert_send_refusal(e: &str) {
+    assert!(e.starts_with("RECUSADO: este botão envia a candidatura") && e.contains("confirm_submit"), "not the send-class refusal: {e}");
+}
+
+// ───────────── I1 (review of d5d8639): the same page under a pinch zoom ─────────────
+// With a pinch zoom the screen (the VISUAL viewport, where Input.dispatchMouseEvent clicks and DOM.getBoxModel
+// measures) moves inside the LAYOUT viewport. The hit test must add the visual viewport's offset; the layout
+// viewport's scroll would judge the element `offset` pixels higher.
+
+/// Document y (CSS px) of an element's centre and its x, measured at scale 1 and scroll 0.
+async fn doc_center(a: &cdp::CdpClient, id: &str) -> (f64, f64) {
+    let v = eval(a, &format!("(()=>{{const r=document.getElementById('{id}').getBoundingClientRect();return [r.x+r.width/2+window.scrollX, r.y+r.height/2+window.scrollY]}})()")).await;
+    (v[0].as_f64().unwrap(), v[1].as_f64().unwrap())
+}
+
+/// Pinch-zooms the agent's tab to 2x and moves the viewports so the layout viewport's top is at `layout_y` and the
+/// visual viewport's top `offset` below it (`offset` at most half the window's height).
+/// Returns Chrome's own metrics (cssLayoutViewport, cssVisualViewport) after the moves.
+async fn pinch(a: &cdp::CdpClient, layout_y: f64, offset: f64) -> (serde_json::Value, serde_json::Value) {
+    // window.scrollTo moves only the layout viewport (seen in the guest: the visual offset stayed 0), so the layout
+    // viewport is placed first, at scale 1, and the visual one is moved by a real pinch gesture: a pinch to 2x
+    // anchored at screen y keeps the document point under the anchor still, so the visual viewport ends y/2 below the
+    // layout viewport's top. Anchor at 2 * offset.
+    eval(a, &format!("window.scrollTo(0, {layout_y}); true")).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let metrics = || async { a.call("Page.getLayoutMetrics", json!({})).await.unwrap() };
+    let pinch = a
+        .call("Input.synthesizePinchGesture", json!({ "x": 100.0, "y": 2.0 * offset, "scaleFactor": 2.0, "relativeSpeed": 2000 }))
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let m = metrics().await;
+    eprintln!("pinch gesture {pinch:?}: layout {}; visual {}", m["cssLayoutViewport"], m["cssVisualViewport"]);
+    let is_2x = |v: &serde_json::Value| v["scale"].as_f64().is_some_and(|s| (s - 2.0).abs() < 0.01);
+    if !is_2x(&m["cssVisualViewport"]) {
+        // No gesture in this Chrome: emulate the scale, then turn the wheel (the visual viewport may scroll first).
+        a.call("Emulation.setPageScaleFactor", json!({ "pageScaleFactor": 2.0 })).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        a.call("Input.dispatchMouseEvent", json!({ "type": "mouseWheel", "x": 100.0, "y": 100.0, "deltaX": 0, "deltaY": offset }))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let m = metrics().await;
+    let (lv, vv) = (m["cssLayoutViewport"].clone(), m["cssVisualViewport"].clone());
+    eprintln!("pinch: asked layout_y {layout_y} offset {offset}; layout {lv}; visual {vv}");
+    assert!(is_2x(&vv), "the pinch zoom took: {vv}");
+    assert!((lv["pageY"].as_f64().unwrap() - layout_y).abs() < 2.0, "layout viewport where asked: {lv}");
+    assert!((vv["pageY"].as_f64().unwrap() - lv["pageY"].as_f64().unwrap() - offset).abs() < 2.0, "visual offset where asked: {lv} {vv}");
+    (lv, vv)
+}
+
+/// Opens the job list in a fresh agent tab and settles the viewport guarantee (the long page widens the window once).
+async fn open_job_list(l: &Live, ctx: Arc<Ctx>) -> (BrowserTools, cdp::CdpClient) {
+    let t = tools(l, ctx);
+    t.open(&fixture_file("job-list.html")).await.unwrap();
+    t.read(None).await.unwrap();
+    let a = agent_client(l).await;
+    (t, a)
+}
+
+#[tokio::test]
+#[ignore]
+async fn under_a_pinch_zoom_a_click_at_the_send_button_is_refused_and_a_confirmed_one_sends() {
+    // Geometry: the visual viewport sits `offset` = send - posting 6 below the layout viewport, so the screen point
+    // over "Submit application", read with the LAYOUT viewport's scroll, falls on posting 6 (a harmless link).
+    // Mutation: document_point reads the layout viewport -> the click sends without confirm_submit.
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let (t, a) = open_job_list(&l, ctx.clone()).await;
+    let (sx, sy) = doc_center(&a, "send").await;
+    let (_, j6) = doc_center(&a, "job-link-6").await;
+    let vh = eval(&a, "window.innerHeight").await.as_f64().unwrap() / 2.0;
+    let offset = sy - j6;
+    let (lv, vv) = pinch(&a, j6 - vh / 4.0, offset).await;
+    let (x, y) = (sx - vv["pageX"].as_f64().unwrap(), sy - vv["pageY"].as_f64().unwrap());
+    assert!(x > 0.0 && x < vv["clientWidth"].as_f64().unwrap() && y > 0.0 && y < vv["clientHeight"].as_f64().unwrap(), "the send button is on screen at ({x}, {y}): {vv}");
+    // What the layout viewport's scroll would judge (client coordinates of the layout viewport = the screen point).
+    let wrong = eval(&a, &format!("(()=>{{const e=document.elementFromPoint({x},{y});return !!e&&!!e.closest('#job-link-6')}})()")).await;
+    assert_eq!(wrong, true, "read with the layout viewport's scroll the point falls on posting 6: {lv} {vv}");
+    let e = t.click_at(x, y, None).await.unwrap_err();
+    assert_send_refusal(&e);
+    assert_eq!(eval(&a, "window.__sent").await, false, "the application must not have been sent");
+    let r = t.click_at(x, y, Some(7)).await;
+    assert!(r.is_ok(), "a confirmed send goes through: {r:?}");
+    assert_eq!(eval(&a, "window.__sent").await, true, "the confirmed click pressed the send button on screen");
+    assert_eq!(*ctx.claimed.lock().unwrap(), HashSet::from([7]));
+}
+
+#[tokio::test]
+#[ignore]
+async fn under_a_pinch_zoom_a_click_at_on_a_job_link_opens_it_without_a_refusal() {
+    // Geometry: the visual viewport sits `offset` = posting 10 - send below the layout viewport, so the screen point
+    // over posting 10, read with the LAYOUT viewport's scroll, falls on "Submit application".
+    // Mutation: document_point reads the layout viewport -> "RECUSADO: este botão envia a candidatura".
+    let l = launch().await;
+    let ctx = Ctx::candidatando(7);
+    let (t, a) = open_job_list(&l, ctx.clone()).await;
+    let (sx, sy) = doc_center(&a, "send").await;
+    let (_, j10) = doc_center(&a, "job-link-10").await;
+    let vh = eval(&a, "window.innerHeight").await.as_f64().unwrap() / 2.0;
+    let offset = j10 - sy;
+    let (lv, vv) = pinch(&a, sy - vh / 4.0, offset).await;
+    // The x of the send button's centre, inside posting 10 too (both sit in the centred 700 px column).
+    let x = sx - vv["pageX"].as_f64().unwrap();
+    let y = j10 - vv["pageY"].as_f64().unwrap();
+    assert!(x > 0.0 && x < vv["clientWidth"].as_f64().unwrap() && y > 0.0 && y < vv["clientHeight"].as_f64().unwrap(), "posting 10 is on screen at ({x}, {y}): {vv}");
+    let wrong = eval(&a, &format!("(()=>{{const e=document.elementFromPoint({x},{y});return !!e&&!!e.closest('#send')}})()")).await;
+    assert_eq!(wrong, true, "read with the layout viewport's scroll the point falls on the send button: {lv} {vv}");
+    let r = t.click_at(x, y, None).await;
+    assert!(r.is_ok(), "a job link only opens the posting: {r:?}");
+    assert_eq!(eval(&a, "location.hash").await, "#job-10", "the click opened the posting");
+    assert_eq!(eval(&a, "window.__sent").await, false);
+    assert!(ctx.claimed.lock().unwrap().is_empty(), "a navigation link never spends the send");
 }

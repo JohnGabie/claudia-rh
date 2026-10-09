@@ -158,13 +158,17 @@ fn shot_clip(metrics: &Value, clip: Option<Value>, scale: f64) -> Value {
     cl
 }
 
-/// Pure: a VIEWPORT point (a DOM.getBoxModel centre, a browser_click_at, a wheel point: what
-/// Input.dispatchMouseEvent takes) as the DOCUMENT point DOM.getNodeForLocation reads (Chrome takes the scroll
-/// off again). Without the scroll offset, a scrolled page was hit-tested somewhere else: nothing (a job link
-/// refused as "envia a candidatura") or another element (a send button judged as the harmless link above it).
-/// None when the metrics carry no scroll offset: the caller fails closed.
+/// Pure: a point on SCREEN (a DOM.getBoxModel centre, a browser_click_at, a wheel point: what
+/// Input.dispatchMouseEvent takes, CSS pixels from the top-left of the VISUAL viewport) as the DOCUMENT point
+/// DOM.getNodeForLocation reads (Chrome takes the scroll off again). Without the offset, a scrolled page was
+/// hit-tested somewhere else: nothing (a job link refused as "envia a candidatura") or another element (a send
+/// button judged as the harmless link above it).
+/// The offset is the VISUAL viewport's (as in `shot_clip`): under a pinch zoom the visual viewport moves inside
+/// the layout viewport, and the layout viewport's scroll would hit-test another element. Only the CSS-pixel
+/// metrics are read: the legacy `visualViewport`/`layoutViewport` are in device pixels. None when the metrics
+/// carry no `cssVisualViewport` offset: the caller fails closed.
 fn document_point(metrics: &Value, x: f64, y: f64) -> Option<(f64, f64)> {
-    let v = if metrics["cssLayoutViewport"].is_object() { &metrics["cssLayoutViewport"] } else { &metrics["layoutViewport"] };
+    let v = &metrics["cssVisualViewport"];
     Some((x + v["pageX"].as_f64()?, y + v["pageY"].as_f64()?))
 }
 
@@ -708,7 +712,7 @@ impl BrowserTools {
         into.add_info(&Self::info_for_node(c, backend_id).await);
     }
 
-    /// The node under a VIEWPORT point (where the mouse goes), decided by Chrome (hit test), not by page script.
+    /// The node under a SCREEN point (where the mouse goes), decided by Chrome (hit test), not by page script.
     /// None when it cannot tell (the caller fails closed).
     async fn node_at_point(c: &CdpClient, x: f64, y: f64) -> Option<i64> {
         let m = c.call("Page.getLayoutMetrics", json!({})).await.ok()?;
@@ -743,16 +747,15 @@ impl BrowserTools {
     /// confirmation but does not spend it.
     fn run_guard(&self, p: &Probe, page_url: &str, confirm: Option<i64>) -> Result<(), String> {
         let decision = guard::classify_submit(&p.names, &p.target_names, p.structural, p.form_submit);
-        let verdict = match decision {
+        let verdict = match (decision, guard::missing_confirmation_refusal(decision)) {
+            // No confirmation: each class says what it is (send name, structural, form submit).
+            (_, Some(why)) if confirm.is_none() => Verdict::Refuse(why.into()),
             // "submit" is a whole-word pattern: whatever the real label was, the guard sees a submit.
-            SubmitDecision::ConfirmAndSpend => guard::check_submit("submit", page_url, confirm, self.guard.as_ref()),
-            SubmitDecision::ConfirmStructural => guard::check_confirmation(page_url, confirm, self.guard.as_ref()),
-            SubmitDecision::ConfirmForm if confirm.is_none() => Verdict::Refuse(
-                "RECUSADO: este botão envia um formulário. Se for o envio da candidatura, repita com confirm_submit = <id da vaga>."
-                    .into(),
-            ),
-            SubmitDecision::ConfirmForm => guard::check_confirmation(page_url, confirm, self.guard.as_ref()),
-            SubmitDecision::Allow => Verdict::Allow,
+            (SubmitDecision::ConfirmAndSpend, _) => guard::check_submit("submit", page_url, confirm, self.guard.as_ref()),
+            (SubmitDecision::ConfirmStructural | SubmitDecision::ConfirmForm, _) => {
+                guard::check_confirmation(page_url, confirm, self.guard.as_ref())
+            }
+            (SubmitDecision::Allow, _) => Verdict::Allow,
         };
         match verdict {
             Verdict::Allow => {
@@ -2135,18 +2138,30 @@ mod tests {
     fn the_guards_hit_test_point_of_a_scrolled_page_is_moved_by_the_scroll_offset() {
         // D4 (2026-10-09): DOM.getNodeForLocation reads DOCUMENT coordinates; the box centre of a job link far
         // down an Ashby list is in VIEWPORT coordinates. Ashby, scrollY 524: (684, 474) found no node at all.
-        let m = json!({ "cssLayoutViewport": { "pageX": 0.0, "pageY": 524.0, "clientWidth": 1385.0, "clientHeight": 1000.0 } });
+        let m = json!({
+            "cssLayoutViewport": { "pageX": 0.0, "pageY": 524.0, "clientWidth": 1385.0, "clientHeight": 1000.0 },
+            "cssVisualViewport": { "pageX": 0.0, "pageY": 524.0, "clientWidth": 1385.0, "clientHeight": 1000.0, "scale": 1.0 }
+        });
         assert_eq!(document_point(&m, 684.5, 474.5), Some((684.5, 998.5)));
-        let sideways = json!({ "cssLayoutViewport": { "pageX": 30.0, "pageY": 0.0 } });
+        let sideways = json!({ "cssVisualViewport": { "pageX": 30.0, "pageY": 0.0 } });
         assert_eq!(document_point(&sideways, 10.0, 20.0), Some((40.0, 20.0)));
-        let unscrolled = json!({ "cssLayoutViewport": { "pageX": 0.0, "pageY": 0.0 } });
+        let unscrolled = json!({ "cssVisualViewport": { "pageX": 0.0, "pageY": 0.0 } });
         assert_eq!(document_point(&unscrolled, 10.0, 20.0), Some((10.0, 20.0)));
-        // Older Chrome: only the legacy layoutViewport.
-        let legacy = json!({ "layoutViewport": { "pageX": 0.0, "pageY": 300.0 } });
-        assert_eq!(document_point(&legacy, 10.0, 20.0), Some((10.0, 320.0)));
-        // No scroll offset to read: no point at all (the guard fails closed), never the unmoved point.
+        // Pinch zoom (I1, review of d5d8639): the screen is the VISUAL viewport, 265 px below the layout viewport's
+        // top. The layout viewport's scroll would hit-test 265 px too high (another element).
+        let pinched = json!({
+            "cssLayoutViewport": { "pageX": 0.0, "pageY": 415.0, "clientWidth": 1385.0, "clientHeight": 1000.0 },
+            "cssVisualViewport": { "pageX": 40.0, "pageY": 680.0, "clientWidth": 692.5, "clientHeight": 500.0, "scale": 2.0 }
+        });
+        assert_eq!(document_point(&pinched, 474.0, 250.0), Some((514.0, 930.0)));
+        // No CSS visual viewport to read: no point at all (the guard fails closed), never the unmoved point and
+        // never the legacy metrics (device pixels) nor the layout viewport (wrong under a pinch zoom).
         assert_eq!(document_point(&json!({}), 10.0, 20.0), None);
-        assert_eq!(document_point(&json!({ "cssLayoutViewport": { "pageX": 0.0 } }), 10.0, 20.0), None);
+        assert_eq!(document_point(&json!({ "cssVisualViewport": { "pageX": 0.0 } }), 10.0, 20.0), None);
+        let legacy = json!({ "layoutViewport": { "pageX": 0.0, "pageY": 300.0 }, "visualViewport": { "pageX": 0.0, "pageY": 300.0 } });
+        assert_eq!(document_point(&legacy, 10.0, 20.0), None);
+        let layout_only = json!({ "cssLayoutViewport": { "pageX": 0.0, "pageY": 300.0 } });
+        assert_eq!(document_point(&layout_only, 10.0, 20.0), None);
     }
 
     #[test]

@@ -170,15 +170,36 @@ pub enum Verdict {
     Refuse(String),
 }
 
+/// Refusal without `confirm_submit` for a target whose NAME says "send".
+pub const SEND_REFUSAL: &str =
+    "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga> (a vaga precisa estar em 'candidatando').";
+/// Refusal without `confirm_submit` for a target that is only STRUCTURALLY submit-like (iframe, nameless button,
+/// unreadable element, nothing found under the point). It must not say the element sends: in D4 that made the
+/// agent blame a job link's name.
+pub const STRUCTURAL_REFUSAL: &str = "RECUSADO: não foi possível confirmar que este elemento não envia a candidatura (iframe, botão sem nome ou elemento ilegível). Se for o envio, repita com confirm_submit = <id da vaga>; se não for, use browser_read e clique por outra ref.";
+/// Refusal without `confirm_submit` for a button that submits a form under a name that is neither send nor navigation.
+pub const FORM_REFUSAL: &str =
+    "RECUSADO: este botão envia um formulário. Se for o envio da candidatura, repita com confirm_submit = <id da vaga>.";
+
+/// Pure: the refusal for an action that needs a confirmation and came without one, by the guard's decision.
+/// None for `Allow` (nothing to confirm). Every message names `confirm_submit`: a legitimate send stays possible.
+pub fn missing_confirmation_refusal(decision: SubmitDecision) -> Option<&'static str> {
+    match decision {
+        SubmitDecision::Allow => None,
+        SubmitDecision::ConfirmAndSpend => Some(SEND_REFUSAL),
+        SubmitDecision::ConfirmStructural => Some(STRUCTURAL_REFUSAL),
+        SubmitDecision::ConfirmForm => Some(FORM_REFUSAL),
+    }
+}
+
 /// Everything the guard checks about a CONFIRMATION, without spending the vaga's single allowed
 /// submit. Used both by check_submit and for targets that are only STRUCTURALLY submit-like
 /// (an iframe, a nameless button): those need a valid confirmation but must not burn it.
+/// Without a confirmation it answers with the SEND message; callers that know the target is only structural or
+/// only a form submit refuse first with `missing_confirmation_refusal`.
 pub fn check_confirmation(page_url: &str, confirm: Option<i64>, ctx: &dyn GuardContext) -> Verdict {
     let Some(vaga_id) = confirm else {
-        return Verdict::Refuse(
-            "RECUSADO: este botão envia a candidatura. Repita a chamada com confirm_submit = <id da vaga> (a vaga precisa estar em 'candidatando')."
-                .into(),
-        );
+        return Verdict::Refuse(SEND_REFUSAL.into());
     };
     match ctx.vaga_status(vaga_id).as_deref() {
         Some("candidatando") => {}
@@ -801,6 +822,28 @@ mod tests {
     fn structural_targets_confirm_without_spending() {
         assert_eq!(classify_submit(&names(&[]), &names(&[]), true, false), SubmitDecision::ConfirmStructural);
         assert_eq!(classify_submit(&names(&["Next"]), &names(&["Next"]), true, true), SubmitDecision::ConfirmStructural);
+    }
+
+    #[test]
+    fn each_decision_without_a_confirmation_gets_its_own_refusal() {
+        // D4 (2026-10-09): a structural target (nothing found under a job link) was refused with "este botão envia a
+        // candidatura" and the agent blamed the link's name. The send class and the structural class must differ.
+        assert_eq!(missing_confirmation_refusal(SubmitDecision::Allow), None);
+        let send = missing_confirmation_refusal(SubmitDecision::ConfirmAndSpend).unwrap();
+        let structural = missing_confirmation_refusal(SubmitDecision::ConfirmStructural).unwrap();
+        let form = missing_confirmation_refusal(SubmitDecision::ConfirmForm).unwrap();
+        assert_eq!(send, SEND_REFUSAL);
+        assert!(send.contains("envia a candidatura"), "{send}");
+        assert_eq!(structural, STRUCTURAL_REFUSAL);
+        assert!(structural.contains("não foi possível confirmar") && structural.contains("browser_read"), "{structural}");
+        assert!(!structural.contains("este botão envia"), "the structural refusal must not claim the element sends: {structural}");
+        assert_eq!(form, FORM_REFUSAL);
+        assert!(form.contains("envia um formulário"), "{form}");
+        for m in [send, structural, form] {
+            assert!(m.starts_with("RECUSADO") && m.contains("confirm_submit"), "{m}");
+        }
+        // check_submit (the send class) keeps the send message.
+        assert!(matches!(check_submit("Enviar candidatura", "https://example.com", None, &ok()), Verdict::Refuse(m) if m == SEND_REFUSAL));
     }
 
     #[test]
