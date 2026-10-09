@@ -40,6 +40,17 @@ fn idle_secs() -> u32 {
     0
 }
 
+/// Pure decision: automation (idle trigger + autonomous mode) is suppressed only in a debug build
+/// AND with `CLAUDIA_SEM_AUTOMACAO=1`. In release the variable is ignored. Nothing is written to disk.
+pub(crate) fn automacao_suprimida(debug: bool, var: Option<&str>) -> bool {
+    debug && var == Some("1")
+}
+
+/// The decision for this process, read from the build profile and the environment.
+pub(crate) fn automacao_suprimida_agora() -> bool {
+    automacao_suprimida(cfg!(debug_assertions), std::env::var("CLAUDIA_SEM_AUTOMACAO").ok().as_deref())
+}
+
 fn pode_disparar(db: &Arc<Mutex<rusqlite::Connection>>, config: &IdleConfig) -> bool {
     let conn = match db.lock() {
         Ok(c) => c,
@@ -122,13 +133,14 @@ pub fn start(
                 continue;
             }
 
-            if !ativo || fired_this_idle {
+            if !ativo || fired_this_idle || automacao_suprimida_agora() {
                 continue;
             }
 
-            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) {
-                fired_this_idle = true;
-                let _ = iniciar_sessao(Arc::clone(&db), &app, "inatividade");
+            // Starting a session launches the browser if it is not up. Only a failed browser holds the trigger
+            // back, armed, so it tries again on the next tick instead of losing the whole idle period.
+            if secs >= limiar_secs && pode_disparar(&db, &cfg_snapshot) && !crate::commands::sessao::browser_failed(&app) {
+                fired_this_idle = iniciar_sessao(Arc::clone(&db), &app, "inatividade").is_ok();
             }
         }
     });
@@ -136,8 +148,21 @@ pub fn start(
 
 #[cfg(test)]
 mod tests {
-    use super::pode_disparar;
+    use super::{automacao_suprimida, pode_disparar};
     use crate::{IdleConfig, JanelaAgendamento};
+
+    #[test]
+    fn automation_is_suppressed_only_in_debug_with_the_variable_set_to_1() {
+        assert!(automacao_suprimida(true, Some("1")));
+        assert!(!automacao_suprimida(true, None));
+        assert!(!automacao_suprimida(true, Some("0")));
+        assert!(!automacao_suprimida(true, Some("")));
+    }
+
+    #[test]
+    fn automation_suppression_variable_is_ignored_in_release() {
+        assert!(!automacao_suprimida(false, Some("1")));
+    }
     use chrono::Datelike;
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};

@@ -2,6 +2,7 @@ import React from "react";
 import {
   LayoutDashboard,
   UserRound,
+  FileText,
   History,
   SquareTerminal,
   Settings,
@@ -10,7 +11,7 @@ import {
 } from "lucide-react";
 import { useT } from "../i18n";
 
-export type View = "dashboard" | "perfil" | "historico" | "feedback" | "pendencias" | "terminal" | "configuracoes";
+export type View = "dashboard" | "perfil" | "documentos" | "historico" | "feedback" | "pendencias" | "terminal" | "configuracoes";
 
 interface SidebarProps {
   active: View;
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ active, onChange, sugerirFeedb
   const items: { id: View; label: string; Icon: React.FC<{ size: number }> }[] = [
     { id: "dashboard", label: t.nav.dashboard, Icon: LayoutDashboard },
     { id: "perfil", label: t.nav.profile, Icon: UserRound },
+    { id: "documentos", label: t.nav.documents, Icon: FileText },
     { id: "historico", label: t.nav.history, Icon: History },
     { id: "feedback", label: t.nav.feedback, Icon: MessageSquareText },
     { id: "pendencias", label: t.nav.notifications, Icon: Bell },

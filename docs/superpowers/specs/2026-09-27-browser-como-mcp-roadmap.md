@@ -2,6 +2,8 @@
 
 > **Spec de rota, não de implementação.** Ordena backlog existente para chegar a um objetivo. Não autoriza código: cada fase mantém seu próprio ciclo spec → plano → review.
 
+> **Status: superado pela decisão CDP direto** (`docs/pesquisa/2026-09-28-DECISAO-browser.md`). As Fases 3 e 4 (CLA-27, CLA-30, CLA-8) continuam abertas no Linear.
+
 **Data:** 2026-09-27
 **Issues atravessadas:** CLA-29, CLA-7, CLA-20, CLA-28, CLA-5, CLA-27, CLA-30, CLA-8
 

@@ -96,7 +96,6 @@ pub fn iniciar(
 
 /// Spawn the `claude` process for an execution session, with:
 /// - SESSION_CHECKPOINT_REQUESTED detection → clean restart via frontend event
-/// - Chrome extension disconnection detection → automatic /chrome reconnect attempt
 /// - Session end → updates `sessoes.terminada_em` in the database
 // TODO(refactor): group these args into a session config struct
 #[allow(clippy::too_many_arguments)]
@@ -138,7 +137,6 @@ pub fn iniciar_claude(
         let mut buf = [0u8; 4096];
         let mut line_buf = String::new();
         let mut checkpoint_requested = false;
-        let mut reconnect_attempts: u32 = 0;
         let mut api_continue_attempts: u32 = 0;
         let mut last_api_continue: Option<Instant> = None;
 
@@ -174,36 +172,6 @@ pub fn iniciar_claude(
                         drop(guard);
                         diagnostics::pty_flush();
                         break;
-                    }
-
-                    let chrome_error = line_buf.contains("Browser extension is not connected")
-                        || line_buf.contains("Receiving end does not exist");
-
-                    if chrome_error {
-                        // Clear so we don't re-trigger on the same text
-                        line_buf.clear();
-                        if reconnect_attempts < 3 {
-                            reconnect_attempts += 1;
-                            diagnostics::emit_event(
-                                "pty",
-                                "chrome_reconnect",
-                                Some(session_id),
-                                "",
-                            );
-                            if let Ok(mut w) = writer_for_thread.lock() {
-                                let _ = w.write_all(b"/chrome\r");
-                                let _ = w.flush();
-                            }
-                        } else if reconnect_attempts == 3 {
-                            reconnect_attempts += 1; // prevent repeat
-                            let _ = app_thread.emit("chrome-reconnect-failed", ());
-                            diagnostics::emit_event(
-                                "pty",
-                                "chrome_failed",
-                                Some(session_id),
-                                "",
-                            );
-                        }
                     }
 
                     // Network retry / stalled stream: skip the 2m wait and resume.

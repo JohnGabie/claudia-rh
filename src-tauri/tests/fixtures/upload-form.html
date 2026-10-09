@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Upload</title></head>
+<body>
+  <h1>Candidatura de teste</h1>
+  <label for="cv">Currículo</label>
+  <input id="cv" type="file" onchange="document.getElementById('nome-cv').textContent = this.files[0] ? this.files[0].name : ''">
+  <span id="nome-cv"></span>
+
+  <!-- LinkedIn pattern: the real input is hidden, a button opens the chooser -->
+  <input id="escondido" type="file" style="display:none" onchange="document.getElementById('nome-esc').textContent = this.files[0] ? this.files[0].name : ''">
+  <button id="anexar" type="button" onclick="document.getElementById('escondido').click()">Carregar currículo</button>
+  <span id="nome-esc"></span>
+
+  <!-- only PDF: the page itself rejects anything else -->
+  <input id="so-pdf" type="file" accept=".pdf" aria-label="Só PDF" onchange="var f=this.files[0]; document.getElementById('nome-pdf').textContent = (f && f.name.toLowerCase().endsWith('.pdf')) ? f.name : 'rejeitado'">
+  <span id="nome-pdf"></span>
+
+  <!-- a plain field: the page shows nothing; only the native control knows the file -->
+  <input id="sem-eco" type="file" aria-label="Sem eco">
+
+  <button id="morto" type="button">Botão que não abre nada</button>
+  <button id="enviar" type="button" onclick="window.__submitted = true">Enviar candidatura</button>
+  <script>
+    window.__submitted = false;
+    // A chooser that really opened and closed (not intercepted) reports back here.
+    document.getElementById('escondido').addEventListener('cancel', function () { document.getElementById('nome-esc').textContent = 'cancelado'; });
+  </script>
+</body></html>

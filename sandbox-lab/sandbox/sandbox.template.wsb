@@ -1,0 +1,33 @@
+<!-- Template do Windows Sandbox. NAO editar o .generated.wsb: ele e gerado por scripts\test-up.ps1.
+     Placeholders {{...}} sao substituidos com caminhos absolutos do host (XML-escaped). -->
+<Configuration>
+  <VGpu>{{VGPU}}</VGpu>
+  <Networking>{{NETWORKING}}</Networking>
+  <ClipboardRedirection>{{CLIPBOARD}}</ClipboardRedirection>
+  <MemoryInMB>{{MEMORY_MB}}</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>{{SHARED_DIR}}</HostFolder>
+      <SandboxFolder>C:\lab</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>{{OUT_DIR}}</HostFolder>
+      <SandboxFolder>C:\lab\out</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>{{PROJECT_DIR}}</HostFolder>
+      <SandboxFolder>C:\labproject</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>{{SANDBOX_DIR}}</HostFolder>
+      <SandboxFolder>C:\labsandbox</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File C:\labsandbox\bootstrap.ps1</Command>
+  </LogonCommand>
+</Configuration>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LayoutDashboard,
@@ -24,10 +25,11 @@ import {
 import { useT, useLocale } from "../i18n";
 import type { Locale } from "../i18n";
 import type { View } from "./Sidebar";
+import { docsApi } from "../lib/documentos-api";
 
 interface SetupStatus {
   claude_instalado: boolean;
-  nativehost_chrome: boolean;
+  browser_pronto: boolean;
   perfil_preenchido: boolean;
 }
 
@@ -197,19 +199,6 @@ const LinkBtn: React.FC<{ onClick: () => void; children: React.ReactNode }> = ({
   </button>
 );
 
-const PrimaryBtn: React.FC<{ onClick: () => void; children: React.ReactNode }> = ({ onClick, children }) => (
-  <button
-    onClick={onClick}
-    style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "6px 14px", borderRadius: 6, fontFamily: "inherit", fontSize: 12,
-      border: "none", background: "var(--accent)", color: "#fff",
-      fontWeight: 500, cursor: "pointer",
-    }}
-  >
-    {children}
-  </button>
-);
 
 const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span style={{
@@ -312,11 +301,22 @@ const StepInstall: React.FC<{
   status: SetupStatus | null;
   checking: boolean;
   onRecheck: () => void;
-  onOpenTerminal: () => void;
-}> = ({ status, checking, onRecheck, onOpenTerminal }) => {
+}> = ({ status, checking, onRecheck }) => {
   const t = useT();
   const cliOk = !!status?.claude_instalado;
-  const chromeOk = !!status?.nativehost_chrome;
+  // The browser is prepared by the app in the background: follow it live instead of waiting for a recheck.
+  const [browserStage, setBrowserStage] = useState<string>("idle");
+  useEffect(() => {
+    // Listen first and let a live event win over the one-off read, which may answer after it.
+    let sawEvent = false;
+    const un = listen<{ stage: string }>("browser-progress", (e) => { sawEvent = true; setBrowserStage(e.payload.stage); });
+    un.then(() => invoke<{ stage: string }>("browser_status"))
+      .then((b) => { if (!sawEvent) setBrowserStage(b.stage); })
+      .catch(() => {});
+    return () => { un.then((f) => f()); };
+  }, []);
+  const browserOk = browserStage === "ready" || browserStage === "installed" || !!status?.browser_pronto;
+  const chromeOk = browserOk;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -367,45 +367,16 @@ const StepInstall: React.FC<{
         )}
       </AccordionCard>
 
-      {/* 3 · Chrome extension */}
-      <AccordionCard status={chromeOk ? "ok" : "warn"} title={t.welcome.chromeExtTitle} defaultOpen={!chromeOk}>
-        {chromeOk ? (
-          <SuccessNote>{t.welcome.chromeExtOk}</SuccessNote>
-        ) : (
+      {/* 3 · Claudia browser */}
+      <AccordionCard status={browserOk ? "ok" : "warn"} title={t.welcome.browserTitle} defaultOpen>
+        {browserOk ? (
           <>
-            <S n={1} title={t.welcome.chromeExtS1} desc={t.welcome.chromeExtS1Desc} />
-            <S n={2} title={t.welcome.chromeExtS2} desc={t.welcome.chromeExtS2Desc}>
-              <LinkBtn onClick={() => openUrl("https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn").catch(console.error)}>
-                {t.welcome.chromeExtS2Btn}
-              </LinkBtn>
-            </S>
-            <S n={3} title={t.welcome.chromeExtS3} desc={t.welcome.chromeExtS3Desc} />
-            <S n={4} title={t.welcome.chromeExtS4} desc={t.welcome.chromeExtS4Desc} last />
+            <SuccessNote>{t.welcome.browserOk}</SuccessNote>
+            <S n={1} title={t.welcome.browserLoginS1} desc={t.welcome.browserLoginS1Desc} />
+            <S n={2} title={t.welcome.browserLoginS2} desc={t.welcome.browserLoginS2Desc} last />
           </>
-        )}
-      </AccordionCard>
-
-      {/* 4 · Enable Chrome in CLI */}
-      <AccordionCard status={chromeOk ? "ok" : "warn"} title={t.welcome.chromeHostTitle} defaultOpen={!chromeOk}>
-        {chromeOk ? (
-          <SuccessNote>{t.welcome.chromeHostOk}</SuccessNote>
         ) : (
-          <>
-            <S n={1} title={t.welcome.chromeHostS1} desc={t.welcome.chromeHostS1Desc}>
-              <PrimaryBtn onClick={onOpenTerminal}>{t.welcome.chromeHostS1Btn}</PrimaryBtn>
-            </S>
-            <S n={2} title={t.welcome.chromeHostS2} desc={t.welcome.chromeHostS2Desc}>
-              <CodeBlock>{t.welcome.chromeHostS2Cmd}</CodeBlock>
-            </S>
-            <S n={3} title={t.welcome.chromeHostS3} desc={t.welcome.chromeHostS3Desc}>
-              <CodeBlock>{t.welcome.chromeHostS3Cmd}</CodeBlock>
-            </S>
-            <S n={4} title={t.welcome.chromeHostS4} desc={t.welcome.chromeHostS4Desc} last>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.5 }}>
-                {t.welcome.chromeHostPermanentNote}
-              </div>
-            </S>
-          </>
+          <S n={1} title={t.welcome.browserWait} desc={t.welcome.browserWaitDesc} last />
         )}
       </AccordionCard>
 
@@ -710,8 +681,14 @@ const StepProfile: React.FC<{
   hasProfile: boolean;
   onSetup: () => void;
   onDashboard: () => void;
-}> = ({ hasProfile, onSetup, onDashboard }) => {
+  onResumes: () => void;
+}> = ({ hasProfile, onSetup, onDashboard, onResumes }) => {
   const t = useT();
+  // Stays false while loading or if the library cannot be read: no warning then, never a false alarm.
+  const [semCurriculo, setSemCurriculo] = useState(false);
+  useEffect(() => {
+    docsApi.listar("curriculo").then((l) => setSemCurriculo(l.length === 0)).catch(() => setSemCurriculo(false));
+  }, []);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{
@@ -732,6 +709,26 @@ const StepProfile: React.FC<{
             {hasProfile ? t.welcome.profileAlreadyDone : t.welcome.profileEmpty}
           </span>
         </div>
+        {semCurriculo && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10, marginTop: 10,
+            padding: "10px 14px", borderRadius: 8,
+            background: "color-mix(in srgb, var(--warning) 8%, var(--bg-sunken))",
+            border: "1px solid color-mix(in srgb, var(--warning) 25%, var(--border))",
+          }}>
+            <AlertCircle size={16} color="var(--warning)" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{t.welcome.noResumeWarning}</span>
+            <button
+              onClick={onResumes}
+              style={{
+                padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-surface)",
+                color: "var(--accent-strong)", fontSize: 12, fontWeight: 500, fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
+              }}
+            >
+              {t.welcome.openResumes}
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <button
@@ -817,7 +814,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ onComplete }) => {
               status={status}
               checking={checking}
               onRecheck={recheck}
-              onOpenTerminal={() => complete("terminal")}
             />
           )}
           {step === 2 && <StepTour />}
@@ -827,6 +823,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onComplete }) => {
               hasProfile={status?.perfil_preenchido ?? false}
               onSetup={() => complete("perfil")}
               onDashboard={() => complete("dashboard")}
+              onResumes={() => complete("documentos")}
             />
           )}
         </div>

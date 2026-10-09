@@ -35,23 +35,6 @@ export interface CandidateBase {
   fontes_usadas: { tipo: string; referencia: string; consultado_em: string }[];
 }
 
-export interface CurriculoInfo {
-  path: string;
-  file_name: string;
-  template_id: string;
-  template_nome: string;
-  gerado_em: string;
-}
-
-export interface CoverLetterInfo {
-  path: string;
-  file_name: string;
-  empresa: string;
-  cargo: string;
-  idioma: string;
-  gerado_em: string;
-}
-
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -59,7 +42,7 @@ export interface Message {
   streaming?: boolean;
 }
 
-export type Mode = "resumo" | "chat" | "curriculos" | "cover_letters";
+export type Mode = "resumo" | "chat";
 export interface ChatFocus {
   section: string;
   label: string;

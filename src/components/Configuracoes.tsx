@@ -5,6 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { Check, ExternalLink, FolderOpen, RefreshCw } from "lucide-react";
 import { useT, useLocale } from "../i18n";
 import { ToggleSwitch } from "./ui/ToggleSwitch";
+import { OpenBrowserButton } from "./BrowserBanner";
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ const Section: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShowWelcome }) => {
+export const Configuracoes: React.FC<{ onShowWelcome?: () => void; onOpenActivityLog?: () => void }> = ({ onShowWelcome, onOpenActivityLog }) => {
   const t = useT();
   const { locale, setLocale } = useLocale();
   const prompts = [
@@ -174,6 +175,32 @@ export const Configuracoes: React.FC<{ onShowWelcome?: () => void }> = ({ onShow
             {t.settings.startOnBoot}
           </span>
         </label>
+      </Section>
+
+      {/* The Claudia browser opens only when the AI is called; this opens it so the user can log into sites */}
+      <Section>
+        <SectionTitle>{t.settings.browser.title}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.browser.desc}
+        </p>
+        <OpenBrowserButton />
+      </Section>
+
+      {/* Activity log: always on; this only lets the user look at what was recorded */}
+      <Section>
+        <SectionTitle>{t.settings.activityLog.title}</SectionTitle>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          {t.settings.activityLog.desc}
+        </p>
+        <button
+          onClick={onOpenActivityLog}
+          style={{
+            padding: "7px 20px", borderRadius: 6, fontSize: 13, fontWeight: 500, fontFamily: "inherit", cursor: "pointer",
+            border: "none", background: "var(--accent)", color: "#fff",
+          }}
+        >
+          {t.settings.activityLog.view}
+        </button>
       </Section>
 
       {/* 2. Modo autónomo */}

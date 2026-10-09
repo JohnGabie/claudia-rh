@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Job list fixture</title>
+<!--
+  The shape of a public ATS job list (Ashby, Teamtailor): a sticky header with the company logo and a long list
+  where each posting is ONE <a href> wrapping a title and a line of details. A posting far down the list is only
+  reachable after the page scrolls. Fictitious company and titles.
+  In the middle there is an application form with a real "Submit application" button (to prove a scrolled page
+  still guards the send). window.__sent turns true when that form really submits.
+-->
+<style>
+  body { font: 15px sans-serif; margin: 0; }
+  header { position: sticky; top: 0; height: 60px; background: #fff; border-bottom: 1px solid #ccc; z-index: 2; }
+  header img { width: 120px; height: 40px; margin: 10px 16px; }
+  main { width: 700px; margin: 0 auto; }
+  a.posting { display: block; padding: 20px; margin: 12px 0; border: 1px solid #ddd; color: inherit; text-decoration: none; }
+  a.posting h3 { margin: 0 0 8px 0; font-size: 17px; }
+  a.posting p { margin: 0; color: #555; }
+  form#apply { margin: 24px 0; padding: 20px; border: 2px solid #999; }
+  form#apply button { width: 220px; height: 36px; }
+</style>
+<script>
+  window.__sent = false;
+  function sendApplication() { window.__sent = true; return false; }
+</script>
+</head>
+<body>
+  <header><img alt="Acme Labs" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></header>
+  <main id="list"></main>
+  <script>
+    const list = document.getElementById("list");
+    const places = "Engineering • Remote; Lisbon; Copenhagen • Full time";
+    for (let i = 1; i <= 30; i++) {
+      if (i === 8) {
+        const f = document.createElement("form");
+        f.id = "apply";
+        f.setAttribute("onsubmit", "return sendApplication()");
+        f.innerHTML = '<p>Application for Posting 7</p><button id="send" type="submit">Submit application</button>';
+        list.appendChild(f);
+      }
+      const a = document.createElement("a");
+      a.className = "posting";
+      a.id = "job-link-" + i;
+      a.href = "#job-" + i;
+      a.innerHTML = "<h3>Software Engineer " + i + ", Data Team</h3><p>" + places + "</p>";
+      list.appendChild(a);
+    }
+  </script>
+</body>
+</html>

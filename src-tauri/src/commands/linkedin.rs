@@ -32,11 +32,15 @@ pub fn iniciar_busca_linkedin_rede(
     app: AppHandle,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
+    let db = Arc::clone(&state.0);
+    crate::commands::sessao::when_browser_ready(&app, move |app| iniciar_busca_agora(app, db))
+}
+
+fn iniciar_busca_agora(app: &AppHandle, db: Arc<std::sync::Mutex<rusqlite::Connection>>) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = data_dir.join("claudia_rh.db");
     let db_path_str = db_path.to_string_lossy().to_string();
 
-    let db = Arc::clone(&state.0);
     let session_id = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -65,7 +69,7 @@ pub fn iniciar_busca_linkedin_rede(
     let prompt_file = workspace.join(".claude-system-prompt-linkedin.txt");
     std::fs::write(&prompt_file, &sys_prompt).map_err(|e| e.to_string())?;
 
-    let mcp_config = crate::commands::perfil::write_mcp_config(&app, crate::mcp::SessionKind::Autonomous);
+    let mcp_config = crate::commands::perfil::write_mcp_config(app, crate::mcp::SessionKind::Autonomous);
     let debug_file = crate::diagnostics::PATHS
         .get()
         .map(|p| p.dir.join("claude-startup.log"));

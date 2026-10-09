@@ -4,7 +4,7 @@
 
 <h1>Claudia RH</h1>
 
-<p><strong>Automated job-application agent powered by Claude + Chrome.</strong></p>
+<p><strong>Automated job-application agent powered by Claude + its own browser.</strong></p>
 
 <p>
   <a href="https://github.com/JohnGabie/claudia-rh/stargazers">
@@ -46,7 +46,7 @@
 ### How it works
 
 1. **Conversational profile** — tell Claude who you are, paste your CV, define search variants (e.g. "senior remote dev" vs "hybrid tech lead")
-2. **Automatic triggering** — the app detects when you're idle and launches a Claude Code session connected to Chrome
+2. **Automatic triggering** — the app detects when you're idle and launches a Claude Code session connected to the app's own browser
 3. **Job analysis** — the agent reads each listing, cross-references your profile, and decides whether to apply
 4. **Document generation** — CV and cover letter tailored to each job, with honesty enforced
 5. **Pending actions & notifications** — captchas, required fields, and other blockers appear as Windows notifications for manual resolution
@@ -59,7 +59,7 @@
 
 | | Feature |
 |---|---|
-| 🤖 | Claude Code agent with Chrome access |
+| 🤖 | Claude Code agent with the app's own browser |
 | 📄 | AI-generated CV and cover letter per job |
 | 🔍 | Multiple simultaneous search variants |
 | 🔔 | Windows notifications for captchas / blockers |
@@ -92,8 +92,8 @@
 │       Rust (Tauri v2) + SQLite + keyring                 │
 │                                                          │
 │  ┌─────────────────────────────────────────────────┐    │
-│  │  PTY Manager  →  claude --chrome  →  Chrome     │    │
-│  │                   (Claude Code CLI)   Extension  │    │
+│  │  PTY Manager  →  claude (MCP)  →  Claudia       │    │
+│  │                   browser_* tools    browser     │    │
 │  └─────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
          ↕ Tauri events (SQLite watcher, idle watcher)
@@ -151,7 +151,7 @@
 <td>AI</td>
 <td><img src="https://img.shields.io/badge/Claude_Code-CLI-D97757" /></td>
 <td>latest</td>
-<td>Application agent with Chrome access</td>
+<td>Application agent with its own browser</td>
 </tr>
 <tr>
 <td>Credentials</td>
@@ -172,7 +172,6 @@
 **Required**
 - Windows 11 (build ≥ 26200)
 - [Claude Code CLI](https://claude.ai/code) installed and authenticated
-- **Claude in Chrome** extension installed in Chrome
 - Rust toolchain (`rustup`)
 - Node.js 20+
 
@@ -181,7 +180,7 @@
 
 **Recommended**
 - Claude Pro or Team account (for session volume)
-- Chrome as your primary browser
+- An internet connection on the first launch (about 200 MB, downloaded by the app itself)
 - 8 GB RAM+
 
 </td>
@@ -190,46 +189,17 @@
 
 ---
 
-## Claude in Chrome extension setup — critical step
+## The Claudia browser — nothing to install
 
-> **Without this step the agent cannot control the browser and will do nothing.**
+The agent controls its **own browser**, which the app downloads, starts and watches by itself. You do not install a browser extension and you do not need Chrome.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+1. On the first launch the app downloads a pinned Chrome build (about 200 MB, once). A banner at the top shows the progress. The browser itself only opens when the AI is called, or when you press **Open the browser** in Settings; it opens as an orange window.
+2. **Press Open the browser and log into the job sites you want to use in that window** (LinkedIn, ...). The logins stay in that browser, like in any other. Claudia never sees your passwords, and sites you are not logged into are skipped.
+3. The agent can only submit an application through a guard in the app: it must confirm the exact job being applied to, within your daily budget, once per job.
 
-### Install the extension
+Everything the browser stores lives in `%LOCALAPPDATA%\io.github.johngabie.claudia-rh\browser`. Uninstalling with "Delete the application data" removes it.
 
-1. Open Chrome and go to the **Chrome Web Store**
-2. Search for **"Claude"** (official Anthropic extension)
-3. Install the **Claude** extension in Chrome
-
-> ⚠️ **The Google/Claude account used in Chrome must be exactly the same one authenticated in the Claude Code CLI.** If they differ, the connection fails silently.
-
-</td>
-<td width="50%" valign="top">
-
-### Enable Chrome mode
-
-After installing the extension, open a terminal and run Claude Code:
-
-```bash
-claude
-```
-
-Inside the session, type:
-
-```
-/chrome
-```
-
-When the **"Enable by default"** option appears, select **Yes**.
-
-Close Claude, reopen it — from then on Chrome connects automatically in every session.
-
-</td>
-</tr>
-</table>
+**Activity log** always records what the AI does in the browser (clicks, typing, pages, errors, with screenshots) on your computer only, never passwords. Open Settings → View records for a read-only screen of them (with a Back button). Old records are deleted automatically (30 days / 1 GB).
 
 ---
 

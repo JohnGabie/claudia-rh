@@ -1,0 +1,232 @@
+# Disk helpers for the lab guards. Reading attributes only, except Clear-LabOut, which deletes inside shared\out after
+# the pure guard (travas.ps1) said yes. Dot-source travas.ps1 first.
+# Defining these functions touches nothing; calling them is what reads the disk.
+
+function Test-LabInSandbox {
+  # Reads the OS identity and one guest-only file; the decision itself is the pure Test-LabSandboxDecision.
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  return Test-LabSandboxDecision -Identity $id -HasBootstrap (Test-Path -LiteralPath $script:LabGuestMarker -PathType Leaf)
+}
+
+function Get-LabLinksInPath([string]$Dir, [string]$StopAt) {
+  # Reparse points from $Dir up to, not including, $StopAt. Missing folders are not links.
+  $links = @()
+  $cur = $Dir
+  $stop = ConvertTo-LabPathKey $StopAt
+  while ((ConvertTo-LabPathKey $cur) -ne $stop) {
+    $item = Get-Item -LiteralPath $cur -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $links += $cur }
+    $parent = Split-Path $cur -Parent
+    if (-not $parent -or $parent -eq $cur) { throw "$Dir is not inside $StopAt" }
+    $cur = $parent
+  }
+  return $links   # flat on purpose (no leading comma): callers wrap it in ConvertTo-LabLinkList (travas.ps1)
+}
+
+function ConvertTo-LabFullPath([string]$Path, [string]$Base) {
+  # Full path with an explicit base (never the CWD). Only 'X:\...' and UNC count as absolute; drive-relative ('C:x') and
+  # rooted-without-drive ('\x') are refused because GetFullPath would resolve them against the CWD. Windows PowerShell 5.1
+  # has no two-argument GetFullPath, so relative values are joined to the base first. SANDBOX ONLY (touches no disk, but
+  # is exercised together with the disk helpers in travas.sandbox.ps1).
+  if ([string]::IsNullOrWhiteSpace($Path)) { throw 'empty path' }
+  if ($Path -match '^[A-Za-z]:\\' -or $Path -match '^\\\\') { return [IO.Path]::GetFullPath($Path) }
+  if ([IO.Path]::IsPathRooted($Path)) { throw "path is neither absolute nor relative (depends on the CWD): $Path" }
+  return [IO.Path]::GetFullPath((Join-Path $Base $Path))
+}
+
+function Resolve-LabRealPath([string]$FullPath) {
+  # Path as the OS reports it for an existing item (SANDBOX ONLY: needs a real disk); a missing item stays as given.
+  # Links are not followed here: Get-LabLinksAboveRoot finds them and the pure guards refuse them.
+  $item = Get-Item -LiteralPath $FullPath -Force -ErrorAction SilentlyContinue
+  if ($item) { return $item.FullName }
+  return $FullPath
+}
+
+function Get-LabLinksAboveRoot([string]$FullPath) {
+  # Reparse points in the path or any ancestor up to the drive root (junction, symlink, subst folder). SANDBOX ONLY.
+  return ConvertTo-LabLinkList (Get-LabLinksInPath $FullPath ([IO.Path]::GetPathRoot($FullPath)))
+}
+
+function Get-LabReparsePoints([string]$Dir) {
+  # Every reparse point at or under $Dir, without ever descending into one (same behavior on PowerShell 5.1 and 7).
+  $found = @()
+  $stack = New-Object System.Collections.Stack
+  $stack.Push($Dir)
+  while ($stack.Count) {
+    $d = $stack.Pop()
+    $item = Get-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+    # Only the starting folder may be absent; a child that cannot be read refuses (it could hide a link).
+    if (-not (Test-LabScanEntryOk -IsRoot ($d -eq $Dir) -Found ([bool]$item))) { throw "cannot read $d while looking for links under ${Dir}: refusing" }
+    if (-not $item) { continue }
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $found += $d; continue }
+    if (-not $item.PSIsContainer) { continue }
+    foreach ($e in [IO.Directory]::EnumerateFileSystemEntries($d)) { $stack.Push($e) }
+  }
+  return $found   # flat on purpose, see Get-LabLinksInPath
+}
+
+function Read-LabLinkTarget([string]$LinkPath) {
+  # The text a link points to, read WITHOUT following it (Get-Item -Force gives the reparse data; PowerShell 5.1 has .Target,
+  # PowerShell 7 also .LinkTarget). $null when unreadable, empty, or more than one target. SANDBOX ONLY.
+  try {
+    $item = Get-Item -LiteralPath $LinkPath -Force -ErrorAction Stop
+    $v = $item.Target
+    if ($null -eq $v -and $item.PSObject.Properties['LinkTarget']) { $v = $item.LinkTarget }
+    $v = @($v | Where-Object { $null -ne $_ })
+    if ($v.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$v[0])) { return $null }
+    return [string]$v[0]
+  } catch { return $null }
+}
+
+function Get-LabLinkTargets([string[]]$Paths) {
+  # Hashtable link path -> target text (Read-LabLinkTarget); links whose target cannot be read are left out. Never follows a link.
+  $r = @{}
+  foreach ($p in @($Paths | Where-Object { $_ })) { $t = Read-LabLinkTarget $p; if ($null -ne $t) { $r[$p] = $t } }
+  return $r
+}
+
+function Get-LabFileLinks([string[]]$Paths) {
+  # Of reparse points already found, the ones that are links to a FILE (no Directory attribute). Reads attributes only and
+  # never follows the link; anything unreadable is NOT listed, so it stays a refusing link. SANDBOX ONLY.
+  $r = @()
+  foreach ($p in @($Paths | Where-Object { $_ })) {
+    $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+    # A target that cannot be read leaves the link out of the list, so it stays a refusing link.
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($item.Attributes -band [IO.FileAttributes]::Directory) -and ($null -ne (Read-LabLinkTarget $p))) { $r += $p }
+  }
+  return $r   # flat on purpose, see Get-LabLinksInPath
+}
+
+function Clear-LabOut([string]$OutDir, [string]$LabDir) {
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $OutDir $LabDir)) + @(ConvertTo-LabLinkList (Get-LabReparsePoints $OutDir))
+  $refusal = Get-LabOutCleanRefusal -OutDir $OutDir -LabDir $LabDir -Links $links
+  if ($refusal) { throw "Refusing to clean ${OutDir}: $refusal" }
+  Get-ChildItem -LiteralPath $OutDir -Force | Where-Object { $_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force
+}
+
+function Test-LabTools([string]$LabDir) {
+  # Problems with shared\tools against shared\tools.sha256 (empty array = fine). Reads only.
+  $manifest = Join-Path $LabDir 'shared\tools.sha256'
+  if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return ,@('manifest not found: shared\tools.sha256') }
+  $toolsDir = Join-Path $LabDir 'shared\tools'
+  $found = @{}
+  if (Test-Path -LiteralPath $toolsDir -PathType Container) {
+    $base = (Get-Item -LiteralPath $toolsDir).FullName.TrimEnd('\') + '\'
+    Get-ChildItem -LiteralPath $toolsDir -Recurse -File -Force | ForEach-Object { $found[$_.FullName.Substring($base.Length).Replace('\', '/')] = $_.Length }
+  }
+  return ,(Get-LabMissingTools -ManifestText (Get-Content -LiteralPath $manifest -Raw) -FoundSizes $found)
+}
+
+function Get-LabRustcPathFromRustup([string]$ProjectDir) {
+  # `rustup which rustc` run IN the project folder, so the toolchain the project uses (rust-toolchain file or an override) is
+  # the one found. Read-only: rustup only prints. $null when rustup is missing, fails, times out or prints nothing.
+  $rustup = Get-Command rustup -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $rustup) { return $null }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $rustup.Source
+  $psi.Arguments = 'which rustc'
+  $psi.WorkingDirectory = $ProjectDir
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  # rustup may DOWNLOAD and install a toolchain to satisfy a rust-toolchain file or an override. This call must only read:
+  # no auto-install, and no inherited RUSTUP_TOOLCHAIN (it would override the project's own choice).
+  $psi.EnvironmentVariables['RUSTUP_AUTO_INSTALL'] = '0'
+  $psi.EnvironmentVariables.Remove('RUSTUP_TOOLCHAIN')
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $errTask = $proc.StandardError.ReadToEndAsync()
+  $outTask = $proc.StandardOutput.ReadToEndAsync()
+  if (-not $proc.WaitForExit(30000)) { try { $proc.Kill() } catch { }; return $null }
+  $proc.WaitForExit()   # flushes the redirected output after the timed wait
+  if ($proc.ExitCode -ne 0) { return $null }
+  return $outTask.Result.Trim()
+}
+
+function Get-LabHostToolCandidate {
+  # Where one host tool lives on THIS PC, found at run time (no path is ever written in a versioned file), and how many of its
+  # required files exist there. Reads only. Returns [ordered]@{ HostPath; MarkerCount } or $null when the tool is not found.
+  # The decision to mount is Get-LabHostToolRefusal (travas.ps1), taken by the caller on the REAL path.
+  param([string]$Nome, [string]$ProjectDir)
+  $pf = [Environment]::GetFolderPath('ProgramFiles')
+  $pfx86 = [Environment]::GetFolderPath('ProgramFilesX86')
+  switch ($Nome) {
+    'node' {
+      $dir = Join-Path $pf 'nodejs'
+      return [ordered]@{ HostPath = $dir; MarkerCount = [int](Test-Path -LiteralPath (Join-Path $dir 'node.exe') -PathType Leaf) }
+    }
+    'winkits' {
+      $dir = Join-Path $pfx86 'Windows Kits\10'
+      $n = @(Get-ChildItem -LiteralPath (Join-Path $dir 'Include') -Directory -Filter '10.*' -ErrorAction SilentlyContinue).Count
+      return [ordered]@{ HostPath = $dir; MarkerCount = $n }
+    }
+    'msvc' {
+      # The BuildTools folder first; vswhere (Microsoft's own locator, read-only) when it is not there.
+      $dir = Join-Path $pfx86 'Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC'
+      if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+        $vswhere = Join-Path $pfx86 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+          $found = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null)
+          $first = @($found | Where-Object { $_ })
+          if ($first.Count) { $dir = Join-Path ([string]$first[0]) 'VC\Tools\MSVC' }
+        }
+      }
+      $n = @(Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'bin\Hostx64\x64\cl.exe') -PathType Leaf }).Count
+      return [ordered]@{ HostPath = $dir; MarkerCount = $n }
+    }
+    'rust' {
+      $tc = ConvertTo-LabRustToolchainDir (Get-LabRustcPathFromRustup $ProjectDir)
+      if (-not $tc) { return $null }
+      $n = @(Get-ChildItem -LiteralPath (Join-Path $tc 'lib\rustlib\x86_64-pc-windows-msvc\lib') -Filter 'libstd*' -File -ErrorAction SilentlyContinue).Count
+      return [ordered]@{ HostPath = $tc; MarkerCount = $n }
+    }
+  }
+  return $null
+}
+
+function Remove-LabCredentialFile {
+  # Deletes ONE file, only after Get-LabCredentialCleanRefusal says yes. Never -Recurse.
+  param([string]$File, [string]$RepoRoot)
+  $p = Get-LabCredentialPaths $RepoRoot
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $p.Dir $RepoRoot))
+  $item = Get-Item -LiteralPath $File -Force -ErrorAction SilentlyContinue
+  if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $links += $File }
+  if ($item -and $item.PSIsContainer) { throw "[credential] refusing to delete a folder: $File" }
+  $refusal = Get-LabCredentialCleanRefusal -File $File -RepoRoot $RepoRoot -Links $links
+  if ($refusal) { throw "[credential] refusing to delete ${File}: $refusal" }
+  if ($item) { Remove-Item -LiteralPath $File -Force }
+}
+
+function Remove-LabCredential {
+  # test-down / failed test-up: the copy and any .tmp left by an interrupted copy. Nothing else in the folder.
+  param([string]$RepoRoot)
+  $p = Get-LabCredentialPaths $RepoRoot
+  if (-not (Test-Path -LiteralPath $p.Dir -PathType Container)) { return }
+  Remove-LabCredentialFile -File $p.File -RepoRoot $RepoRoot
+  foreach ($f in @(Get-ChildItem -LiteralPath $p.Dir -Force -File -Filter '.credentials.json.*.tmp')) {
+    Remove-LabCredentialFile -File $f.FullName -RepoRoot $RepoRoot
+  }
+}
+
+function Copy-LabCredential {
+  # Copies the login of the account signed in on this PC (spec A4) into .sandbox-work\credencial. The bytes are never
+  # read into a variable, printed or logged; errors never carry the user folder.
+  param([string]$RepoRoot, [string]$UserProfile, [string]$ConfigDir)
+  $src = Join-Path $UserProfile '.claude\.credentials.json'
+  $refusal = Get-LabCredentialSourceRefusal -Source $src -UserProfile $UserProfile -ConfigDir $ConfigDir -Links @(ConvertTo-LabLinkList (Get-LabLinksAboveRoot $src))
+  if ($refusal) { throw "[credential] refused: $refusal" }
+  if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw '[credential] no account is signed in on this PC (%USERPROFILE%\.claude\.credentials.json is missing): run claude and /login, then test-up again' }
+  $p = Get-LabCredentialPaths $RepoRoot
+  New-Item -ItemType Directory -Force -Path $p.Dir | Out-Null
+  $links = @(ConvertTo-LabLinkList (Get-LabLinksInPath $p.Dir $RepoRoot))
+  if ($links.Count) { throw "[credential] refused: link (symlink/junction) in $($links[0])" }
+  $tmp = "$($p.Dir)\.credentials.json.$([guid]::NewGuid().ToString('N')).tmp"
+  try {
+    try {
+      [IO.File]::Copy($src, $tmp)
+      if (Test-Path -LiteralPath $p.File) { [IO.File]::Replace($tmp, $p.File, [NullString]::Value) } else { [IO.File]::Move($tmp, $p.File) }
+    } catch { throw '[credential] copy failed (the login file could not be read or written)' }
+  } finally {
+    if (Test-Path -LiteralPath $tmp) { Remove-LabCredentialFile -File $tmp -RepoRoot $RepoRoot }
+  }
+}

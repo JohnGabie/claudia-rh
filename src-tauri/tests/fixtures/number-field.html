@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="pt"><head><meta charset="utf-8"><title>Campo numérico</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  /* The number field sits exactly in the middle of a 1200x800 viewport and is focused: a wheel turned
+     over it would change its value. The page is tall so the document can scroll. */
+  #wrap { height: 3000px; position: relative; }
+  #anos { position: absolute; left: 400px; top: 300px; width: 400px; height: 200px; font-size: 40px; }
+</style></head>
+<body>
+<div id="wrap"><input id="anos" type="number" value="5" aria-label="Anos de experiência"></div>
+<script>document.getElementById("anos").focus();</script>
+</body></html>

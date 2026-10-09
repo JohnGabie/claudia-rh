@@ -18,7 +18,7 @@
 - Do not `git add` `npm-package/`.
 - Do not split `perfil/` or `dashboard/` further. Do not touch `schema.sql` ALTERs.
 - Work on `feat/fix-notificacoes-i18n`. Merge back to `dev`. Never commit on `main`.
-- Cwd for git: `C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh`. Cargo tests: `src-tauri/`.
+- Cwd for git: `claudia-rh`. Cargo tests: `src-tauri/`.
 
 ## File map
 
@@ -144,7 +144,7 @@ pub fn decide_notify(
 - [ ] **Step 2: Run tests — they must fail (stub returns both false)**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh\src-tauri"
+Set-Location "src-tauri"
 cargo test decide_notify -- --nocapture
 ```
 
@@ -405,7 +405,7 @@ pub fn start(
 - [ ] **Step 4: Re-run `decide_notify` tests + `cargo check`**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh\src-tauri"
+Set-Location "src-tauri"
 cargo test decide_notify -- --nocapture
 cargo check
 ```
@@ -465,7 +465,7 @@ onAction(() => {
 - [ ] **Step 2: Typecheck**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 npx tsc --noEmit
 ```
 
@@ -580,7 +580,7 @@ with:
 - [ ] **Step 4: Verify hardcodes gone + typecheck**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 npx tsc --noEmit
 ```
 
@@ -608,7 +608,7 @@ git commit -m "fix(i18n): route dashboard and profile loading strings through t(
 - [ ] **Step 1: Tests + identifier + plugin still init**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git diff HEAD -- src-tauri/tauri.conf.json
 Select-String -Path src-tauri\src\lib.rs -Pattern "tauri_plugin_notification::init"
 Set-Location src-tauri
@@ -620,7 +620,7 @@ Expected: empty diff on `tauri.conf.json`; one `init` hit; 6 tests pass.
 - [ ] **Step 2: Branch diff must not include `npm-package/` or identifier**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git diff --name-only origin/dev...HEAD
 ```
 

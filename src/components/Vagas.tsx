@@ -5,6 +5,7 @@ import { ExternalLink, Folder } from "lucide-react";
 import { Vaga } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useT } from "../i18n";
+import { rotuloDocumentoCandidatura } from "./dashboard/anexos";
 
 
 interface Candidatura {
@@ -18,6 +19,8 @@ interface Candidatura {
   pasta_arquivos: string;
   metodo: string;
   resultado: string | null;
+  documento_id: number | null;
+  documento_nome: string | null;
 }
 
 const STATUS_STYLE: Record<string, { background: string; color: string }> = {
@@ -89,6 +92,7 @@ export const Vagas: React.FC = () => {
   const [vagas, setVagas] = useState<Vaga[]>([]);
   const [candidaturas, setCandidaturas] = useState<Candidatura[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erroPasta, setErroPasta] = useState<string | null>(null);
 
   const carregarVagas = () => {
     setLoading(true);
@@ -183,6 +187,20 @@ export const Vagas: React.FC = () => {
           </div>
         )}
       </div>
+
+      {erroPasta && (
+        <div
+          role="alert"
+          onClick={() => setErroPasta(null)}
+          style={{
+            padding: "8px 24px", fontSize: 12, cursor: "pointer",
+            color: "var(--text-primary)", background: "var(--bg-surface)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          {erroPasta}
+        </div>
+      )}
 
       {/* Content */}
       <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }}>
@@ -281,7 +299,7 @@ export const Vagas: React.FC = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.method, t.jobs.tableHeaders.result, t.jobs.tableHeaders.sent, "", ""].map((h, i) => (
+                  {[t.jobs.tableHeaders.title, t.jobs.tableHeaders.company, t.jobs.tableHeaders.platform, t.jobs.tableHeaders.document, t.jobs.tableHeaders.method, t.jobs.tableHeaders.result, t.jobs.tableHeaders.sent, "", ""].map((h, i) => (
                     <th key={i} style={{
                       padding: "10px 12px",
                       textAlign: "left",
@@ -316,6 +334,11 @@ export const Vagas: React.FC = () => {
                       <td style={{ padding: "10px 12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
                         {c.plataforma}
                       </td>
+                      <td style={{ padding: "10px 12px", color: "var(--text-secondary)", maxWidth: 200 }}>
+                        <div title={rotuloDocumentoCandidatura(c)} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {rotuloDocumentoCandidatura(c)}
+                        </div>
+                      </td>
                       <td style={{ padding: "10px 12px" }}>
                         <span style={{
                           fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
@@ -337,7 +360,7 @@ export const Vagas: React.FC = () => {
                       <td style={{ padding: "10px 12px" }}>
                         {c.pasta_arquivos && (
                           <button
-                            onClick={() => invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch(console.error)}
+                            onClick={() => { setErroPasta(null); invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch((e) => setErroPasta(String(e))); }}
                             title={t.jobs.openFiles}
                             style={{
                               background: "transparent", border: "none", cursor: "pointer",

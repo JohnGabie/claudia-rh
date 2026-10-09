@@ -124,9 +124,14 @@ pub fn tempo_sessoes_hoje(state: State<'_, DbState>) -> Result<f64, String> {
 }
 
 #[tauri::command]
-pub fn abrir_pasta(caminho: String) -> Result<(), String> {
+pub fn abrir_pasta(app: AppHandle, caminho: String) -> Result<(), String> {
+    use tauri::Manager;
+    // The path may come from the agent (register_candidatura): validate before anything is launched.
+    let raiz = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let validado = crate::commands::pasta_segura::pasta_permitida(&caminho, &raiz)
+        .map_err(|m| format!("Não foi possível abrir a pasta: {m}"))?;
     Command::new("explorer")
-        .arg(&caminho)
+        .arg(&validado)
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())

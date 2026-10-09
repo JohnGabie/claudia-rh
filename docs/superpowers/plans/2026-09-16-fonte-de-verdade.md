@@ -18,10 +18,10 @@
 - **Não editar** nenhum `.rs`, `.tsx`, `.ts`, `.sql`, `schema.sql`.
 - **Não** `git add` `npm-package/` (working tree sujo, fora de escopo).
 - `main` = só releases. Nunca commit em `main`. Trabalho em `feat/fonte-de-verdade`. Integração em `dev`.
-- Pasta pai `C:\Users\joaog\PycharmProjects\curriculum-apply\` não é git. Banners HISTÓRICO lá não entram em `git add`.
+- Pasta pai `<usuário>/curriculum-apply/` não é git. Banners HISTÓRICO lá não entram em `git add`.
 - Não copiar para o git: `prompt-construcao-tauri.md`, `prompt-execucao-*.md`, `mudanca-*-spec.md`.
 - Não documentar neste ciclo: welcome, i18n EN/PT, LinkedIn rede, updater, npm wrapper, agendamento por janelas. Feedback entra só como item da sidebar.
-- Cwd de todos os comandos git: `C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh`.
+- Cwd de todos os comandos git: `claudia-rh`.
 
 ## File map
 
@@ -50,7 +50,7 @@
 - [ ] **Step 1: Confirmar cwd e working tree**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git status -sb
 git hash-object src-tauri/src/prompt_sistema_runtime.md
 ```
@@ -570,7 +570,7 @@ git commit -m "docs: CLAUDE.md vivo — indice, pt-BR e fluxo git via dev"
 ### Task 5: Banner HISTÓRICO na pasta pai (fora do git)
 
 **Files:**
-- Modify (fora do repo): os 10 markdowns listados abaixo em `C:\Users\joaog\PycharmProjects\curriculum-apply\`
+- Modify (fora do repo): os 10 markdowns listados abaixo em `<usuário>/curriculum-apply/`
 
 **Interfaces:**
 - Consumes: Tasks 2–4 (os destinos vivos já existem, para o banner não apontar para o vazio)
@@ -600,10 +600,10 @@ Lista (não apagar nenhum; não tocar nos `.html`):
 
 - [ ] **Step 1: Prefixar cada ficheiro se ainda não tiver o banner**
 
-Para cada path `$f` na lista, a partir de `C:\Users\joaog\PycharmProjects\curriculum-apply`:
+Para cada path `$f` na lista, a partir de `<usuário>/curriculum-apply`:
 
 ```powershell
-$root = "C:\Users\joaog\PycharmProjects\curriculum-apply"
+$root = "<usuário>/curriculum-apply"
 $banner = @"
 > **HISTÓRICO.** Este arquivo já não é fonte de verdade.
 > A spec viva está em ``claudia-rh/docs/`` e o índice em ``claudia-rh/CLAUDE.md``.
@@ -636,8 +636,8 @@ No banner escrito no disco, as backticks são simples (`` `claudia-rh/docs/` ``)
 - [ ] **Step 2: Verificar que o corpo antigo sobreviveu**
 
 ```powershell
-Select-String -Path "C:\Users\joaog\PycharmProjects\curriculum-apply\arquitetura-sistema-candidaturas.md" -Pattern "HISTÓRICO" | Select-Object -First 1
-Select-String -Path "C:\Users\joaog\PycharmProjects\curriculum-apply\arquitetura-sistema-candidaturas.md" -Pattern "Visibilidade sobre ocultação"
+Select-String -Path "<usuário>/curriculum-apply/arquitetura-sistema-candidaturas.md" -Pattern "HISTÓRICO" | Select-Object -First 1
+Select-String -Path "<usuário>/curriculum-apply/arquitetura-sistema-candidaturas.md" -Pattern "Visibilidade sobre ocultação"
 ```
 
 Expected: banner na linha 1–3; a frase de princípios ainda existe mais abaixo. Se o corpo desapareceu, restaurar do git **não dá** (pasta pai não é git) — restaurar de `claudia-rh/docs/arquitetura-sistema-candidaturas.md` **não** (já está patched). Fonte de recuperação: o original está no histórico da conversa / cópia em `docs/` **antes** do patch não existe. Por isso o Step 1 tem de **prefixar**, nunca substituir. Se `Get-Content` + concatenar falhar a meio, parar.
@@ -645,7 +645,7 @@ Expected: banner na linha 1–3; a frase de princípios ainda existe mais abaixo
 - [ ] **Step 3: Confirmar que git em `claudia-rh` não vê estes ficheiros**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git status -sb
 ```
 
@@ -665,7 +665,7 @@ Expected: `feat/fonte-de-verdade`; possivelmente `npm-package/` dirty; **não** 
 - [ ] **Step 1: Prompt injetado intacto**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 git hash-object src-tauri/src/prompt_sistema_runtime.md
 git diff HEAD -- src-tauri/src/prompt_sistema_runtime.md
 ```
@@ -725,7 +725,7 @@ Leftover a apagar (já ancestrais de `main`; confirmar com `merge-base --is-ance
 - [ ] **Step 1: Confirmar que cada leftover é ancestral de `main`**
 
 ```powershell
-Set-Location "C:\Users\joaog\PycharmProjects\curriculum-apply\claudia-rh"
+Set-Location "claudia-rh"
 foreach ($b in @(
   "feat/i18n-english","feat/sdd","feat/tests","feat/welcome",
   "feature/dashboard-remodel","fix/pt-br-language"

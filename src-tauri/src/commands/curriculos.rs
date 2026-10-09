@@ -1,7 +1,5 @@
 use chrono::{Local, Datelike};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_opener::OpenerExt;
 use crate::commands::perfil::{parse_candidato_base_interno, CandidatoBase};
 
 fn traduzir_conteudo_en(data: &CandidatoBase) -> CandidatoBase {
@@ -73,17 +71,6 @@ fn traduzir_conteudo_en(data: &CandidatoBase) -> CandidatoBase {
     }
 
     translated
-}
-
-// ── Struct ────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CurriculoInfo {
-    pub path: String,
-    pub file_name: String,
-    pub template_id: String,
-    pub template_nome: String,
-    pub gerado_em: String,
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -827,88 +814,65 @@ experiencia:
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub fn gerar_curriculo(app: AppHandle, template_id: String, cor_primaria: Option<String>, idioma: Option<String>) -> Result<CurriculoInfo, String> {
-    let raw = parse_candidato_base_interno(&app)?;
-    let idioma_str = idioma.as_deref().unwrap_or("pt");
-    let color = cor_primaria.as_deref().unwrap_or("#D97757");
-    let lang = pick_lang(idioma_str);
-    let data = if idioma_str == "en" { traduzir_conteudo_en(&raw) } else { raw };
-    let html = match template_id.as_str() {
-        "classic-ats" => template_classic_ats(&data, color, lang),
-        "hybrid-skills" => template_hybrid_skills(&data, color, lang),
-        "dev-compact" => template_dev_compact(&data, color, lang),
-        _ => return Err(format!("Template desconhecido: {template_id}")),
-    };
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let cv_dir = dir.join("curriculos");
-    std::fs::create_dir_all(&cv_dir).map_err(|e| e.to_string())?;
-    let timestamp = Local::now().format("%Y-%m-%d_%H-%M").to_string();
-    let file_name = format!("cv_{template_id}_{timestamp}.html");
-    let path = cv_dir.join(&file_name);
-    std::fs::write(&path, &html).map_err(|e| e.to_string())?;
-    let template_nome = match template_id.as_str() {
+
+fn template_nome(template_id: &str) -> &'static str {
+    match template_id {
         "classic-ats" => "Classic ATS",
         "hybrid-skills" => "Hybrid Skills",
         _ => "Dev Compact",
-    }.to_string();
-    Ok(CurriculoInfo {
-        path: path.to_string_lossy().to_string(),
-        file_name,
-        template_id,
-        template_nome,
-        gerado_em: timestamp,
+    }
+}
+
+#[tauri::command]
+pub async fn gerar_curriculo(
+    app: AppHandle,
+    template_id: String,
+    cor_primaria: Option<String>,
+    idioma: Option<String>,
+    variante_id: Option<String>,
+) -> Result<crate::documentos::biblioteca::DocumentoView, String> {
+    use crate::documentos::{biblioteca, registrar};
+    let raw = parse_candidato_base_interno(&app)?;
+    let idioma_str = idioma.unwrap_or_else(|| "pt".to_string());
+    let color = cor_primaria.unwrap_or_else(|| "#D97757".to_string());
+    // The English translation shells out to the claude CLI: keep it off the async workers.
+    let data = if idioma_str == "en" {
+        tauri::async_runtime::spawn_blocking(move || traduzir_conteudo_en(&raw)).await.map_err(|e| e.to_string())?
+    } else {
+        raw
+    };
+    let lang = pick_lang(&idioma_str);
+    let html = match template_id.as_str() {
+        "classic-ats" => template_classic_ats(&data, &color, lang),
+        "hybrid-skills" => template_hybrid_skills(&data, &color, lang),
+        "dev-compact" => template_dev_compact(&data, &color, lang),
+        _ => return Err(format!("Template desconhecido: {template_id}")),
+    };
+    let variante_id = variante_id.filter(|v| !v.is_empty());
+    let mut tags = vec![
+        biblioteca::Tag { tipo: "template".into(), valor: template_id.clone() },
+        biblioteca::Tag { tipo: "cor".into(), valor: color.clone() },
+        biblioteca::Tag { tipo: "idioma".into(), valor: idioma_str.clone() },
+    ];
+    if let Some(v) = variante_id.as_deref() {
+        tags.insert(0, biblioteca::Tag { tipo: "variante".into(), valor: v.to_string() });
+    }
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let base = format!("cv_{template_id}_{}", Local::now().format("%Y-%m-%d_%H-%M-%S"));
+    let novo = registrar::NovoGerado {
+        tipo: "curriculo".into(),
+        nome: format!("{} ({})", template_nome(&template_id), idioma_str.to_uppercase()),
+        base,
+        html,
+        idioma: Some(idioma_str),
+        variante_id,
+        vaga_id: None,
+        tags,
+    };
+    let printer = app.clone();
+    let id = registrar::registrar_gerado(&data_dir, novo, move |h, p| async move {
+        crate::documentos::pdf::html_to_pdf(&printer, &h, &p).await
     })
-}
-
-#[tauri::command]
-pub fn listar_curriculos(app: AppHandle) -> Result<Vec<CurriculoInfo>, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let cv_dir = dir.join("curriculos");
-    if !cv_dir.exists() { return Ok(vec![]); }
-    let mut infos: Vec<CurriculoInfo> = std::fs::read_dir(&cv_dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x == "html").unwrap_or(false))
-        .map(|e| {
-            let path = e.path();
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // filename: cv_{template_id}_{YYYY-MM-DD_HH-MM}.html
-            // parse: strip "cv_" prefix and ".html" suffix, then last 16 chars are date
-            let stem = file_name.strip_prefix("cv_").unwrap_or(&file_name)
-                .strip_suffix(".html").unwrap_or(&file_name);
-            let (template_id, gerado_em) = if stem.len() > 17 {
-                let date_part = &stem[stem.len()-16..]; // "YYYY-MM-DD_HH-MM"
-                let id_part = &stem[..stem.len()-17];   // strip trailing "_" + date
-                (id_part.to_string(), date_part.replace('_', " "))
-            } else {
-                (stem.to_string(), String::new())
-            };
-            let template_nome = match template_id.as_str() {
-                "classic-ats" => "Classic ATS",
-                "hybrid-skills" => "Hybrid Skills",
-                "dev-compact" => "Dev Compact",
-                _ => "Unknown",
-            }.to_string();
-            CurriculoInfo {
-                path: path.to_string_lossy().to_string(),
-                file_name,
-                template_id,
-                template_nome,
-                gerado_em,
-            }
-        })
-        .collect();
-    infos.sort_by(|a, b| b.gerado_em.cmp(&a.gerado_em));
-    Ok(infos)
-}
-
-#[tauri::command]
-pub fn abrir_curriculo(app: AppHandle, path: String) -> Result<(), String> {
-    app.opener().open_path(&path, None::<&str>).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn apagar_curriculo(path: String) -> Result<(), String> {
-    std::fs::remove_file(&path).map_err(|e| e.to_string())
+    .await?;
+    biblioteca::ver(&biblioteca::open_conn(&data_dir)?, id)
 }

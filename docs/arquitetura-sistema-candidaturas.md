@@ -6,7 +6,7 @@
 
 O sistema é uma aplicação desktop (Windows, construída em Tauri) que automatiza a descoberta e candidatura a vagas de emprego, com o objetivo de processar cerca de dez vagas por dia, cobrindo tanto candidaturas "fáceis" (Easy Apply, formulários padronizados) como candidaturas manuais que exigem navegação por sites de terceiros.
 
-A aplicação não tenta resolver isto com automação puramente scriptada (Playwright determinístico). Em vez disso, orquestra sessões do Claude Code ligadas ao Chrome através da extensão oficial Claude in Chrome (via native messaging, ativada com a flag `--chrome` ou o comando `/chrome`), deixando o modelo interpretar cada página, decidir o que fazer, e quando parar. O Tauri funciona como casca: interface, configuração, histórico, e o agente que dispara essas sessões — nunca como motor de decisão.
+A aplicação não tenta resolver isto com automação puramente scriptada (Playwright determinístico). Em vez disso, orquestra sessões de um agente de IA (Claude Code, Grok, Gemini, OpenCode: qualquer um que fale MCP) ligadas a um **browser próprio da Claudia**, que o app baixa, lança e vigia sozinho e controla por ferramentas MCP (`browser_*`) sobre o protocolo CDP do Chrome. O modelo interpreta cada página, decide o que fazer, e quando parar. O Tauri funciona como casca: interface, configuração, histórico, o browser, e o agente que dispara essas sessões — nunca como motor de decisão.
 
 A ideia central do sistema pode ser resumida assim: existe uma camada lenta e conversacional, onde o usuário e o Claude discutem estratégia, perfil e prioridades; e existe uma camada rápida e autônoma, onde uma sessão de execução aplica essa estratégia vaga a vaga, de forma visível, parando sempre que encontra algo fora do que foi acordado.
 
@@ -35,18 +35,18 @@ O sistema divide-se em cinco componentes com responsabilidades estritamente sepa
 Aplicação nativa Windows, construída em Tauri (Rust no backend, webview HTML/CSS/JS no frontend). Responsabilidades:
 
 - Renderizar o dashboard: histórico de vagas, estado atual, pendências de revisão.
-- Gerir configurações: credenciais de plataformas (LinkedIn e outras) e caminho da pasta de aplicações. Os dados do candidato não se editam aqui — vivem na aba Perfil.
+- Gerir configurações: Activity log (botão para ver os registros), estado do browser da Claudia e caminho da pasta de aplicações. Senhas de plataformas não são guardadas: o login é feito à mão no browser da Claudia. Os dados do candidato não se editam aqui — vivem na aba Perfil.
 - Expor os dois mecanismos de disparo da sessão de execução: botão manual ("procurar vagas agora") e detecção de inatividade do sistema.
 - Spawnar e gerir o processo `claude` como child process, através de um pseudo-terminal (PTY), e renderizar o seu output num terminal embutido.
-- Gerir o segundo modo de sessão Claude Code: a conversa da aba Perfil, invocada sem `--chrome`, com interface de chat (não PTY/terminal). Essa sessão lê e escreve `candidate_base.yaml` e `search_variants.yaml`; nunca submete candidaturas.
+- Gerir o segundo modo de sessão Claude Code: a conversa da aba Perfil, com interface de chat (não PTY/terminal). Essa sessão lê e escreve `candidate_base.yaml` e `search_variants.yaml`; nunca submete candidaturas.
 - Posicionar e (opcionalmente) gerir a janela do Chrome aberta pela sessão de execução, sem nunca a esconder.
 - Ler o estado persistido (SQLite, arquivos `candidate_base.yaml`, `search_variants.yaml` e estratégia) e refletir isso na interface. O Tauri nunca escreve diretamente nesse estado como resultado de uma decisão de candidatura — apenas como resultado de ação direta do usuário (ex: editar o perfil, aprovar uma pendência).
 
 O Tauri é deliberadamente "burro" em relação a decisões sobre vagas. Ele observa e expõe controle; não decide.
 
-### 3.2 Sessão de execução (Claude Code + extensão Claude in Chrome)
+### 3.2 Sessão de execução (agente + browser da Claudia)
 
-Processo `claude` invocado pelo Tauri com a integração Chrome ativa (flag `--chrome`), responsável por todo o trabalho de descoberta, análise, geração de conteúdo e candidatura. Esta sessão:
+Processo `claude` invocado pelo Tauri com `--no-chrome`: o browser não vem de extensão, vem das ferramentas MCP `browser_*` do próprio app (ver 3.6). Responsável por todo o trabalho de descoberta, análise, geração de conteúdo e candidatura. Esta sessão:
 
 - Lê, no início, `candidate_base.yaml`, `search_variants.yaml`, a estratégia do dia (se existir), e a memória das últimas execuções.
 - Navega as plataformas configuradas (job boards e, com restrições próprias, o LinkedIn), com um Chrome sempre visível.
@@ -56,7 +56,7 @@ Processo `claude` invocado pelo Tauri com a integração Chrome ativa (flag `--c
 
 Esta é a única parte do sistema com poder de decisão real. Tudo o resto existe para lhe dar contexto ou para lhe impor limites.
 
-**Pré-requisitos confirmados desta integração:** exige um plano direto pago da Anthropic (Pro, Max, Team, ou Enterprise) — não funciona através de Amazon Bedrock, Google Cloud Vertex AI, ou Microsoft Foundry; se a conta usada for de um destes provedores, é necessária uma conta claude.ai separada apenas para esta funcionalidade. Funciona apenas com Google Chrome ou Microsoft Edge — Brave, Arc, e outros browsers baseados em Chromium não são suportados, nem o WSL no Windows. Estes pré-requisitos devem ser verificados e comunicados ao usuário na tela de configurações antes de qualquer tentativa de disparo da sessão de execução.
+**Pré-requisitos desta integração:** o browser é o Chrome for Testing que o próprio app baixa (ver 3.6): não há extensão do Claude in Chrome, nem Chrome ou Edge do usuário, nem passo de instalação. Resta a conta do agente: o `claude` usado pela sessão exige um plano direto pago da Anthropic (Pro, Max, Team ou Enterprise) e não funciona através de Amazon Bedrock, Google Cloud Vertex AI ou Microsoft Foundry; com um destes provedores, é necessária uma conta claude.ai separada. **Não validado na tela de configurações** hoje (dívida conhecida no `CLAUDE.md`).
 
 ### 3.3 Camada de estratégia
 
@@ -74,6 +74,32 @@ Um terminal funcional (não decorativo) construído com `xterm.js` no frontend e
 
 SQLite como base de dados principal (histórico de vagas, candidaturas, pendências), mais um pequeno conjunto de arquivos de configuração em formato YAML ou JSON (`candidate_base.yaml`, `search_variants.yaml`, estratégia ativa). Detalhado na seção 5. É este estado — não a janela de contexto de nenhuma sessão — que carrega a memória do sistema entre execuções.
 
+### 3.6 O browser da Claudia
+
+- **Binário:** Chrome for Testing, versão e SHA-256 fixados no código (`src-tauri/browser-pin.json`), baixado na primeira abertura do app (~200 MB) para `%LOCALAPPDATA%\io.github.johngabie.claudia-rh\browser\`. Sem o Chrome pessoal do usuário e sem extensão: nenhum passo de instalação para o usuário.
+- **Perfil e contas:** perfil persistente em `browser\profile`. Só **sessão por cookies**: o usuário faz login na janela do browser da Claudia, como em qualquer browser; nenhuma senha passa pelo app. Site em que a conta não está logada é pulado, não é pausa.
+- **Janela visível sempre** (tema laranja da marca); `--headless` existe só em testes.
+- **Ciclo de vida:** o browser **só roda quando a IA é chamada**. Na abertura o app só garante que o Chrome fixado está no disco (baixa se preciso, em segundo plano; estado `installed`), para a primeira sessão não esperar 200 MB. Ao começar uma sessão (execução, varredura da rede LinkedIn, chat de Perfil) ou ao apertar o botão "Abrir o browser", o app aplica o tema e lança o Chrome; a sessão espera ele ficar pronto. Enquanto uma sessão roda, o app vigia e religa se cair; sem sessão ativa, uma janela que o usuário fechou continua fechada. Um Chrome de outra versão que ainda segure o perfil depois de uma atualização é fechado, e o browser encerra quando o app sai. Se o browser falhar, a sessão não começa.
+- **Ferramentas MCP** (`browser_open`, `browser_read`, `browser_text`, `browser_click`, `browser_type`, `browser_key`, `browser_scroll`, `browser_crop`, `browser_click_at`, `browser_upload`): o agente age por refs e por pedidos nomeados; não executa código na página; só abre `http` e `https` e nunca endereços locais. As armadilhas do LinkedIn (aba em segundo plano, modal sem `role=dialog` no DOM, rádio escondido, rolagem antes de medir, botão que muda de nome) ficam dentro do app.
+- **`browser_text`**: o texto da página (títulos, parágrafos, listas, botões) em ordem de leitura, lido da árvore de acessibilidade, paginado por caracteres (`offset`/`next_offset`, padrão 6000, teto 12000). Não depende do tamanho da janela nem de rolar, não executa código na página e nunca lê o que foi digitado num campo (nem senha). A resposta abre com um aviso fixo de que o conteúdo é dado não confiável, não instrução.
+- **`browser_scroll`**: rola a página (`down`, `up`, `top`, `bottom`) ou o contêiner de uma ref, com a roda do mouse (sem JavaScript na página). Serve às listas que carregam mais ao rolar; ler texto é com `browser_text`. Não passa pela guarda de envio.
+- **Fim de todo resultado:** `browser_open`, `browser_read` e `browser_text` terminam com `estado: ok | login_wall | captcha | vazio | carregando` (heurística por URL e árvore de acessibilidade; só informa, nunca bloqueia). Quando a mesma ferramenta se repete 4 vezes sem a página mudar, o resultado ganha uma dica para ler de outro jeito ou marcar a vaga como pendente (também nunca bloqueia). O `estado:` é sempre a última linha; a nota de viewport e a dica de repetição vêm antes dele. O texto da página fica entre uma linha de aviso (dado não confiável) e `[fim do conteúdo <nonce>]`, e linhas da página que imitam as do app (`estado:`, `total_chars:`, `next_offset:`, `Dica:`, `viewport`, `[fim`) levam o prefixo `| `. `login_wall` e `captcha` casam por palavra inteira, olhando só o caminho da URL (nunca a query); título e títulos de página nunca contam como captcha. Spec: `docs/superpowers/specs/2026-10-03-mcp-leitura-robusta-design.md`.
+- **Janela e viewport:** o Chrome visível abre com `--start-maximized` (`browser/manager.rs`) e, antes de toda ferramenta, o app garante um viewport de pelo menos 1200×800 (`browser/viewport.rs`, só `Browser.setWindowBounds`, nunca emulação). Se a tela for menor, segue e avisa `viewport_abaixo_do_minimo` uma vez por sessão, sem tentar de novo no mesmo tamanho. Um `browser_click_at` logo depois de um redimensionamento é recusado (as coordenadas eram do layout antigo). A rolagem evita girar a roda sobre um campo de formulário.
+- **Limites conhecidos da leitura:** `browser_text` lê a árvore de acessibilidade só do documento principal; texto dentro de iframes (descrições embutidas em Greenhouse/Lever) não aparece. A nota de viewport e a dica de repetição são estado por instância do MCP, que atende uma sessão de agente por vez.
+- **Guarda de envio (código, não prompt):** o clique, a tecla ou o campo de formulário que enviaria a candidatura é recusado a menos que `confirm_submit` seja o ID da única vaga em `candidatando`, dentro do orçamento diário e uma vez por vaga (a reivindicação fica no banco). A regra tem quatro degraus: (1) o nome casa com um padrão de envio (`src-tauri/submit-patterns.txt`; nomes fracos como "Apply" só contam quando o botão envia um `<form>`) e a confirmação **gasta** o envio da vaga no dia; (2) alvo sem nome, em iframe ou ilegível exige a confirmação sem gastá-la; (3) qualquer botão que envia um `<form>` e cujo nome não está na lista de navegação ("Próximo", "Next", "Voltar"...) exige a confirmação sem gastá-la; (4) o resto passa. Vale para clique, Enter, Espaço e clique por coordenada. A decisão usa o que o Chrome calcula (árvore de acessibilidade, teste de clique, foco) e lê a página num mundo JavaScript isolado; o que a guarda não consegue ler conta como envio. **Limite:** protege contra erro ou manipulação do modelo; uma página hostil pode enviar pelo próprio JavaScript, e a porta de debug local não tem autenticação.
+- **Activity log:** sempre ligado (sem interruptor); o usuário vê os registros numa tela própria, somente leitura, aberta por um botão em Configurações (com "Voltar"); banco separado `<dados-locais>\dev\activity-log.db` com prints antes e depois de cada ação, navegação, erros e recusas; campos de senha nunca são gravados; retenção de 30 dias e 1 GB; nenhuma tool MCP o lê. Grava também 11 eventos do próprio browser (download iniciado, instalado, falha de instalação, lançado, falha de lançamento, queda, religado, não religado, desistência de religar, queda de aba, diálogo), sem progresso de download nem "aba ativada".
+- **Diálogos nativos:** `alert`, `confirm`, `prompt` e `beforeunload` congelariam a página; uma tarefa do app os responde na hora (`alert` OK, `prompt` Cancelar, `confirm` Cancelar exceto durante um clique que a guarda aprovou, `beforeunload` sair só durante `browser_open`), avisa o agente na linha "Diálogo da página" e grava o evento. A queda da aba é reportada como erro da tool e o agente reabre com `browser_open`.
+
+### 3.7 Documentos
+
+- **Biblioteca:** currículos e cartas são documentos em `<dados>/documentos/` (PDF ou DOCX anexável, mais o HTML de pré-visualização quando a Claudia gerou), registrados no SQLite (`documentos`, `preferidos` para o preferido geral e por variante, `anexos` para o que foi anexado a cada vaga, `migrados` para a migração dos arquivos antigos, e `candidaturas.documento_id`). Um documento pode ser **gerado** pela Claudia (templates de currículo, carta escrita pelo agente com `save_cover_letter`) ou **importado** pelo usuário (PDF e DOCX, até 10 MB, conferido pelo tipo real do arquivo).
+- **Aba Currículos:** grade com miniaturas A4, página do documento, tags, preferido, importar e gerar (ver `docs/padrao-design-claudia-rh.md`).
+- **Escolha do arquivo:** é código do app, nunca o modelo. Para `browser_upload`: o documento pedido, se existir e for do tipo certo; senão o preferido da variante gravada na vaga (`set_vaga_variante`); senão o preferido geral; senão o gerado mais novo da variante. Sem variante gravada vale a variante principal do usuário.
+- **Tools sem caminho:** `list_documentos`, `get_documento`, `save_cover_letter`, `list_variantes`, `get_variante`, `set_vaga_variante` e `browser_upload` nunca devolvem nem aceitam caminho de arquivo. Antes de anexar, o app reconfere que o arquivo está dentro de `<dados>/documentos/` e que o `sha256` não mudou. `update_variante` e `set_documento_preferido` existem nas duas sessões e a de execução as recusa.
+- **PDF:** gerado pelo WebView2 do próprio app (`PrintToPdf`), numa janela invisível que carrega o mesmo HTML da pré-visualização; sem runtime novo e sem o Chrome da Claudia. A janela roda com JavaScript e sem acesso ao app (risco aceito).
+- **Migração:** no início do app, os currículos e cartas antigos viram documentos gerados, uma vez cada; os originais não são apagados e um documento que o usuário excluir não volta.
+- Spec: `docs/superpowers/specs/2026-10-04-anexar-curriculo-design.md`.
+
 ## 4. Fluxo de disparo da sessão de execução
 
 Existem dois mecanismos de disparo, ambos invocando exatamente o mesmo caminho de código no Tauri — a única diferença é o que origina a chamada.
@@ -87,7 +113,7 @@ Em ambos os casos, o passo seguinte é idêntico:
 1. O Tauri grava o prompt de invocação num arquivo e passa o **caminho** ao `claude` (`--system-prompt-file`). O prompt contém apenas as regras de operação: nada do perfil, das variantes, da estratégia ou da memória é injetado nele. A sessão lê esses dados em tempo de execução pelas ferramentas MCP `get_candidate_profile`, `get_search_variants`, `get_strategy` e `get_memory_summary`.
 
    Isto não é detalhe de implementação. Injetar os dados fazia a linha de comando crescer com a carreira do candidato até ultrapassar o limite de 32 767 caracteres do `CreateProcessW`, e colocava CPF e endereço na lista de argumentos do processo, legível por qualquer outro processo da máquina. O prompt passa a ter tamanho fixo.
-2. O Tauri spawna o processo `claude` com a flag de skip de permissões e a flag `--chrome` (que ativa a integração com a extensão Claude in Chrome via native messaging), ligado ao PTY do terminal embutido.
+2. O Tauri verifica que o browser da Claudia está pronto (senão a sessão não começa) e spawna o processo `claude` com a flag de skip de permissões e `--no-chrome`, ligado ao PTY do terminal embutido.
 3. O terminal embutido começa a mostrar o output em tempo real; o Chrome abre como janela visível separada.
 4. A sessão processa vagas até esgotar o orçamento do dia, encontrar um motivo de pausa total, ou decidir que deve encerrar e ser reaberta pelo Tauri (ver seção 7).
 5. Ao terminar (por qualquer motivo), o Tauri atualiza o dashboard a partir do estado persistido.
@@ -104,7 +130,7 @@ O modelo antigo de um único `profile.yaml` foi substituído. Existem dois arqui
 
 #### 5.1.1 `candidate_base.yaml` — banco de dados pessoal
 
-Tudo o que é verdadeiro sobre o candidato, independente de qualquer candidatura ou variante. Editado pela aba Perfil (conversa Claude Code sem `--chrome`), nunca pela sessão de execução.
+Tudo o que é verdadeiro sobre o candidato, independente de qualquer candidatura ou variante. Editado pela aba Perfil (conversa Claude Code), nunca pela sessão de execução.
 
 ```yaml
 dados_pessoais:
@@ -239,8 +265,8 @@ Estas condições interrompem o processamento da vaga atual e disparam notifica�
 
 - **Qualquer campo de pretensão salarial fora da faixa definida em `preferencias_globais.faixa_salarial`**, ou qualquer campo salarial quando a faixa não está definida.
 - **Qualquer campo listado em `red_lines`** no perfil do candidato, sem exceção.
-- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — a única diferença no LinkedIn é que o login em si é automatizado (credenciais geridas via keyring, seção 3.3 do prompt de construção), nunca causando pausa por si só; um captcha que apareça depois do login segue a regra geral. Nota técnica: esta é também a política nativa da extensão Claude in Chrome — ao encontrar uma página de login ou captcha, ela já pausa e espera intervenção manual, o que está alinhado com esta regra e não exige lógica adicional para a detectar.
-- **Diálogo JavaScript bloqueante** (`alert`, `confirm`, `prompt`) na página. Estes diálogos bloqueiam todos os eventos do browser e a sessão não os consegue dispensar programaticamente — exigem fecho manual pelo usuário antes de a sessão poder continuar. Trata-se de uma limitação técnica da extensão, não de uma escolha de design, mas o efeito prático é o mesmo de uma pausa total: a sessão fica bloqueada até intervenção humana.
+- **Captcha, "prove que não é um robot", ou qualquer desafio de verificação humana.** A sessão nunca tenta contornar isto — apenas marca a vaga como bloqueada e notifica. Isto aplica-se a qualquer plataforma, incluindo o LinkedIn — o login nunca é feito pela sessão: o usuário entra à mão na janela do browser da Claudia (seção 3.6) e a sessão fica por cookies. Uma plataforma em que a conta não está logada é pulada, sem pausa; um captcha segue a regra geral.
+- **Diálogo JavaScript bloqueante** (`alert`, `confirm`, `prompt`) na página. Estes diálogos bloqueiam todos os eventos do browser e a sessão não os consegue dispensar programaticamente — exigem fecho manual pelo usuário antes de a sessão poder continuar. O efeito prático é o de uma pausa total: a sessão fica bloqueada até intervenção humana.
 - **Pergunta aberta de formulário sem correspondência em `respostas_modelo`** e sem informação suficiente no perfil ou no CV da variante correspondente para responder com honestidade. Exemplo: "por que você quer trabalhar aqui especificamente" quando não há nenhuma resposta-modelo equivalente.
 - **Pedido de dados pessoais sensíveis** não cobertos pelo perfil (dados de saúde, informação familiar, número de identificação nacional, e equivalentes).
 - **Qualquer situação em que a sessão precise de inventar informação** para preencher um campo obrigatório. Isto é absoluto: a honestidade definida na seção 2 não é uma preferência, é uma regra de bloqueio.
@@ -267,9 +293,9 @@ Para eliminar ambiguidade, esta lista enumera explicitamente decisões que perte
 
 Qualquer situação que pareça exigir uma destas decisões é, por definição, uma pausa total.
 
-### 6.4 Queda de ligação da extensão Chrome
+### 6.4 Queda do browser
 
-A extensão Claude in Chrome usa um service worker que pode ficar inativo em sessões longas, quebrando a ligação entre a sessão de execução e o browser. Quando isto acontece, a sessão de execução deve primeiro tentar reconectar automaticamente (equivalente ao comando `/chrome` seguido de "Reconnect extension") antes de notificar o usuário — esta é uma falha técnica recuperável na maioria dos casos, não uma decisão que exige julgamento humano, e por isso não deve gerar uma notificação só por tentar. Se a tentativa de reconexão automática falhar, ou se falhar repetidamente dentro de um curto espaço de tempo, a situação é então tratada como pausa total e notificada normalmente, com a descrição a indicar explicitamente que se trata de uma falha de ligação, não de uma decisão sobre uma vaga.
+O browser da Claudia é do app, não da sessão, e o app o vigia: se o processo cair, ele o religa sozinho (até 5 vezes em 10 minutos). Enquanto isso, as ferramentas `browser_*` respondem que a conexão fechou ou que o browser não está pronto, e a sessão espera alguns segundos e lê a página de novo. Se continuar falhando depois de três tentativas seguidas, ou se o app desistir de religar, a situação é tratada como pausa total e notificada nas pendências, deixando claro que é uma falha do browser e não uma decisão sobre a vaga.
 
 ### 6.5 Mecanismo de notificação
 
@@ -279,11 +305,11 @@ Quando ocorre uma pausa total, a sessão de execução escreve o estado de pend�
 
 ### 7.1 Comportamento de ritmo
 
-Como a navegação é feita pela própria sessão Claude Code através da extensão Claude in Chrome e não por um script Playwright determinístico, a etiqueta de plataforma é implementada como instrução de comportamento no prompt de sistema, não como lógica de código com `sleep()` calculados. O prompt de sistema da sessão de execução deve instruir explicitamente:
+Como a navegação é feita pela própria sessão do agente através das ferramentas `browser_*` e não por um script Playwright determinístico, a etiqueta de plataforma é implementada como instrução de comportamento no prompt de sistema, não como lógica de código com `sleep()` calculados. O prompt de sistema da sessão de execução deve instruir explicitamente:
 
 - Introduzir pausas de leitura entre ações (ex: "antes de clicar num botão, considera o tempo que uma pessoa levaria a ler o conteúdo da página").
 - Não preencher campos de formulário instantaneamente em sequência; preencher um, fazer uma pequena pausa, preencher o seguinte.
-- Fazer scroll pela página antes de interagir com elementos fora do viewport inicial, como uma pessoa faria.
+- Ler a página com `browser_text` antes de interagir; rolar (`browser_scroll`) só em listas que carregam mais ao rolar, como uma pessoa faria.
 - Limitar o número de candidaturas processadas por hora, distribuindo o trabalho do dia em vez de processar tudo em sequência rápida.
 - Nunca tentar resolver ou contornar um desafio de verificação humana (ver seção 6.1) — isto é tratado como pausa total, não como obstáculo a superar.
 
@@ -410,7 +436,7 @@ CREATE TABLE sessoes (
 );
 ```
 
-Este schema deve ser tratado como ponto de partida, não como definição congelada — a fase de implementação pode revelar necessidade de campos adicionais (ex: índices para performance, ou uma tabela de log de gaps equivalente ao `_gaps.jsonl` da skill original, ver seção 11).
+O schema acima é o do começo do projeto. O código acrescentou colunas (`vagas.variante_id`, `vagas.fonte_conexao`, `candidaturas.resultado`, `candidaturas.documento_id`) e as tabelas `feedbacks`, `documentos`, `preferidos`, `anexos` e `migrados` (biblioteca de documentos, ver 3.7); a definição atual está em `src-tauri/src/db/schema.sql` e em `src-tauri/src/db/mod.rs`. Este schema deve ser tratado como ponto de partida, não como definição congelada — a fase de implementação pode revelar necessidade de campos adicionais (ex: índices para performance, ou uma tabela de log de gaps equivalente ao `_gaps.jsonl` da skill original, ver seção 11).
 
 ## 11. Relação com a skill `tailor-application` original
 

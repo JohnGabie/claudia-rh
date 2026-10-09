@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb } from "lucide-react";
+import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb, FileWarning } from "lucide-react";
+import { ehSemDocumento } from "./dashboard/anexos";
 import { useT } from "../i18n";
 
 interface Proposta {
@@ -41,9 +42,10 @@ function tempoDesde(iso: string): string {
 interface CardProps {
   p: Pendencia;
   onResolved: () => void;
+  onNavigateToDocumentos?: () => void;
 }
 
-const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
+const NotifItem: React.FC<CardProps> = ({ p, onResolved, onNavigateToDocumentos }) => {
   const t = useT();
   const CATEGORIA_META: Record<string, { label: string; color: string; bg: string; Icon: React.FC<{ size: number }> }> = {
     captcha:               { label: t.notifications.categories.captcha,               color: "var(--danger)",  bg: "rgba(184,71,61,0.08)",  Icon: MousePointerClick },
@@ -54,6 +56,8 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
     pergunta_sem_resposta: { label: t.notifications.categories.pergunta_sem_resposta, color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: HelpCircle },
     dialogo_bloqueante:    { label: t.notifications.categories.dialogo_bloqueante,    color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
     extensao_chrome:       { label: t.notifications.categories.extensao_chrome,       color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: AlertTriangle },
+    sem_curriculo:         { label: t.notifications.categories.sem_curriculo,         color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: FileWarning },
+    sem_carta:             { label: t.notifications.categories.sem_carta,             color: "var(--warning)", bg: "rgba(184,134,46,0.08)", Icon: FileWarning },
   };
   const resolveMeta = (categoria: string) => {
     const key = Object.keys(CATEGORIA_META).find((k) => categoria.toLowerCase().includes(k));
@@ -68,6 +72,7 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
 
   const meta = resolveMeta(p.categoria);
   const isCaptcha = p.categoria.toLowerCase().includes("captcha");
+  const semDocumento = ehSemDocumento(p.categoria);
 
   const handleResolver = async () => {
     if (isCaptcha) {
@@ -238,12 +243,19 @@ const NotifItem: React.FC<CardProps> = ({ p, onResolved }) => {
               </button>
             </>
           ) : (
-            <button
-              onClick={handleResolver}
-              style={solidBtnStyle}
-            >
-              {isCaptcha ? t.notifications.resolvedInChrome : t.notifications.resolve}
-            </button>
+            <>
+              {semDocumento && (
+                <button onClick={() => onNavigateToDocumentos?.()} style={{ ...ghostBtnStyle, color: "var(--accent-strong)", fontWeight: 500 }}>
+                  {t.common.openResumes}
+                </button>
+              )}
+              <button
+                onClick={handleResolver}
+                style={solidBtnStyle}
+              >
+                {isCaptcha ? t.notifications.resolvedInChrome : t.notifications.resolve}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -369,7 +381,7 @@ const solidBtnStyle: React.CSSProperties = {
   padding: "5px 12px",
 };
 
-export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () => void }> = ({ noHeader = false, onNavigateToPerfil }) => {
+export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () => void; onNavigateToDocumentos?: () => void }> = ({ noHeader = false, onNavigateToPerfil, onNavigateToDocumentos }) => {
   const t = useT();
   const [pendencias, setPendencias] = useState<Pendencia[]>([]);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
@@ -441,7 +453,7 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
             .sort((a, b) => new Date(b.criada_em).getTime() - new Date(a.criada_em).getTime())
             .map((entry) =>
               entry.tipo === "pendencia"
-                ? <NotifItem key={`p-${entry.item.id}`} p={entry.item as Pendencia} onResolved={carregar} />
+                ? <NotifItem key={`p-${entry.item.id}`} p={entry.item as Pendencia} onResolved={carregar} onNavigateToDocumentos={onNavigateToDocumentos} />
                 : <PropostaItem key={`s-${entry.item.id}`} p={entry.item as Proposta} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
             )
           }

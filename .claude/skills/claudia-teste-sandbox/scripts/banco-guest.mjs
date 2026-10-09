@@ -1,18 +1,17 @@
 // Copies a consistent snapshot of the app database from the sandbox guest to the host.
 // Prints {db}: use it as CLAUDIA_DB with the claudia-teste-e2e scripts. Repeat after each action that changes data.
-// Usage: node banco-guest.mjs [--id <sandbox>] [--work-dir <folder>] [--timeout 30]   (--work-dir default $env:LAB_WORK_DIR)
+// Usage: node banco-guest.mjs [--id <sandbox>] [--timeout 30]
+// The snapshot lands in <main checkout>\.sandbox-work\guest-rw\db (the folder mounted as C:\labwork).
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { APP_ID, sandboxId, noGuest, validarInt, falhaDe, erroBancoAusente } from "./comum.mjs";
+import { APP_ID, sandboxId, noGuest, validarInt, falhaDe, erroBancoAusente, onde } from "./comum.mjs";
 
 try {
-  const { values } = parseArgs({ options: { id: { type: "string" }, "work-dir": { type: "string" }, timeout: { type: "string", default: "30" } } });
+  const { values } = parseArgs({ options: { id: { type: "string" }, timeout: { type: "string", default: "30" } } });
   const id = sandboxId(values.id);
   const timeout = validarInt(values.timeout, 1, 0xFFFFFFFF, "--timeout");
-  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR;
-  if (!workDir) throw new Error("LAB_WORK_DIR is not set: pass --work-dir (the folder used by publicar.mjs).");
-  const hostDb = path.join(workDir, "guest-rw", "db", "claudia_rh.db");
+  const hostDb = path.join(onde().guestRw, "db", "claudia_rh.db");
   const hostDbTmp = hostDb + ".tmp";
   fs.rmSync(hostDb, { force: true });
   fs.rmSync(hostDbTmp, { force: true });

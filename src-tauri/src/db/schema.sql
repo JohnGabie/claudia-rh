@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS candidaturas (
     vaga_id INTEGER NOT NULL REFERENCES vagas(id),
     enviada_em TEXT NOT NULL,
     pasta_arquivos TEXT NOT NULL,
-    metodo TEXT NOT NULL
+    metodo TEXT NOT NULL,
+    documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS pendencias (
@@ -49,4 +50,48 @@ CREATE TABLE IF NOT EXISTS sessoes (
     motivo_disparo TEXT NOT NULL,
     motivo_termino TEXT,
     vagas_processadas INTEGER DEFAULT 0
+);
+
+-- Documents the agent may attach (CVs, cover letters). `arquivo` is a bare file name inside
+-- <app data>/documentos/: never a path.
+CREATE TABLE IF NOT EXISTS documentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL CHECK (tipo IN ('curriculo', 'carta')),
+    nome TEXT NOT NULL,
+    origem TEXT NOT NULL CHECK (origem IN ('gerado', 'importado')),
+    arquivo TEXT NOT NULL,
+    arquivo_html TEXT,
+    formato TEXT NOT NULL CHECK (formato IN ('pdf', 'docx')),
+    idioma TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    sha256 TEXT NOT NULL,
+    tamanho INTEGER NOT NULL,
+    vaga_id INTEGER REFERENCES vagas(id),
+    variante_id TEXT,
+    criado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One preferred document per (tipo, variante). variante_id '' = the general preference.
+CREATE TABLE IF NOT EXISTS preferidos (
+    tipo TEXT NOT NULL,
+    variante_id TEXT NOT NULL DEFAULT '',
+    documento_id INTEGER NOT NULL REFERENCES documentos(id) ON DELETE CASCADE,
+    PRIMARY KEY (tipo, variante_id)
+);
+
+-- Which document was attached to a vaga: written by the app on every successful browser_upload.
+-- documento_id goes NULL if the document is deleted later (the attachment still happened).
+CREATE TABLE IF NOT EXISTS anexos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vaga_id INTEGER NOT NULL REFERENCES vagas(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('curriculo', 'carta')),
+    documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL,
+    anexado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Old CVs/letters already brought into the library (origem = "curriculos/<file>.html"). Deleting the
+-- document does not touch this table, so a deleted migration never comes back at the next start.
+CREATE TABLE IF NOT EXISTS migrados (
+    origem TEXT PRIMARY KEY,
+    migrado_em TEXT NOT NULL DEFAULT (datetime('now'))
 );

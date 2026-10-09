@@ -17,12 +17,24 @@ pub(crate) fn apply(conn: &Connection) -> Result<()> {
         ("ALTER TABLE sessoes ADD COLUMN tempo_pausado_segundos INTEGER DEFAULT 0;", "sessoes.tempo_pausado_segundos"),
         ("ALTER TABLE sessoes ADD COLUMN pausada_em TEXT;", "sessoes.pausada_em"),
         ("ALTER TABLE vagas ADD COLUMN fonte_conexao TEXT;", "vagas.fonte_conexao"),
+        // Fresh databases get it from schema.sql; this is for databases created before it existed.
+        ("ALTER TABLE candidaturas ADD COLUMN documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL;", "candidaturas.documento_id"),
     ] {
         if let Err(e) = conn.execute_batch(sql) {
             if !e.to_string().contains("duplicate column") {
                 eprintln!("[db migration] {label}: {e}");
             }
         }
+    }
+    // One row per stored file. Databases that already hold duplicates keep them (nothing is deleted
+    // automatically): the index is skipped and the problem is reported.
+    let duplicados: i64 = conn
+        .query_row("SELECT COUNT(*) FROM (SELECT arquivo FROM documentos GROUP BY arquivo HAVING COUNT(*) > 1)", [], |r| r.get(0))
+        .unwrap_or(0);
+    if duplicados > 0 {
+        eprintln!("[db migration] documentos.arquivo: {duplicados} arquivo(s) com linha duplicada; índice único não criado, resolva à mão");
+    } else if let Err(e) = conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_documentos_arquivo ON documentos(arquivo);") {
+        eprintln!("[db migration] idx_documentos_arquivo: {e}");
     }
     // Close any ghost sessions left open by a previous crash or forced quit
     let _ = conn.execute_batch(
@@ -68,7 +80,7 @@ mod tests {
             .collect::<Result<Vec<_>>>()
             .unwrap();
         tables.retain(|t| t != "sqlite_sequence");
-        for expected in ["candidaturas", "feedbacks", "pendencias", "propostas_perfil", "sessoes", "vagas"] {
+        for expected in ["anexos", "candidaturas", "documentos", "feedbacks", "pendencias", "preferidos", "propostas_perfil", "sessoes", "vagas"] {
             assert!(tables.contains(&expected.to_string()), "missing table: {expected}");
         }
     }
@@ -78,6 +90,32 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         apply(&conn).expect("first apply");
         apply(&conn).expect("second apply must not fail");
+    }
+
+    fn doc_row(conn: &Connection, arquivo: &str) -> Result<usize> {
+        conn.execute(
+            "INSERT INTO documentos (tipo, nome, origem, arquivo, formato, sha256, tamanho) VALUES ('curriculo', 'CV', 'gerado', ?1, 'pdf', 'x', 1)",
+            [arquivo],
+        )
+    }
+
+    #[test]
+    fn documentos_arquivo_is_unique() {
+        let conn = mem();
+        doc_row(&conn, "a.pdf").unwrap();
+        assert!(doc_row(&conn, "a.pdf").is_err(), "second row with the same arquivo must be rejected");
+    }
+
+    #[test]
+    fn preexisting_duplicates_are_kept_and_do_not_break_apply() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch("DROP INDEX IF EXISTS idx_documentos_arquivo;").unwrap();
+        doc_row(&conn, "a.pdf").unwrap();
+        doc_row(&conn, "a.pdf").unwrap();
+        apply(&conn).expect("apply must survive duplicates");
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM documentos", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2, "no row is deleted");
     }
 
     #[test]

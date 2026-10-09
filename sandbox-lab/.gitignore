@@ -1,0 +1,10 @@
+# Secrets, pre-downloaded binaries, guest/test output and generated files.
+# The repository root .gitignore repeats these on purpose (two layers).
+shared/secrets/
+shared/tools/
+shared/out/
+shared/cache/
+evidence/
+sandbox/sandbox.generated.wsb
+sandbox/guest.config.json
+.mcp.json

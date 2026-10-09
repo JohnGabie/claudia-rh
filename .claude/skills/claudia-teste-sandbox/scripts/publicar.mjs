@@ -1,25 +1,52 @@
-// Publishes the app plus a scenario folder to the Windows Sandbox lab (lab's scripts\app-stage.ps1).
-// Usage: node publicar.mjs --app <exe|installer|folder> --cenario <scenario folder> [--work-dir <folder>]
-//   --work-dir  default $env:LAB_WORK_DIR, else %TEMP%\claudia-teste-sandbox\work
+// Publishes only the app to the lab work folder (<main checkout>\.sandbox-work) via app-stage.ps1 -Clean.
+// Data comes from a scenario created in the guest (cenario-no-guest.mjs) and installed by guest-run.ps1 -Cenario.
+// Usage: node publicar.mjs --app <exe|installer|folder>
+// The work folder is fixed (no --work-dir, no LAB_WORK_DIR). -Clean only runs when <main>\.sandbox-work\deploy is
+// absent or carries the .lab-deploy marker, with no link on the way (app-stage.ps1 checks the same again).
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
-import { APP_ID, labDir, falhaDe } from "./comum.mjs";
+import { pathToFileURL } from "node:url";
+import { falhaDe, labDir, onde } from "./comum.mjs";
+import { caminhosDoLab, linksAte, motivoRecusaLimparDeploy, MARCADOR_DEPLOY } from "./caminhos-lab.mjs";
 
-try {
-  const { values } = parseArgs({ options: { app: { type: "string" }, cenario: { type: "string" }, "work-dir": { type: "string" } } });
-  if (!values.app || !values.cenario) {
-    throw Object.assign(new Error("Usage: node publicar.mjs --app <exe|installer|folder> --cenario <folder> [--work-dir <folder>]"), { code: "ERR_PARSE_ARGS_USAGE" });
-  }
-  const lab = labDir();
-  const meta = path.join(values.cenario, "cenario.json");
-  if (!fs.existsSync(meta)) throw new Error(`Not a scenario folder (cenario.json missing): ${values.cenario}`);
-  const workDir = values["work-dir"] || process.env.LAB_WORK_DIR || path.join(process.env.TEMP, "claudia-teste-sandbox", "work");
-  const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(lab, "scripts", "app-stage.ps1"),
-    "-App", values.app, "-AppData", path.join(values.cenario, "appdata", APP_ID), "-WorkDir", workDir, "-Clean"],
-    { stdio: ["ignore", "inherit", "inherit"] });
-  if (r.status !== 0) throw new Error(`app-stage.ps1 failed (${r.status ?? r.error?.message})`);
-  const cenario = JSON.parse(fs.readFileSync(meta, "utf8")).cenario;
-  console.log(JSON.stringify({ workDir, deploy: path.join(workDir, "deploy"), cenario }));
-} catch (e) { falhaDe(e); }
+function ehLinkNoDisco(p) {
+  try { return fs.lstatSync(p).isSymbolicLink(); } catch (e) { if (e.code === "ENOENT") return false; throw e; }
+}
+
+/** `raizPrincipal` and `rodarStage` are injected so the Sandbox test uses a fake checkout and a fake app-stage. */
+export function publicar({ app }, { raizPrincipal, rodarStage }) {
+  const c = caminhosDoLab(raizPrincipal);
+  let st = null;
+  try { st = fs.lstatSync(c.deploy); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  const motivo = motivoRecusaLimparDeploy({
+    deploy: c.deploy,
+    raizPrincipal,
+    existe: st !== null,
+    temMarcador: st !== null && fs.existsSync(path.join(c.deploy, MARCADOR_DEPLOY)),
+    linksNoCaminho: linksAte(c.deploy, raizPrincipal, ehLinkNoDisco),
+  });
+  if (motivo) throw new Error(`Refusing -Clean: ${motivo}: ${c.deploy}`);
+  const status = rodarStage(c.appStage, ["-App", app, "-WorkDir", c.trabalho, "-Clean"]);
+  if (status !== 0) throw new Error(`app-stage.ps1 failed (${status})`);
+  fs.mkdirSync(c.deploy, { recursive: true });
+  fs.writeFileSync(path.join(c.deploy, MARCADOR_DEPLOY), "");
+  return { workDir: c.trabalho, deploy: c.deploy };
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  try {
+    const { values } = parseArgs({ options: { app: { type: "string" } } });
+    if (!values.app) {
+      throw Object.assign(new Error("Usage: node publicar.mjs --app <exe|installer|folder>"), { code: "ERR_PARSE_ARGS_USAGE" });
+    }
+    labDir();
+    const { raizPrincipal } = onde();
+    const rodarStage = (ps1, args) => {
+      const r = spawnSync("pwsh", ["-NoProfile", "-File", ps1, ...args], { stdio: ["ignore", "inherit", "inherit"] });
+      return r.status ?? r.error?.message;
+    };
+    console.log(JSON.stringify(publicar(values, { raizPrincipal, rodarStage })));
+  } catch (e) { falhaDe(e); }
+}

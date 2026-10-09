@@ -42,7 +42,7 @@ Cada limite aqui foi **medido** contra o app rodando, não deduzido. Data e vers
 
 ## Evals de disparo (2026-10-01 e 02)
 
-Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-e2e)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
+(Não rodar `rodar-evals.mjs` até a Tarefa 0b: CLA-56.) Medidos com `node .claude/skills/claudia-teste-e2e/evals/rodar-evals.mjs <modelo>`. Critério: a **primeira** chamada de ferramenta do modelo é `Skill(claudia-teste-e2e)`. Duas rodadas por modelo e por descrição. Uma execução com `INVALIDO` ou `session limit` não conta, nem como acerto nem como falha.
 
 ### Antigo e novo, lado a lado
 

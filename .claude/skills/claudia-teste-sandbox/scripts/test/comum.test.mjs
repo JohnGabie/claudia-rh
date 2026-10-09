@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, labDir, dentroDe, erroDeExec, erroBancoAusente } from "../comum.mjs";
+import { APP_ID, REPO_ROOT, novoCenarioDir, escreverCenario, desligarAutomacao, dentroDe, erroDeExec, erroBancoAusente } from "../comum.mjs";
 import { tempDir, SCRIPTS } from "./util.mjs";
 
 function cleanup(dir) {
@@ -59,23 +59,6 @@ test("automacao completa a partir de arquivo parcial", () => {
   }
 });
 
-test("lab ausente ou incompleto nomeia o que falta", () => {
-  const antigo = process.env.SANDBOX_LAB_DIR;
-  try {
-    delete process.env.SANDBOX_LAB_DIR;
-    assert.throws(() => labDir(), /SANDBOX_LAB_DIR/);
-    const labTemp = tempDir("lab");
-    try {
-      process.env.SANDBOX_LAB_DIR = labTemp;
-      assert.throws(() => labDir(), /app-stage\.ps1/);
-    } finally {
-      cleanup(labTemp);
-    }
-  } finally {
-    if (antigo === undefined) delete process.env.SANDBOX_LAB_DIR; else process.env.SANDBOX_LAB_DIR = antigo;
-  }
-});
-
 test("desligarAutomacao: null file treated as defaults", () => {
   const temp = tempDir("comum");
   try {
@@ -119,19 +102,9 @@ test("novoCenarioDir: refuses non-empty dir without cenario.json", () => {
   }
 });
 
-test("novoCenarioDir: refuses if target is REPO_ROOT", () => {
-  assert.throws(() => novoCenarioDir(REPO_ROOT, "t"), /REPO_ROOT/);
-});
-
-test("novoCenarioDir: refuses if target is ancestor of REPO_ROOT", () => {
-  const parent = path.dirname(REPO_ROOT);
-  assert.throws(() => novoCenarioDir(parent, "t"), /ancestor of REPO_ROOT/);
-});
-
-test("novoCenarioDir: refuses if target is filesystem root", () => {
-  const root = path.parse(REPO_ROOT).root;
-  assert.throws(() => novoCenarioDir(root, "t"), /filesystem root/);
-});
+// Refusal of the repo, its ancestors and disk roots is tested ONLY on the pure
+// validation function, with invented strings: see motivo-recusa.test.mjs.
+// Never pass a real path to novoCenarioDir in a test (it deletes recursively).
 
 test("novoCenarioDir: recreates existing scenario folder", () => {
   const temp = tempDir("comum");

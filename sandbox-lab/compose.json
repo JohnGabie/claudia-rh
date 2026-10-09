@@ -1,0 +1,92 @@
+{
+  "$comment": "Ambientes do Windows Sandbox (spec 2026-10-07-sandbox-ambiente-declarativo). Uso: scripts\\test-up.ps1 -Ambiente <nome> -Project <projeto do onde.mjs>. Sem caminho do host: so nomes de montagem (projeto, trabalho, deploy), caminhos relativos a sandbox-lab/ e caminhos do guest. Instaladores: scripts\\cache-up.ps1 baixa os pacotes para shared/cache (fora do git).",
+  "comum": {
+    "extensionsDir": "shared/extensions",
+    "extensions": ["lab-ext"],
+    "dbBackup": "shared/db/backup.sqlite",
+    "dbHashFile": "shared/db/backup.sha256",
+    "dbVerifySql": "shared/db/verify.sql",
+    "dbVerifyExpected": "shared/db/verify.expected.txt",
+    "chrome": {
+      "exe": "shared/tools/chrome/chrome-win64/chrome.exe",
+      "startUrl": "http://localhost:8080/test-page.html",
+      "testServerPort": 8080,
+      "remoteDebuggingPort": 9222
+    },
+    "mcp": {
+      "$comment": "Detalhes do Windows-MCP ficam em shared/mcp.json; port deve bater com ele.",
+      "port": 8000,
+      "configFile": "shared/mcp.json",
+      "authKeyFile": "shared/secrets/mcp-auth.key",
+      "authKeyEnv": "LAB_MCP_AUTH_KEY"
+    },
+    "vGPU": "Enable",
+    "clipboardRedirection": "Enable"
+  },
+  "ambientes": {
+    "exemplo": {
+      "$comment": "Lab de exemplo (O1-O10). Sem -Project, monta sample-project.",
+      "rede": true, "memoriaMB": 4096, "bootTimeoutSec": 240, "conta": false,
+      "instalar": [], "montar": ["projeto:ro"]
+    },
+    "app": {
+      "$comment": "App desktop SEM rede; controle so por wsb exec. Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs (Node do guest) + guest-run.ps1 -Cenario.",
+      "rede": false, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
+      "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
+    },
+    "app-winapp": {
+      "$comment": "App desktop controlado pelo winapp; rede ligada, internet bloqueada por sandbox\\app\\guest-firewall.ps1 (wsb exec -r System); com internet:false o guest-run.ps1 recusa abrir o app sem o firewall.txt com a marca de bloqueio. Antes: publicar.mjs (so o app). Dados: cenario-no-guest.mjs + guest-run.ps1 -Cenario.",
+      "rede": true, "internet": false, "memoriaMB": 6144, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": false,
+      "instalar": ["node"], "montar": ["projeto:ro", "deploy:ro", "trabalho:rw"]
+    },
+    "cache-msvc": {
+      "$comment": "So para montar o layout offline do MSVC (adendo 8.2): wsb exec -r System C:\\labsandbox\\layout-msvc.ps1; depois scripts\\cache-up.ps1 -ImportarMsvc <id>. Rede ligada (baixa do servidor da Microsoft).",
+      "rede": true, "memoriaMB": 6144, "bootTimeoutSec": 300, "conta": false,
+      "instalar": [], "montar": ["projeto:ro", "cache-saida:rw"]
+    },
+    "testes": {
+      "$comment": "Testes de Sandbox (testes-no-guest.mjs), cargo test e Claude Code com a conta logada no PC. Internet aberta (cargo e npm). Rust, Node, MSVC e Windows SDK vem do PC, montados SO LEITURA em C:\\hosttools (hostTools, por NOME: test-up acha cada pasta na hora da subida); so o Claude Code e instalado no guest (cerca de 4 s). Decisao do usuario em 2026-10-08: a instalacao do MSVC levava ~3 h por subida.",
+      "rede": true, "memoriaMB": 8192, "bootTimeoutSec": 300, "instalarTimeoutSec": 600, "conta": true,
+      "instalar": ["claude-code"], "hostTools": ["rust", "node", "msvc", "winkits"], "montar": ["projeto:ro", "trabalho:rw"]
+    },
+    "testes-limpo": {
+      "$comment": "Como o testes, mas instala TUDO no guest a partir do cache (MSVC, Rust, Node, Claude Code): simula um PC novo de verdade, sem nenhuma ferramenta do PC. Leva cerca de 3 h por subida (o gargalo e o Windows SDK do MSVC; limites.md item 14).",
+      "rede": true, "memoriaMB": 8192, "bootTimeoutSec": 300, "instalarTimeoutSec": 14400, "conta": true,
+      "instalar": ["msvc", "rust", "node", "claude-code"], "montar": ["projeto:ro", "trabalho:rw"]
+    }
+  },
+  "pacotes": {
+    "msvc": {
+      "tipo": "vs-layout",
+      "versao": "17.14.41",
+      "arquivo": "msvc-17.14.41",
+      "componentes": [
+        "Microsoft.VisualStudio.Workload.VCTools",
+        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+        "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+      ],
+      "bootstrapper": { "arquivo": "vs_buildtools-17.14.41.exe", "url": "https://download.visualstudio.microsoft.com/download/pr/bc92e2cb-33de-4a0c-995d-efa817f16b16/37bb0fb429d163ecebd272a865d11a37b906d152bef960da2ddb29c2e2fd6eeb/vs_BuildTools.exe", "sha256": "37bb0fb429d163ecebd272a865d11a37b906d152bef960da2ddb29c2e2fd6eeb", "bytes": 4473792 }
+    },
+    "rust": {
+      "tipo": "msi", "versao": "1.95.0",
+      "arquivo": "rust-1.95.0-x86_64-pc-windows-msvc.msi",
+      "url": "https://static.rust-lang.org/dist/rust-1.95.0-x86_64-pc-windows-msvc.msi",
+      "sha256": "08d228850565cfe421da6faeac029fb1f0c8341219d0dd9490d42a8355aa0703",
+      "bytes": 303775340
+    },
+    "node": {
+      "tipo": "zip", "versao": "22.23.3",
+      "arquivo": "node-v22.23.3-win-x64.zip",
+      "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip",
+      "sha256": "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71",
+      "bytes": 35574076
+    },
+    "claude-code": {
+      "tipo": "exe", "versao": "2.1.285",
+      "arquivo": "claude-2.1.285-win32-x64.exe",
+      "url": "https://downloads.claude.ai/claude-code-releases/2.1.285/win32-x64/claude.exe",
+      "sha256": "121fc8151ed40bd9c144d68aa1cea23427803628ffab65e23da1cceda155697e",
+      "bytes": 243751072
+    }
+  }
+}

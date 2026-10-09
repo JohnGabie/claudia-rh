@@ -1,9 +1,12 @@
+import type { AnexoAtual } from "./anexos";
+
 export interface VagaAtual {
   id: number;
   titulo: string;
   empresa: string;
   url: string;
   etapa: string | null;
+  anexos?: AnexoAtual[];
 }
 
 export interface JanelaAgendamento {

@@ -13,6 +13,8 @@ pub struct Candidatura {
     pub pasta_arquivos: String,
     pub metodo: String,
     pub resultado: Option<String>,
+    pub documento_id: Option<i64>,
+    pub documento_nome: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,6 +24,17 @@ pub struct VagaAtual {
     pub empresa: String,
     pub url: String,
     pub etapa: Option<String>,
+    pub anexos: Vec<AnexoAtual>,
+}
+
+/// The latest document attached to the current vaga, per tipo. `documento_id`/`nome`/`formato` are
+/// None when the document was deleted after being attached.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AnexoAtual {
+    pub tipo: String,
+    pub documento_id: Option<i64>,
+    pub nome: Option<String>,
+    pub formato: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -189,8 +202,9 @@ pub fn candidaturas_hoje(conn: &Connection) -> Result<i64> {
 pub fn listar_candidaturas_historico(conn: &Connection) -> Result<Vec<Candidatura>> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.vaga_id, v.titulo, v.empresa, v.plataforma, v.url, \
-                c.enviada_em, c.pasta_arquivos, c.metodo, c.resultado \
+                c.enviada_em, c.pasta_arquivos, c.metodo, c.resultado, c.documento_id, d.nome \
          FROM candidaturas c JOIN vagas v ON v.id = c.vaga_id \
+         LEFT JOIN documentos d ON d.id = c.documento_id \
          ORDER BY c.enviada_em DESC LIMIT 200",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -205,6 +219,8 @@ pub fn listar_candidaturas_historico(conn: &Connection) -> Result<Vec<Candidatur
             pasta_arquivos: row.get(7)?,
             metodo: row.get(8)?,
             resultado: row.get(9)?,
+            documento_id: row.get(10)?,
+            documento_nome: row.get(11)?,
         })
     })?
     .collect::<Result<Vec<_>>>()?;
@@ -255,7 +271,7 @@ pub fn listar_propostas(conn: &Connection) -> Result<Vec<Proposta>> {
 }
 
 pub fn vaga_candidatando(conn: &Connection) -> Result<Option<VagaAtual>> {
-    match conn.query_row(
+    let atual = match conn.query_row(
         "SELECT id, titulo, empresa, url, motivo_status FROM vagas \
          WHERE status = 'candidatando' ORDER BY descoberta_em DESC LIMIT 1",
         [],
@@ -266,13 +282,31 @@ pub fn vaga_candidatando(conn: &Connection) -> Result<Option<VagaAtual>> {
                 empresa: row.get(2)?,
                 url: row.get(3)?,
                 etapa: row.get(4)?,
+                anexos: Vec::new(),
             })
         },
     ) {
-        Ok(v) => Ok(Some(v)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e),
-    }
+        Ok(v) => v,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut atual = atual;
+    atual.anexos = anexos_da_vaga(conn, atual.id)?;
+    Ok(Some(atual))
+}
+
+/// The most recent attachment of each tipo for a vaga (curriculo first, then carta).
+fn anexos_da_vaga(conn: &Connection, vaga_id: i64) -> Result<Vec<AnexoAtual>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.tipo, a.documento_id, d.nome, d.formato FROM anexos a \
+         LEFT JOIN documentos d ON d.id = a.documento_id \
+         WHERE a.vaga_id = ?1 AND a.id = (SELECT MAX(id) FROM anexos WHERE vaga_id = ?1 AND tipo = a.tipo) \
+         ORDER BY CASE a.tipo WHEN 'curriculo' THEN 0 ELSE 1 END",
+    )?;
+    let rows = stmt
+        .query_map([vaga_id], |r| Ok(AnexoAtual { tipo: r.get(0)?, documento_id: r.get(1)?, nome: r.get(2)?, formato: r.get(3)? }))?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 pub fn vagas_analisadas_hoje(conn: &Connection) -> Result<i64> {
@@ -481,6 +515,72 @@ mod tests {
         let atual = vaga_candidatando(&conn).unwrap().expect("must find active job");
         assert_eq!(atual.id, vid);
         assert_eq!(atual.titulo, "Rust Engineer");
+    }
+
+    fn insert_documento(conn: &Connection, tipo: &str, nome: &str, formato: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO documentos (tipo, nome, origem, arquivo, formato, sha256, tamanho) VALUES (?1, ?2, 'importado', ?2, ?3, 'h', 1)",
+            rusqlite::params![tipo, nome, formato],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_anexo(conn: &Connection, vaga_id: i64, tipo: &str, doc: i64) {
+        conn.execute("INSERT INTO anexos (vaga_id, tipo, documento_id) VALUES (?1, ?2, ?3)", rusqlite::params![vaga_id, tipo, doc]).unwrap();
+    }
+
+    #[test]
+    fn the_current_vaga_lists_its_latest_attachments() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Rust Engineer", "candidatando");
+        let other = insert_vaga(&conn, "Other", "analisada");
+        let cv1 = insert_documento(&conn, "curriculo", "CV Velho", "pdf");
+        let cv2 = insert_documento(&conn, "curriculo", "CV Backend", "pdf");
+        let carta = insert_documento(&conn, "carta", "Carta ACME", "docx");
+        let alheio = insert_documento(&conn, "curriculo", "De outra vaga", "pdf");
+        insert_anexo(&conn, vid, "curriculo", cv1);
+        insert_anexo(&conn, vid, "curriculo", cv2);
+        insert_anexo(&conn, vid, "carta", carta);
+        insert_anexo(&conn, other, "curriculo", alheio);
+        let atual = vaga_candidatando(&conn).unwrap().unwrap();
+        assert_eq!(atual.anexos.len(), 2, "one per tipo, only this vaga: {:?}", atual.anexos);
+        let cv = atual.anexos.iter().find(|a| a.tipo == "curriculo").unwrap();
+        assert_eq!((cv.documento_id, cv.nome.as_deref(), cv.formato.as_deref()), (Some(cv2), Some("CV Backend"), Some("pdf")));
+        let c = atual.anexos.iter().find(|a| a.tipo == "carta").unwrap();
+        assert_eq!((c.documento_id, c.nome.as_deref(), c.formato.as_deref()), (Some(carta), Some("Carta ACME"), Some("docx")));
+        // A deleted document stays listed (the attachment happened) with no id and no name.
+        conn.execute("DELETE FROM documentos WHERE id = ?1", [cv2]).unwrap();
+        let atual = vaga_candidatando(&conn).unwrap().unwrap();
+        let cv = atual.anexos.iter().find(|a| a.tipo == "curriculo").unwrap();
+        assert_eq!((cv.documento_id, cv.nome.clone(), cv.formato.clone()), (None, None, None));
+    }
+
+    #[test]
+    fn a_vaga_without_attachments_lists_none() {
+        let conn = mem();
+        insert_vaga(&conn, "Rust Engineer", "candidatando");
+        assert!(vaga_candidatando(&conn).unwrap().unwrap().anexos.is_empty());
+    }
+
+    #[test]
+    fn history_names_the_document_used() {
+        let conn = mem();
+        let vid = insert_vaga(&conn, "Dev", "aplicada");
+        let doc = insert_documento(&conn, "curriculo", "CV Backend", "pdf");
+        conn.execute(
+            "INSERT INTO candidaturas (vaga_id, enviada_em, pasta_arquivos, metodo, documento_id) VALUES (?1, datetime('now'), '/tmp', 'chrome', ?2)",
+            rusqlite::params![vid, doc],
+        ).unwrap();
+        insert_candidatura(&conn, vid); // one with no document at all
+        let h = listar_candidaturas_historico(&conn).unwrap();
+        let with = h.iter().find(|c| c.documento_id == Some(doc)).expect("the one with the document");
+        assert_eq!(with.documento_nome.as_deref(), Some("CV Backend"));
+        assert!(h.iter().any(|c| c.documento_id.is_none() && c.documento_nome.is_none()));
+        // Deleting the document later must work and leave the history readable.
+        conn.execute("DELETE FROM documentos WHERE id = ?1", [doc]).unwrap();
+        let h = listar_candidaturas_historico(&conn).unwrap();
+        assert_eq!(h.len(), 2);
+        assert!(h.iter().all(|c| c.documento_id.is_none() && c.documento_nome.is_none()));
     }
 
     #[test]

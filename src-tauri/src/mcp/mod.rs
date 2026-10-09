@@ -20,7 +20,7 @@ use std::path::PathBuf;
 pub enum SessionKind {
     /// Profile / LinkedIn sessions: turn-based, user reads every reply.
     Interactive,
-    /// The `claude --chrome` run: nobody is necessarily looking.
+    /// The autonomous execution run: nobody is necessarily looking.
     Autonomous,
 }
 
@@ -44,6 +44,10 @@ pub struct McpConfig {
     pub notify_port: Option<u16>,
     pub debug: bool,
     pub session: SessionKind,
+    /// state.json written by the app: tells this process which port its browser listens on.
+    pub browser_state: Option<PathBuf>,
+    /// <dados-locais>: where the browser and the Activity log live.
+    pub local_data_dir: Option<PathBuf>,
 }
 
 /// Single entry point for every tool invocation. Owns cross-cutting concerns:
@@ -85,14 +89,20 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
                 args["localizacao"].as_str(),
                 args["modelo_trabalho"].as_str(),
                 args["fonte_conexao"].as_str(),
+                args["variante_id"].as_str(),
             )
             .inspect(|_| notify(cfg, "db"))
         }
         "update_vaga_status" => {
             let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
             let status = args["status"].as_str().ok_or("parâmetro 'status' em falta")?;
-            tools::update_vaga_status(&cfg.data_dir, vaga_id, status, args["detalhe"].as_str())
+            tools::update_vaga_status(&cfg.data_dir, vaga_id, status, args["detalhe"].as_str(), args["variante_id"].as_str())
                 .inspect(|_| notify(cfg, "db"))
+        }
+        "set_vaga_variante" => {
+            let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
+            let variante = args["variante_id"].as_str().ok_or("parâmetro 'variante_id' em falta")?;
+            tools::set_vaga_variante(&cfg.data_dir, vaga_id, variante).inspect(|_| notify(cfg, "db"))
         }
         "register_candidatura" => {
             let vaga_id = args["vaga_id"].as_i64().ok_or("parâmetro 'vaga_id' em falta")?;
@@ -118,6 +128,29 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
             )
             .inspect(|_| notify(cfg, "db"))
         }
+        "list_variantes" => tools::list_variantes(&cfg.data_dir),
+        "get_variante" => {
+            let id = args["id"].as_str().ok_or("parâmetro 'id' em falta")?;
+            tools::get_variante(&cfg.data_dir, id)
+        }
+        "update_variante" => {
+            let id = args["id"].as_str().ok_or("parâmetro 'id' em falta")?;
+            tools::update_variante(&cfg.data_dir, id, &args["campos"], cfg.session).inspect(|_| notify(cfg, "perfil"))
+        }
+        "list_documentos" => {
+            let tipo = args["tipo"].as_str().unwrap_or("curriculo");
+            tools::list_documentos(&cfg.data_dir, tipo)
+        }
+        "get_documento" => {
+            let id = args["id"].as_i64().ok_or("parâmetro 'id' em falta")?;
+            tools::get_documento(&cfg.data_dir, id)
+        }
+        "set_documento_preferido" => {
+            let id = args["id"].as_i64().ok_or("parâmetro 'id' em falta")?;
+            tools::set_documento_preferido(&cfg.data_dir, id, args["variante_id"].as_str(), cfg.session)
+                .inspect(|_| notify(cfg, "db"))
+        }
+        "save_cover_letter" => save_cover_letter(cfg, args),
         // Read tools: they replace what the runtime prompt used to carry inline.
         // No notify() — reads change nothing the GUI needs to refresh for.
         "get_candidate_profile" => tools::get_candidate_profile(&cfg.data_dir),
@@ -135,6 +168,43 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
     result
 }
 
+/// Queues the letter, tells the running app ("documentos": it prints the PDF and registers the
+/// document), then waits a little for the document to show up. The wait is long enough for a running
+/// app and short enough not to stall the agent when the app is closed (it is processed at next start).
+fn save_cover_letter(cfg: &McpConfig, args: &serde_json::Value) -> Result<String, String> {
+    let texto = args["texto"].as_str().ok_or("parâmetro 'texto' em falta")?;
+    let idioma = args["idioma"].as_str().unwrap_or("pt");
+    let (base, aviso) = tools::guardar_pendente(&cfg.data_dir, texto, args["vaga_id"].as_i64(), idioma, args["variante_id"].as_str())?;
+    notify(cfg, "documentos");
+    let espera = if cfg.notify_port.is_some() { std::time::Duration::from_secs(20) } else { std::time::Duration::ZERO };
+    Ok(tools::juntar_aviso(tools::aguardar_documento(&cfg.data_dir, &base, espera), aviso))
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::resolver_data_dir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn data_dir_is_required_and_never_falls_back_to_the_current_dir() {
+        assert!(resolver_data_dir(None).unwrap_err().contains("falta --data-dir"));
+        assert!(resolver_data_dir(Some("")).is_err());
+        assert!(resolver_data_dir(Some("   ")).is_err());
+    }
+
+    #[test]
+    fn data_dir_must_be_absolute() {
+        assert!(resolver_data_dir(Some("dados")).unwrap_err().contains("absoluto"));
+        assert!(resolver_data_dir(Some(r"..\dados")).is_err());
+        assert!(resolver_data_dir(Some(".")).is_err());
+    }
+
+    #[test]
+    fn an_absolute_data_dir_is_accepted_without_touching_the_disk() {
+        assert_eq!(resolver_data_dir(Some(r"Z:\nao-existe\dados")).unwrap(), PathBuf::from(r"Z:\nao-existe\dados"));
+    }
+}
+
 #[cfg(test)]
 mod dispatch_tests {
     use super::*;
@@ -146,6 +216,82 @@ mod dispatch_tests {
             notify_port: None,
             debug: false,
             session: SessionKind::Interactive,
+            browser_state: None,
+            local_data_dir: None,
+        }
+    }
+
+    #[test]
+    fn set_vaga_variante_is_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-var");
+        seed_db(&dir);
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n").unwrap();
+        let out = dispatch(&cfg_for(&dir), "set_vaga_variante", &serde_json::json!({ "vaga_id": 1, "variante_id": "backend" })).unwrap();
+        assert!(out.contains("backend"), "{out}");
+    }
+
+    #[test]
+    fn document_and_variant_tools_are_reachable_through_dispatch() {
+        let dir = temp_dir("dispatch-docs");
+        seed_db(&dir);
+        crate::db::apply(&rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap()).unwrap();
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n").unwrap();
+        std::fs::write(dir.join("candidate_base.yaml"), "dados_pessoais:\n  nome_completo: Ana\n").unwrap();
+        let cfg = cfg_for(&dir);
+        assert_eq!(dispatch(&cfg, "list_documentos", &serde_json::json!({ "tipo": "curriculo" })).unwrap().trim(), "[]");
+        assert!(dispatch(&cfg, "list_variantes", &serde_json::json!({})).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "get_variante", &serde_json::json!({ "id": "backend" })).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "get_documento", &serde_json::json!({ "id": 1 })).is_err());
+        assert!(dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 5 } })).unwrap().contains("backend"));
+        assert!(dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": 1 })).is_err(), "no such document");
+        let r = dispatch(&cfg, "save_cover_letter", &serde_json::json!({ "texto": "Olá.", "variante_id": "backend" })).unwrap();
+        assert!(r.contains("fica pronto"), "{r}");
+    }
+
+    /// The session rule must hold through the real entry point, not only in the tool functions.
+    #[test]
+    fn the_execution_session_cannot_write_variants_or_preferred_documents() {
+        let dir = temp_dir("dispatch-exec");
+        seed_db(&dir);
+        crate::db::apply(&rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap()).unwrap();
+        let sv = "variantes:\n  - id: backend\n    peso: 60\n";
+        std::fs::write(dir.join("search_variants.yaml"), sv).unwrap();
+        let mut cfg = cfg_for(&dir);
+        cfg.session = SessionKind::Autonomous;
+        let e = dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 5 } })).unwrap_err();
+        assert!(e.contains("sessão de Perfil"), "{e}");
+        let e = dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": 1 })).unwrap_err();
+        assert!(e.contains("sessão de Perfil"), "{e}");
+        assert_eq!(std::fs::read_to_string(dir.join("search_variants.yaml")).unwrap(), sv);
+    }
+
+    /// No document or variant tool may accept or return a path, whatever the answer looks like.
+    #[test]
+    fn no_document_or_variant_answer_carries_a_path() {
+        let dir = temp_dir("dispatch-nopath");
+        seed_db(&dir);
+        let c = crate::documentos::biblioteca::open_conn(&dir).unwrap();
+        crate::db::apply(&c).unwrap();
+        let docs = crate::documentos::docs_dir(&dir);
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(docs.join("cv_x.pdf"), b"%PDF-1.7 x").unwrap();
+        std::fs::write(docs.join("cv_x.html"), "<p>Ana</p>").unwrap();
+        let id = crate::documentos::inserir(&c, &crate::documentos::NovoDocumento { tipo: "curriculo", nome: "X", origem: "gerado", arquivo: "cv_x.pdf", arquivo_html: Some("cv_x.html"), formato: "pdf", idioma: Some("pt"), sha256: "0", tamanho: 1, variante_id: Some("backend") }).unwrap();
+        std::fs::write(dir.join("search_variants.yaml"), "variantes:\n  - id: backend\n    cv_gerado_path: C:\\\\Users\\\\x\\\\cv.html\n    cv_gerado_em: ontem\n").unwrap();
+        let cfg = cfg_for(&dir);
+        let home = dir.to_string_lossy().to_string();
+        let answers = [
+            dispatch(&cfg, "list_documentos", &serde_json::json!({ "tipo": "curriculo" })).unwrap(),
+            dispatch(&cfg, "get_documento", &serde_json::json!({ "id": id })).unwrap(),
+            dispatch(&cfg, "list_variantes", &serde_json::json!({})).unwrap(),
+            dispatch(&cfg, "get_variante", &serde_json::json!({ "id": "backend" })).unwrap(),
+            dispatch(&cfg, "set_documento_preferido", &serde_json::json!({ "id": id, "variante_id": "backend" })).unwrap(),
+            dispatch(&cfg, "update_variante", &serde_json::json!({ "id": "backend", "campos": { "peso": 7 } })).unwrap(),
+        ];
+        for a in &answers {
+            for leak in [home.as_str(), "cv_x", "cv.html", "cv_gerado", "arquivo", "sha256", "C:\\", "documentos/", "documentos\\"] {
+                assert!(!a.contains(leak), "{leak} leaked: {a}");
+            }
         }
     }
 
@@ -224,6 +370,19 @@ fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
 }
 
+/// The data dir must be given and absolute: never fall back to the current directory (it would
+/// write the database and logs wherever the process happened to start). Pure: touches no disk.
+pub(crate) fn resolver_data_dir(arg: Option<&str>) -> Result<PathBuf, String> {
+    let raw = arg
+        .filter(|a| !a.trim().is_empty())
+        .ok_or_else(|| "mcp: falta --data-dir <pasta>; recusado em vez de usar a pasta atual".to_string())?;
+    let p = PathBuf::from(raw);
+    if !p.is_absolute() {
+        return Err(format!("mcp: --data-dir precisa ser um caminho absoluto, recebido {raw:?}"));
+    }
+    Ok(p)
+}
+
 /// Called first thing from main(). Returns true when the process ran in an
 /// MCP mode and the GUI must NOT start.
 pub fn cli_main() -> bool {
@@ -234,9 +393,13 @@ pub fn cli_main() -> bool {
         return false;
     }
 
-    let data_dir = parse_flag_value(&args, "--data-dir")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let data_dir = match resolver_data_dir(parse_flag_value(&args, "--data-dir").as_deref()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
     crate::diagnostics::init_paths(&data_dir, None);
     let notify_port = parse_flag_value(&args, "--notify-port").and_then(|p| p.parse().ok());
     let session = parse_flag_value(&args, "--session-kind")
@@ -247,6 +410,8 @@ pub fn cli_main() -> bool {
         notify_port,
         debug: args.iter().any(|a| a == "--debug"),
         session,
+        browser_state: parse_flag_value(&args, "--browser-state").map(PathBuf::from),
+        local_data_dir: parse_flag_value(&args, "--local-data-dir").map(PathBuf::from),
     };
 
     if serve {

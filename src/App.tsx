@@ -4,14 +4,17 @@ import { listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
 import "./styles/tokens.css";
 import { TitleBar } from "./components/TitleBar";
+import { BrowserBanner } from "./components/BrowserBanner";
 import { Sidebar, type View } from "./components/Sidebar";
 import { useT } from "./i18n";
 import { Dashboard } from "./components/dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/perfil";
+import { Documentos } from "./components/documentos";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
+import { ActivityLogScreen } from "./components/ActivityLogScreen";
 import { Pendencias } from "./components/Pendencias";
 import { Welcome } from "./components/Welcome";
 
@@ -27,6 +30,8 @@ function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  // The Activity log viewer is a screen of its own, opened from Settings and closed with its Back button.
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
 
   const refreshFeedbackSugestao = () =>
     invoke<{ sugerir: boolean }>("sugerir_feedback").then(s => setSugerirFeedback(s.sugerir)).catch(() => {});
@@ -95,6 +100,7 @@ function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <TitleBar />
+      <BrowserBanner />
       {updateInfo && !updateDismissed && (
         <div style={{
           display: "flex", alignItems: "center", gap: 12,
@@ -140,7 +146,7 @@ function App() {
           <Welcome onComplete={(v) => { setShowWelcome(false); setView(v); }} />
         ) : (
           <>
-            <Sidebar active={view} onChange={setView} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
+            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
             <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
               {/* Dashboard */}
@@ -150,7 +156,12 @@ function App() {
 
               {/* Perfil */}
               <div style={{ display: view === "perfil" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-                <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} />
+                <Perfil initialSection={perfilSection} onSectionHandled={handlePerfilSectionHandled} onOpenDocumentos={() => setView("documentos")} />
+              </div>
+
+              {/* Currículos */}
+              <div style={{ display: view === "documentos" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Documentos />
               </div>
 
               {/* Terminal — nunca desmontado */}
@@ -170,13 +181,20 @@ function App() {
 
               {/* Pendências */}
               <div style={{ display: view === "pendencias" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "auto" }}>
-                <Pendencias onNavigateToPerfil={() => setView("perfil")} />
+                <Pendencias onNavigateToPerfil={() => setView("perfil")} onNavigateToDocumentos={() => setView("documentos")} />
               </div>
 
               {/* Configurações */}
-              <div style={{ display: view === "configuracoes" ? "block" : "none", height: "100%", overflow: "auto" }}>
-                <Configuracoes onShowWelcome={() => setShowWelcome(true)} />
+              <div style={{ display: view === "configuracoes" && !activityLogOpen ? "block" : "none", height: "100%", overflow: "auto" }}>
+                <Configuracoes onShowWelcome={() => setShowWelcome(true)} onOpenActivityLog={() => setActivityLogOpen(true)} />
               </div>
+
+              {/* Activity log (somente leitura), aberto a partir das Configurações */}
+              {view === "configuracoes" && activityLogOpen && (
+                <div style={{ height: "100%" }}>
+                  <ActivityLogScreen onBack={() => setActivityLogOpen(false)} />
+                </div>
+              )}
 
             </main>
           </>

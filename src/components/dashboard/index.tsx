@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Pencil } from "lucide-react";
+import { ExternalLink, AlertTriangle, Lightbulb, Pause, Play, Square, Pencil, FileText, Mail } from "lucide-react";
 import { useT } from "../../i18n";
 import { VagaResumo, SearchVariant } from "../../types";
 import { tempoRelativo, formatarTempo, formatTempoCompact } from "../../lib/format";
@@ -12,9 +12,10 @@ import { LimitModal } from "./LimitModal";
 import { AgendamentoModal } from "./AgendamentoModal";
 import { VariantCardDash } from "./VariantCardDash";
 import { ModoCard } from "./ModoCard";
+import { rotuloAnexo } from "./anexos";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate: _onNavigate }) => {
+export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) => void }> = ({ onNavigate }) => {
   const t = useT();
   const [candidaturasHoje, setCandidaturasHoje] = useState(0);
   const [vagasHoje, setVagasHoje] = useState(0);
@@ -146,7 +147,6 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
       }),
       listen("linkedin-session-started", () => { setLinkedinScanning(true); setSessionActive(true); }),
       listen("db-atualizada", () => { carregar(); carregarLinkedin(); carregarVariantes(); }),
-      listen("chrome-reconnect-failed", () => console.warn("[Claudia RH] Chrome extension reconnection failed")),
       listen("api-continue-exhausted", () => console.warn("[Claudia RH] API stall: continue sent 5 times, still failing")),
     ]).then((fns) => {
       if (active) {
@@ -379,6 +379,22 @@ export const Dashboard: React.FC<{ onNavigate?: (tab: string, section?: string) 
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
               {vagaAtual.empresa}{vagaAtual.etapa && ` — ${vagaAtual.etapa}`}
             </div>
+            {(vagaAtual.anexos ?? []).map((a, i) => {
+              const apagado = a.documento_id === null;
+              const Icone = a.tipo === "carta" ? Mail : FileText;
+              return (
+                <button key={`${a.tipo}-${i}`} onClick={() => onNavigate?.("documentos")} title={t.dashboard.attachmentOpen}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, marginRight: 8, padding: 0,
+                    background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12,
+                    color: apagado ? "var(--text-tertiary)" : "var(--accent-strong)",
+                    fontStyle: apagado ? "italic" : "normal",
+                  }}>
+                  <Icone size={12} />
+                  {rotuloAnexo(a, t.dashboard.attachmentDeleted)}
+                </button>
+              );
+            })}
           </div>
           <button onClick={() => openUrl(vagaAtual.url).catch(console.error)}
             style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--accent-strong)", flexShrink: 0, display: "flex", alignItems: "center" }}>

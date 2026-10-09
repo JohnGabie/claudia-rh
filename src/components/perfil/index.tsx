@@ -5,15 +5,13 @@ import { SearchVariant } from "../../types";
 import { CandidateBase, ChatFocus, EditTarget, Mode } from "./types";
 import { ResumoView } from "./ResumoView";
 import { ChatView } from "./ChatView";
-import { CurriculosView } from "./CurriculosView";
-import { CoverLettersView } from "./CoverLettersView";
 import { SectionEditModal } from "./EditModal";
 import { EmptyState } from "./EmptyState";
 import { useT } from "../../i18n";
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled?: () => void }> = ({ initialSection, onSectionHandled }) => {
+export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled?: () => void; onOpenDocumentos: () => void }> = ({ initialSection, onSectionHandled, onOpenDocumentos }) => {
   const [mode, setMode] = useState<Mode>("resumo");
   const [chatFocus, setChatFocus] = useState<ChatFocus | null>(null);
   const [profileData, setProfileData] = useState<CandidateBase | null>(null);
@@ -91,9 +89,6 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
     setMode("chat");
   };
 
-  const openCurriculos = () => setMode("curriculos");
-  const openCoverLetters = () => setMode("cover_letters");
-
   const backToResumo = () => {
     setMode("resumo");
     setChatFocus(null);
@@ -112,14 +107,6 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
     return <ChatView focus={chatFocus} onBack={backToResumo} data={profileData} />;
   }
 
-  if (mode === "curriculos") {
-    return <CurriculosView onBack={backToResumo} />;
-  }
-
-  if (mode === "cover_letters") {
-    return <CoverLettersView onBack={backToResumo} />;
-  }
-
   if (!hasProfile) {
     return <EmptyState onStart={openChat} />;
   }
@@ -130,8 +117,7 @@ export const Perfil: React.FC<{ initialSection?: string | null; onSectionHandled
         data={profileData}
         variants={variants}
         onOpenChat={openChat}
-        onOpenCurriculos={openCurriculos}
-        onOpenCoverLetters={openCoverLetters}
+        onOpenDocumentos={onOpenDocumentos}
         onDirectEdit={setEditTarget}
         onReloadData={loadData}
       />

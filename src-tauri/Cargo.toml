@@ -34,10 +34,22 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 rmcp = { version = "2.2.0", features = ["server", "transport-io"] }
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-single-instance = "2"
 log = "0.4"
 tauri-plugin-log = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+sha2 = "0.10"
+futures-util = "0.3"
+tokio-tungstenite = "0.26"
+base64 = "0.22"
+unicode-normalization = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+webview2-com = "0.38"
+windows-core = "0.61"
 
+[dev-dependencies]
+png = "0.17"

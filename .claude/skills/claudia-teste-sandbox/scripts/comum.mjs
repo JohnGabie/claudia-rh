@@ -3,8 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { raizPrincipalDe, caminhosDoLab, ambienteGitLimpo, estaNoSandbox, MARCADOR_GUEST, raizDeCenarios, motivoRecusaRaizTeste } from "./caminhos-lab.mjs";
 
 export const APP_ID = "io.github.johngabie.claudia-rh";
+
+/** Guest folder where test-up -DadosReais mounts the app's Roaming data folder, read-only (spec addendum 8.1). */
+export const ORIGEM_DADOS_REAIS = "C:\\labdadosreais";
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 
 /** Check if path b is inside path a. Works across different drives. */
@@ -23,31 +27,117 @@ export function falhaDe(err) {
   sair(err.message, String(err.code ?? "").startsWith("ERR_PARSE_ARGS") ? 2 : 1);
 }
 
-export function labDir() {
-  const d = process.env.SANDBOX_LAB_DIR;
-  if (!d) throw new Error("SANDBOX_LAB_DIR is not set: point it to the Windows Sandbox lab folder.");
-  const stage = path.join(d, "scripts", "app-stage.ps1");
-  if (!fs.existsSync(stage)) throw new Error(`Incomplete lab: ${stage} not found.`);
-  return path.resolve(d);
+function gitLer(args, cwd) {
+  // GIT_DIR & co. would override -C when this runs inside a git hook or worktree command.
+  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: ambienteGitLimpo(process.env) });
+  if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(r.stderr || r.error?.message || "").trim()}`);
+  return r.stdout.trim();
+}
+
+/**
+ * Main checkout (lab + work folder) and current checkout (project under test). Read-only: only `git rev-parse`.
+ * `git` is injectable so the logic is tested without spawning git.
+ */
+export function onde(cwd = REPO_ROOT, git = gitLer) {
+  const raizPrincipal = raizPrincipalDe(git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd));
+  const projeto = path.win32.normalize(git(["rev-parse", "--show-toplevel"], cwd));
+  return { raizPrincipal, projeto, ...caminhosDoLab(raizPrincipal) };
+}
+
+/** sandbox-lab of the main checkout; throws naming the missing file. Never reads an environment variable. */
+export function labDir({ cwd = REPO_ROOT, git = gitLer, existe = fs.existsSync } = {}) {
+  const o = onde(cwd, git);
+  if (!existe(o.appStage)) {
+    throw new Error(`Lab not found: ${o.appStage} is missing in the main checkout. The lab lives in sandbox-lab/ of the main checkout (SKILL.md, section 1).`);
+  }
+  return o.lab;
+}
+
+const NOME_BASE = "claudia-teste-sandbox";
+const minusculas = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
+
+/** Same as dentroDe, but case-insensitive on Windows. */
+function dentroDeCI(a, b) {
+  return dentroDe(minusculas(a), minusculas(b));
+}
+
+/**
+ * PURE (never touches the disk). Allow-list for deletable scenario folders.
+ * Returns null when `dir` may be deleted, otherwise the reason it is refused.
+ * Only accepts an absolute, normalized path with no "..", strictly inside <tempRoot>/claudia-teste-sandbox.
+ */
+export function motivoRecusa(dir, { repoRoot, tempRoot, ancestoresComGit = [] }) {
+  if (typeof dir !== "string" || dir.trim() === "") return "empty path";
+  if (dir.startsWith("\\\\") || dir.startsWith("//")) return "UNC or extended-length path";
+  if (!path.isAbsolute(dir)) return "relative path";
+  const segmentos = dir.split(/[\\/]+/);
+  if (segmentos.includes("..")) return "path contains '..'";
+  // Win32 strips trailing dots/spaces ("<base>\..." resolves to "<base>"), so a lexical check would be fooled.
+  if (segmentos.some((s) => /[. ]$/.test(s))) return "path has a segment ending in '.' or space";
+  if (path.normalize(dir) !== dir) return "path is not normalized";
+  if (path.parse(dir).root === dir) return "path is a filesystem root";
+  if (typeof repoRoot !== "string" || repoRoot === "" || typeof tempRoot !== "string" || tempRoot === "") {
+    return "repoRoot and tempRoot are required";
+  }
+  if (dentroDeCI(dir, repoRoot)) return "path is the repository or an ancestor of it";
+  if (dentroDeCI(repoRoot, dir)) return "path is inside the repository";
+  if (ancestoresComGit.some((g) => dentroDeCI(g, dir))) return "path is inside a git checkout";
+  const base = path.join(tempRoot, NOME_BASE);
+  if (minusculas(dir) === minusculas(base)) return "path is the sandbox base folder itself";
+  if (!dentroDeCI(base, dir)) return `path is outside the sandbox base folder (${base})`;
+  return null;
+}
+
+/**
+ * `dir` and each of its ancestors up to the root that contain a ".git" entry.
+ * `existe` is injectable so the logic can be tested without a disk.
+ */
+export function ancestoresComGit(dir, existe = fs.existsSync) {
+  const achados = [];
+  let atual = dir;
+  for (;;) {
+    if (existe(path.join(atual, ".git"))) achados.push(atual);
+    const pai = path.dirname(atual);
+    if (pai === atual) break;
+    atual = pai;
+  }
+  return achados;
+}
+
+export { MARCADOR_DEPLOY, podeLimparDeploy } from "./caminhos-lab.mjs";
+
+/** PURE. Default scenario folder for a given tempRoot. cenario-copia uses it for its overlap check. */
+export function saidaPadraoCenario(nome, tempRoot) {
+  return path.join(tempRoot, NOME_BASE, nome);
+}
+
+/** Z:\ inside the guest (two factors). On the PC it throws: scenarios run only in the Sandbox (D1). */
+export function raizCenariosAtual() {
+  const noSandbox = estaNoSandbox({ identidade: os.userInfo().username, temBootstrap: fs.existsSync(MARCADOR_GUEST) });
+  const raiz = raizDeCenarios({ noSandbox });
+  if (!raiz) throw new Error("scenarios run only inside Windows Sandbox (D1): from the PC use cenario-no-guest.mjs --cenario <novo|mock|copia>");
+  return raiz;
 }
 
 export function novoCenarioDir(saida, nome) {
-  const dir = path.resolve(saida || path.join(process.env.TEMP ?? os.tmpdir(), "claudia-teste-sandbox", nome));
+  const tempRoot = raizCenariosAtual(); // throws on the PC before any disk access
+  const dir = path.resolve(saida || saidaPadraoCenario(nome, tempRoot));
 
-  // Safety checks before deletion
-  const parsed = path.parse(dir);
-  if (parsed.root === dir) {
-    throw new Error("novoCenarioDir: target is a filesystem root");
-  }
-  if (dir === REPO_ROOT) {
-    throw new Error("novoCenarioDir: target is REPO_ROOT");
-  }
-  if (dentroDe(dir, REPO_ROOT)) {
-    throw new Error("novoCenarioDir: target is an ancestor of REPO_ROOT");
-  }
+  const motivo = motivoRecusa(dir, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(dir) });
+  if (motivo) throw new Error(`novoCenarioDir: refused (${motivo}): ${dir}`);
+  const mz = motivoRecusaRaizTeste(dir);
+  if (mz) throw new Error(`novoCenarioDir: refused (${mz}): ${dir}`);
 
-  // Check if non-empty directory exists without cenario.json or .cenario marker
-  if (fs.existsSync(dir)) {
+  // Symlink/junction guard: never delete through a link.
+  let st = null;
+  try { st = fs.lstatSync(dir); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  if (st) {
+    if (st.isSymbolicLink()) throw new Error(`novoCenarioDir: refused (target is a symlink/junction): ${dir}`);
+    const real = fs.realpathSync.native(dir);
+    if (motivoRecusaRaizTeste(real)) throw new Error(`novoCenarioDir: refused (real path not on Z:: ${real}): ${dir}`);
+    if (minusculas(real) !== minusculas(dir) || motivoRecusa(real, { repoRoot: REPO_ROOT, tempRoot, ancestoresComGit: ancestoresComGit(real) })) {
+      throw new Error(`novoCenarioDir: refused (real path differs: ${real}): ${dir}`);
+    }
     const entries = fs.readdirSync(dir);
     const hasCenarioJson = fs.existsSync(path.join(dir, "cenario.json"));
     const hasMarker = fs.existsSync(path.join(dir, ".cenario"));
@@ -56,9 +146,11 @@ export function novoCenarioDir(saida, nome) {
     }
   }
 
+  // Only now (marker rule passed) delete.
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "appdata", APP_ID), { recursive: true });
   fs.mkdirSync(path.join(dir, "localappdata"), { recursive: true });
+  if (motivoRecusaRaizTeste(fs.realpathSync.native(dir))) throw new Error(`novoCenarioDir: refused (real path not on Z: after create): ${dir}`);
   fs.writeFileSync(path.join(dir, ".cenario"), "");
   return dir;
 }

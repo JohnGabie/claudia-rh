@@ -1,21 +1,24 @@
 mod commands;
 mod db;
+mod documentos;
 mod db_watcher;
 mod idle_watcher;
+pub mod activity_log;
 pub mod mcp;
+pub mod browser;
 mod migration;
 mod diagnostics;
 mod notificacoes;
 mod prompt;
 mod pty_manager;
 
-use commands::cover_letter::{gerar_cover_letter, listar_cover_letters, abrir_cover_letter, apagar_cover_letter};
+use commands::cover_letter::gerar_cover_letter;
 use commands::welcome::{verificar_setup, welcome_necessario, marcar_welcome_concluido};
 use commands::linkedin::{iniciar_busca_linkedin_rede, listar_vagas_linkedin_rede, obter_status_linkedin_rede};
 use commands::updater::{instalar_atualizacao, verificar_atualizacao};
 use commands::startup::{obter_iniciar_com_sistema, configurar_iniciar_com_sistema};
 use commands::prompts::{abrir_ficheiro_prompt, abrir_pasta_dados};
-use commands::curriculos::{gerar_curriculo, listar_curriculos, abrir_curriculo, apagar_curriculo};
+use commands::curriculos::gerar_curriculo;
 use commands::credenciais::{
     apagar_credencial, guardar_credencial, obter_credencial, obter_utilizador_credencial,
 };
@@ -75,6 +78,10 @@ fn start_mcp_notify_listener(app: &tauri::AppHandle) -> Option<u16> {
                     "db" => {
                         let _ = app.emit("db-atualizada", ());
                         let _ = app.emit("pendencia-resolvida", ());
+                    }
+                    // The MCP wrote a cover letter to documentos/pendentes/: the app makes its PDF.
+                    "documentos" => {
+                        tauri::async_runtime::spawn(crate::documentos::migrar::ao_iniciar(app.clone()));
                     }
                     _ => {}
                 }
@@ -155,6 +162,15 @@ fn exportar_diagnostico(dest: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second launch exits before it touches anything. A second instance would otherwise
+        // stop the first one's Chrome on its way out (the browser is owned by the app that launched it).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
@@ -265,8 +281,16 @@ pub fn run() {
                 std::mem::forget(tray);
             }
 
+            // The app-owned browser: installed, launched and watched in the background.
+            app.manage(browser::service::StatusState(Arc::new(Mutex::new(browser::service::Status::idle()))));
+            app.manage(browser::service::Running(std::sync::atomic::AtomicBool::new(false)));
+            tauri::async_runtime::spawn(browser::service::install_in_background(app.handle().clone()));
+
             // Ensure all prompt files exist on disk
             commands::prompts::ensure_all_prompts(&data_dir);
+
+            // Old generated CVs/letters join the document library in the background (never deleted).
+            tauri::async_runtime::spawn(documentos::migrar::ao_iniciar(app.handle().clone()));
 
             // Start background tasks
             idle_watcher::start(app.handle().clone(), idle_arc, Arc::clone(&conn_arc));
@@ -334,13 +358,7 @@ pub fn run() {
             marcar_resultado_candidatura,
             sugerir_feedback,
             gerar_curriculo,
-            listar_curriculos,
-            abrir_curriculo,
-            apagar_curriculo,
             gerar_cover_letter,
-            listar_cover_letters,
-            abrir_cover_letter,
-            apagar_cover_letter,
             abrir_ficheiro_prompt,
             abrir_pasta_dados,
             obter_iniciar_com_sistema,
@@ -355,11 +373,28 @@ pub fn run() {
             marcar_welcome_concluido,
             diagnostics::watchdog::diag_heartbeat,
             exportar_diagnostico,
+            commands::activity::activity_log_list,
+            commands::documentos::listar_documentos,
+            commands::documentos::importar_documento,
+            commands::documentos::definir_preferido,
+            commands::documentos::obter_documento,
+            commands::documentos::renomear_documento,
+            commands::documentos::atualizar_tags_documento,
+            commands::documentos::remover_preferido,
+            commands::documentos::abrir_documento,
+            commands::documentos::apagar_documento,
+            commands::documentos::listar_variantes,
+            commands::activity::activity_log_get,
+            commands::activity::activity_log_image,
+            browser::service::browser_status,
+            browser::service::browser_retry,
+            browser::service::browser_abrir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                browser::service::stop(app);
                 crate::diagnostics::emit_event("app", "exit", None, "");
                 crate::diagnostics::pty_flush();
             }
