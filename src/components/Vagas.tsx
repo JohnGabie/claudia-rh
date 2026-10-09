@@ -92,6 +92,7 @@ export const Vagas: React.FC = () => {
   const [vagas, setVagas] = useState<Vaga[]>([]);
   const [candidaturas, setCandidaturas] = useState<Candidatura[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erroPasta, setErroPasta] = useState<string | null>(null);
 
   const carregarVagas = () => {
     setLoading(true);
@@ -186,6 +187,20 @@ export const Vagas: React.FC = () => {
           </div>
         )}
       </div>
+
+      {erroPasta && (
+        <div
+          role="alert"
+          onClick={() => setErroPasta(null)}
+          style={{
+            padding: "8px 24px", fontSize: 12, cursor: "pointer",
+            color: "var(--text-primary)", background: "var(--bg-surface)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          {erroPasta}
+        </div>
+      )}
 
       {/* Content */}
       <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }}>
@@ -345,7 +360,7 @@ export const Vagas: React.FC = () => {
                       <td style={{ padding: "10px 12px" }}>
                         {c.pasta_arquivos && (
                           <button
-                            onClick={() => invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch(console.error)}
+                            onClick={() => { setErroPasta(null); invoke("abrir_pasta", { caminho: c.pasta_arquivos }).catch((e) => setErroPasta(String(e))); }}
                             title={t.jobs.openFiles}
                             style={{
                               background: "transparent", border: "none", cursor: "pointer",

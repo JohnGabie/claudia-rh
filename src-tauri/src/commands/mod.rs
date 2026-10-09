@@ -10,6 +10,7 @@ pub mod estado;
 pub mod feedback;
 pub mod linkedin;
 pub mod notif;
+pub mod pasta_segura;
 pub mod perfil;
 pub mod prompts;
 pub mod pty;
