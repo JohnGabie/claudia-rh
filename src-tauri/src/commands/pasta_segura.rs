@@ -69,6 +69,9 @@ mod tests {
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
     }
+    // Every path that a rule must refuse is ALSO mapped here to an existing folder inside the data
+    // dir, so that without that rule it would be accepted (and the test catches the missing rule
+    // instead of falling through to "A pasta não existe.").
     const MAPA: &[(&str, &str)] = &[
         (r"Y:\inventado\dados", r"Y:\inventado\dados"),
         (r"Y:\inventado\dados\vaga1", r"Y:\inventado\dados\vaga1"),
@@ -76,6 +79,17 @@ mod tests {
         (r"Y:\inventado\dados-x\vaga1", r"Y:\inventado\dados-x\vaga1"),
         (r"Y:\inventado\dados\link", r"Y:\outro\lugar"),
         (r"Y:\", r"Y:\"),
+        // network / device forms
+        (r"\\servidor\share\x", r"Y:\inventado\dados\vaga1"),
+        (r"\\?\Y:\inventado\dados\vaga1", r"Y:\inventado\dados\vaga1"),
+        (r"\\.\Y:\inventado\dados\vaga1", r"Y:\inventado\dados\vaga1"),
+        ("//servidor/share", r"Y:\inventado\dados\vaga1"),
+        // relative and drive-relative forms
+        ("vaga1", r"Y:\inventado\dados\vaga1"),
+        (r"Y:inventado\dados\vaga1", r"Y:\inventado\dados\vaga1"),
+        // '..' forms
+        (r"Y:\inventado\dados\vaga1\..", r"Y:\inventado\dados"),
+        (r"Y:\inventado\dados\vaga1\..\..\..", r"Y:\inventado\dados\vaga1"),
     ];
     fn so_pastas(p: &Path) -> bool {
         !p.to_string_lossy().ends_with(".exe")
@@ -83,6 +97,19 @@ mod tests {
     fn run(c: &str) -> Result<PathBuf, &'static str> {
         pasta_permitida_com(c, Path::new(RAIZ), fake(MAPA), so_pastas)
     }
+    /// Refused, and by the expected rule (exact message).
+    fn recusa(c: &str, motivo: &'static str) {
+        assert_eq!(run(c), Err(motivo), "path {c:?}");
+    }
+
+    const VAZIO: &str = "Caminho vazio.";
+    const REDE: &str = "Caminhos de rede ou de dispositivo não são permitidos.";
+    const RELATIVO: &str = "O caminho precisa ser absoluto.";
+    const PONTO: &str = "O caminho não pode conter '.' ou '..'.";
+    const NAO_EXISTE: &str = "A pasta não existe.";
+    const RAIZ_DISCO: &str = "Raiz de disco não é permitida.";
+    const FORA: &str = "A pasta está fora da pasta de dados do app.";
+    const NAO_PASTA: &str = "O caminho não é uma pasta.";
 
     #[test]
     fn aceita_pasta_dentro() {
@@ -90,42 +117,47 @@ mod tests {
     }
     #[test]
     fn aceita_a_propria_raiz_de_dados() {
-        assert!(run(RAIZ).is_ok());
+        assert_eq!(run(RAIZ).unwrap(), PathBuf::from(RAIZ));
     }
     #[test]
     fn recusa_arquivo_exe() {
-        assert!(run(r"Y:\inventado\dados\vaga1\cv.exe").is_err());
+        recusa(r"Y:\inventado\dados\vaga1\cv.exe", NAO_PASTA);
     }
     #[test]
     fn recusa_prefixo_de_texto() {
-        assert!(run(r"Y:\inventado\dados-x\vaga1").is_err());
+        recusa(r"Y:\inventado\dados-x\vaga1", FORA);
     }
     #[test]
     fn recusa_link_para_fora() {
-        assert!(run(r"Y:\inventado\dados\link").is_err());
+        recusa(r"Y:\inventado\dados\link", FORA);
     }
     #[test]
     fn recusa_unc_e_verbatim() {
-        assert!(run(r"\\servidor\share\x").is_err());
-        assert!(run(r"\\?\Y:\inventado\dados\vaga1").is_err());
-        assert!(run("//servidor/share").is_err());
+        recusa(r"\\servidor\share\x", REDE);
+        recusa(r"\\?\Y:\inventado\dados\vaga1", REDE);
+        recusa(r"\\.\Y:\inventado\dados\vaga1", REDE);
+        recusa("//servidor/share", REDE);
     }
     #[test]
     fn recusa_relativo_vazio_e_ponto_ponto() {
-        assert!(run("").is_err());
-        assert!(run("   ").is_err());
-        assert!(run(r"vaga1").is_err());
-        assert!(run(r"Y:\inventado\dados\vaga1\..\..\..").is_err());
+        recusa("", VAZIO);
+        recusa("   ", VAZIO);
+        recusa("vaga1", RELATIVO);
+        recusa(r"Y:inventado\dados\vaga1", RELATIVO);
+        recusa(r"Y:\inventado\dados\vaga1\..", PONTO);
+        recusa(r"Y:\inventado\dados\vaga1\..\..\..", PONTO);
     }
     #[test]
     fn recusa_raiz_de_disco() {
-        assert!(run(r"Y:\").is_err());
-        // a data dir that is itself a disk root is also refused
-        let r = pasta_permitida_com(r"Y:\", Path::new(r"Y:\"), fake(MAPA), so_pastas);
-        assert!(r.is_err());
+        recusa(r"Y:\", RAIZ_DISCO);
+        // a data dir that is itself a disk root is also refused, even for a folder inside it
+        for c in [r"Y:\", r"Y:\inventado\dados\vaga1"] {
+            let r = pasta_permitida_com(c, Path::new(r"Y:\"), fake(MAPA), so_pastas);
+            assert_eq!(r, Err(RAIZ_DISCO), "path {c:?}");
+        }
     }
     #[test]
     fn recusa_inexistente() {
-        assert!(run(r"Y:\inventado\dados\nao_existe").is_err());
+        recusa(r"Y:\inventado\dados\nao_existe", NAO_EXISTE);
     }
 }
