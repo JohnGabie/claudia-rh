@@ -158,6 +158,16 @@ fn shot_clip(metrics: &Value, clip: Option<Value>, scale: f64) -> Value {
     cl
 }
 
+/// Pure: a VIEWPORT point (a DOM.getBoxModel centre, a browser_click_at, a wheel point: what
+/// Input.dispatchMouseEvent takes) as the DOCUMENT point DOM.getNodeForLocation reads (Chrome takes the scroll
+/// off again). Without the scroll offset, a scrolled page was hit-tested somewhere else: nothing (a job link
+/// refused as "envia a candidatura") or another element (a send button judged as the harmless link above it).
+/// None when the metrics carry no scroll offset: the caller fails closed.
+fn document_point(metrics: &Value, x: f64, y: f64) -> Option<(f64, f64)> {
+    let v = if metrics["cssLayoutViewport"].is_object() { &metrics["cssLayoutViewport"] } else { &metrics["layoutViewport"] };
+    Some((x + v["pageX"].as_f64()?, y + v["pageY"].as_f64()?))
+}
+
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -698,10 +708,13 @@ impl BrowserTools {
         into.add_info(&Self::info_for_node(c, backend_id).await);
     }
 
-    /// The node under a point, decided by Chrome (hit test), not by page script.
+    /// The node under a VIEWPORT point (where the mouse goes), decided by Chrome (hit test), not by page script.
+    /// None when it cannot tell (the caller fails closed).
     async fn node_at_point(c: &CdpClient, x: f64, y: f64) -> Option<i64> {
+        let m = c.call("Page.getLayoutMetrics", json!({})).await.ok()?;
+        let (dx, dy) = document_point(&m, x, y)?;
         let r = c
-            .call("DOM.getNodeForLocation", json!({ "x": x.round() as i64, "y": y.round() as i64, "includeUserAgentShadowDOM": false }))
+            .call("DOM.getNodeForLocation", json!({ "x": dx.round() as i64, "y": dy.round() as i64, "includeUserAgentShadowDOM": false }))
             .await
             .ok()?;
         r["backendNodeId"].as_i64()
@@ -2116,6 +2129,24 @@ mod tests {
         assert_eq!((boxed["width"].as_f64(), boxed["height"].as_f64()), (Some(1249.0), Some(140.0)));
         let unscrolled = json!({ "cssVisualViewport": { "pageX": 0.0, "pageY": 0.0, "clientWidth": 1200.0, "clientHeight": 800.0 } });
         assert_eq!(shot_clip(&unscrolled, None, 1.0)["y"].as_f64(), Some(0.0));
+    }
+
+    #[test]
+    fn the_guards_hit_test_point_of_a_scrolled_page_is_moved_by_the_scroll_offset() {
+        // D4 (2026-10-09): DOM.getNodeForLocation reads DOCUMENT coordinates; the box centre of a job link far
+        // down an Ashby list is in VIEWPORT coordinates. Ashby, scrollY 524: (684, 474) found no node at all.
+        let m = json!({ "cssLayoutViewport": { "pageX": 0.0, "pageY": 524.0, "clientWidth": 1385.0, "clientHeight": 1000.0 } });
+        assert_eq!(document_point(&m, 684.5, 474.5), Some((684.5, 998.5)));
+        let sideways = json!({ "cssLayoutViewport": { "pageX": 30.0, "pageY": 0.0 } });
+        assert_eq!(document_point(&sideways, 10.0, 20.0), Some((40.0, 20.0)));
+        let unscrolled = json!({ "cssLayoutViewport": { "pageX": 0.0, "pageY": 0.0 } });
+        assert_eq!(document_point(&unscrolled, 10.0, 20.0), Some((10.0, 20.0)));
+        // Older Chrome: only the legacy layoutViewport.
+        let legacy = json!({ "layoutViewport": { "pageX": 0.0, "pageY": 300.0 } });
+        assert_eq!(document_point(&legacy, 10.0, 20.0), Some((10.0, 320.0)));
+        // No scroll offset to read: no point at all (the guard fails closed), never the unmoved point.
+        assert_eq!(document_point(&json!({}), 10.0, 20.0), None);
+        assert_eq!(document_point(&json!({ "cssLayoutViewport": { "pageX": 0.0 } }), 10.0, 20.0), None);
     }
 
     #[test]
