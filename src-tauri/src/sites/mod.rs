@@ -2,4 +2,5 @@
 //! gate that decides what the agent may open.
 pub mod dominio;
 pub mod modelo;
+pub mod repo;
 pub mod seed;
