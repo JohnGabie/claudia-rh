@@ -11,6 +11,7 @@ pub mod pagestate;
 pub mod pin;
 pub mod refs;
 pub mod service;
+pub mod sitegate;
 pub mod text;
 pub mod theme;
 pub mod viewport;

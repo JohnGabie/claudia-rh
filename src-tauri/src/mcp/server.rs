@@ -594,7 +594,8 @@ pub fn run(cfg: McpConfig) -> Result<(), String> {
             None => Arc::new(NoSink),
         };
         let docs = Arc::new(crate::documentos::fonte::DbDocumentSource { data_dir: cfg.data_dir.clone() });
-        let browser = Arc::new(BrowserTools::new(state_file, guard, sink).with_documents(docs));
+        let site_gate = Arc::new(crate::sites::gate::DbSiteGate { data_dir: cfg.data_dir.clone() });
+        let browser = Arc::new(BrowserTools::new(state_file, guard, sink).with_documents(docs).with_site_gate(site_gate));
         let service = ClaudiaMcp { cfg: Arc::new(cfg), browser }
             .serve(rmcp::transport::stdio())
             .await
