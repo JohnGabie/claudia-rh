@@ -204,7 +204,9 @@ Acima do bloco `#[cfg(test)]`, em `src-tauri/src/sites/dominio.rs`:
 /// Host and path of an http(s) URL as a browser would read them, both lowercased. `None` when it is
 /// not a plain http(s) URL with an ASCII host (IP literals and IDNs are refused on purpose).
 pub fn host_and_path(url: &str) -> Option<(String, String)> {
-    let u = url.trim();
+    // Checked on the RAW input: a trailing newline or a space inside the host is a refusal, not
+    // something to clean up.
+    let u = url;
     if u.is_empty() || u.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return None;
     }
