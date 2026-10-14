@@ -10,6 +10,7 @@ mod migration;
 mod diagnostics;
 mod notificacoes;
 mod prompt;
+mod sites;
 mod pty_manager;
 
 use commands::cover_letter::gerar_cover_letter;
