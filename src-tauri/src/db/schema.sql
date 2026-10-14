@@ -95,3 +95,42 @@ CREATE TABLE IF NOT EXISTS migrados (
     origem TEXT PRIMARY KEY,
     migrado_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Curated job sites (spec 2026-10-14-lista-de-sites). `dominios` and `dominios_ats` are JSON arrays of
+-- bare domains. An ATS domain only matches under `caminho_ats` (several companies share one ATS host).
+CREATE TABLE IF NOT EXISTS contas_browser (
+    chave TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    url_login TEXT NOT NULL,
+    dominios TEXT NOT NULL,
+    dominios_ats TEXT NOT NULL DEFAULT '[]',
+    caminho_ats TEXT,
+    tipo TEXT NOT NULL CHECK (tipo IN ('geral','regional','tecnologia','remoto','freelance','empresa','nicho')),
+    regiao TEXT NOT NULL CHECK (regiao IN ('SA','NA','EU','AS','AF','OC','GLOBAL')),
+    pais TEXT,
+    papel TEXT NOT NULL DEFAULT 'candidatura' CHECK (papel IN ('candidatura','descoberta')),
+    regra_login TEXT NOT NULL DEFAULT 'manual' CHECK (regra_login IN ('manual','cookie_sessao','nenhuma')),
+    ia_pode_usar INTEGER NOT NULL DEFAULT 0,
+    embutida INTEGER NOT NULL DEFAULT 0,
+    padrao_atual INTEGER NOT NULL DEFAULT 1,
+    estado TEXT NOT NULL DEFAULT 'desconhecido' CHECK (estado IN ('logada','precisa_login','desconhecido')),
+    verificada_em TEXT
+);
+
+-- Domains the agent tried to open that are not on the list. Only the host, a counter and the last URL
+-- WITHOUT its query string (it may carry tokens). Nothing here promotes a site by itself.
+CREATE TABLE IF NOT EXISTS dominios_recusados (
+    dominio TEXT PRIMARY KEY,
+    contagem INTEGER NOT NULL DEFAULT 0,
+    ultima_vez TEXT NOT NULL,
+    ultima_url TEXT NOT NULL
+);
+
+-- "Log in again" notices (decision D1: pendencias.vaga_id is NOT NULL and these have no vaga).
+CREATE TABLE IF NOT EXISTS avisos_sites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chave TEXT NOT NULL REFERENCES contas_browser(chave) ON DELETE CASCADE,
+    criado_em TEXT NOT NULL,
+    resolvido INTEGER NOT NULL DEFAULT 0,
+    resolvido_em TEXT
+);
