@@ -3,7 +3,7 @@
 > Documento de pesquisa que alimenta `docs/superpowers/specs/2026-10-14-lista-de-sites-design.md` §4.2. **Não é seed, não é código.** Nada daqui entra no app antes de a spec ser aprovada e de o usuário revisar a lista.
 
 **Data:** 2026-10-14
-**Estado:** primeira passada concluída para SA, NA, EU, AS e OC. **África e Oriente Médio não foram pesquisados.** Faltam as páginas de empresas de tecnologia e o freelance.
+**Estado:** primeira passada concluída para SA, NA, EU, AS e OC, para empresas de tecnologia (globais, regionais, corporativas "normais" e "legais") e para freelance. **África e Oriente Médio não foram pesquisados.** Falta a passada de verificação dos termos e das URLs de login.
 
 ## Como foi feito
 
@@ -242,6 +242,140 @@ Golpes de vaga falsa são frequentes no México em 2026 (alertas oficiais), sem 
 
 **Descartados:** FlexJobs (pago ao candidato; termos proíbem ferramentas que preenchem candidaturas), Remote.co, Remote Rocketship (paywall).
 
+## EMPRESAS: páginas de carreiras de tecnologia (`tipo = empresa`)
+
+Aqui a unidade é a **empresa**, e não o ATS: cada uma tem a página de carreiras e, quase sempre, **outro domínio** para onde a candidatura vai. **Nenhuma cláusula de robôs foi confirmada em nenhuma delas**; os termos de Greenhouse, Lever, Workday, Teamtailor e Gupy deram 404. Isso é NÃO VERIFICADO, e não permissão.
+
+### Globais (`regiao = GLOBAL`)
+
+| Empresa | chave | Carreiras | Domínios envolvidos | ATS | Veredito |
+|---|---|---|---|---|---|
+| Anthropic | `anthropic` | https://job-boards.greenhouse.io/anthropic | `job-boards.greenhouse.io` (`boards.greenhouse.io` redireciona) | Greenhouse | INCLUIR (alta) |
+| Google | `google` | https://www.google.com/about/careers/applications/ | `www.google.com`; `careers.google.com` redireciona | próprio | INCLUIR (média) |
+| Microsoft | `microsoft` | https://apply.careers.microsoft.com/careers | `careers.microsoft.com` redireciona para `apply.careers.microsoft.com` | próprio (Eightfold, conhecimento prévio) | INCLUIR (média) |
+| Amazon | `amazon` | https://www.amazon.jobs/en/ | `amazon.jobs` | próprio | INCLUIR (média) |
+| Apple | `apple` | https://jobs.apple.com/en-us/search | `jobs.apple.com` | próprio | INCLUIR (média) |
+| Netflix | `netflix` | https://explore.jobs.netflix.net/careers | `explore.jobs.netflix.net` | Eightfold | INCLUIR (média) |
+| Nvidia | `nvidia` | https://jobs.nvidia.com/careers | `jobs.nvidia.com`; `nvidia.wd5.myworkdayjobs.com` (fonte de terceiros) | Workday | INCLUIR (média) |
+| OpenAI | `openai` | https://openai.com/careers/ (403) | `openai.com`; `jobs.ashbyhq.com` (terceiros) | Ashby | INCLUIR (média) |
+| Stripe | `stripe` | https://stripe.com/jobs | `stripe.com`; Greenhouse | Greenhouse (inferência) | INCLUIR (média) |
+| Databricks | `databricks` | https://www.databricks.com/company/careers | `databricks.com`; Greenhouse (terceiros) | Greenhouse | INCLUIR (média) |
+| Cloudflare | `cloudflare` | https://www.cloudflare.com/careers/jobs/ | `cloudflare.com`; `job-boards.greenhouse.io` (terceiros) | Greenhouse | INCLUIR (média) |
+| Meta | `meta` | https://www.metacareers.com/ | `metacareers.com` | próprio | TALVEZ (baixa) |
+| Salesforce | `salesforce` | https://www.salesforce.com/company/careers/jobs/ | `careers.salesforce.com` redireciona | Workday (conhecimento prévio) | TALVEZ (baixa) |
+| Shopify | `shopify` | https://www.shopify.com/careers | `shopify.com` | Ashby (fraca) | TALVEZ (baixa) |
+| Atlassian | `atlassian` | https://www.atlassian.com/company/careers | `atlassian.com` | próprio (terceiros) | TALVEZ (baixa) |
+| Snowflake | `snowflake` | — (`/en/careers/` deu 404) | — | — | NÃO VERIFICADO |
+
+**Citadas só por conhecimento prévio, não verificadas hoje:** Adobe, Oracle, SAP, IBM, Cisco, Intel, Datadog, GitLab, Airbnb, Spotify (verificada abaixo), Uber, Twilio, MongoDB, Elastic, Canonical.
+
+### Regionais
+
+| Empresa | chave | Reg/País | Carreiras | ATS (domínio de candidatura) | Veredito |
+|---|---|---|---|---|---|
+| Pleo | `pleo` | EU/DK | https://www.pleo.io/en/careers | Ashby (`jobs.ashbyhq.com/pleo`) | INCLUIR (alta); remoto em vários países e híbrido em Copenhagen |
+| Lunar | `lunar` | EU/DK | https://jobs.lunar.app/jobs | Teamtailor (`jobs.lunar.app`) | INCLUIR (média); muitas vagas pedem dinamarquês; remoto improvável |
+| Templafy | `templafy` | EU/DK | https://templafy.com/careers/ | Teamtailor (`templafy.teamtailor.com`) | INCLUIR (média); híbrido |
+| Spotify | `spotify` | EU/SE | https://www.lifeatspotify.com/jobs | Lever (`jobs.lever.co/spotify`); uma fonte diz Greenhouse | INCLUIR (média); nenhuma vaga em Copenhagen na amostra |
+| DeepL | `deepl` | EU/DE | https://www.deepl.com/en/careers | Ashby (`jobs.ashbyhq.com/DeepL`) | INCLUIR (média) |
+| Nubank | `nubank` | SA/BR | https://nu.com/pt/carreiras | Ashby (`jobs.ashbyhq.com/nubank`); `nubank.com.br/carreiras` redireciona | INCLUIR (média); AR, BR, CA, CO, DE, MX, US, UY |
+| VTEX | `vtex` | SA/BR | https://job-boards.greenhouse.io/vtex | Greenhouse | INCLUIR (média); nenhuma vaga marcada como remota |
+| Klarna | `klarna` | EU/SE | https://www.klarna.com/careers/ | Deel (`jobs.deel.com/job-boards/klarna`) | TALVEZ (média) |
+| Netcompany | `netcompany` | EU/DK | https://www.netcompany.com/careers | não verificado | TALVEZ (média); muitas vagas exigem dinamarquês |
+| Vestas | `vestas` | EU/DK | https://careers.vestas.com/search | próprio | TALVEZ (média); 638 vagas |
+| Trustpilot | `trustpilot` | EU/DK | https://corporate.trustpilot.com/careers | não verificado | TALVEZ (baixa) |
+| Danske Bank (tech) | `danske` | EU/DK | https://danskebank.com/careers/tech | não verificado | TALVEZ (baixa) |
+| Siteimprove | `siteimprove` | EU/DK | https://careers.siteimprove.com | não verificado | TALVEZ (baixa) |
+| Novo Nordisk | `novonordisk` | EU/DK | https://www.novonordisk.com/careers/find-a-job.html | não verificado | TALVEZ (baixa); aviso de fraude em recrutamento |
+| Unity | `unity` | NA/US | https://unity.com/careers | não verificado | TALVEZ (baixa); nenhuma vaga em Copenhagen vista |
+| Zalando | `zalando` | EU/DE | https://jobs.zalando.com/ | não verificado | TALVEZ (média); muita vaga presencial |
+| Booking.com | `booking` | EU/NL | https://jobs.booking.com | iCIMS (`external-workingatbooking.icims.com`); conta exigida | TALVEZ (média) |
+| Adyen | `adyen` | EU/NL | https://careers.adyen.com | Greenhouse (`job-boards.greenhouse.io/adyen`) | TALVEZ (média); "office-first", sem remoto |
+| Wise | `wise` | EU/GB | https://wise.jobs | SmartRecruiters (`smartr.me`); conta provável | TALVEZ (média); a única cláusula lida (SmartRecruiters, "use automatic means to access content or data from other users") fala de dados de outros usuários |
+| N26, Celonis, Mollie, Personio, Revolut | `n26`, `celonis`, `mollie`, `personio`, `revolut` | EU | vários | não verificado | TALVEZ (baixa) |
+| Zup | `zup` | SA/BR | https://www.zup.com.br/carreiras | Greenhouse (`boards.greenhouse.io/zupinnovation`) | TALVEZ (média); 3 vagas, todas remotas |
+| QuintoAndar | `quintoandar` | SA/BR | https://carreiras.quintoandar.com.br | não verificado | TALVEZ (média); remoto só no Brasil |
+| iFood, TOTVS, Mercado Libre | `ifood`, `totvs`, `mercadolibre` | SA | vários (404 ou 403 hoje) | não verificado | TALVEZ (baixa) |
+
+**Descartadas ou adiadas:** Magalu (candidata pela 99jobs), Stone (Gupy com 0 vagas hoje), Creditas (404), Globo (domínio bloqueado). **Sem verificação:** Maersk, Vivino e Zendesk Copenhagen.
+
+### O que as empresas ensinam sobre o modelo
+
+- **O modelo deve ser a empresa, não o ATS.** Workday usa subdomínio por empresa e por servidor (`nvidia.wd5.myworkdayjobs.com`); um curinga `*.myworkdayjobs.com` abriria demais. Greenhouse, Lever e Ashby usam **caminho** por empresa (`/anthropic`), então casar só o domínio também abriria demais.
+- **Cada empresa precisa de uma lista de domínios**, porque há aliases e redirecionamentos: `careers.google.com`, `careers.microsoft.com`, `boards.greenhouse.io`, `nubank.com.br/carreiras`.
+- **Conta por empresa** (conhecimento prévio, não verificado): Workday, SuccessFactors, Taleo, iCIMS e Eightfold costumam exigir; Greenhouse, Lever e Ashby costumam aceitar candidatura sem conta.
+- **Idioma é o principal filtro na Dinamarca:** Lunar e Netcompany pedem dinamarquês ou sueco em muitas vagas; Pleo, Templafy e Spotify operam em inglês.
+- Poucos ATS concentram a maioria (Ashby, Greenhouse, Teamtailor, Lever), o que simplifica a automação.
+
+### Corporativas "normais" (pedido do usuário: HP, Dell, SAP e parecidas)
+
+| Empresa | chave | Reg/País | Carreiras | ATS / domínios | Veredito |
+|---|---|---|---|---|---|
+| Accenture | `accenture` | GLOBAL | https://www.accenture.com/dk-en/careers | Workday: `accenture.wd103.myworkdayjobs.com/AccentureCareers`; conta provável | INCLUIR (média) |
+| LEGO Group | `lego` | EU/DK | https://www.lego.com/en-dk/careers/how-to-apply | Workday: `lego.wd103.myworkdayjobs.com`; **cria perfil na candidatura**; triagem assistida por IA na DK, UK e Boston | INCLUIR (média) |
+| Ørsted | `orsted` | EU/DK | https://orsted.com/en/careers/vacancies-list | ATS não identificado; "Sign in or create an account" | INCLUIR (média) |
+| SAP | `sap` | GLOBAL | https://jobs.sap.com/ | SuccessFactors (inferência); **parece migrar para `sap.com/en/jobs`, que deu 403**; 188 vagas na busca por Denmark, nenhuma listada na DK | TALVEZ (baixa) |
+| Dell | `dell` | GLOBAL | `jobs.dell.com` redireciona para `enterpriseplatform.dell.com/hcmUI/CandidateExperience/` | Oracle HCM (inferência pelo caminho); escritório em Copenhagen | TALVEZ (baixa) |
+| HP Inc | `hp` | GLOBAL | https://jobs.hp.com/ | `apply.hp.com`; ATS contraditório entre resumos (Eightfold ou outro); `careers.hp.com` não resolve | TALVEZ (baixa) |
+| IBM | `ibm` | GLOBAL | https://www.ibm.com/careers | `careers.ibm.com`, `www.ibm.com/careers/search`; vagas da IBM Danmark em Holte (fonte secundária) | TALVEZ (baixa) |
+| Cisco | `cisco` | GLOBAL | https://careers.cisco.com/ | Phenom (CDN `phenompeople.com`) | TALVEZ (média) |
+| Nordea | `nordea` | EU/DK | https://careers.nordea.com/ | não identificado; vagas em `careers.nordea.com/job/...` | TALVEZ (média) |
+| Maersk | `maersk` | EU/DK | `maersk.com/careers` deu erro de leitura | Workday como RH (via busca) | TALVEZ (baixa) |
+| Capgemini, Ericsson, Grundfos, Carlsberg, Kyndryl | `capgemini`, `ericsson`, `grundfos`, `carlsberg`, `kyndryl` | vários | páginas de carreiras abriram ou redirecionaram | ATS não identificado | TALVEZ (baixa) |
+
+**Sem leitura utilizável (403, DNS, SSL):** Oracle, Intel, Siemens, Nokia, Deloitte DK, Arla. **Não pesquisadas por limite de esforço, não por mérito:** Lenovo, Philips, Bosch, KPMG, EY, PwC, TCS, Infosys, Atos, CGI.
+
+### Empresas "legais" (pedido do usuário: Canonical e parecidas)
+
+| Empresa | chave | Reg/País | ATS (domínio de candidatura) | Remoto / elegibilidade | Veredito |
+|---|---|---|---|---|---|
+| **Canonical** | `canonical` | GLOBAL/GB | Greenhouse (`job-boards.greenhouse.io/canonical`) | totalmente distribuída, "any country"; 75+ vagas pela API; **limite de 1 vaga por 180 dias, ou 4 vagas diferentes**; processo de ~3 meses com avaliação escrita | INCLUIR (alta) |
+| GitLab | `gitlab` | GLOBAL/US | Greenhouse (`job-boards.greenhouse.io/gitlab`) | all-remote; 150 vagas; vaga LATAM/Brasil vista | INCLUIR (alta) |
+| Supabase | `supabase` | GLOBAL/US | Ashby (`jobs.ashbyhq.com/supabase`) | fully remote em 60+ países; contagens divergem (9 pela API, 53 no site) | INCLUIR (alta) |
+| Grafana Labs | `grafanalabs` | GLOBAL/US | Greenhouse (`job-boards.greenhouse.io/grafanalabs`) | remote por país (NL, DE, UK vistos); 112 vagas | INCLUIR (média) |
+| Elastic | `elastic` | GLOBAL/NL | Greenhouse (`jobs.elastic.co`) | "distributed by design", 40+ países | INCLUIR (média) |
+| Linear | `linear` | GLOBAL/US | Ashby (`jobs.ashbyhq.com/linear`) | vagas "Europe, Remote"; 8 vagas | INCLUIR (média) |
+| Hugging Face | `huggingface` | GLOBAL/FR | Workable (`apply.workable.com/huggingface`) | vagas "EMEA Remote"; 6 vagas | INCLUIR (média) |
+| Automattic | `automattic` | GLOBAL/US | Greenhouse (board `automatticcareers`) | distribuída, 83 países; trial de até 20 horas; **declara avaliar candidaturas com ferramentas automatizadas e verificar identidade** | INCLUIR (média) |
+| Mozilla | `mozilla` | GLOBAL/US | Greenhouse (embutido em `mozilla.org`) | remoto por país (FR, DE, UK, US); DK e Brasil não vistos | TALVEZ (média) |
+| Sentry | `sentry` | GLOBAL/US | Ashby (`jobs.ashbyhq.com/sentry`) | política remota não verificada | TALVEZ (média) |
+| Tailscale | `tailscale` | NA/US | Greenhouse (`job-boards.greenhouse.io/tailscale`) | só CA, US, UK | TALVEZ (média) |
+| Mistral AI | `mistral` | EU/FR | Ashby (`jobs.ashbyhq.com/mistral.ai`) | escritórios europeus, sem DK | TALVEZ (média) |
+| JetBrains | `jetbrains` | EU/CZ | Greenhouse EU (`job-boards.eu.greenhouse.io/jetbrains`) | híbrido, 15 escritórios | TALVEZ (média) |
+| Doist (Todoist) | `doist` | GLOBAL/PT | não identificado | "work from anywhere"; sem confirmar vagas hoje | TALVEZ (média) |
+| Red Hat | `redhat` | GLOBAL/US | Workday (`redhat.wd5.myworkdayjobs.com`); **exige conta** | remoto parcial | TALVEZ (média) |
+| SUSE | `suse` | EU/DE | Workday (`suse.wd3.myworkdayjobs.com`); **exige conta** | não verificado | TALVEZ (baixa) |
+| Cohere, Netlify, Prisma, Vercel | `cohere`, `netlify`, `prisma`, `vercel` | vários | Ashby, Greenhouse e não identificado | foco EUA ou poucas vagas | TALVEZ (baixa) |
+
+**Descartadas:** 37signals (sem vagas hoje), HashiCorp (adquirida pela IBM em 2025), PlanetScale (só EUA), Zapier (só EUA, Canadá e Índia). **Sem leitura:** Docker (404), Fly.io (política remota não confirmada). **Não pesquisadas:** Buffer, Postman, Figma, Notion.
+
+### Observações sobre empresas
+
+- **Greenhouse domina** entre as "legais"; o resto usa Ashby ou Workable. Domínios a liberar por empresa: `job-boards.greenhouse.io`, `job-boards.eu.greenhouse.io`, `jobs.ashbyhq.com`, `apply.workable.com`, mais os subdomínios Workday exatos.
+- **Dois tipos de limite que o app precisa respeitar:** a Canonical limita candidaturas por empresa (180 dias), e a Automattic avalia com ferramentas automatizadas. Candidatura em lote nessas duas é contraproducente.
+- **Dinamarca:** nenhuma vaga amostrada das "legais" estava explicitamente lá; o caminho é "Remote EMEA/Europe".
+
+## FREELANCE (`tipo = freelance`)
+
+**Os termos proíbem automação quase sempre.** As cláusulas abaixo foram citadas por resumo de leitura; Upwork, Fiverr e Malt bloquearam a leitura (403). **Conclusão do agente: tratar todas como descoberta, com envio manual.**
+
+| Plataforma | chave | Reg | Entrada | Modelo e custo ao freelancer | Brasil / DK | Veredito | Termos |
+|---|---|---|---|---|---|---|---|
+| Worksome | `worksome` | EU/DK | https://www.worksome.com | rede vetada; custo NÃO VERIFICADO | empresa dinamarquesa; aceite de brasileiros NÃO VERIFICADO | INCLUIR (média) | AUP v1 (2024-03-01) existe; cláusula NÃO LIDA |
+| Malt | `malt` | EU | https://www.malt.com | marketplace; comissão 10%, 5% após 6 meses, 2% cliente próprio (fonte secundária; três revisões em 2026) | **Brasil só com empresa registrada**; DK NÃO VERIFICADO | INCLUIR (média) | NÃO VERIFICADO (403) |
+| freelancermap | `freelancermap` | EU (DACH) | https://www.freelancermap.de | grátis (10 candidaturas/mês), Premium €13,99/mês, sem comissão | NÃO VERIFICADO; muitas vagas exigem alemão | INCLUIR (média) | NÃO VERIFICADO (404) |
+| Lemon.io | `lemonio` | GLOBAL | https://lemon.io | rede vetada, 5 etapas; taxa não divulgada | **Brasil citado na página oficial** | INCLUIR (alta p/ BR) | **⚠ proíbe** (§20(K) e (L)); conta única |
+| Toptal | `toptal` | GLOBAL | https://www.toptal.com | rede vetada, ~3% aceitos, 3 a 8 semanas | NÃO VERIFICADO | INCLUIR como descoberta (média) | **⚠ proíbe** ("page-scraper, deep-link, spider, robot") |
+| Upwork | `upwork` | GLOBAL | https://www.upwork.com/ab/account-security/login (por busca; 403) | 0 a 15% por contrato + Connects (~US$0,15, 2 a 16 por proposta) | amplamente usado | TALVEZ (média) | **⚠ proíbe** (via busca); auto-bidders banidos, inclusive por fingerprint |
+| Freelancer.com | `freelancercom` | GLOBAL | https://www.freelancer.com/login | lances; 10% por projeto | conta aberta globalmente | TALVEZ (média) | **⚠ proíbe** (§33, vale para a API) |
+| Turing | `turing` | GLOBAL | https://www.turing.com | rede vetada | NÃO VERIFICADO | TALVEZ (média) | **⚠ proíbe** (§6(b)); múltiplos perfis = fraude |
+| Contra | `contra` | GLOBAL | https://contra.com | 0% de comissão; Pro US$29/mês | NÃO VERIFICADO | TALVEZ (média) | **⚠ proíbe** ("multiple accounts, automated tools") |
+| Crossover | `crossover` | GLOBAL | https://www.crossover.com | emprego remoto full-time com testes e monitoramento | NÃO VERIFICADO | TALVEZ (média) | NÃO VERIFICADO |
+| 99Freelas | `n99freelas` | SA/BR | https://www.99freelas.com.br/login | 10 a 20% (mínimo R$ 5) + pacotes de conexões | Brasil | TALVEZ (média) | sem cláusula; ticket baixo para perfil sênior |
+| Braintrust, Andela, Malt Strategy (ex-Comatch), Freelance.de | `braintrust`, `andela`, `maltstrategy`, `freelancede` | vários | vários | rede vetada ou DACH | NÃO VERIFICADO | TALVEZ (baixa) | parcial ou NÃO VERIFICADO |
+
+**Descartadas:** Fiverr (vende "gigs", não propõe a vagas), Gun.io (convite, focado em EUA e Canadá), Codementor (mentoria), Twago (adquirida pela Randstad em 2016), Comatch como marca (virou Malt Strategy em 2022), **Mercor e Outlier** (processos, vazamento de dados e retenção de pagamento, por fontes secundárias). **Sem confirmação:** Hired.com, Konsulentbørsen/Freelance.dk (só Edora e Freelance.nl apareceram).
+
 ## AF: África e Oriente Médio
 
 **Não pesquisados.** Lacuna declarada, e não esquecimento.
@@ -267,7 +401,8 @@ Golpes de vaga falsa são frequentes no México em 2026 (alertas oficiais), sem 
 4. Confirmar o portal atual do SINE, se `glassdoor.com.br` ainda é independente e o estado de Monster e CareerBuilder.
 5. Pesquisar **África e Oriente Médio**, China e Hong Kong, Coreia, e PCD e mulheres em tecnologia com quadro real.
 
-## Próximas fases
+## Próximas etapas
 
-- **Empresas de tecnologia:** páginas de carreiras e ATS usados por elas.
-- **Freelance** (Workana, Upwork e afins; Arc.dev e Workana já apareceram).
+- **Passada de verificação com navegador real:** termos de uso (LinkedIn, Indeed, Glassdoor, Workday, SuccessFactors, Greenhouse, Ashby), URLs de login marcadas NÃO VERIFICADO e o estado das empresas que mudaram de domínio (SAP, Dell, HP).
+- **Curadoria:** reduzir as ~190 entradas listadas para ~100 com o usuário, decidir o risco dos termos e fechar o seed na spec.
+- **Lacunas:** África e Oriente Médio, China e Hong Kong, Coreia, PCD e mulheres em tecnologia, e as corporativas não pesquisadas (Lenovo, Philips, Bosch, KPMG, EY, PwC, TCS, Infosys, Atos, CGI).

@@ -51,6 +51,7 @@ Separadas do pedido. Cada uma indica o estado da decisão.
 | P9 | Sétimo tipo **`nicho`** (estágio, PCD, mulheres em tecnologia) | Decidida pelo usuário em 2026-10-14, depois da pesquisa da fase 1. |
 | P10 | Campo **`papel`**: agregadores que só redirecionam entram no seed como `descoberta`, com um pill no cartão | Decidida pelo usuário em 2026-10-14, depois da pesquisa da fase 1. |
 | P11 | Campo **`regiao`** (`SA`, `NA`, `EU`, `AS`, `AF`, `OC`, `GLOBAL`) e filtro Região, com `pais` opcional | Decidida pelo usuário em 2026-10-14 ("separar por cada região"). |
+| P12 | Para `tipo = empresa`, modelar **domínios de carreiras, domínios do ATS e caminho do ATS** por empresa, em vez de uma lista única `dominios`. Motivo: Workday usa subdomínio por empresa e servidor; Greenhouse, Lever e Ashby usam caminho por empresa; há aliases (`careers.google.com`) | **Proposta que veio da pesquisa de empresas. Não decidida.** Muda o casamento de domínio de §4.5. |
 
 ## 4. Design
 
