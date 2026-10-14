@@ -146,6 +146,8 @@ Item "Sites" na sidebar. Barra de ferramentas: busca por texto (nome e domínio)
 
 ## 8. Em aberto / não verificado
 
+**Estado da pesquisa do seed (2026-10-14, fechada por ora):** `docs/pesquisa/2026-10-14-lista-de-sites-pesquisa.md`. Decisões do usuário já aplicadas: empresas só entram se publicam as vagas no próprio site; no freelance, só plataformas de fora da América do Sul. **Fora do seed por falta de confirmação:** VTEX e Hugging Face (o site só linka direto ao ATS) e Creditas (sem página própria vista), até o usuário decidir. A lista tem cerca de 190 entradas e **precisa de curadoria até ~100** antes de virar `sites-padrao.json`.
+
 - **Não verificado:** a lista do seed (sites e `url_login` não visitados); o nome do cookie de sessão do LinkedIn (`li_at`).
 - **Em aberto:** qual `status` recebe a vaga salva por site fora da lista; se a pendência de relogar exige categoria nova (arquitetura §10 e §6.1); como a vaga se liga ao domínio recusado.
 - **Risco aceito pelo usuário:** o verde pode estar velho, porque o login não expira por prazo. Mitigado só pelo "confirmada há X dias".
