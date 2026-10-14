@@ -1,0 +1,14 @@
+{
+  "versao": 1,
+  "sites": [
+    {"chave": "linkedin", "nome": "LinkedIn", "url_login": "https://www.linkedin.com/jobs/", "dominios": ["linkedin.com"], "tipo": "geral", "regiao": "GLOBAL", "papel": "candidatura"},
+    {"chave": "indeed-br", "nome": "Indeed Brasil", "url_login": "https://br.indeed.com/", "dominios": ["indeed.com"], "tipo": "geral", "regiao": "GLOBAL", "papel": "descoberta"},
+    {"chave": "vagas-com", "nome": "Vagas.com", "url_login": "https://www.vagas.com.br/login-candidatos", "dominios": ["vagas.com.br"], "tipo": "geral", "regiao": "SA", "pais": "BR"},
+    {"chave": "jobindex", "nome": "Jobindex", "url_login": "https://www.jobindex.dk/bruger/log-ind", "dominios": ["jobindex.dk"], "tipo": "geral", "regiao": "EU", "pais": "DK"},
+    {"chave": "thehub", "nome": "The Hub", "url_login": "https://thehub.io/", "dominios": ["thehub.io"], "tipo": "tecnologia", "regiao": "EU"},
+    {"chave": "reed", "nome": "Reed", "url_login": "https://www.reed.co.uk/", "dominios": ["reed.co.uk"], "tipo": "geral", "regiao": "EU", "pais": "GB"},
+    {"chave": "canonical", "nome": "Canonical", "url_login": "https://canonical.com/careers", "dominios": ["canonical.com"], "dominios_ats": ["job-boards.greenhouse.io"], "caminho_ats": "/canonical", "tipo": "empresa", "regiao": "GLOBAL", "regra_login": "nenhuma"},
+    {"chave": "anthropic", "nome": "Anthropic", "url_login": "https://www.anthropic.com/careers", "dominios": ["anthropic.com"], "dominios_ats": ["job-boards.greenhouse.io"], "caminho_ats": "/anthropic", "tipo": "empresa", "regiao": "GLOBAL", "regra_login": "nenhuma"},
+    {"chave": "lego", "nome": "LEGO Group", "url_login": "https://www.lego.com/en-dk/careers/how-to-apply", "dominios": ["lego.com"], "dominios_ats": ["lego.wd103.myworkdayjobs.com"], "tipo": "empresa", "regiao": "EU", "pais": "DK"}
+  ]
+}
