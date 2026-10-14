@@ -2,7 +2,7 @@
 
 > Spec de design. Não é o plano de implementação. Ciclo 2 de 3. Depende do motor do browser (`2026-10-02-browser-cdp-motor-design.md`).
 
-> **Status: NÃO INICIADA.** Ciclo 2, branch própria `feat/browser-contas`, depois do merge desta. Precisa de aprovação.
+> **Status: SUBSTITUÍDA em 2026-10-14** por `2026-10-14-lista-de-sites-design.md` (branch `feat/lista-de-sites`). Mudanças de decisão: §4 (o login não expira por prazo) e §6 (a IA só acessa sites da lista; fora dela é recusado e a vaga é salva). O resto segue como histórico.
 
 **Data:** 2026-10-02
 **Branch:** `feat/browser-contas` (a partir da branch do ciclo 1, depois que ela estiver integrada)
