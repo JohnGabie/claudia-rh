@@ -26,7 +26,7 @@
 
 ## Decisões que o plano toma (revise antes de executar)
 
-- **D1, aviso de relogar (diverge da spec §4.4):** `pendencias.vaga_id` é `NOT NULL REFERENCES vagas(id)`, e "relogar em X" não tem vaga. Em vez de reconstruir a tabela `pendencias` do usuário (risco para dados reais), o plano cria a tabela `avisos_sites` e mostra o aviso **na tela Sites e no badge da sidebar**. A tela **Pendências** não muda. **Este trecho precisa da sua aprovação**, e a Task 8 não começa sem ela.
+- **D1, aviso de relogar (aprovada pelo usuário em 2026-10-14, com um acréscimo):** `pendencias.vaga_id` é `NOT NULL REFERENCES vagas(id)`, e "relogar em X" não tem vaga. Em vez de reconstruir a tabela `pendencias` do usuário (risco para dados reais), o plano cria a tabela `avisos_sites`, no mesmo molde de `propostas_perfil` (que já aparece na tela Pendências sem ser uma pendência). **O aviso aparece na tela Pendências, como notificação** (item na lista, badge do item Pendências da sidebar e notificação nativa), **e também numa faixa na tela Sites**.
 - **D2, vaga fora da lista:** a recusa é do `browser_open`; quem salva a vaga é o agente, com `register_vaga` + `update_vaga_status('pulada', "site fora da lista: <domínio>")`, instruído pela mensagem de recusa. O app **não** cria vaga sozinho (o `browser_open` só recebe uma URL, sem título nem empresa). A tabela `dominios_recusados` guarda só domínio, contagem, última vez e a última URL **sem query string**. Resolve o "em aberto" da spec §8.
 - **D3, abrir o site para logar:** abre uma aba nova no browser da Claudia por CDP HTTP (`PUT /json/new?<url>`), depois de `request_start`. É o único ponto com leitura de código ainda por fazer (Task 9, Step 1).
 - **D4, seed:** a Task 2 entrega um **seed inicial de 9 sites** com URLs confirmadas na pesquisa. A curadoria até ~100 é a Task 14 e **depende de você** (lista e risco dos termos de uso).
@@ -1569,13 +1569,13 @@ git commit -m "feat(mcp): browser_contas lists where the agent may open pages"
 
 ---
 
-### Task 8: Avisos de "relogar" (D1; só depois da aprovação do desvio)
+### Task 8: Avisos de "relogar" (D1, aprovada) e a notificação em Pendências
 
-> **Bloqueada** até o usuário aprovar a decisão D1 (aviso em tabela própria, e não em `pendencias`). Ao aprovar, registre a data na spec §4.4.
+> D1 aprovada em 2026-10-14: tabela própria `avisos_sites`, **mostrada na tela Pendências** (item, badge e notificação nativa, no molde das propostas de perfil) e na faixa da tela Sites.
 
 **Files:**
 - Create: `src-tauri/src/sites/avisos.rs`
-- Modify: `src-tauri/src/sites/mod.rs`, `src-tauri/src/sites/gate.rs`
+- Modify: `src-tauri/src/sites/mod.rs`, `src-tauri/src/sites/gate.rs`, `src-tauri/src/notificacoes.rs`, `src/components/Pendencias.tsx`, `src/App.tsx`, `src/i18n/pt.ts`, `src/i18n/en.ts`
 
 **Interfaces:**
 - Produces: `criar(conn, chave) -> Result<(), String>`, `contar(conn) -> Result<i64, String>`, `listar_abertos(conn) -> Result<Vec<Aviso>, String>`, `resolver_do_site(conn, chave) -> Result<(), String>`; `#[derive(Serialize)] pub struct Aviso { id: i64, chave: String, nome: String, criado_em: String }`
@@ -1696,11 +1696,61 @@ Expected: PASS (todos os testes de `sites`).
 
 Remova o `WHERE NOT EXISTS` de `criar` e confirme que **`one_open_notice_per_site_even_if_created_twice`** falha. Restaure.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: A notificação nativa e o evento (o aviso "como notificação")**
+
+Em `src-tauri/src/notificacoes.rs`, siga **exatamente** o molde de `query_open_propostas` e do laço das propostas (linhas ~43 e ~160-195):
+
+1. Acrescente, ao lado de `query_open_propostas`:
+
+```rust
+fn query_open_avisos_sites(db: &Arc<Mutex<Connection>>) -> Vec<OpenItem> {
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT a.id, c.nome FROM avisos_sites a JOIN contas_browser c ON c.chave = a.chave WHERE a.resolvido = 0",
+    ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map([], |r| {
+        let id: i64 = r.get(0)?;
+        let nome: String = r.get(1)?;
+        Ok(OpenItem { id, body: format!("Entre de novo em {nome} para a IA poder usar o site.") })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+```
+
+2. Em `start`, junto de `seen_propostas` e `last_native_prop`, acrescente `seen_avisos: HashSet<i64>` e `last_native_aviso: HashMap<i64, Instant>`, e, depois do bloco das propostas, um terceiro bloco idêntico a ele, trocando `query_open_propostas` por `query_open_avisos_sites`, o evento por `"novo-aviso-site"` e o título nativo por `"Claudia RH — Site"`, com a mensagem de erro `"[notif] show aviso de site: {e}"`. Reaproveite `decide_notify` sem mudá-la: a regra de repetição (intervalo configurado) vale também para estes avisos.
+
+3. O teste de `decide_notify` já existente cobre a regra. Acrescente um teste de `query_open_avisos_sites` com um `Connection::open_in_memory()` + `crate::db::apply`, um site e um aviso, que confirme que o item traz o nome do site no `body` e que um aviso resolvido não aparece. Rode (Sandbox) `cargo test --lib notificacoes`. Expected: PASS.
+
+Prova de mutação: troque `a.resolvido = 0` por `1 = 1` na consulta e confirme que o teste do aviso resolvido falha. Restaure.
+
+- [ ] **Step 8: O item na tela Pendências, a contagem e o badge**
+
+Em `src/components/Pendencias.tsx`, siga o molde de `Proposta` e `PropostaItem`:
+
+1. Acrescente `interface AvisoSite { id: number; chave: string; nome: string; criado_em: string }` e o estado `const [avisos, setAvisos] = useState<AvisoSite[]>([]);`.
+2. Em `carregar`, acrescente `invoke<AvisoSite[]>("listar_avisos_sites")` ao `Promise.all` e `setAvisos`.
+3. Em `useEffect`, acrescente `listen("novo-aviso-site", carregar)` e `listen("aviso-site-resolvido", carregar)` à lista de `unsubs`.
+4. `const total = pendencias.length + propostas.length + avisos.length;`.
+5. Na lista combinada, acrescente `...avisos.map((a) => ({ tipo: "aviso" as const, criada_em: a.criado_em, item: a }))` e o ramo de renderização `<AvisoSiteItem key={`a-${entry.item.id}`} a={entry.item as AvisoSite} onResolved={carregar} />`.
+6. Crie `AvisoSiteItem` no mesmo arquivo, com o mesmo cartão das outras notificações (barra lateral `var(--warning)`, ícone `AlertTriangle`, pill com `t.notifications.categories.site_login`, tempo com `tempoDesde(a.criado_em)`), o texto `t.sites.relogin(a.nome)` e dois botões: **"Abrir o site"** (`invoke("abrir_site", { chave: a.chave })`) e **"Já entrei"** (`invoke("marcar_site_logado", { chave: a.chave })` e depois `onResolved()`). O botão "Já entrei" só aparece depois de "Abrir o site" ter sido clicado, para evitar confirmar sem entrar.
+7. Em `src/App.tsx`: `const [avisosSitesCount, setAvisosSitesCount] = useState(0);`, `refreshAvisosSitesCount` com `invoke<number>("contar_avisos_sites")` (chamada onde `refreshPropostasCount` é chamada, e no `listen("db-atualizada", ...)`), `listen("novo-aviso-site", refreshAvisosSitesCount)` e `listen("aviso-site-resolvido", refreshAvisosSitesCount)`, e `pendenciasCount={pendenciasCount + propostasCount + avisosSitesCount}` no `Sidebar`.
+8. Em `src/i18n/pt.ts` e `en.ts`, acrescente a categoria `site_login` em `notifications.categories` ("Site pede login" / "Site needs login"), os textos "Abrir o site" e "Já entrei", e o aviso de erro genérico, nas duas línguas.
+9. Os botões chamam `abrir_site` e `marcar_site_logado`, **criados na Task 9** (o `marcar_site_logado` já emite `aviso-site-resolvido`). Até a Task 9, a tela compila mas os botões ainda não têm comando por trás.
+
+Verifique: `npx tsc --noEmit && npm run build` (código de saída 0).
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src-tauri/src/sites
-git commit -m "feat(sites): log-in-again notices in their own table"
+git add src-tauri/src src
+git commit -m "feat(sites): log-in-again notices in their own table, shown in Pendências as notifications"
 ```
 
 ---
@@ -1770,7 +1820,7 @@ use crate::sites::avisos::{self, Aviso};
 use crate::sites::repo::{self, Site};
 use crate::DbState;
 use rusqlite::Connection;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 pub(crate) fn do_listar(c: &Connection) -> Result<Vec<Site>, String> { repo::listar(c) }
 pub(crate) fn do_definir_ia(c: &Connection, chave: &str, valor: bool) -> Result<(), String> { repo::definir_ia_pode_usar(c, chave, valor) }
@@ -1789,9 +1839,12 @@ pub fn definir_ia_pode_usar(state: State<'_, DbState>, chave: String, valor: boo
 }
 
 #[tauri::command]
-pub fn marcar_site_logado(state: State<'_, DbState>, chave: String) -> Result<(), String> {
+pub fn marcar_site_logado(app: AppHandle, state: State<'_, DbState>, chave: String) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    do_marcar_logado(&conn, &chave)
+    do_marcar_logado(&conn, &chave)?;
+    // The Pendências list and the sidebar badge listen to this event.
+    let _ = app.emit("aviso-site-resolvido", chave);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2160,9 +2213,9 @@ Cada componente tem **uma** responsabilidade e não passa de ~150 linhas.
 
 - [ ] **Step 4: Sidebar e App**
 
-Em `src/components/Sidebar.tsx`: acrescente `"sites"` ao tipo `View`, importe `Globe` de `lucide-react` e acrescente, logo depois de `documentos`, `{ id: "sites", label: t.nav.sites, Icon: Globe }`. Para o badge de avisos, acrescente a prop `sitesCount?: number` e mostre-o com o mesmo estilo do badge de `pendenciasCount` (leia o JSX de `pendencias` mais abaixo no arquivo e copie o padrão).
+Em `src/components/Sidebar.tsx`: acrescente `"sites"` ao tipo `View`, importe `Globe` de `lucide-react` e acrescente, logo depois de `documentos`, `{ id: "sites", label: t.nav.sites, Icon: Globe }`. **O item Sites não leva badge:** os avisos de login contam no badge do item **Pendências** (Task 8, Step 8), para não contar o mesmo aviso duas vezes.
 
-Em `src/App.tsx`: `const [sitesCount, setSitesCount] = useState(0);`, uma `refreshSitesCount` com `invoke<number>("contar_avisos_sites")`, chamada nos mesmos pontos de `refreshPendenciasCount` e no `listen("db-atualizada", ...)`. Passe `sitesCount` ao `Sidebar` e monte, depois do bloco de Currículos:
+Em `src/App.tsx` (o `avisosSitesCount` e o `listen` já vieram na Task 8), monte, depois do bloco de Currículos:
 
 ```tsx
               {/* Sites */}
@@ -2244,7 +2297,7 @@ Run (PC): `cargo clippy --all-targets`, `npx tsc --noEmit`, `npm run build` e `n
 
 - [ ] **Step 3: Smoke de uso real (skill `claudia-teste-e2e`, páginas locais, sem site real)**
 
-Abra o app, vá à tela **Sites** e confira, nos dois idiomas, com prints: galeria e lista; busca por "jobindex" e por um nome com acento; filtros Tipo, Região e País combinados; as 5 ordenações; adicionar um site (https), ver o erro de um `http://` e de um domínio repetido; remover o site adicionado e confirmar que um embutido não tem "Remover"; ligar "IA pode usar" num site `manual` sem login e ver a recusa; "Já estou logado" e depois ligar; **Abrir** (a aba abre no browser da Claudia). Com uma sessão de agente contra a página local: `browser_contas` lista só o liberado; `browser_open` de um endereço fora da lista é recusado com a mensagem de salvar a vaga; um `login_wall` na página local de teste vira o aviso na tela e o badge da sidebar. Registre o que foi visto e o que não foi.
+Abra o app, vá à tela **Sites** e confira, nos dois idiomas, com prints: galeria e lista; busca por "jobindex" e por um nome com acento; filtros Tipo, Região e País combinados; as 5 ordenações; adicionar um site (https), ver o erro de um `http://` e de um domínio repetido; remover o site adicionado e confirmar que um embutido não tem "Remover"; ligar "IA pode usar" num site `manual` sem login e ver a recusa; "Já estou logado" e depois ligar; **Abrir** (a aba abre no browser da Claudia). Com uma sessão de agente contra a página local: `browser_contas` lista só o liberado; `browser_open` de um endereço fora da lista é recusado com a mensagem de salvar a vaga; um `login_wall` na página local de teste vira, em até ~30 s, o item "Entre de novo em X" na tela **Pendências**, o badge do item Pendências, a notificação nativa e a faixa na tela Sites; "Abrir o site" abre a aba, "Já entrei" faz o item sumir e o site voltar a poder ser liberado. Registre o que foi visto e o que não foi.
 
 - [ ] **Step 4: Revisão de código por Opus**
 
