@@ -2,7 +2,7 @@
 
 > Spec de design. Não é o plano de implementação. Substitui a spec de contas do browser (`2026-10-02-contas-do-browser-design.md`, ciclo 2), **removida do repositório em 2026-10-14** a pedido do usuário; o texto original continua no histórico do git.
 
-> **Status: RASCUNHO PARA REVISÃO. Não aprovada.** Nenhum código foi escrito. Depois da aprovação do usuário: plano em `docs/superpowers/plans/`, depois implementação.
+> **Status: APROVADA pelo usuário em 2026-10-14**, com as propostas P1, P2, P3, P8 e P12 aceitas. Nenhum código foi escrito. Próximo: plano em `docs/superpowers/plans/`, depois implementação. Pontos que continuam abertos e vão para o plano: status da vaga salva por site fora da lista, categoria da pendência de relogar, risco dos termos de uso, curadoria do seed.
 
 **Data:** 2026-10-14
 **Branch:** `feat/lista-de-sites` (a partir de `dev` em `98da02b`)
@@ -145,6 +145,10 @@ Item "Sites" na sidebar. Barra de ferramentas: busca por texto (nome e domínio)
 - Guardar senha ou fazer login automático (descartado por segurança).
 
 ## 8. Em aberto / não verificado
+
+**Atualização de 2026-10-14 (feita ao escrever o plano, trecho a reaprovar):**
+- **§4.4, aviso de relogar:** `pendencias.vaga_id` é `NOT NULL` e o aviso não tem vaga. Em vez de reconstruir a tabela `pendencias` do usuário, o aviso fica numa tabela própria, `avisos_sites`, mostrado na tela Sites e no badge da sidebar. A tela Pendências não muda. **Aguarda a aprovação do usuário.**
+- **Vaga fora da lista:** quem salva é o agente (`register_vaga` e `update_vaga_status('pulada', "site fora da lista: <domínio>")`), instruído pela mensagem de recusa; o app só conta o domínio em `dominios_recusados` (sem query string na URL guardada).
 
 **Estado da pesquisa do seed (2026-10-14, fechada por ora):** `docs/pesquisa/2026-10-14-lista-de-sites-pesquisa.md`. Decisões do usuário já aplicadas: empresas só entram se publicam as vagas no próprio site; no freelance, só plataformas de fora da América do Sul. **Fora do seed por falta de confirmação:** VTEX e Hugging Face (o site só linka direto ao ATS) e Creditas (sem página própria vista), até o usuário decidir. A lista tem cerca de 190 entradas e **precisa de curadoria até ~100** antes de virar `sites-padrao.json`.
 
