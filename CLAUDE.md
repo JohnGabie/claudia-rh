@@ -116,6 +116,19 @@ O modelo depende da complexidade da tarefa, não do hábito.
 - **Agente que falha** (limite de sessão, erro de API) deve ser tratado como se não tivesse entregado nada: confira a worktree e relance com o mesmo escopo.
 - **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado.
 
+#### Ciclo obrigatório executor ↔ revisor (uma tarefa por vez)
+
+Motivo desta regra: a branch já quebrou quando o trabalho foi tocado inteiro numa tacada só, sem passar por desenvolver, testar, validar e aprovar ou recusar. Por isso:
+
+1. **Uma tarefa do plano por ciclo.** Nunca entregar várias tarefas, nem a feature inteira, numa única execução. A tarefa seguinte só começa depois do OK da atual.
+2. **O ciclo é:** o **Executor** desenvolve e faz commit → um **Revisor** (agente separado do executor, **Opus** quando a tarefa toca segurança, dados ou ferramenta do agente) valida → **aprova ou recusa** → se recusa, o executor corrige e o ciclo recomeça (teste, validação, nova decisão) → repete até o revisor escrever **"Looks good to me"**.
+3. **O executor não é encerrado, descartado nem substituído enquanto o revisor não der o "Looks good to me".** Dar a tarefa por concluída, matar o executor ou seguir para a próxima antes disso é violação. Quem corrige é o próprio executor; o orquestrador **nunca corrige no lugar dele** (a correção pularia a revisão). Só se troca de executor nas exceções já previstas: o agente falhou (limite de sessão, erro de API) ou ficou preso por três rodadas, caso em que o orquestrador relança com o mesmo escopo, mais capaz, e o ciclo continua.
+4. **Limite de rodadas:** cinco recusas seguidas na mesma tarefa, e o orquestrador **para e pergunta ao usuário**; não segue adiante com a tarefa aberta.
+5. **O que o Revisor faz (não basta ler o diff):**
+   - **Back:** roda os testes (no Sandbox quando a regra de `cargo test` manda), procura bugs com entradas hostis, banco indisponível e falhas parciais, confere um a um os requisitos da spec e a prova de mutação de cada regra nova.
+   - **Front:** abre o app de verdade (skill `claudia-teste-e2e`), olha a tela e responde: está aceitável? está bonita, no padrão de `docs/padrao-design-claudia-rh.md`? está quebrada? atende os requisitos? Confere os estados vazio, erro e com dados, nos dois idiomas, com prints; roda `npx tsc --noEmit`, `npm run build` e os testes de front.
+6. **A aprovação é um veredito escrito do revisor, com evidência** (comandos, código de saída, prints). "Passou" sem evidência, ou aprovação de quem só leu o código, não vale para tarefa de front nem de back. Recusa também é escrita, com o achado, o arquivo e a entrada que falha.
+
 ### 3. Rodadas de teste
 
 "Mudança relevante" = qualquer alteração em código de produção. Docs e comentários não precisam das rodadas.
@@ -165,7 +178,7 @@ Uma mudança só está pronta quando **todos** os itens são verdadeiros, com ev
 2. Unitários, integração e regressão verdes, com código de saída conferido.
 3. Cada regra nova tem teste com prova de mutação.
 4. Smoke de uso real feito e anexado, ou "não verificado" declarado com o motivo.
-5. Revisão de código por Opus feita, com os achados corrigidos ou registrados.
+5. Revisão de código por Opus feita, com os achados corrigidos ou registrados, e **cada tarefa passou pelo ciclo executor ↔ revisor (seção 2) e tem o "Looks good to me" escrito do revisor**.
 6. Nada em "não verificado" que contradiga o que foi afirmado.
 
 **Integrar (merge, push, PR, release) é sempre decisão do usuário**, nunca automática ao fim de um ramo.
