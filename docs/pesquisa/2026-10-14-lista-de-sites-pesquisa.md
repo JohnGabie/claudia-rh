@@ -423,6 +423,23 @@ Aqui a unidade é a **empresa**, e não o ATS: cada uma tem a página de carreir
 | Crossover | `crossover` | GLOBAL | https://www.crossover.com | emprego remoto full-time com testes e monitoramento | NÃO VERIFICADO | TALVEZ (média) | NÃO VERIFICADO |
 | Braintrust, Andela, Malt Strategy (ex-Comatch), Freelance.de | `braintrust`, `andela`, `maltstrategy`, `freelancede` | vários | vários | rede vetada ou DACH | NÃO VERIFICADO | TALVEZ (baixa) | parcial ou NÃO VERIFICADO |
 
+**Curadoria do freelance (pedido do usuário, 2026-10-14): "as melhores, de preferência fora da SA, para ganhar em dólar".** Ordem abaixo é **opinião minha**, montada só com o que os agentes leram (nada novo foi pesquisado); custo, moeda e aceite de brasileiro seguem em parte NÃO VERIFICADO.
+
+| Faixa | Plataforma | Por quê | Ressalvas |
+|---|---|---|---|
+| 1 | **Lemon.io** | rede vetada para devs, **cita o Brasil na página oficial**, clientes em dólar (moeda não confirmada), pagamento por Payoneer ou Wise | funil único de 5 etapas (~1,2% aceitos, fonte secundária); proíbe bots |
+| 1 | **Toptal** | rede vetada de alto nível, taxa horária definida por você, cobrança pela Toptal | ~3% aceitos, 3 a 8 semanas; proíbe robôs; aceite de brasileiro NÃO VERIFICADO |
+| 1 | **Upwork** | maior volume, contratos em dólar | 0 a 15% + Connects (~US$0,15 cada); **maior risco de banimento por automação**, usar só para descobrir e propor à mão |
+| 2 | **Contra** | 0% de comissão sobre projetos, global | Pro US$29/mês; volume depende da demanda; proíbe automação |
+| 2 | **Braintrust** | sem taxa ao talento (a confirmar nos termos), rede vetada | um único perfil permitido; volume incerto |
+| 2 | **Turing** | rede vetada, vagas de empresas dos EUA | longas esperas sem match (Trustpilot misto); proíbe automação |
+| 3 | **Crossover** | pagamento em dólar, emprego remoto full-time | é mais emprego que freelance; testes e monitoramento de produtividade |
+| 3 | **Arc.dev** | rede vetada, foco em clientes dos EUA | proíbe automação; vetting demorado |
+| 3 | **Freelancer.com** | aberto, dólar | 10% por projeto; saturado e com spam de propostas |
+| Europa (euro) | **Malt**, **Worksome**, **freelancermap** | úteis se quiser a Europa/Dinamarca | **Malt só aceita brasileiro com empresa registrada**; freelancermap pede alemão em muitos casos; não pagam em dólar |
+
+**Fora do seed:** Fiverr, Gun.io, Codementor, Twago, Mercor, Outlier, 99Freelas e Workana. **Recomendação:** no app, todas entram como `papel = descoberta`, com o envio de propostas feito por você, porque quase todas proíbem automação.
+
 **Decisão do usuário (2026-10-14): no freelance, só plataformas de fora da América do Sul** ("da gringa, nenhuma daqui da SA"). Por isso **99Freelas** (BR) e **Workana** ficam fora do seed; Lemon.io e as demais globais ou europeias continuam.
 
 **Descartadas:** 99Freelas e Workana (por decisão do usuário, ver acima), Fiverr (vende "gigs", não propõe a vagas), Gun.io (convite, focado em EUA e Canadá), Codementor (mentoria), Twago (adquirida pela Randstad em 2016), Comatch como marca (virou Malt Strategy em 2022), **Mercor e Outlier** (processos, vazamento de dados e retenção de pagamento, por fontes secundárias). **Sem confirmação:** Hired.com, Konsulentbørsen/Freelance.dk (só Edora e Freelance.nl apareceram).
