@@ -300,9 +300,7 @@ Aqui a unidade é a **empresa**, e não o ATS: cada uma tem a página de carreir
 
 **Critério:** nota geral do Glassdoor **abaixo de 3,0 de 5 sai**. Notas lidas por agentes em snippets do Google e do DuckDuckGo em 2026-10-14, **sem abrir o Glassdoor e sem data de coleta**; o "% recomenda" vem em parte de resumo gerado por IA do Google. Notícias de peso (demissão, assédio) **não foram pesquisadas**.
 
-**Saem (1):** **DeepL**, nota 2,7 (~32% recomendam; alta gestão 2,1).
-
-**Ficam no limite (nota 3,0):** Mozilla (38% recomendam, 22% abaixo da média) e Docker (45% recomendam, reviews citam caos). O corte era "mínimo 3,0", então ficam, **marcadas para decisão do usuário**.
+**Saem (3):** **DeepL**, nota 2,7 (~32% recomendam; alta gestão 2,1), e, por decisão do usuário ("pode remover, sem dó"), **Mozilla** (3,0; 38% recomendam, 22% abaixo da média) e **Docker** (3,0; 45% recomendam, reviews citam caos), que estavam exatamente no limite.
 
 **Ficam, mas com alerta (nota acima de 3,0 e % recomenda baixo):** Klarna 3,1 (35 a 37%), Templafy 3,2 (46%), Pleo 3,2 (51%), Automattic 3,1, Atlassian 3,2, Cloudflare 3,2, Personio 3,2, Shopify 3,3, GitLab 3,3 (queda de 17% em 12 meses), Meta 3,4 (queda de 9%), Canonical 3,4 (57% recomendam; reviews citam gestão fraca e ritmo exigente).
 
