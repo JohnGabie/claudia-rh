@@ -13,6 +13,11 @@ const PUBLIC_SUFFIXES: &[&str] = &[
     "co.uk", "com.br", "com.au", "org.uk", "co.nz", "com.mx", "co.jp", "co.kr", "com.ar", "com.co",
 ];
 
+/// Exact match against the public-suffix list.
+pub fn is_public_suffix(d: &str) -> bool {
+    PUBLIC_SUFFIXES.contains(&d)
+}
+
 fn papel_padrao() -> String { "candidatura".into() }
 fn regra_padrao() -> String { "manual".into() }
 
@@ -68,7 +73,7 @@ pub fn validate_site(s: &SeedSite) -> Result<(), String> {
     if let Some(d) = s.dominios.iter().chain(&s.dominios_ats).find(|d| !valid_domain(d)) {
         return e(&format!("domínio inválido '{d}' (sem esquema, sem caminho, minúsculas)"));
     }
-    if let Some(d) = s.dominios.iter().chain(&s.dominios_ats).find(|d| PUBLIC_SUFFIXES.contains(&d.as_str())) {
+    if let Some(d) = s.dominios.iter().chain(&s.dominios_ats).find(|d| is_public_suffix(d)) {
         return e(&format!("domínio '{d}' é um sufixo público"));
     }
     if !s.dominios.iter().chain(&s.dominios_ats).any(|d| host_matches(&host, d)) {

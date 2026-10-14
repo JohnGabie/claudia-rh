@@ -1,7 +1,7 @@
 //! Reads and writes of the stored site list. Every rule the UI shows is enforced here too: the
 //! screen is never the only defence.
-use super::dominio::{chave_from_url, host_and_path, host_matches, url_matches, DomainRules};
-use super::modelo::TIPOS;
+use super::dominio::{chave_from_url, host_and_path, host_matches, url_matches, valid_domain, DomainRules};
+use super::modelo::{is_public_suffix, TIPOS};
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;
 
@@ -127,6 +127,14 @@ pub fn adicionar(conn: &Connection, nome: &str, url: &str, tipo: &str, pais: Opt
         return Err("Já existe um site com este endereço.".into());
     }
     let dominio = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    if !valid_domain(&dominio) || is_public_suffix(&dominio) {
+        return Err("Endereço inválido: use o endereço de um site (ex.: https://www.exemplo.com.br/).".into());
+    }
+    for s in listar(conn)? {
+        if s.dominios.iter().chain(&s.dominios_ats).any(|d| host_matches(&dominio, d) || host_matches(d, &dominio)) {
+            return Err(format!("Este endereço se sobrepõe ao site \"{}\".", s.nome));
+        }
+    }
     let dominios = serde_json::to_string(&vec![dominio]).map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO contas_browser (chave, nome, url_login, dominios, tipo, regiao, pais, papel, regra_login, embutida) \
@@ -247,6 +255,30 @@ mod tests {
         ] {
             assert!(adicionar(&c, nome, url, tipo, pais).is_err(), "{nome} {url} {tipo}");
         }
+    }
+
+    #[test]
+    fn adding_refuses_public_suffixes_and_single_label_hosts() {
+        let c = db_with(LI);
+        for url in ["https://co.uk/", "https://com/", "https://localhost/"] {
+            assert!(adicionar(&c, "X", url, "geral", None).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn adding_refuses_a_shared_ats_host_of_an_existing_site() {
+        let ats = r#"{"chave":"gh","nome":"GH","url_login":"https://job-boards.greenhouse.io/x","dominios":["gh.example.com"],"dominios_ats":["job-boards.greenhouse.io"],"caminho_ats":"/x","tipo":"empresa","regiao":"EU"}"#;
+        let c = db_with(ats);
+        let e = adicionar(&c, "X", "https://job-boards.greenhouse.io/", "geral", None).unwrap_err();
+        assert!(e.contains("GH"), "{e}");
+    }
+
+    #[test]
+    fn adding_refuses_a_parent_of_an_existing_domain() {
+        let sub = r#"{"chave":"jl","nome":"JL","url_login":"https://jobs.linkedin.com/","dominios":["jobs.linkedin.com"],"tipo":"geral","regiao":"GLOBAL"}"#;
+        let c = db_with(sub);
+        assert!(adicionar(&c, "X", "https://linkedin.com/", "geral", None).is_err());
+        assert!(adicionar(&c, "Ok", "https://normal-site.org/", "geral", None).is_ok());
     }
 
     #[test]
