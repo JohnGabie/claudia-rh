@@ -246,6 +246,56 @@ Golpes de vaga falsa são frequentes no México em 2026 (alertas oficiais), sem 
 
 Aqui a unidade é a **empresa**, e não o ATS: cada uma tem a página de carreiras e, quase sempre, **outro domínio** para onde a candidatura vai. **Nenhuma cláusula de robôs foi confirmada em nenhuma delas**; os termos de Greenhouse, Lever, Workday, Teamtailor e Gupy deram 404. Isso é NÃO VERIFICADO, e não permissão.
 
+### Revisão pelo critério único (decisão do usuário, 2026-10-14)
+
+**Pergunta:** a empresa publica as próprias vagas num site próprio? **Se sim, mantém.** Lida como: existe página de carreiras no domínio da empresa (ou subdomínio dela) que lista as vagas ou leva direto a elas, mesmo que o formulário final fique num ATS. **Este critério substitui os vereditos INCLUIR/TALVEZ das tabelas abaixo para empresas;** as tabelas ficam como registro de ATS e domínios.
+
+**SIM, mantém (77):**
+
+| Grupo | Empresas |
+|---|---|
+| Globais | Anthropic, Google, Microsoft, Amazon, Apple, Netflix, Nvidia, OpenAI, Stripe, Databricks, Cloudflare, Meta, Salesforce, Shopify, Atlassian, Snowflake |
+| Corporativas | Accenture, LEGO, Ørsted, SAP, Dell, HP, IBM, Cisco, Nordea, Capgemini, Ericsson, Grundfos, Carlsberg, Kyndryl, Intel, Siemens, Deloitte DK, Arla, Danske Bank |
+| Europa e Nórdicos | Pleo, Lunar, Templafy, Spotify, DeepL, Klarna, Netcompany, Vestas, Unity, Zalando, Booking.com, Adyen, Wise, N26, Celonis, Novo Nordisk |
+| Brasil | Nubank, Zup, QuintoAndar, Magalu |
+| "Legais" | Canonical, GitLab, Supabase, Grafana Labs, Elastic, Linear, Automattic, Mozilla, Sentry, Tailscale, Mistral AI, JetBrains, Doist, Netlify, Prisma, Vercel, Red Hat, SUSE, Cohere, Docker, Fly.io, 37signals |
+
+**Segunda passada (mesmo dia), sobre os 16 pendentes:**
+
+| Resultado | Empresas |
+|---|---|
+| **SIM, página aberta** (+4 aos 77) | iFood (`carreiras.ifood.com.br`), Stone (`jornada.stone.com.br`, cerca de 357 vagas por área), Trustpilot (`corporate.trustpilot.com/careers`, botão "View open jobs" leva a um ATS não identificado), Oracle (`careers.oracle.com`, abriu sem erro, resumo vago) |
+| **SIM, URL dada pelo usuário** (+4; não reabertas por agente) | Mercado Libre (`https://careers-meli.mercadolibre.com/pt/positions?country=<país>`; o parâmetro `country` é obrigatório), Revolut (`https://www.revolut.com/careers/`), Personio (`https://www.personio.com/about-personio/careers/`), Nokia (`https://jobs.nokia.com/en/sites/CX_1`, subdomínio `jobs.` e não `nokia.com/careers`, que era o que o agente tentava) |
+| **Ainda NÃO VERIFICADO (8), fora do seed até confirmar** | VTEX (`careers.vtex.com` recusou conexão; `vtex.com/br-pt/carreiras/` 404), TOTVS (402 e DNS), Maersk (erro de leitura), Hugging Face (`huggingface.co/jobs` abriu a home; só o ATS `apply.workable.com/huggingface` lista vagas), Creditas (404 e DNS), Globo (domínios bloqueados pela ferramenta), Siteimprove (404), Mollie (404 e DNS) |
+
+**Placar:** 81 SIM lidos + 4 SIM por conferência do usuário = 85 mantidos; 8 pendentes; nenhum NÃO firme.
+
+**Terceira passada, com navegador (Playwright, janela própria, só leitura de páginas públicas):**
+
+| Empresa | Resultado | Evidência |
+|---|---|---|
+| TOTVS | **SIM** | `https://www.totvs.com/trabalhe-conosco/` abriu; o botão "Confira as vagas na TOTVS" leva a `atracaodetalentos.totvs.app/vempratotvs/extended` (domínio da própria TOTVS) |
+| Maersk | **SIM** | `https://www.maersk.com/careers/vacancies` abriu; título "Vacancies \| Careers at Maersk" |
+| VTEX | **só link direto ao ATS** | `vtex.com/pt-br/carreiras/` deu 404; o único link de carreiras do site é `https://job-boards.greenhouse.io/vtex` |
+| Hugging Face | **só link direto ao ATS** | o "Careers" do site aponta direto para `https://apply.workable.com/huggingface/`; `huggingface.co/jobs` não é página de carreiras |
+| Creditas | **sem página própria vista** | a home não tem link de carreiras; a busca "Creditas trabalhe conosco" devolveu o portal da Creditas no Gupy, LinkedIn e Glassdoor; inconclusivo |
+| Mollie | **SIM** | o site (`mollie.com/pt/`) linka "Carreiras" para `https://jobs.mollie.com/` |
+| Siteimprove | **SIM** | o site linka "Careers" para `https://careers.siteimprove.com/` |
+| Globo | **SIM (por busca)** | a busca "Globo trabalhe conosco" mostra "Vem pra Globo — Plataforma de Carreiras" e "Trabalhe Conosco - Grupo Globo" em `grupoglobo.com.br`; as páginas em si não foram abertas |
+
+**Pergunta aberta ao usuário:** VTEX e Hugging Face (o site só linka direto para o quadro do ATS, sem página de carreiras) passam no critério "posta as vagas no próprio site"? Grafana e Zup, que têm página própria com botão para o ATS, foram mantidas.
+
+**Por que não zerou:** a ferramenta de busca atingiu o teto da sessão (`web search budget (200 of 200)`). As duas passadas tiveram de usar tentativa direta de domínios, e 404, DNS e 403 não provam ausência de página. Para fechar: elevar `CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` e abrir sessão nova, ou o usuário colar as URLs.
+
+**NÃO firme:** nenhuma. Nenhuma empresa ficou provada como "só em portal de terceiro".
+
+**Ressalvas dos SIM:**
+- **Só a página leva ao ATS, sem listar vagas:** Grafana Labs e Zup (botão para o quadro do Greenhouse).
+- **Leitura parcial:** Intel (o Workday final veio vazio), Grundfos (6 subpáginas não abertas), Celonis (vagas por API; o texto lido mostrava "no jobs at the moment"), Meta e Salesforce (conteúdo mínimo; SIM pelo domínio e pelo redirecionamento).
+- **Magalu passa no critério**, embora um agente anterior tenha dito que a candidatura vai para a plataforma 99jobs (terceiro).
+- **37signals** passa, mas **não tem vagas hoje**.
+- **Idioma:** Lunar e Netcompany pedem dinamarquês em muitas vagas.
+
 ### Globais (`regiao = GLOBAL`)
 
 | Empresa | chave | Carreiras | Domínios envolvidos | ATS | Veredito |
@@ -371,10 +421,11 @@ Aqui a unidade é a **empresa**, e não o ATS: cada uma tem a página de carreir
 | Turing | `turing` | GLOBAL | https://www.turing.com | rede vetada | NÃO VERIFICADO | TALVEZ (média) | **⚠ proíbe** (§6(b)); múltiplos perfis = fraude |
 | Contra | `contra` | GLOBAL | https://contra.com | 0% de comissão; Pro US$29/mês | NÃO VERIFICADO | TALVEZ (média) | **⚠ proíbe** ("multiple accounts, automated tools") |
 | Crossover | `crossover` | GLOBAL | https://www.crossover.com | emprego remoto full-time com testes e monitoramento | NÃO VERIFICADO | TALVEZ (média) | NÃO VERIFICADO |
-| 99Freelas | `n99freelas` | SA/BR | https://www.99freelas.com.br/login | 10 a 20% (mínimo R$ 5) + pacotes de conexões | Brasil | TALVEZ (média) | sem cláusula; ticket baixo para perfil sênior |
 | Braintrust, Andela, Malt Strategy (ex-Comatch), Freelance.de | `braintrust`, `andela`, `maltstrategy`, `freelancede` | vários | vários | rede vetada ou DACH | NÃO VERIFICADO | TALVEZ (baixa) | parcial ou NÃO VERIFICADO |
 
-**Descartadas:** Fiverr (vende "gigs", não propõe a vagas), Gun.io (convite, focado em EUA e Canadá), Codementor (mentoria), Twago (adquirida pela Randstad em 2016), Comatch como marca (virou Malt Strategy em 2022), **Mercor e Outlier** (processos, vazamento de dados e retenção de pagamento, por fontes secundárias). **Sem confirmação:** Hired.com, Konsulentbørsen/Freelance.dk (só Edora e Freelance.nl apareceram).
+**Decisão do usuário (2026-10-14): no freelance, só plataformas de fora da América do Sul** ("da gringa, nenhuma daqui da SA"). Por isso **99Freelas** (BR) e **Workana** ficam fora do seed; Lemon.io e as demais globais ou europeias continuam.
+
+**Descartadas:** 99Freelas e Workana (por decisão do usuário, ver acima), Fiverr (vende "gigs", não propõe a vagas), Gun.io (convite, focado em EUA e Canadá), Codementor (mentoria), Twago (adquirida pela Randstad em 2016), Comatch como marca (virou Malt Strategy em 2022), **Mercor e Outlier** (processos, vazamento de dados e retenção de pagamento, por fontes secundárias). **Sem confirmação:** Hired.com, Konsulentbørsen/Freelance.dk (só Edora e Freelance.nl apareceram).
 
 ## AF: África e Oriente Médio
 
