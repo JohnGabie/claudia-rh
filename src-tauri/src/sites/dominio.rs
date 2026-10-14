@@ -20,8 +20,13 @@ pub fn host_and_path(url: &str) -> Option<(String, String)> {
     if host_port.starts_with('[') {
         return None;
     }
-    let host = host_port.split(':').next()?.trim_end_matches('.');
-    if host.is_empty() || !host.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-') {
+    let mut parts = host_port.split(':');
+    let host = parts.next()?.trim_end_matches('.');
+    let port = parts.next().unwrap_or("");
+    if parts.next().is_some() || !port.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if host.is_empty() || host.starts_with('.') || host.contains("..") || !host.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-') {
         return None;
     }
     let path = if tail.starts_with('/') { tail.split(['?', '#']).next().unwrap_or("/") } else { "/" };
@@ -36,6 +41,11 @@ pub fn host_matches(host: &str, domain: &str) -> bool {
 
 /// `path` is `prefix` or lives under it, at a segment boundary. An empty prefix matches everything.
 pub fn path_under(path: &str, prefix: &str) -> bool {
+    // Fail closed: a browser resolves dot-segments and percent-encoded dots/slashes, so such a path
+    // may point outside the prefix it appears to be under.
+    if path.contains('%') || path.split('/').any(|s| s == "." || s == "..") {
+        return false;
+    }
     let p = prefix.trim().trim_end_matches('/').to_ascii_lowercase();
     if p.is_empty() {
         return true;
@@ -155,6 +165,30 @@ mod tests {
     fn the_key_of_a_user_added_site_comes_from_its_domain() {
         assert_eq!(chave_from_url("https://www.Jobindex.dk/jobsoegning").as_deref(), Some("jobindex-dk"));
         assert_eq!(chave_from_url("not a url"), None);
+    }
+
+    #[test]
+    fn dot_segments_and_percent_encoding_cannot_escape_the_ats_company_path() {
+        let dom = v(&["canonical.com"]);
+        let ats = v(&["job-boards.greenhouse.io"]);
+        let r = rules(&dom, &ats, Some("/canonical"));
+        for url in [
+            "https://job-boards.greenhouse.io/canonical/../anthropic",
+            "https://job-boards.greenhouse.io/canonical/%2e%2e/anthropic",
+            "https://job-boards.greenhouse.io/canonical/..%2fanthropic",
+        ] {
+            assert!(!url_matches(&r, url), "{url}");
+        }
+        assert!(url_matches(&r, "https://job-boards.greenhouse.io/canonical/jobs/1"));
+        assert!(url_matches(&r, "https://canonical.com/careers/a%20b"));
+    }
+
+    #[test]
+    fn empty_labels_and_malformed_ports_are_refused() {
+        for bad in ["https://.linkedin.com/", "https://a..com/", "https://linkedin.com:abc/", "https://linkedin.com:443:x/"] {
+            assert!(host_and_path(bad).is_none(), "{bad}");
+        }
+        assert_eq!(host_and_path("https://linkedin.com:443/").unwrap().0, "linkedin.com");
     }
 
     #[test]
