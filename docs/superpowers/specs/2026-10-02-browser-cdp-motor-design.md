@@ -215,7 +215,7 @@ Estas hipóteses ainda não foram testadas, e o plano começa por elas, antes de
 
 ## 9. Fora do escopo deste ciclo
 
-- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-02-contas-do-browser-design.md`), e a linha do tempo por vaga no Activity log (a lista simples com prints é deste ciclo, seção 5.6).
+- **Ciclo 2:** lista de contas na UI, estado logado/não, permissão "a IA pode usar", pular sites sem login (spec `2026-10-14-lista-de-sites-design.md`, que substituiu a de contas), e a linha do tempo por vaga no Activity log (a lista simples com prints é deste ciclo, seção 5.6).
 - **Ciclo 3:** a IA entrar num site, puxar o perfil do usuário e configurar o app. Depende dos dois primeiros.
 - Várias contas por site, perfis múltiplos.
 - Senhas guardadas pelo app. Descartado por decisão de segurança; reabrir só com cofre criptografado e confirmação.

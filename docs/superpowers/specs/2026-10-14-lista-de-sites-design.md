@@ -1,6 +1,6 @@
 # Spec: lista de sites (catálogo de sites de vagas e contas do browser)
 
-> Spec de design. Não é o plano de implementação. Substitui `2026-10-02-contas-do-browser-design.md` (ciclo 2), que passa a "substituída por esta".
+> Spec de design. Não é o plano de implementação. Substitui a spec de contas do browser (`2026-10-02-contas-do-browser-design.md`, ciclo 2), **removida do repositório em 2026-10-14** a pedido do usuário; o texto original continua no histórico do git.
 
 > **Status: RASCUNHO PARA REVISÃO. Não aprovada.** Nenhum código foi escrito. Depois da aprovação do usuário: plano em `docs/superpowers/plans/`, depois implementação.
 
@@ -48,6 +48,9 @@ Separadas do pedido. Cada uma indica o estado da decisão.
 | P6 | Cartão mostra **"confirmada há X dias"** | Aprovada com a Seção 3. |
 | P7 | Tabela de **domínios recusados** com contagem, só registro | Aprovada explicitamente. |
 | P8 | Contador "N de 100 sites" e botão "Limpar filtros" | Apresentadas na Seção 2. **Confirmar na revisão.** |
+| P9 | Sétimo tipo **`nicho`** (estágio, PCD, mulheres em tecnologia) | Decidida pelo usuário em 2026-10-14, depois da pesquisa da fase 1. |
+| P10 | Campo **`papel`**: agregadores que só redirecionam entram no seed como `descoberta`, com um pill no cartão | Decidida pelo usuário em 2026-10-14, depois da pesquisa da fase 1. |
+| P11 | Campo **`regiao`** (`SA`, `NA`, `EU`, `AS`, `AF`, `OC`, `GLOBAL`) e filtro Região, com `pais` opcional | Decidida pelo usuário em 2026-10-14 ("separar por cada região"). |
 
 ## 4. Design
 
@@ -60,8 +63,10 @@ Tabela `contas_browser` (banco principal, em `src-tauri/src/db/schema.sql`, com 
 | `chave` | identificador estável (`linkedin`, `jobindex`…; no site do usuário, gerado do domínio) |
 | `nome`, `url_login` | rótulo e para onde "Abrir" leva (`https`) |
 | `dominios` | domínios que pertencem ao site (usados para resolver URL → site) |
-| `tipo` | `geral`, `regional`, `tecnologia`, `remoto`, `freelance`, `empresa` (um por site) |
-| `pais` | código do país ou `GLOBAL` |
+| `tipo` | `geral`, `regional`, `tecnologia`, `remoto`, `freelance`, `empresa`, `nicho` (um por site; `nicho` cobre estágio, PCD, mulheres em tecnologia e afins, decisão de 2026-10-14) |
+| `papel` | `candidatura` (padrão: dá para candidatar de ponta a ponta) ou `descoberta` (agregador que só redireciona; a IA acha e salva a vaga, e candidatar no destino depende de o destino estar na lista; decisão de 2026-10-14) |
+| `regiao` | `SA`, `NA`, `EU`, `AS`, `AF`, `OC` ou `GLOBAL` (decisão de 2026-10-14; filtro próprio na tela) |
+| `pais` | código ISO do país, ou vazio quando o site cobre um bloco (Nórdicos, LATAM, UE) |
 | `regra_login` | `manual` (padrão), `cookie_sessao` (só os testados) ou `nenhuma` |
 | `ia_pode_usar` | permissão explícita; desligada por padrão; só pode ser ligada com o site `logada` ou com regra `nenhuma` |
 | `embutida` | veio do seed ou foi adicionada pelo usuário |
@@ -72,15 +77,15 @@ Tabela `dominios_recusados`: `dominio`, `contagem`, `ultima_vez`, e a ligação 
 
 ### 4.2 Seed
 
-`src-tauri/sites-padrao.json`, empacotado no instalador, mesclado por `chave` na abertura do app. Idempotente. Para site existente atualiza só `nome`, `url_login`, `dominios`, `tipo` e `pais`; **nunca** toca em `ia_pode_usar`, `estado` ou `regra_login`. Site que sai do seed numa versão nova não é apagado. Um seed inválido (`chave` repetida, `tipo` fora dos 6, `url_login` sem `https`, `dominios` vazio) faz o **teste** falhar, não o app.
+`src-tauri/sites-padrao.json`, empacotado no instalador, mesclado por `chave` na abertura do app. Idempotente. Para site existente atualiza só `nome`, `url_login`, `dominios`, `tipo` e `pais`; **nunca** toca em `ia_pode_usar`, `estado` ou `regra_login`. Site que sai do seed numa versão nova não é apagado. Um seed inválido (`chave` repetida, `tipo` fora dos 7, `papel` desconhecido, `regiao` fora do conjunto, `url_login` sem `https`, `dominios` vazio) faz o **teste** falhar, não o app.
 
 A lista é montada a partir do conhecimento do assistente, **sem visitar os sites**, e fica **não verificada** até o usuário revisar.
 
 ### 4.3 Telas
 
-Item "Sites" na sidebar. Barra de ferramentas: busca por texto (nome e domínio), filtros Tipo e País, ordenação (Nome A–Z padrão, Tipo, País, Estado de login), alternador galeria | lista (preferência salva), botão "Adicionar site" (cheio em `--accent`) e contador.
+Item "Sites" na sidebar. Barra de ferramentas: busca por texto (nome e domínio), filtros Tipo, Região e País, ordenação (Nome A–Z padrão, Tipo, Região, País, Estado de login), alternador galeria | lista (preferência salva), botão "Adicionar site" (cheio em `--accent`) e contador.
 
-- **Galeria:** `repeat(auto-fill, minmax(190px, 1fr))`, 16px, cartão com borda de 1px e raio de 8px; avatar de letra inicial, nome, domínio, pills de tipo e país, badge de estado, "confirmada há X dias", interruptor "IA pode usar" e botão "Abrir".
+- **Galeria:** `repeat(auto-fill, minmax(190px, 1fr))`, 16px, cartão com borda de 1px e raio de 8px; avatar de letra inicial, nome, domínio, pills de tipo e país (mais um pill "descoberta" quando `papel = descoberta`), badge de estado, "confirmada há X dias", interruptor "IA pode usar" e botão "Abrir".
 - **Lista:** linha de 48px; cabeçalho das colunas ordena ao clicar e inverte no segundo clique.
 - **Estado:** `logada` verde (`--success`), `desconhecido` âmbar (`--warning`), `precisa_login` cinza (`--text-tertiary`).
 - **Adicionar site (+):** painel acima da grade, com nome, URL (`https`) e tipo (país opcional). Nasce `manual`, `embutida = falso`, `ia_pode_usar` desligado.

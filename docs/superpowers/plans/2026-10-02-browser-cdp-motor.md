@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (Tauri 2, tokio, rusqlite, rmcp 2.2), `reqwest` (rustls), `sha2`, `tokio-tungstenite`, `zip`; React + TypeScript para a interface; Node 24 só para scripts de validação.
 
-**Spec:** `docs/superpowers/specs/2026-10-02-browser-cdp-motor-design.md` (motor) e, só para contexto de fronteira, `2026-10-02-contas-do-browser-design.md` (ciclo 2, **fora deste plano**). Pesquisa: `docs/pesquisa/2026-09-28-DECISAO-browser.md`. Implementação de referência em JS: `prototipo-playwright/cdp/`.
+**Spec:** `docs/superpowers/specs/2026-10-02-browser-cdp-motor-design.md` (motor) e, só para contexto de fronteira, `2026-10-14-lista-de-sites-design.md` (ciclo 2, que substituiu a spec de contas, **fora deste plano**). Pesquisa: `docs/pesquisa/2026-09-28-DECISAO-browser.md`. Implementação de referência em JS: `prototipo-playwright/cdp/`.
 
 ## Global Constraints
 

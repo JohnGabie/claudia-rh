@@ -10,7 +10,7 @@ Este arquivo é o ponto de entrada de qualquer sessão de coding **neste reposit
 2. `docs/padrao-design-claudia-rh.md` — identidade visual, tokens, navegação, layout.
 3. `src-tauri/src/prompt_sistema_runtime.md` — texto que a app injeta na sessão de execução. **Não edite sem pedido explícito.**
 4. Este `CLAUDE.md`.
-5. A spec da área em que você vai mexer, em `docs/superpowers/specs/` (browser: `2026-10-02-browser-cdp-motor-design.md` e `2026-10-03-mcp-leitura-robusta-design.md`; contas: `2026-10-02-contas-do-browser-design.md`; documentos: `2026-10-04-anexar-curriculo-design.md`; guarda de envio por formulário, eventos do browser e diálogos: `2026-10-08-pendencias-finais-browser-design.md`). O que foi provado e o que falta provar nesta branch: `docs/superpowers/evidencias/2026-10-feat-browser-cdp-mcp.md`.
+5. A spec da área em que você vai mexer, em `docs/superpowers/specs/` (browser: `2026-10-02-browser-cdp-motor-design.md` e `2026-10-03-mcp-leitura-robusta-design.md`; sites e contas do browser: `2026-10-14-lista-de-sites-design.md`; documentos: `2026-10-04-anexar-curriculo-design.md`; guarda de envio por formulário, eventos do browser e diálogos: `2026-10-08-pendencias-finais-browser-design.md`). O que foi provado e o que falta provar nesta branch: `docs/superpowers/evidencias/2026-10-feat-browser-cdp-mcp.md`.
 6. `.claude/QUALIDADE.md` — roadmap de qualidade/refactor (quando existir).
 
 ## Convenções
