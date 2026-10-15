@@ -8,10 +8,11 @@ import {
   Settings,
   MessageSquareText,
   Bell,
+  Globe,
 } from "lucide-react";
 import { useT } from "../i18n";
 
-export type View = "dashboard" | "perfil" | "documentos" | "historico" | "feedback" | "pendencias" | "terminal" | "configuracoes";
+export type View = "dashboard" | "perfil" | "documentos" | "sites" | "historico" | "feedback" | "pendencias" | "terminal" | "configuracoes";
 
 interface SidebarProps {
   active: View;
@@ -38,6 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ active, onChange, sugerirFeedb
     { id: "dashboard", label: t.nav.dashboard, Icon: LayoutDashboard },
     { id: "perfil", label: t.nav.profile, Icon: UserRound },
     { id: "documentos", label: t.nav.documents, Icon: FileText },
+    { id: "sites", label: t.nav.sites, Icon: Globe },
     { id: "historico", label: t.nav.history, Icon: History },
     { id: "feedback", label: t.nav.feedback, Icon: MessageSquareText },
     { id: "pendencias", label: t.nav.notifications, Icon: Bell },

@@ -11,6 +11,7 @@ import { Dashboard } from "./components/dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/perfil";
 import { Documentos } from "./components/documentos";
+import { Sites } from "./components/sites";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
@@ -162,6 +163,11 @@ function App() {
               {/* Currículos */}
               <div style={{ display: view === "documentos" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
                 <Documentos />
+              </div>
+
+              {/* Sites */}
+              <div style={{ display: view === "sites" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Sites />
               </div>
 
               {/* Terminal — nunca desmontado */}

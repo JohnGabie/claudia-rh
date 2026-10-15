@@ -7,6 +7,7 @@ export const en = {
     feedback: "Feedback",
     notifications: "Notifications",
     terminal: "Terminal",
+    sites: "Sites",
     settings: "Settings",
   },
   titleBar: {
@@ -478,6 +479,29 @@ export const en = {
     profileAlreadyDone: "Profile already has data — you can review and update it.",
     profileEmpty: "No profile yet — let's build it now.",
   },
+  sites: {
+    title: "Job sites",
+    searchPlaceholder: "Search by name or domain",
+    searchLabel: "Search sites",
+    type: "Type", region: "Region", country: "Country", all: "All",
+    sortBy: "Sort by", sortName: "Name (A–Z)", sortType: "Type", sortRegion: "Region", sortCountry: "Country", sortState: "Login state",
+    sortDirection: "Reverse the order",
+    view: "View mode",
+    gallery: "Gallery", list: "List",
+    add: "Add site", counter: (n: number, total: number) => `${n} of ${total} sites`,
+    clearFilters: "Clear filters", noMatch: "No site matches these filters.",
+    loading: "Loading…", error: "Could not load the sites", retry: "Try again",
+    open: "Open", loggedIn: "I am logged in", remove: "Remove", removeConfirm: "Remove this site from the list?",
+    aiCanUse: "AI can use",
+    notDefault: "no longer a default",
+    state: { logada: "Logged in", precisa_login: "Needs login", desconhecido: "Unconfirmed" },
+    confirmedDaysAgo: (d: number) => (d === 0 ? "confirmed today" : `confirmed ${d} ${d === 1 ? "day" : "days"} ago`),
+    discovery: "discovery",
+    types: { geral: "General", regional: "Regional", tecnologia: "Technology", remoto: "Remote", freelance: "Freelance", empresa: "Company", nicho: "Niche" },
+    regions: { SA: "South America", NA: "North America", EU: "Europe", AS: "Asia", AF: "Africa", OC: "Oceania", GLOBAL: "Global" },
+    form: { title: "Add site", name: "Site name", url: "Address (https://…)", type: "Type", country: "Country (optional, e.g. DK)", save: "Save", saving: "Saving…", cancel: "Cancel" },
+    relogin: (nome: string) => `Log in again at ${nome}`,
+  },
   documents: {
     title: "Résumés and cover letters",
     tabResumes: "Résumés",
@@ -715,6 +739,7 @@ export const en = {
 
 type StringLeaves<T> =
   T extends string ? string :
+  T extends (...a: infer A) => string ? (...a: A) => string :
   T extends readonly string[] ? readonly string[] :
   { [K in keyof T]: StringLeaves<T[K]> };
 
