@@ -76,9 +76,12 @@ impl SiteGate for DbSiteGate {
         if site.regra_login == "nenhuma" {
             return; // a public site that happens to show a sign-in box is not "logged out"
         }
-        if repo::marcar_precisa_login(&conn, &site.chave).unwrap_or(false) {
-            let _ = conn.execute("INSERT INTO avisos_sites (chave, criado_em) VALUES (?1, datetime('now'))", [&site.chave]);
+        if repo::marcar_precisa_login(&conn, &site.chave).is_err() {
+            return;
         }
+        // The site is `precisa_login` now. Create the notice whether or not the state just changed, so a
+        // failed insert on an earlier wall is repaired by the next one (`criar` is idempotent).
+        let _ = super::avisos::criar(&conn, &site.chave);
     }
 }
 
@@ -172,6 +175,26 @@ mod tests {
         assert_eq!(repo::obter(&conn, "linkedin").unwrap().unwrap().estado, "precisa_login");
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM avisos_sites WHERE chave='linkedin'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1, "the notice is created once, not at every read");
+    }
+
+    #[test]
+    fn a_login_wall_recreates_a_missing_notice() {
+        let dir = crate::mcp::tools::test_support::temp_dir("site-gate-recreate");
+        crate::mcp::tools::test_support::seed_db(&dir);
+        {
+            let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            crate::sites::seed::merge(&conn, &crate::sites::seed::parse_seed(
+                r#"{"versao":1,"sites":[{"chave":"linkedin","nome":"LinkedIn","url_login":"https://www.linkedin.com/jobs/","dominios":["linkedin.com"],"tipo":"geral","regiao":"GLOBAL"}]}"#).unwrap()).unwrap();
+            repo::marcar_logada(&conn, "linkedin").unwrap();
+            // State already flipped, but the notice was lost.
+            repo::marcar_precisa_login(&conn, "linkedin").unwrap();
+            let n: i64 = conn.query_row("SELECT COUNT(*) FROM avisos_sites WHERE chave='linkedin'", [], |r| r.get(0)).unwrap();
+            assert_eq!(n, 0);
+        }
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM avisos_sites WHERE chave='linkedin' AND resolvido = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
     }
 
     #[test]

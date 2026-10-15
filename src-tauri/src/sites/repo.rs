@@ -90,6 +90,7 @@ pub fn marcar_logada(conn: &Connection, chave: &str) -> Result<(), String> {
     }
     conn.execute("UPDATE contas_browser SET estado = 'logada', verificada_em = datetime('now') WHERE chave = ?1", [chave])
         .map_err(|e| e.to_string())?;
+    let _ = super::avisos::resolver_do_site(conn, chave);
     Ok(())
 }
 

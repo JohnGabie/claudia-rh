@@ -65,6 +65,26 @@ fn query_open_propostas(db: &Arc<Mutex<Connection>>) -> Vec<OpenItem> {
     .unwrap_or_default()
 }
 
+fn query_open_avisos_sites(db: &Arc<Mutex<Connection>>) -> Vec<OpenItem> {
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT a.id, c.nome FROM avisos_sites a JOIN contas_browser c ON c.chave = a.chave WHERE a.resolvido = 0",
+    ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map([], |r| {
+        let id: i64 = r.get(0)?;
+        let nome: String = r.get(1)?;
+        Ok(OpenItem { id, body: format!("Entre de novo em {nome} para a IA poder usar o site.") })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotifyDecision {
     pub send_native: bool,
@@ -117,6 +137,8 @@ pub fn start(
         let mut seen_propostas: HashSet<i64> = HashSet::new();
         let mut last_native_pend: HashMap<i64, Instant> = HashMap::new();
         let mut last_native_prop: HashMap<i64, Instant> = HashMap::new();
+        let mut seen_avisos: HashSet<i64> = HashSet::new();
+        let mut last_native_aviso: HashMap<i64, Instant> = HashMap::new();
 
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -199,6 +221,40 @@ pub fn start(
                     last_native_prop.insert(item.id, now);
                 }
             }
+
+            let avisos = query_open_avisos_sites(&db);
+            let aviso_ids: HashSet<i64> = avisos.iter().map(|p| p.id).collect();
+            seen_avisos.retain(|id| aviso_ids.contains(id));
+            last_native_aviso.retain(|id, _| aviso_ids.contains(id));
+            for item in &avisos {
+                let first_seen = !seen_avisos.contains(&item.id);
+                let decision = decide_notify(
+                    first_seen,
+                    true,
+                    last_native_aviso.get(&item.id).copied(),
+                    now,
+                    interval,
+                    native_enabled,
+                );
+                if decision.emit_event {
+                    seen_avisos.insert(item.id);
+                    let _ = app.emit("novo-aviso-site", item.id);
+                } else if first_seen {
+                    seen_avisos.insert(item.id);
+                }
+                if decision.send_native {
+                    if let Err(e) = app
+                        .notification()
+                        .builder()
+                        .title("Claudia RH — Site")
+                        .body(&item.body)
+                        .show()
+                    {
+                        eprintln!("[notif] show aviso de site: {e}");
+                    }
+                    last_native_aviso.insert(item.id, now);
+                }
+            }
         }
     });
 }
@@ -210,6 +266,30 @@ mod tests {
 
     fn t0() -> Instant {
         Instant::now()
+    }
+
+    fn mem_db() -> Arc<Mutex<Connection>> {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::apply(&c).unwrap();
+        crate::sites::seed::merge(&c, &crate::sites::seed::parse_seed(r#"{"versao":1,"sites":[{"chave":"a","nome":"Alpha","url_login":"https://a.com/","dominios":["a.com"],"tipo":"geral","regiao":"EU"}]}"#).unwrap()).unwrap();
+        Arc::new(Mutex::new(c))
+    }
+
+    #[test]
+    fn open_site_notices_name_the_site_and_resolved_ones_are_hidden() {
+        let db = mem_db();
+        crate::sites::avisos::criar(&db.lock().unwrap(), "a").unwrap();
+        let items = query_open_avisos_sites(&db);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].body.contains("Alpha"), "{}", items[0].body);
+        crate::sites::avisos::resolver_do_site(&db.lock().unwrap(), "a").unwrap();
+        assert!(query_open_avisos_sites(&db).is_empty());
+    }
+
+    #[test]
+    fn a_missing_notices_table_gives_an_empty_list() {
+        let db = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
+        assert!(query_open_avisos_sites(&db).is_empty());
     }
 
     #[test]
