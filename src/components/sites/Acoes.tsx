@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useT } from "../../i18n";
-import { bloqueado as estaBloqueado } from "./estado";
+import { bloqueado as estaBloqueado, situacaoFaixa } from "./estado";
 import { Faixa } from "./Faixa";
 import type { Site } from "./logica";
 import type { AcoesSite } from "./tipos";
@@ -16,23 +16,13 @@ export const Acoes: React.FC<{ site: Site; erro?: string } & AcoesSite> = ({ sit
     <div className="st-painel">
       <h3>{t.sites.aiTitle}</h3>
       <div className="st-acoes-p">
-        {bloq ? (
-          <div onClick={() => onIa(site, true)}>
-            <Faixa ligado={false} bloqueado className="solta" />
-          </div>
-        ) : (
-          <div
-            role="switch"
-            aria-checked={site.ia_pode_usar}
-            aria-label={`${site.nome}: ${site.ia_pode_usar ? t.sites.aiOpen : t.sites.aiClosed}`}
-            tabIndex={0}
-            className="st-switch-faixa"
-            onClick={alternar}
-            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); alternar(); } }}
-          >
-            <Faixa ligado={site.ia_pode_usar} bloqueado={false} className="solta" />
-          </div>
-        )}
+        {/* Temporary adapter to the new Faixa props; this panel goes away with the detail page (Task 6). */}
+        <Faixa
+          situacao={situacaoFaixa(site)}
+          nome={site.nome}
+          className="solta"
+          onClick={() => (bloq ? onIa(site, true) : alternar())}
+        />
         <button type="button" className="st-btn primario" onClick={() => onAbrir(site)}>{t.sites.openSite}</button>
         {bloq && <button type="button" className="st-btn" onClick={() => onLogado(site)}>{t.sites.loggedIn}</button>}
         <button type="button" className="st-btn" disabled title={t.sites.configureHint}>{t.sites.configure}</button>
