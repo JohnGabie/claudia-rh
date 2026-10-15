@@ -6,3 +6,4 @@ pub mod gate;
 pub mod modelo;
 pub mod repo;
 pub mod seed;
+pub mod stats;

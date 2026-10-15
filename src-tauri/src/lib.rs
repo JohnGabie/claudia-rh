@@ -401,6 +401,7 @@ pub fn run() {
             commands::sites::marcar_site_logado,
             commands::sites::adicionar_site,
             commands::sites::remover_site,
+            commands::sites::estatisticas_site,
             commands::sites::listar_avisos_sites,
             commands::sites::contar_avisos_sites,
             commands::sites::abrir_site,

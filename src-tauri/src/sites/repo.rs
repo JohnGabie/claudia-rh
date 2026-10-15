@@ -157,9 +157,15 @@ pub fn remover(conn: &Connection, chave: &str) -> Result<(), String> {
 
 /// The site `url` belongs to; with several matches the one with the longest matching domain wins.
 pub fn resolver(conn: &Connection, url: &str) -> Result<Option<Site>, String> {
-    let Some((host, _)) = host_and_path(url) else { return Ok(None) };
-    let mut best: Option<(usize, Site)> = None;
-    for s in listar(conn)? {
+    Ok(resolver_em(&listar(conn)?, url).cloned())
+}
+
+/// Same rule as [`resolver`] over an already loaded list, so callers that resolve many URLs load the
+/// sites once.
+pub fn resolver_em<'a>(sites: &'a [Site], url: &str) -> Option<&'a Site> {
+    let (host, _) = host_and_path(url)?;
+    let mut best: Option<(usize, &'a Site)> = None;
+    for s in sites {
         let rules = DomainRules { dominios: &s.dominios, dominios_ats: &s.dominios_ats, caminho_ats: s.caminho_ats.as_deref() };
         if !url_matches(&rules, url) {
             continue;
@@ -169,7 +175,7 @@ pub fn resolver(conn: &Connection, url: &str) -> Result<Option<Site>, String> {
             best = Some((weight, s));
         }
     }
-    Ok(best.map(|(_, s)| s))
+    best.map(|(_, s)| s)
 }
 
 #[cfg(test)]

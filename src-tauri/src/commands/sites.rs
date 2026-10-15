@@ -2,6 +2,7 @@
 //! so the rules stay testable without a window.
 use crate::sites::avisos::{self, Aviso};
 use crate::sites::repo::{self, Site};
+use crate::sites::stats::{self, SiteStats};
 use crate::DbState;
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter, State};
@@ -41,6 +42,12 @@ pub fn adicionar_site(state: State<'_, DbState>, nome: String, url: String, tipo
 pub fn remover_site(state: State<'_, DbState>, chave: String) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     repo::remover(&conn, &chave)
+}
+
+#[tauri::command]
+pub fn estatisticas_site(state: State<'_, DbState>, chave: String) -> Result<SiteStats, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    stats::estatisticas(&conn, &chave)
 }
 
 #[tauri::command]
