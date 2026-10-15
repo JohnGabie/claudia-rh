@@ -6,6 +6,7 @@ mod memory;
 mod pendencias;
 mod profile;
 mod propostas;
+mod sites;
 mod variantes;
 mod vagas;
 pub mod browser;
@@ -14,6 +15,7 @@ pub use documentos::{aguardar_documento, get_documento, guardar_pendente, juntar
 pub use variantes::{get_variante, list_variantes, update_variante};
 
 pub use memory::get_memory_summary;
+pub use sites::browser_contas;
 pub use pendencias::{close_pendencia, close_pendencias_vaga, get_pendencia_vaga, list_pendencias};
 pub(crate) use profile::write_profile_atomically;
 pub use propostas::propose_profile_change;

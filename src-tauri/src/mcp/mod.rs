@@ -157,6 +157,7 @@ pub fn dispatch(cfg: &McpConfig, tool: &str, args: &serde_json::Value) -> Result
         "get_search_variants" => tools::get_search_variants(&cfg.data_dir),
         "get_strategy" => tools::get_strategy(&cfg.data_dir),
         "get_memory_summary" => tools::get_memory_summary(&cfg.data_dir),
+        "browser_contas" => tools::browser_contas(&cfg.data_dir),
         other => Err(format!("ferramenta desconhecida: {other}")),
     };
 
