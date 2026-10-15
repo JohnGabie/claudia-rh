@@ -220,6 +220,16 @@ mod tests {
     }
 
     #[test]
+    fn confirming_the_login_clears_the_sites_open_notice() {
+        let c = db_with(LI);
+        marcar_precisa_login(&c, "linkedin").unwrap();
+        crate::sites::avisos::criar(&c, "linkedin").unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 1);
+        marcar_logada(&c, "linkedin").unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 0);
+    }
+
+    #[test]
     fn marking_login_needed_reports_whether_anything_changed() {
         let c = db_with(LI);
         marcar_logada(&c, "linkedin").unwrap();
