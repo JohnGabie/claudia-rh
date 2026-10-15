@@ -105,12 +105,14 @@ mod tests {
     #[test]
     fn a_site_off_the_list_is_refused_and_counted() {
         let c = db();
-        let m = refused(decidir(&c, "https://stranger.org/jobs/1?token=secret"));
-        assert!(m.contains("register_vaga") && m.contains("pulada"), "{m}");
         decidir(&c, "https://stranger.org/other");
+        // The LAST call carries the query string and fragment, so the stored value is the one under test.
+        let m = refused(decidir(&c, "https://stranger.org/jobs/1?token=secret#frag"));
+        assert!(m.contains("register_vaga") && m.contains("pulada"), "{m}");
         let (n, url): (i64, String) = c.query_row("SELECT contagem, ultima_url FROM dominios_recusados WHERE dominio='stranger.org'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(n, 2);
-        assert!(!url.contains("token") && !url.contains('?'), "the query string must not be stored: {url}");
+        assert_eq!(url, "https://stranger.org/jobs/1");
+        assert!(!url.contains("token") && !url.contains('?') && !url.contains('#'), "the query string and fragment must not be stored: {url}");
     }
 
     #[test]
