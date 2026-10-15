@@ -4,7 +4,7 @@
 export const MOCK_SITES = "mock-sites-dev-only";
 
 import type { Site } from "../components/sites/logica";
-import type { AvisoSite } from "./sites-api";
+import type { AvisoSite, SiteStats } from "./sites-api";
 
 const diasAtras = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
 
@@ -57,6 +57,16 @@ let sites = inicial();
 let avisos: AvisoSite[] = [{ id: 1, chave: "indeed", nome: "Indeed", criado_em: diasAtras(0) }];
 const espera = <T>(v: T) => new Promise<T>((ok) => setTimeout(() => ok(structuredClone(v)), 120));
 
+// Fixed numbers per key (stable across reloads); every other key gets a deterministic set from its name.
+const stats = (chave: string): SiteStats => {
+  const n = [...chave].reduce((a, c) => a + c.charCodeAt(0), 0);
+  if (chave === "linkedin") {
+    return { relogins: 2, aberturas: 14, ultima_abertura: diasAtras(1), vagas: 52, candidaturas: 9, ultima_candidatura: diasAtras(2) };
+  }
+  if (n % 5 === 0) return { relogins: 0, aberturas: 0, ultima_abertura: null, vagas: 0, candidaturas: 0, ultima_candidatura: null };
+  return { relogins: n % 3, aberturas: 3 + (n % 9), ultima_abertura: diasAtras(n % 7), vagas: 10 + (n % 40), candidaturas: n % 6, ultima_candidatura: n % 6 ? diasAtras(n % 5) : null };
+};
+
 const TIPOS = ["geral", "regional", "tecnologia", "remoto", "freelance", "empresa", "nicho"];
 const hostDe = (url: string): string | null => {
   try {
@@ -92,6 +102,34 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       x.estado = "logada";
       x.verificada_em = diasAtras(0);
       avisos = avisos.filter((a) => a.chave !== x.chave);
+      return r(undefined);
+    }
+    case "estatisticas_site": {
+      const x = achar();
+      if (!x) return naoAchou();
+      return r(stats(x.chave));
+    }
+    case "definir_site_sem_login": {
+      const x = achar();
+      if (!x) return naoAchou();
+      if (x.regra_login === "cookie_sessao") {
+        return Promise.reject('Este site é verificado pelo cookie da sessão; a opção "não pede login" não vale aqui.');
+      }
+      if (args.valor === true) {
+        x.regra_login = "nenhuma";
+        avisos = avisos.filter((a) => a.chave !== x.chave);
+      } else {
+        x.regra_login = "manual";
+        // Back to manual login without a confirmed login: the AI permission closes too.
+        if (x.estado !== "logada") x.ia_pode_usar = false;
+      }
+      return r(undefined);
+    }
+    case "marcar_site_nao_logado": {
+      const x = achar();
+      if (!x) return naoAchou();
+      x.estado = "precisa_login";
+      x.ia_pode_usar = false;
       return r(undefined);
     }
     case "adicionar_site": {

@@ -11,6 +11,7 @@ export const ESTILOS = `
 .st-estado.logada::before { background: var(--success); }
 .st-estado.sem::before { background: var(--warning); }
 .st-estado.precisa::before { background: var(--text-tertiary); }
+.st-estado.semlogin::before { background: var(--success); }
 .st-abrir { font: inherit; font-size: 12px; font-weight: 500; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
 .st-abrir:hover { border-color: var(--accent); color: var(--accent-strong); }
 .sites-tela a.dominio { color: var(--text-secondary); font-size: 12px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
@@ -50,6 +51,7 @@ export const ESTILOS = `
 .st-linha:hover { border-color: var(--accent); }
 .st-linha .risco { align-self: stretch; background: var(--text-tertiary); }
 .st-linha .risco.logada { background: var(--success); }
+.st-linha .risco.semlogin { background: var(--success); }
 .st-linha .risco.sem { background: var(--warning); }
 .st-mono { width: 28px; height: 28px; border-radius: 6px; background: var(--bg-sunken); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .st-linha .quem { min-width: 0; padding: 6px 0; }

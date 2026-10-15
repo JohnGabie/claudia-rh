@@ -131,7 +131,10 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
     case "definir_ia_pode_usar":
     case "marcar_site_logado":
     case "adicionar_site":
-    case "remover_site": {
+    case "remover_site":
+    case "estatisticas_site":
+    case "definir_site_sem_login":
+    case "marcar_site_nao_logado": {
       // Sites commands: answered by the Sites mock (dynamic import, DEV only).
       const { mockInvoke: sitesMock } = await import("./sites.mock");
       return sitesMock(cmd, args);
