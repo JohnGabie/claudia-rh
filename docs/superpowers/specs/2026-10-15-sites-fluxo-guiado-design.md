@@ -4,7 +4,7 @@ Data: 2026-10-15. Estado: **rascunho, aguardando aprovação do usuário**. Nada
 
 Complementa `2026-10-14-lista-de-sites-design.md` (catálogo, banco, bloqueio no MCP). Onde as duas divergirem, **esta vence só nos trechos de tela e de comportamento do cartão** (§4.3 e a parte "Já estou logado" de §4.4 da spec anterior). Dados, segurança e MCP não mudam.
 
-O desenho visual foi aprovado pelo usuário num mock em HTML, fora do repositório (pasta raiz do workspace, `fluxo-guiado-sites.html` e `.css`). O mock é referência visual; o que vale é o texto desta spec.
+O desenho visual foi aprovado pelo usuário num mock em HTML, guardado em `docs/superpowers/specs/assets/2026-10-15-sites-fluxo-guiado-mock.html` (e `.css`). O mock é referência visual (medidas, cores, estrutura); o que vale é o texto desta spec. Os números do painel "Uso pela IA" no mock são inventados.
 
 ## 1. Pedido do usuário
 

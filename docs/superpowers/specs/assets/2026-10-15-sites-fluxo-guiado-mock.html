@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluxo guiado: Sites</title>
+<link rel="stylesheet" href="2026-10-15-sites-fluxo-guiado-mock.css">
+</head>
+<body>
+<div class="wrap">
+
+<section id="galeria" aria-labelledby="tg">
+  <h1 id="tg">Sites de vagas</h1>
+  <p class="dica">
+    <b>Como testar:</b> clique em qualquer lugar do card para abrir a <b>página do site</b>.
+    Só a <b>faixa cinza de baixo</b> liga e desliga a IA. No <b>Jobindex</b> (ainda não entrou) a faixa te leva ao passo 1.
+    O <b>Canonical</b> está marcado como "não pede login" (botão "Este site não pede login" no passo 1).
+  </p>
+  <div class="grade" id="grade"></div>
+</section>
+
+<section id="pagina" hidden aria-live="polite"></section>
+
+</div>
+
+<script>
+  // Dados de exemplo. "entrou" = confirmou o login (por enquanto é a palavra do usuário); "semLogin" = o site não pede login.
+  var sites = [
+    { id: 'linkedin', url: 'https://www.linkedin.com/jobs/', regiao: 'Global', papel: 'Candidatura de ponta a ponta', origem: 'Veio com o app', nome: 'LinkedIn',  dominio: 'linkedin.com',  pais: 'Global', tipo: 'Portal de vagas', local: 'Global · Portal de vagas', entrou: true,  semLogin: false, ia: true,  u: { relogins: 2, logadoDesde: '12/10/2026', aberturas: 48, ultAbertura: 'hoje', analisadas: 126, aplicou: 17, ultAplicou: 'ontem', recusadas: 3 } },
+    { id: 'vagas', url: 'https://www.vagas.com.br/login-candidatos', regiao: 'América do Sul', papel: 'Candidatura de ponta a ponta', origem: 'Veio com o app',    nome: 'Vagas.com', dominio: 'vagas.com.br',  pais: 'Brasil', tipo: 'Portal de vagas', local: 'Brasil · Portal de vagas', entrou: true,  semLogin: false, ia: false, u: { relogins: 5, logadoDesde: '03/10/2026', aberturas: 9, ultAbertura: 'há 6 dias', analisadas: 14, aplicou: 1, ultAplicou: 'há 6 dias', recusadas: 0 } },
+    { id: 'jobindex', url: 'https://www.jobindex.dk/bruger/log-ind', regiao: 'Europa', papel: 'Candidatura de ponta a ponta', origem: 'Veio com o app', nome: 'Jobindex',  dominio: 'jobindex.dk',   pais: 'Dinamarca', tipo: 'Portal de vagas', local: 'Dinamarca · Portal de vagas', entrou: false, semLogin: false, ia: false, u: { relogins: 0, logadoDesde: null, aberturas: 0, ultAbertura: null, analisadas: 0, aplicou: 0, ultAplicou: null, recusadas: 0 } },
+    { id: 'canonical', url: 'https://canonical.com/careers', regiao: 'Global', papel: 'Candidatura de ponta a ponta', origem: 'Veio com o app',nome: 'Canonical', dominio: 'canonical.com', pais: 'Global', tipo: 'Site da empresa', local: 'Global · Site da empresa', entrou: false, semLogin: true,  ia: true,  u: { relogins: null, logadoDesde: null, aberturas: 22, ultAbertura: 'hoje', analisadas: 61, aplicou: 6, ultAplicou: 'há 2 dias', recusadas: 1 } }
+  ];
+  var abertoId = null;
+  var abertas = {};   // seções recolhíveis que o usuário abriu
+  var jaAbriu = {};   // o "Já entrei" só aparece depois de "Abrir o site"
+
+  function pronto(s) { return s.semLogin || s.entrou; }                       // pode liberar a IA?
+  function estadoTexto(s) {
+    if (s.semLogin) return ['sem', 'Não pede login'];
+    return s.entrou ? ['ok', s.dias === 0 ? 'Logado hoje' : 'Logado há ' + (s.dias || 3) + ' dias'] : ['', 'Precisa de login'];
+  }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function faixaHtml(s, noCard) {
+    if (!pronto(s)) {
+      return '<button class="faixa falta" type="button" data-faixa="' + s.id + '"><span class="marca"></span>Faça o passo 1 para liberar<span class="seta">Entrar →</span></button>';
+    }
+    return '<button class="faixa ' + (s.ia ? 'ligada' : '') + '" type="button" role="switch" aria-checked="' + s.ia + '" data-faixa="' + s.id + '"><span class="marca"></span>' +
+      (s.ia ? 'Liberada para a IA' : 'Fechada · clique para liberar') + '</button>';
+  }
+
+  function desenhaGrade() {
+    document.getElementById('grade').innerHTML = sites.map(function (s) {
+      var e = estadoTexto(s);
+      return '<article class="card">' +
+        '<button class="corpo" type="button" data-abrir="' + s.id + '" aria-label="' + esc(s.nome) + ', abrir a página do site">' +
+          '<div class="capa"><span class="inicial" aria-hidden="true">' + esc(s.nome.charAt(0)) + '</span><span class="nome">' + esc(s.nome) + '</span><a class="abrir" href="#" data-externo="1">Abrir ↗</a></div>' +
+          '<div class="info"><a class="dominio" href="#" data-externo="1">' + esc(s.dominio) + '</a><div class="linha-pills"><span class="pill">' + esc(s.pais) + '</span><span class="pill">' + esc(s.tipo) + '</span><span class="estado ' + e[0] + '">' + e[1] + '</span></div></div>' +
+        '</button>' + faixaHtml(s) + '</article>';
+    }).join('');
+  }
+
+  function passoHtml(n, estado, titulo, texto, acoes) {
+    return '<div class="passo ' + estado + '"><div class="num">' + (estado === 'feito' ? '✓' : n) + '</div><div><h3>' + titulo + '</h3><p>' + texto + '</p>' + (acoes || '') + '</div></div>';
+  }
+
+  function linhaU(rot, val, sub) { return '<dt>' + rot + '</dt><dd>' + val + (sub ? ' <span class="sub">' + sub + '</span>' : '') + '</dd>'; }
+  function sobreHtml(s) {
+    var u = s.u, nada = u.aberturas === 0;
+    return '<aside class="painel" aria-label="Sobre o site"><h3>Sobre o site</h3>' +
+      '<dl>' +
+      '<dt>Endereço</dt><dd><a class="dominio" href="#" data-externo="1">' + esc(s.url) + '</a></dd>' +
+      '<dt>Tipo</dt><dd>' + esc(s.tipo) + '</dd><dt>Região</dt><dd>' + esc(s.regiao) + '</dd><dt>País</dt><dd>' + esc(s.pais === 'Global' ? 'Sem país (vale para vários)' : s.pais) + '</dd>' +
+      '<dt>Papel</dt><dd>' + esc(s.papel) + '</dd><dt>Origem</dt><dd>' + esc(s.origem) + '</dd><dt>Domínios</dt><dd>' + esc(s.dominio) + '</dd></dl>' +
+      '<div class="divisoria"><span>Conta</span></div>' +
+      '<dl>' +
+      (s.semLogin ? linhaU('Login', 'Não pede') : linhaU('Logado desde', u.logadoDesde || 'Ainda não entrou') + linhaU('Relogins', u.relogins, u.relogins === 1 ? 'vez' : 'vezes')) +
+      '</dl>' +
+      '<div class="divisoria"><span>Uso pela IA</span></div>' +
+      (nada ? '<p class="vazio">A IA ainda não abriu este site.</p>' :
+      '<dl>' + linhaU('Aberturas', u.aberturas, 'última ' + u.ultAbertura) + linhaU('Vagas analisadas', u.analisadas) +
+      linhaU('Candidaturas', u.aplicou, u.aplicou ? 'última ' + u.ultAplicou : '') + linhaU('Taxa', u.analisadas ? Math.round(100 * u.aplicou / u.analisadas) + '% das analisadas' : '—')  + '</dl>') +
+      '</aside>';
+  }
+
+  function desenhaPagina() {
+    var s = sites.filter(function (x) { return x.id === abertoId; })[0];
+    var e = estadoTexto(s);
+    var p1;
+    if (s.semLogin) {
+      p1 = passoHtml(1, 'feito', 'Entrar no site', 'Este site não pede login.', '<div class="acoes"><span class="selo ok">Feito</span><button class="btn" type="button" data-semlogin="1">Este site pede login</button></div>');
+    } else if (s.entrou) {
+      p1 = passoHtml(1, 'feito', 'Entrar no site', 'Você confirmou que entrou.', '<div class="acoes"><span class="selo ok">Feito</span><button class="btn" type="button" data-abrir-site="1">Abrir o site ↗</button><button class="btn" type="button" data-desfaz="1">Não estou mais logado</button></div>');
+    } else {
+      p1 = passoHtml(1, 'atual', 'Entrar no site',
+        'Abra o site no browser da Claudia, entre ou crie a sua conta, e volte aqui.',
+        '<div class="acoes"><button class="btn primario" type="button" data-abrir-site="1">Abrir o site ↗</button>' +
+        (jaAbriu[s.id] ? '<button class="btn" type="button" data-entrei="1">Já entrei</button>' : '<span class="meta">O botão "Já entrei" aparece depois de abrir o site.</span>') + '<button class="btn" type="button" data-semlogin="1">Este site não pede login</button></div>');
+    }
+    var p2 = passoHtml(s.semLogin ? 2 : 2, 'travado', 'Configurar o perfil no site',
+      'A Claudia usa a aba para preencher a sua experiência no site. Opcional, e não bloqueia a liberação.',
+      '<div class="acoes"><button class="btn" type="button" disabled>Configurar perfil</button><span class="selo">Em breve</span></div>');
+    var ligavel = pronto(s);
+    var p3 = passoHtml(3, ligavel ? 'atual' : 'travado', 'Liberar para a IA',
+      ligavel ? 'A IA só abre este site depois que você liberar.' : 'Disponível depois do passo 1.',
+      ligavel ? faixaHtml(s) : '<div class="acoes"><span class="selo">Bloqueado</span></div>');
+
+    document.getElementById('pagina').innerHTML =
+      '<div class="topo"><button class="voltar" type="button" data-voltar="1">← Sites</button><h1>' + esc(s.nome) + '</h1><span class="pill">' + esc(s.local) + '</span><span class="estado ' + e[0] + '">' + e[1] + '</span></div>' +
+      '<div class="duas-colunas">' + sobreHtml(s) + '<section class="painel" aria-labelledby="ia-t"><h3 id="ia-t">O que a IA pode fazer aqui</h3><div class="passos">' + p1 + p2 + p3 + '</div></section></div>' +
+      '<details class="config zona-risco" data-sec="risco"' + (abertas.risco ? ' open' : '') + '><summary><span class="tt">Zona de risco</span></summary>' +
+        '<div class="linha-config"><div class="txt"><strong>Remover da lista</strong><small>Só sites que você adicionou podem ser removidos. Este veio com o app.</small></div>' +
+        '<button class="btn perigo" type="button" disabled>Remover site</button></div></details>';
+  }
+
+  function mostra(pagina) {
+    document.getElementById('galeria').hidden = pagina;
+    document.getElementById('pagina').hidden = !pagina;
+    if (pagina) { desenhaPagina(); document.getElementById('pagina').querySelector('h1').setAttribute('tabindex', '-1'); document.getElementById('pagina').querySelector('h1').focus(); }
+    else { desenhaGrade(); }
+    window.scrollTo(0, 0);
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.closest('[data-externo]')) { ev.preventDefault(); ev.stopPropagation(); return; }           // "Abrir ↗" da capa: acesso rápido, não abre a página
+    var f = t.closest('[data-faixa]');
+    if (f) {
+      var s = sites.filter(function (x) { return x.id === f.getAttribute('data-faixa'); })[0];
+      if (!pronto(s)) { abertoId = s.id; mostra(true); return; }                                       // sem o passo 1: leva ao passo 1, não recusa
+      s.ia = !s.ia;
+      if (abertoId) desenhaPagina(); else desenhaGrade();
+      return;
+    }
+    var a = t.closest('[data-abrir]');
+    if (a) { abertoId = a.getAttribute('data-abrir'); mostra(true); return; }
+    if (t.closest('[data-voltar]')) { abertoId = null; mostra(false); return; }
+    var s2 = sites.filter(function (x) { return x.id === abertoId; })[0];
+    if (!s2) return;
+    if (t.closest('[data-abrir-site]')) { jaAbriu[s2.id] = true; desenhaPagina(); return; }
+    if (t.closest('[data-entrei]')) { s2.entrou = true; s2.dias = 0; desenhaPagina(); return; }
+    if (t.closest('[data-desfaz]')) { s2.entrou = false; s2.ia = false; desenhaPagina(); return; }
+  });
+  document.addEventListener('click', function (ev) {
+    var sw = ev.target.closest('[data-semlogin]');
+    if (!sw) return;
+    var s = sites.filter(function (x) { return x.id === abertoId; })[0];
+    s.semLogin = !s.semLogin;
+    if (!s.semLogin && !s.entrou) s.ia = false;                                  // a regra: sem login confirmado, a IA fecha
+    desenhaPagina();
+  });
+
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (d.getAttribute && d.getAttribute('data-sec')) abertas[d.getAttribute('data-sec')] = d.open;
+  }, true);
+
+  desenhaGrade();
+</script>
+</body>
+</html>
