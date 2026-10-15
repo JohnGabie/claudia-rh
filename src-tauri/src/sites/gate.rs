@@ -30,6 +30,10 @@ pub fn registrar_recusa(conn: &Connection, url: &str) {
 }
 
 pub fn decidir(conn: &Connection, url: &str) -> Decision {
+    // Only https may be opened (same notion as the browser's tab opener: case-insensitive scheme).
+    if !url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) {
+        return Decision::Refuse("RECUSADO: sÃ³ endereÃ§os https podem ser abertos. Se o site tem uma versÃ£o https, use-a; se nÃ£o, pule esta fonte e siga para a prÃ³xima.".to_string());
+    }
     let site = match repo::resolver(conn, url) {
         Ok(s) => s,
         Err(e) => return Decision::Refuse(format!("RECUSADO: não foi possível consultar a lista de sites ({e}). Tente de novo.")),
@@ -149,6 +153,25 @@ mod tests {
         for url in ["https://linkedin.com@evil.com/", "https://evil.com\\@linkedin.com", "https://linkedin.com.evil.com/"] {
             assert!(matches!(decidir(&c, url), Decision::Refuse(_)), "{url}");
         }
+    }
+
+    #[test]
+    fn an_http_url_of_an_open_listed_site_is_refused_and_not_counted() {
+        let c = db();
+        repo::marcar_logada(&c, "linkedin").unwrap();
+        repo::definir_ia_pode_usar(&c, "linkedin", true).unwrap();
+        let m = refused(decidir(&c, "http://www.linkedin.com/jobs/1"));
+        assert!(m.contains("https"), "{m}");
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM dominios_recusados", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn an_uppercase_https_scheme_is_still_allowed() {
+        let c = db();
+        repo::marcar_logada(&c, "linkedin").unwrap();
+        repo::definir_ia_pode_usar(&c, "linkedin", true).unwrap();
+        assert_eq!(decidir(&c, "HTTPS://www.linkedin.com/jobs/1"), Decision::Allow("linkedin".into()));
     }
 
     #[test]
