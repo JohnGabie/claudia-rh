@@ -12,4 +12,5 @@ export interface ListaProps extends AcoesSite {
   sites: Site[];
   agora: Date;
   erros: Record<string, string>;
+  onDetalhe: (s: Site) => void;
 }

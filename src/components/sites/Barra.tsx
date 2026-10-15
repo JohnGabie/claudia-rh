@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowDown, ArrowUp, LayoutGrid, List, Plus, Search } from "lucide-react";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
+import { nomePais } from "./paises";
 import { valoresDe, type Campo, type Filtros, type Ordem, type Site } from "./logica";
 import { rotulo } from "./rotulos";
 
@@ -20,12 +21,13 @@ const campo: React.CSSProperties = {
 
 export const Barra: React.FC<Props> = ({ filtros, onFiltros, ordem, onOrdem, modo, onModo, sites, visiveis, onAdicionar }) => {
   const t = useT();
+  const { locale } = useLocale();
   const mudar = (parcial: Partial<Filtros>) => onFiltros({ ...filtros, ...parcial });
 
   const filtro = (chave: "tipo" | "regiao" | "pais", rotuloCampo: string, mapa?: object) => (
     <select key={chave} aria-label={rotuloCampo} value={filtros[chave]} onChange={(e) => mudar({ [chave]: e.target.value })} style={campo}>
       <option value="">{rotuloCampo}: {t.sites.all}</option>
-      {valoresDe(sites, chave).map((v) => <option key={v} value={v}>{mapa ? rotulo(mapa, v) : v}</option>)}
+      {valoresDe(sites, chave).map((v) => <option key={v} value={v}>{mapa ? rotulo(mapa, v) : nomePais(v, locale)}</option>)}
     </select>
   );
 

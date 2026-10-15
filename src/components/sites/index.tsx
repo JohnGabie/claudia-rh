@@ -3,6 +3,8 @@ import { useT } from "../../i18n";
 import { sitesApi, type AvisoSite } from "../../lib/sites-api";
 import { AvisosFaixa } from "./AvisosFaixa";
 import { Barra, type Modo } from "./Barra";
+import { Detalhe } from "./Detalhe";
+import { ESTILOS } from "./estilos";
 import { FormAdicionar } from "./FormAdicionar";
 import { Galeria } from "./Galeria";
 import { Lista } from "./Lista";
@@ -39,6 +41,7 @@ export const Sites: React.FC = () => {
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", desc: false });
   const [modo, setModo] = useState<Modo>(lerModo);
   const [adicionando, setAdicionando] = useState(false);
+  const [aberto, setAberto] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
 
   const carregar = useCallback(async () => {
@@ -74,12 +77,17 @@ export const Sites: React.FC = () => {
     onLogado: (s: Site) => agir(s.chave, () => sitesApi.marcarLogado(s.chave)),
     onIa: (s: Site, v: boolean) => agir(s.chave, () => sitesApi.definirIa(s.chave, v)),
     onRemover: (s: Site) => agir(s.chave, () => sitesApi.remover(s.chave)),
+    onDetalhe: (s: Site) => setAberto(s.chave),
   };
+  const detalhe = sites?.find((s) => s.chave === aberto) ?? null;
 
   const visiveis = useMemo(() => (sites ? ordenar(filtrar(sites, filtros), ordem) : []), [sites, filtros, ordem]);
 
   let corpo: React.ReactNode;
-  if (erro && sites === null) {
+  if (detalhe) {
+    const { onDetalhe: _d, ...porSite } = acoes;
+    corpo = <Detalhe site={detalhe} agora={agora} erro={erros[detalhe.chave]} onVoltar={() => setAberto(null)} {...porSite} />;
+  } else if (erro && sites === null) {
     corpo = (
       <div role="alert" style={{ border: "1px solid var(--danger)", background: "var(--bg-surface)", borderRadius: 8, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ flex: 1, fontSize: 13, color: "var(--danger)", overflowWrap: "anywhere" }}>{t.sites.error}: {erro}</span>
@@ -109,7 +117,7 @@ export const Sites: React.FC = () => {
         ) : modo === "galeria" ? (
           <Galeria sites={visiveis} agora={agora} erros={erros} {...acoes} />
         ) : (
-          <Lista sites={visiveis} agora={agora} erros={erros} ordem={ordem} onOrdem={setOrdem} {...acoes} />
+          <Lista sites={visiveis} agora={agora} erros={erros} {...acoes} />
         )}
       </>
     );
@@ -117,10 +125,10 @@ export const Sites: React.FC = () => {
 
   return (
     <div className="sites-tela" style={{ padding: 24, overflow: "auto", height: "100%" }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 16px" }}>{t.sites.title}</h1>
+      {!detalhe && <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 16px" }}>{t.sites.title}</h1>}
       <AvisosFaixa avisos={avisos} onAbrir={(chave) => agir(chave, () => sitesApi.abrir(chave))} />
       {corpo}
-      <style>{`.sites-tela button:focus-visible, .sites-tela input:focus-visible, .sites-tela select:focus-visible, .sites-tela label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }`}</style>
+      <style>{ESTILOS}</style>
     </div>
   );
 };
