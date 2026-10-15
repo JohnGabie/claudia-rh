@@ -399,6 +399,8 @@ pub fn run() {
             commands::sites::listar_sites,
             commands::sites::definir_ia_pode_usar,
             commands::sites::marcar_site_logado,
+            commands::sites::definir_site_sem_login,
+            commands::sites::marcar_site_nao_logado,
             commands::sites::adicionar_site,
             commands::sites::remover_site,
             commands::sites::estatisticas_site,

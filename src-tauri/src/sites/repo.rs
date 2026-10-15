@@ -94,6 +94,37 @@ pub fn marcar_logada(conn: &Connection, chave: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// valor = true: the site asks for no login. valor = false: back to manual login; if the user is not
+/// logged in, the AI permission is closed in the same transaction.
+pub fn definir_sem_login(conn: &Connection, chave: &str, valor: bool) -> Result<(), String> {
+    let s = exigir(conn, chave)?;
+    if s.regra_login == "cookie_sessao" {
+        return Err("Este site é verificado pelo cookie da sessão; a opção \"não pede login\" não vale aqui.".into());
+    }
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    if valor {
+        tx.execute("UPDATE contas_browser SET regra_login = 'nenhuma' WHERE chave = ?1", [chave]).map_err(|e| e.to_string())?;
+        super::avisos::resolver_do_site(&tx, chave)?;
+    } else {
+        // Back to manual login: without a confirmed login the AI permission closes in the same step.
+        tx.execute(
+            "UPDATE contas_browser SET regra_login = 'manual', \
+             ia_pode_usar = CASE WHEN estado = 'logada' THEN ia_pode_usar ELSE 0 END WHERE chave = ?1",
+            [chave],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+/// "I am no longer logged in": estado = precisa_login and the AI permission closed.
+pub fn marcar_nao_logado(conn: &Connection, chave: &str) -> Result<(), String> {
+    exigir(conn, chave)?;
+    conn.execute("UPDATE contas_browser SET estado = 'precisa_login', ia_pode_usar = 0 WHERE chave = ?1", [chave])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// `true` when the state actually changed (so the caller creates the notice only once).
 pub fn marcar_precisa_login(conn: &Connection, chave: &str) -> Result<bool, String> {
     exigir(conn, chave)?;
@@ -314,5 +345,79 @@ mod tests {
         assert!(resolver(&c, "https://linkedin.com.evil.com/").unwrap().is_none());
         assert!(resolver(&c, "https://linkedin.com@evil.com/").unwrap().is_none());
         assert!(resolver(&c, "https://unknown.org/").unwrap().is_none());
+    }
+
+    fn ia(c: &Connection, k: &str) -> bool { obter(c, k).unwrap().unwrap().ia_pode_usar }
+
+    #[test]
+    fn turning_no_login_on_lets_the_ai_be_released_without_a_login() {
+        let c = db_with(LI); // LI has the default manual rule
+        definir_sem_login(&c, "linkedin", true).unwrap();
+        assert_eq!(obter(&c, "linkedin").unwrap().unwrap().regra_login, "nenhuma");
+        definir_ia_pode_usar(&c, "linkedin", true).unwrap();
+    }
+
+    #[test]
+    fn going_back_to_manual_without_being_logged_in_closes_the_ai() {
+        let c = db_with(PUB); // regra_login = nenhuma, estado = desconhecido
+        definir_ia_pode_usar(&c, "pub", true).unwrap();
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert_eq!(obter(&c, "pub").unwrap().unwrap().regra_login, "manual");
+        assert!(!ia(&c, "pub"));
+    }
+
+    #[test]
+    fn going_back_to_manual_while_needing_login_also_closes_the_ai() {
+        let c = db_with(PUB);
+        definir_ia_pode_usar(&c, "pub", true).unwrap();
+        marcar_precisa_login(&c, "pub").unwrap();
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert!(!ia(&c, "pub"));
+    }
+
+    #[test]
+    fn going_back_to_manual_while_logged_in_keeps_the_ai() {
+        let c = db_with(PUB);
+        definir_ia_pode_usar(&c, "pub", true).unwrap();
+        c.execute("UPDATE contas_browser SET estado='logada' WHERE chave='pub'", []).unwrap();
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert!(ia(&c, "pub"));
+    }
+
+    #[test]
+    fn a_cookie_session_site_refuses_the_toggle_and_stays_untouched() {
+        let c = db_with(LI);
+        c.execute("UPDATE contas_browser SET regra_login='cookie_sessao' WHERE chave='linkedin'", []).unwrap();
+        assert!(definir_sem_login(&c, "linkedin", true).is_err());
+        assert_eq!(obter(&c, "linkedin").unwrap().unwrap().regra_login, "cookie_sessao");
+        assert!(definir_sem_login(&c, "nope", true).is_err());
+    }
+
+    #[test]
+    fn the_cookie_session_refusal_message_is_pinned_with_its_accents() {
+        let c = db_with(LI);
+        c.execute("UPDATE contas_browser SET regra_login='cookie_sessao' WHERE chave='linkedin'", []).unwrap();
+        let e = definir_sem_login(&c, "linkedin", true).unwrap_err();
+        assert_eq!(e, "Este site é verificado pelo cookie da sessão; a opção \"não pede login\" não vale aqui.");
+    }
+
+    #[test]
+    fn turning_no_login_on_resolves_the_open_relogin_notice() {
+        let c = db_with(LI);
+        crate::sites::avisos::criar(&c, "linkedin").unwrap();
+        definir_sem_login(&c, "linkedin", true).unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 0);
+    }
+
+    #[test]
+    fn not_logged_in_anymore_closes_the_ai_and_marks_the_site() {
+        let c = db_with(LI);
+        marcar_logada(&c, "linkedin").unwrap();
+        definir_ia_pode_usar(&c, "linkedin", true).unwrap();
+        marcar_nao_logado(&c, "linkedin").unwrap();
+        let s = obter(&c, "linkedin").unwrap().unwrap();
+        assert_eq!(s.estado, "precisa_login");
+        assert!(!s.ia_pode_usar);
+        assert!(marcar_nao_logado(&c, "pub-que-nao-existe").is_err());
     }
 }

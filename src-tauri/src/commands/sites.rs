@@ -32,6 +32,26 @@ pub fn marcar_site_logado(app: AppHandle, state: State<'_, DbState>, chave: Stri
     Ok(())
 }
 
+/// The user says the site asks for no login (or goes back to manual login). No notice is created: the
+/// user is the one who said it.
+#[tauri::command]
+pub fn definir_site_sem_login(app: AppHandle, state: State<'_, DbState>, chave: String, valor: bool) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    repo::definir_sem_login(&conn, &chave, valor)?;
+    if valor {
+        // Turning it on resolves the open re-login notice, like marcar_site_logado does.
+        let _ = app.emit("aviso-site-resolvido", chave);
+    }
+    Ok(())
+}
+
+/// "I am no longer logged in": marks the site as needing login and closes the AI permission.
+#[tauri::command]
+pub fn marcar_site_nao_logado(state: State<'_, DbState>, chave: String) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    repo::marcar_nao_logado(&conn, &chave)
+}
+
 #[tauri::command]
 pub fn adicionar_site(state: State<'_, DbState>, nome: String, url: String, tipo: String, pais: Option<String>) -> Result<String, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
