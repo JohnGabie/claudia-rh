@@ -88,14 +88,15 @@ Sidebar fixa à esquerda, 220px de largura, fundo `--bg-surface`, borda direita 
 2. **Dashboard**
 3. **Perfil** (aba conversacional — seção 5)
 4. **Currículos** (ícone `FileText`; biblioteca de currículos e cartas — seção 13)
-5. **Histórico** (tabela de vagas processadas — seção 6)
-6. **Feedback** (item da sidebar; layout desta aba não é especificado neste ciclo)
-7. **Pendências** — com badge numérico vermelho (`--danger`) sempre que existir pelo menos uma pendência não resolvida. O badge mostra a contagem; acima de 9, mostra "9+".
-8. **Terminal**
-9. Espaço flexível (empurra o item seguinte para o fundo)
-10. **Configurações** + **ícone de engrenagem** (configurações rápidas/globais — tema, toggle de notificações), no fundo da sidebar, visualmente distinto dos itens de navegação principal.
+5. **Sites** (ícone `Globe`; "Sites" nos dois idiomas; lista de sites que a IA pode abrir — seção 15). Sem badge.
+6. **Histórico** (tabela de vagas processadas — seção 6)
+7. **Feedback** (item da sidebar; layout desta aba não é especificado neste ciclo)
+8. **Pendências** — com badge numérico vermelho (`--danger`) sempre que existir pelo menos uma pendência não resolvida. O badge mostra a contagem; acima de 9, mostra "9+".
+9. **Terminal**
+10. Espaço flexível (empurra o item seguinte para o fundo)
+11. **Configurações** + **ícone de engrenagem** (configurações rápidas/globais — tema, toggle de notificações), no fundo da sidebar, visualmente distinto dos itens de navegação principal.
 
-Cada item de navegação principal (2–8) é uma linha de 40px de altura, ícone (Lucide ou Tabler outline, 18px) mais label, padding horizontal de 16px. O item ativo tem fundo `--accent-soft` e texto/ícone em `--accent-strong`; os restantes têm texto `--text-secondary`, mudando para `--text-primary` no hover.
+Cada item de navegação principal (2–9) é uma linha de 40px de altura, ícone (Lucide ou Tabler outline, 18px) mais label, padding horizontal de 16px. O item ativo tem fundo `--accent-soft` e texto/ícone em `--accent-strong`; os restantes têm texto `--text-secondary`, mudando para `--text-primary` no hover.
 
 ## 4. Dashboard
 
@@ -230,3 +231,32 @@ Não é item da sidebar: abre a partir de **Configurações → Activity log →
 - **Lista** cronológica, mais novo primeiro, em tabela de colunas fixas: hora local, ferramenta (ou o tipo, quando não há ferramenta), alvo, resultado e duração, com "Carregar mais" a cada 100 linhas. Falhas em `--danger`, só como estado.
 - **Detalhe** ao clicar numa linha, ao lado: o print **antes** e o **depois** (carregados só do registro aberto), os campos nomeados (hora, tipo, passo, alvo, papel, texto, endereço, resultado, erro, duração, sessão, vaga) e os dados técnicos num bloco secundário. As linhas do tipo **browser** são os eventos do próprio browser (download, lançamento, queda, queda de aba, diálogo).
 - Os prints podem mostrar dados pessoais; ficam só nesta máquina.
+## 15. Sites
+
+Item 5 da sidebar (`Globe`, label "Sites" nos dois idiomas, sem badge). Título da tela: "Sites de vagas" ("Job sites" em inglês). Código em `src/components/sites/`, estilos em `src/components/sites/estilos.ts` (CSS injetado uma vez dentro de `.sites-tela`). É a lista de sites que a IA pode abrir (arquitetura 3.8). Padding de 24px. Só tokens da seção 2; nada de cor fixa além do branco sobre `--accent`.
+
+**Barra de ferramentas**, acima da galeria ou da lista, numa linha que quebra: busca (por nome ou domínio, sem acento e sem diferença de maiúsculas, "orsted" acha "Ørsted"), três `select` de filtro (**Tipo**, **Região**, **País**, cada um com "<Rótulo>: Todos" e só os valores que existem na lista; o país aparece pelo nome por extenso), **Ordenar por** (Nome, Tipo, Região, País, Estado de login) com um botão que inverte a ordem, o seletor **Galeria | Lista** (o modo fica lembrado em `localStorage`, chave `sites-modo`; sem armazenamento, volta para a galeria), o contador "N de TOTAL sites" em `--text-tertiary` e, à direita, **Adicionar site** (botão cheio em `--accent`). Sites sem país vão por último na ordenação por país, nas duas direções.
+
+**Formulário "Adicionar site"** (painel acima da lista, com borda de 1px): nome, endereço, tipo (`select`) e país (opcional, código de 2 letras; vai para maiúsculas ao enviar). **Salvar** e **Cancelar**. A validação é do backend; o formulário só mostra a mensagem devolvida em `--danger` (por exemplo `http://` recusado, domínio repetido ou sobreposto).
+
+**Cartão da galeria.** Grade `repeat(auto-fill, minmax(232px, 1fr))`, 16px de espaço; cartão com borda de 1px em `--border`, raio de 8px, borda em `--accent` no hover.
+- **Capa** de 84px em `--bg-sunken`, gerada (sem favicon): a inicial do nome bem grande e quase transparente ao fundo, o **nome** do site embaixo (15px / 500, até duas linhas, clicável: abre a página do site dentro da tela) e o botão **Abrir ↗** no canto superior esquerdo.
+- **Corpo:** o domínio como link (abre o site no browser da Claudia, não no navegador do app), duas pills (**país pelo nome por extenso**, ou a região quando o site não tem país; e o **tipo**), a pill "descoberta" quando o papel é só descoberta de vagas, e a linha do **estado de login**: bolinha de 8px mais texto. `logada` em `--success` ("Logada · há N dias", ou "Logada · hoje"); sem confirmação em `--warning` ("Sem confirmação"); `precisa_login` em **cinza** (`--text-tertiary`, "Precisa de login"), porque é um estado de espera e não um erro; site sem login ("Sem login") também em cinza. "não é mais padrão" aparece em 11px quando o site saiu do seed.
+- **Faixa inferior** é o indicador de liberação para a IA, não um interruptor desenhado: uma marca quadrada de 16px e o texto. Fechada: "Fechada · clique para liberar", em `--text-secondary` sobre `--bg-sunken`. Liberada: fundo `--accent-soft`, texto `--accent-strong`, marca cheia em `--accent`, "Liberada para a IA". Bloqueada (site com login manual que ainda não está `logada`): texto `--text-tertiary`, marca tracejada, "Entre para liberar" e, à direita, o botão-texto **Já entrei**.
+- **O cartão inteiro é o interruptor** (`role="switch"`, `aria-checked`, foco visível, Espaço e Enter quando o foco está no próprio cartão). O botão Abrir, o nome, o link do domínio e "Já entrei" não alternam. Cartão bloqueado não é `switch` (é `group`); o clique ainda chega ao backend, que recusa, e a mensagem aparece no cartão em `--danger`.
+
+**Largura mínima da grade (232px) e por quê.** A faixa nunca quebra linha (`white-space: nowrap`, reticências no texto). O pior caso é "Entre para liberar" mais "Já entrei" mais a marca; a estimativa feita na implementação é de cerca de 225px de cartão. Abaixo disso o botão sairia do cartão, então a grade não encolhe a coluna além de 232px.
+
+**Linha da lista.** Linha de no mínimo 52px, borda de 1px em `--border`, raio de 8px, em colunas: um risco vertical de 4px na cor do estado de login (`--success`, `--warning` ou `--text-tertiary`), um monograma de 28px, nome (14px / 500) com "domínio · país · tipo" embaixo em 12px, o botão **Abrir ↗** e o texto final ("✓ Liberada", "Fechada" ou "Entre antes"). A linha inteira é o interruptor, com as mesmas regras do cartão; liberada ganha borda `--accent` e fundo `--accent-soft`.
+
+**Página do site** (substitui a lista; **← Sites** no topo; a lista continua montada por baixo, então filtros, ordem e modo sobrevivem, e o foco e a rolagem voltam ao cartão de onde se saiu). Cabeçalho com nome, pills de local e tipo e o estado de login. Duas colunas que viram uma abaixo de 760px:
+- **Sobre o site** (painel de 1px): endereço (link que abre o site), tipo, região, país ("Sem país (vale para vários)" quando não há), papel ("Candidatura de ponta a ponta" ou "Só descoberta de vagas"), origem ("Veio com o app" ou "Adicionado por você") e domínios.
+- **O que a IA pode fazer aqui:** a mesma faixa, solta (com borda de 1px e raio de 8px) e clicável (`switch`); **Abrir o site ↗** (botão cheio em `--accent`); **Já estou logado** quando o site está bloqueado; **Configurar conta (em breve)** desabilitado, com a dica "Fica para uma próxima etapa."; e **Remover da lista** (`--danger`) **só para site adicionado pelo usuário**, com confirmação inline ("Remover este site da lista?", **Remover da lista** e **Cancelar**). Site que veio com o app não tem "Remover": a IA é desligada nele.
+
+**Estados.** Carregando ("Carregando…" em `--text-tertiary`). Erro (cartão com borda e texto em `--danger`, "Não foi possível carregar os sites: <erro>" e **Tentar de novo**). Vazio por filtro ("Nenhum site combina com esses filtros." e o botão **Limpar filtros**). Recusas e falhas de uma ação (liberar, abrir, remover) aparecem junto do site, em `--danger`, e a lista recarrega.
+
+**Faixa de avisos.** No topo da tela, acima da barra, uma linha por site cujo login foi perdido: ícone de alerta e "Entre de novo em <site>" em `--warning` (borda `--warning`, fundo de 10% de `--warning` sobre `--bg-surface`) e o botão **Abrir**, que abre o site. Some quando o usuário marca "Já entrei" ou "Já estou logado".
+
+**Pendências: item "Site pede login".** A tela Pendências (seção 9) mostra cada aviso de site como um cartão do mesmo molde, com filete esquerdo de 3px em `--warning`, o badge de categoria "Site pede login" em `--warning`, o tempo desde a criação, o texto "Entre de novo em <site>" e as ações **Abrir o site ↗** e, só depois de abrir por ali, **Já entrei**. O badge do item Pendências da sidebar conta esses avisos junto com as pendências e as propostas de perfil.
+
+**Atualização.** A tela recarrega sozinha quando o backend muda a lista (evento ouvido em `src/components/sites/ouvir.ts`).

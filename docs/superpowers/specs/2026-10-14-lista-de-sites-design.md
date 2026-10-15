@@ -156,3 +156,23 @@ Item "Sites" na sidebar. Barra de ferramentas: busca por texto (nome e domínio)
 - **Em aberto:** qual `status` recebe a vaga salva por site fora da lista; se a pendência de relogar exige categoria nova (arquitetura §10 e §6.1); como a vaga se liga ao domínio recusado.
 - **Risco aceito pelo usuário:** o verde pode estar velho, porque o login não expira por prazo. Mitigado só pelo "confirmada há X dias".
 - **Risco para acompanhar:** a rigidez pode reduzir a taxa de candidaturas. A contagem de `dominios_recusados` é o dado para medir isso.
+
+### Estado da implementação (2026-10-14)
+
+Escrito ao fechar a implementação em `feat/lista-de-sites-impl`; não reescreve o texto acima.
+
+**Construído:**
+- Tabelas `contas_browser`, `dominios_recusados` e `avisos_sites`; seed embutido `src-tauri/sites-padrao.json` com merge que preserva as escolhas do usuário; casamento de domínio por fronteira de rótulo e caminho de ATS; porteiro do `browser_open` que fecha por padrão; ferramenta `browser_contas`; gancho de `login_wall` que marca `precisa_login` e cria o aviso; comandos Tauri em `src-tauri/src/commands/sites.rs`; tela **Sites** em `src/components/sites/` (galeria e lista, filtros, ordenação, adicionar, página do site, remover só site do usuário); item "Site pede login" em Pendências, badge e notificação nativa; item Sites na sidebar; i18n pt e en; texto do prompt de runtime sobre `browser_contas`.
+
+**Decisões tomadas durante a implementação:**
+- **Cartão:** o usuário escolheu a opção A (capa gerada com o nome) a partir dos mockups; a lista usa a opção C (linha densa). O cartão inteiro é o interruptor de "IA pode usar", e a faixa inferior é só o indicador.
+- **Avisos:** ficam numa tabela própria (`avisos_sites`) **e** aparecem em Pendências (item, badge, notificação nativa), além da faixa na tela Sites.
+- **Seed entregue:** só **9 sites iniciais** (`src-tauri/sites-padrao.json`). A lista curada de cerca de 100 sites é a Task 14 e está **pendente do usuário**.
+- **Pesquisa:** DeepL, Mozilla e Docker saíram da lista por reputação (nota do Glassdoor abaixo de 3,0 ou no limite; ver `docs/pesquisa/2026-10-14-lista-de-sites-pesquisa.md`).
+- A tela mostra o estado `precisa_login` em cinza (estado de espera, não erro) e o texto "Logada · há N dias" no lugar de "confirmada há N dias" (a chave `confirmedDaysAgo` existe nos dicionários e não é usada).
+
+**Lacunas conhecidas:**
+- "Configurar conta" é só um botão desabilitado; ranking, promoção automática de site e detecção de login por cookie não foram feitos.
+- Navegação por clique ou redirecionamento depois de um `browser_open` aprovado não é barrada (§4.5).
+- O porteiro não exige `https` (só o formulário de adicionar e o seed exigem); a recusa de URL do `browser_open` aceita `http` e `https`.
+- Seed com 9 sites e `url_login` não visitados (continua não verificado, como em §8).
