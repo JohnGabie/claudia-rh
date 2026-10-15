@@ -91,7 +91,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "definir_ia_pode_usar": {
       const x = achar();
       if (!x) return naoAchou();
-      if (args.valor === true && x.regra_login === "manual" && x.estado !== "logada") {
+      if (args.valor === true && x.regra_login !== "nenhuma" && x.estado !== "logada") {
         return Promise.reject('Confirme o login neste site (botão "Já estou logado") antes de liberar a IA.');
       }
       x.ia_pode_usar = args.valor === true;

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Site } from "../../src/components/sites/logica.ts";
 import {
-  estadoVisual, mostraJaEntrei, passo1, podeAlternarSemLogin, pronto, semLogin, situacaoFaixa,
+  bloqueado, estadoVisual, mostraJaEntrei, passo1, podeAlternarSemLogin, pronto, semLogin, situacaoFaixa,
 } from "../../src/components/sites/estado.ts";
 import { pt } from "../../src/i18n/pt.ts";
 import { en } from "../../src/i18n/en.ts";
@@ -70,4 +70,25 @@ test("type labels: all 7 keys exist in pt and en, pt matches the table", () => {
     assert.ok(typeof e === "string" && e.length > 0, `en ${k}`);
     assert.equal(p, tabela[k]);
   }
+});
+
+test("cookie_sessao follows the same release rule as manual: ready only when logged in", () => {
+  const nao = site({ regra_login: "cookie_sessao", estado: "precisa_login" });
+  const sim = site({ regra_login: "cookie_sessao", estado: "logada" });
+  assert.equal(pronto(nao), false);
+  assert.equal(bloqueado(nao), true);
+  assert.equal(situacaoFaixa(nao), "falta");
+  assert.equal(pronto(sim), true);
+  assert.equal(bloqueado(sim), false);
+});
+
+test("estadoVisual of a not logged cookie_sessao site is a login state, never 'does not ask for login'", () => {
+  const agora = new Date();
+  const a = estadoVisual(site({ regra_login: "cookie_sessao", estado: "precisa_login" }), agora, pt);
+  assert.equal(a.cor, "precisa");
+  assert.equal(a.texto, pt.sites.state.precisa_login);
+  const b = estadoVisual(site({ regra_login: "cookie_sessao", estado: "desconhecido" }), agora, pt);
+  assert.equal(b.cor, "sem");
+  const c = estadoVisual(site({ regra_login: "cookie_sessao", estado: "logada", verificada_em: null }), agora, pt);
+  assert.equal(c.cor, "logada");
 });

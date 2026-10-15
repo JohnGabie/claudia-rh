@@ -5,13 +5,13 @@ import { diasDesde, type Site } from "./logica.ts";
 /** "semlogin" = green dot, the site does not ask for login. */
 export type CorEstado = "logada" | "sem" | "precisa" | "semlogin";
 
-/** A manual-login site that is not logged in cannot be opened to the AI (the backend refuses it too). */
-export const bloqueado = (s: Site): boolean => s.regra_login === "manual" && s.estado !== "logada";
-
-/** May the AI be released? */
-export const pronto = (s: Site): boolean => !bloqueado(s);
-
 export const semLogin = (s: Site): boolean => s.regra_login === "nenhuma";
+
+/** May the AI be released? Only no-login sites, or sites with a confirmed login (the backend refuses anything else). */
+export const pronto = (s: Site): boolean => semLogin(s) || s.estado === "logada";
+
+/** A site that asks for login (manual or session cookie) and is not logged in cannot be opened to the AI. */
+export const bloqueado = (s: Site): boolean => !pronto(s);
 
 export type SituacaoFaixa = "falta" | "fechada" | "ligada";
 export const situacaoFaixa = (s: Site): SituacaoFaixa => (!pronto(s) ? "falta" : s.ia_pode_usar ? "ligada" : "fechada");
@@ -31,7 +31,7 @@ export function estadoVisual(s: Site, agora: Date, t: Strings): { cor: CorEstado
     const d = diasDesde(s.verificada_em, agora);
     return { cor: "logada", texto: d === null ? t.sites.state.logada : t.sites.loggedAgo(d) };
   }
-  if (s.regra_login !== "manual") return { cor: "semlogin", texto: t.sites.noLogin };
+  if (semLogin(s)) return { cor: "semlogin", texto: t.sites.noLogin };
   if (s.estado === "desconhecido") return { cor: "sem", texto: t.sites.state.desconhecido };
   return { cor: "precisa", texto: t.sites.state.precisa_login };
 }

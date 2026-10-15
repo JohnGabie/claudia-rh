@@ -50,6 +50,7 @@ export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes
         <Pill>{rotulo(t.sites.types, site.tipo)}</Pill>
         <span style={{ marginLeft: "auto" }}><EstadoLinha cor={cor} texto={texto} /></span>
       </header>
+      {erro && <div role="alert" className="st-erro" style={{ marginBottom: 12 }}>{erro}</div>}
       <div className="grade-p">
         <Sobre site={site} stats={stats} onAbrir={() => acoes.onAbrir(site)} />
         <Passos
@@ -58,7 +59,7 @@ export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes
           onLogado={acoes.onLogado} onIa={acoes.onIa} onSemLogin={acoes.onSemLogin} onNaoLogado={acoes.onNaoLogado}
         />
       </div>
-      <ZonaRisco site={site} erro={erro} aberta={riscoAberto} onAlternar={setRiscoAberto} onRemover={acoes.onRemover} />
+      <ZonaRisco site={site} aberta={riscoAberto} onAlternar={setRiscoAberto} onRemover={acoes.onRemover} />
     </section>
   );
 };

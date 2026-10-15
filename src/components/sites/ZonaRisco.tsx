@@ -4,14 +4,13 @@ import type { Site } from "./logica";
 
 interface Props {
   site: Site;
-  erro?: string;
   aberta: boolean;
   onAlternar: (aberta: boolean) => void;
   onRemover: (s: Site) => void;
 }
 
 // Collapsible danger zone. Whether it is open lives in the parent so it survives data reloads.
-export const ZonaRisco: React.FC<Props> = ({ site, erro, aberta, onAlternar, onRemover }) => {
+export const ZonaRisco: React.FC<Props> = ({ site, aberta, onAlternar, onRemover }) => {
   const t = useT();
   const [confirmando, setConfirmando] = useState(false);
   return (
@@ -37,7 +36,6 @@ export const ZonaRisco: React.FC<Props> = ({ site, erro, aberta, onAlternar, onR
           </div>
         )}
       </div>
-      {erro && <div role="alert" className="st-erro">{erro}</div>}
     </details>
   );
 };

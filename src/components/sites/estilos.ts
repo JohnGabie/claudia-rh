@@ -70,10 +70,10 @@ export const ESTILOS = `
 .st-linha.bloqueada:hover { border-color: var(--border); }
 .st-linha.bloqueada .ia { color: var(--text-tertiary); }
 
-.st-pagina { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; max-width: 1000px; }
+.st-pagina { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; max-width: 1000px; container-type: inline-size; }
 .st-pagina .topo-p { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 14px; }
 .st-pagina h2 { font-size: 15px; font-weight: 500; margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.st-pagina .grade-p { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); gap: 16px; align-items: stretch; }
+.st-pagina .grade-p { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
 .st-painel { border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; height: 100%; box-sizing: border-box; }
 .st-painel h3 { margin: 0 0 10px; font-size: 15px; font-weight: 500; }
 .st-painel dl { margin: 0; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 10px; font-size: 13px; }
@@ -113,5 +113,5 @@ export const ESTILOS = `
 .st-btn.perigo { color: var(--danger); }
 .st-btn[disabled] { color: var(--text-tertiary); cursor: not-allowed; }
 .st-confirma { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--text-secondary); }
-@media (max-width: 820px) { .st-pagina .grade-p { grid-template-columns: 1fr; } }
+@container (max-width: 700px) { .st-pagina .grade-p { grid-template-columns: 1fr; } }
 `;
