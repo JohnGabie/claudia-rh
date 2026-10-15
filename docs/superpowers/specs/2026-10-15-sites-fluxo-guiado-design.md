@@ -77,7 +77,7 @@ Conforme P3. Rótulos em `src/i18n/pt.ts` e `en.ts`; filtro, selos, ordenação 
 ## 5. Impacto
 
 - **Dados:** coluna nova `aberturas INTEGER NOT NULL DEFAULT 0` e `ultima_abertura TEXT` em `contas_browser`, com migração idempotente (P2). Nenhuma outra tabela muda.
-- **Backend:** (a) comando novo `definir_site_sem_login(chave, valor)` com a regra de §4.2; (b) comando de leitura das estatísticas de um site (relogins, aberturas, vagas, candidaturas) ou campos novos em `listar_sites`; (c) o bloqueio do `browser_open` soma a abertura aceita.
+- **Backend:** (a) comandos novos `definir_site_sem_login(chave, valor)` e `marcar_site_nao_logado(chave)` (este grava `precisa_login` e fecha a IA, conforme §4.2; antes só existia a função interna) com as regras de §4.2; (b) comando de leitura das estatísticas de um site (relogins, aberturas, vagas, candidaturas) ou campos novos em `listar_sites`; (c) o bloqueio do `browser_open` soma a abertura aceita.
 - **Frontend:** `Cartao` e `Faixa` (faixa única, corpo abre a página), `Detalhe` (duas colunas, passos, zona de risco recolhível), componente novo de passos, `Lista` (P4), rótulos de tipo, textos pt/en, `sites.mock.ts` e `dev-mock.ts`.
 - **Segurança:** nenhuma regra do MCP muda. A regra "voltar para `manual` sem login fecha a IA" é de segurança e tem teste próprio. O que sai da tela (contagens) não traz URL nem cookie.
 - **Docs:** `padrao-design-claudia-rh.md` §15 (cartão e página) e `arquitetura-sistema-candidaturas.md` §3.8 (comando novo e coluna).
