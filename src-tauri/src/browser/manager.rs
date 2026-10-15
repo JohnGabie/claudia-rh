@@ -103,7 +103,7 @@ pub async fn wait_ready(port: u16, timeout: Duration) -> Result<String, String> 
 /// character (CR/LF would split the request line or smuggle a header) is refused. Space and `#`
 /// are percent-encoded so they cannot end the request line or turn into a fragment.
 fn new_tab_target(url: &str) -> Result<String, String> {
-    if !url.starts_with("https://") {
+    if !url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) {
         return Err("só endereços https podem ser abertos".into());
     }
     if url.chars().any(|c| c.is_control()) {
@@ -445,8 +445,11 @@ mod tests {
     async fn open_tab_turns_a_non_200_into_an_error() {
         let (port, _rx) = fake_new_tab("404 Not Found").await;
         assert!(open_tab(port, "https://example.com/").await.is_err());
-        let (port, _rx) = fake_new_tab("500 Internal Server Error").await;
-        assert!(open_tab(port, "https://example.com/").await.is_err());
+        // Any other status is refused too, including the 2xx ones: only 200 means a tab was opened.
+        for status in ["500 Internal Server Error", "201 Created", "204 No Content"] {
+            let (port, _rx) = fake_new_tab(status).await;
+            assert!(open_tab(port, "https://example.com/").await.is_err(), "{status}");
+        }
     }
 
     #[tokio::test]
@@ -465,6 +468,13 @@ mod tests {
             assert!(open_tab(port, bad).await.is_err(), "{bad:?}");
         }
         assert!(rx.try_recv().is_err(), "a refused URL must never reach the browser");
+    }
+
+    #[test]
+    fn the_new_tab_scheme_check_ignores_case_but_stays_https_only() {
+        assert!(new_tab_target("HTTPS://example.com/").is_ok());
+        assert!(new_tab_target("HTTP://example.com/").is_err());
+        assert!(new_tab_target("HTTPS://example.com/\r\nX: 1").is_err());
     }
 
     #[test]
