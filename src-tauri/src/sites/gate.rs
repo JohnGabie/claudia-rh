@@ -32,7 +32,7 @@ pub fn registrar_recusa(conn: &Connection, url: &str) {
 pub fn decidir(conn: &Connection, url: &str) -> Decision {
     // Only https may be opened (same notion as the browser's tab opener: case-insensitive scheme).
     if !url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) {
-        return Decision::Refuse("RECUSADO: sÃ³ endereÃ§os https podem ser abertos. Se o site tem uma versÃ£o https, use-a; se nÃ£o, pule esta fonte e siga para a prÃ³xima.".to_string());
+        return Decision::Refuse("RECUSADO: só endereços https podem ser abertos. Se o site tem uma versão https, use-a; se não, pule esta fonte e siga para a próxima.".to_string());
     }
     let site = match repo::resolver(conn, url) {
         Ok(s) => s,
@@ -164,6 +164,16 @@ mod tests {
         assert!(m.contains("https"), "{m}");
         let n: i64 = c.query_row("SELECT COUNT(*) FROM dominios_recusados", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn the_https_refusal_message_is_clean_utf8_portuguese() {
+        let c = db();
+        repo::marcar_logada(&c, "linkedin").unwrap();
+        repo::definir_ia_pode_usar(&c, "linkedin", true).unwrap();
+        let m = refused(decidir(&c, "http://www.linkedin.com/jobs/1"));
+        assert!(m.contains("só endereços https") && m.contains("versão"), "{m}");
+        assert!(!m.contains('\u{c3}') && !m.contains('\u{c2}'), "mojibake: {m}");
     }
 
     #[test]
