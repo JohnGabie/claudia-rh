@@ -23,7 +23,9 @@ export interface Filtros { busca: string; tipo: string; regiao: string; pais: st
 export type Campo = "nome" | "tipo" | "regiao" | "pais" | "estado";
 export interface Ordem { campo: Campo; desc: boolean }
 
-const sem = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// NFD does not decompose these, so fold them by hand ("orsted" must find "Ørsted").
+const DOBRAS: Record<string, string> = { "ø": "o", "æ": "ae", "œ": "oe", "ß": "ss", "đ": "d", "ł": "l", "þ": "th" };
+const sem = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[øæœßđłþ]/g, (ch) => DOBRAS[ch]);
 
 export function filtrar(sites: Site[], f: Filtros): Site[] {
   const q = sem(f.busca.trim());
@@ -37,7 +39,7 @@ export function filtrar(sites: Site[], f: Filtros): Site[] {
 }
 
 const RANK_ESTADO: Record<Site["estado"], number> = { logada: 0, desconhecido: 1, precisa_login: 2 };
-const porNome = (a: Site, b: Site) => a.nome.localeCompare(b.nome, "pt", { sensitivity: "base" }) || a.chave.localeCompare(b.chave);
+const porNome = (a: Site, b: Site) => a.nome.localeCompare(b.nome, "pt", { sensitivity: "base", numeric: true }) || a.chave.localeCompare(b.chave);
 
 function chave(s: Site, campo: Campo): string | number {
   if (campo === "estado") return RANK_ESTADO[s.estado];
@@ -54,7 +56,7 @@ export function ordenar(sites: Site[], o: Ordem): Site[] {
     const kb = chave(b, o.campo);
     const c = typeof ka === "number" && typeof kb === "number"
       ? ka - kb
-      : String(ka).localeCompare(String(kb), "pt", { sensitivity: "base" });
+      : String(ka).localeCompare(String(kb), "pt", { sensitivity: "base", numeric: true });
     return c !== 0 ? c * dir : porNome(a, b);
   });
 }

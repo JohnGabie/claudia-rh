@@ -22,6 +22,7 @@ import { Welcome } from "./components/Welcome";
 function App() {
   const t = useT();
   const [view, setView] = useState<View>("dashboard");
+  const [sitesSinal, setSitesSinal] = useState(0);
   const [sugerirFeedback, setSugerirFeedback] = useState(false);
   const [pendenciasCount, setPendenciasCount] = useState(0);
   const [propostasCount, setPropostasCount] = useState(0);
@@ -147,7 +148,7 @@ function App() {
           <Welcome onComplete={(v) => { setShowWelcome(false); setView(v); }} />
         ) : (
           <>
-            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
+            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); if (v === "sites") setSitesSinal((n) => n + 1); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
             <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
               {/* Dashboard */}
@@ -167,7 +168,7 @@ function App() {
 
               {/* Sites */}
               <div style={{ display: view === "sites" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-                <Sites />
+                <Sites voltarSinal={sitesSinal} />
               </div>
 
               {/* Terminal — nunca desmontado */}

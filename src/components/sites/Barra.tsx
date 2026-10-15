@@ -27,7 +27,10 @@ export const Barra: React.FC<Props> = ({ filtros, onFiltros, ordem, onOrdem, mod
   const filtro = (chave: "tipo" | "regiao" | "pais", rotuloCampo: string, mapa?: object) => (
     <select key={chave} aria-label={rotuloCampo} value={filtros[chave]} onChange={(e) => mudar({ [chave]: e.target.value })} style={campo}>
       <option value="">{rotuloCampo}: {t.sites.all}</option>
-      {valoresDe(sites, chave).map((v) => <option key={v} value={v}>{mapa ? rotulo(mapa, v) : nomePais(v, locale)}</option>)}
+      {valoresDe(sites, chave)
+        .map((v) => ({ v, nome: mapa ? rotulo(mapa, v) : nomePais(v, locale) }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, locale === "pt" ? "pt-BR" : "en"))
+        .map(({ v, nome }) => <option key={v} value={v}>{nome}</option>)}
     </select>
   );
 

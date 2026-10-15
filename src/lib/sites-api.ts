@@ -1,25 +1,16 @@
-// The only place the front talks to the Sites commands. In `vite dev` outside Tauri (a plain
-// browser) it answers from an in-memory mock; production builds drop the mock path because
-// import.meta.env.DEV is false there.
+// The only place the front talks to the Sites commands. In `vite dev` outside Tauri, dev-mock.ts
+// answers these commands from sites.mock.ts, so there is no mock path here.
 import { invoke } from "@tauri-apps/api/core";
 import type { Site } from "../components/sites/logica";
 
 export interface AvisoSite { id: number; chave: string; nome: string; criado_em: string }
-
-const semTauri = () => typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
 
 // Fired after any write, so the screen reloads even when the backend event never arrives (mock).
 export const SITES_MUDARAM = "sites-mudaram";
 const ESCRITAS = new Set(["definir_ia_pode_usar", "marcar_site_logado", "adicionar_site", "remover_site"]);
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  let r: T;
-  if (import.meta.env.DEV && semTauri()) {
-    const { mockInvoke } = await import("./sites.mock");
-    r = await mockInvoke<T>(cmd, args ?? {});
-  } else {
-    r = await invoke<T>(cmd, args);
-  }
+  const r = await invoke<T>(cmd, args);
   if (ESCRITAS.has(cmd)) window.dispatchEvent(new Event(SITES_MUDARAM));
   return r;
 }

@@ -23,7 +23,7 @@ export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes
     [t.sites.address, link],
     [t.sites.type, rotulo(t.sites.types, site.tipo)],
     [t.sites.region, rotulo(t.sites.regions, site.regiao)],
-    [t.sites.country, local],
+    [t.sites.country, site.pais ? local : t.sites.noCountry],
     [t.sites.role, site.papel === "descoberta" ? t.sites.roleDiscovery : t.sites.roleApplication],
     [t.sites.origin, site.embutida ? t.sites.originBundled : t.sites.originUser],
     [t.sites.domains, site.dominios.join(", ")],

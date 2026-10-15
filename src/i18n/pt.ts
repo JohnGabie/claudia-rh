@@ -505,6 +505,7 @@ export const pt: Strings = {
     form: { title: "Adicionar site", name: "Nome do site", url: "Endereço (https://…)", type: "Tipo", country: "País (opcional, ex.: DK)", save: "Salvar", saving: "Salvando…", cancel: "Cancelar" },
     relogin: (nome: string) => `Entre de novo em ${nome}`,
     back: "← Sites",
+    noCountry: "Sem país (vale para vários)",
     aboutTitle: "Sobre o site",
     aiTitle: "O que a IA pode fazer aqui",
     aiOpen: "Liberada para a IA",

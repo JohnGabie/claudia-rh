@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useT } from "../../i18n";
+import { normalizarPais } from "./paises";
 import { rotulo } from "./rotulos";
 
 const TIPOS = ["geral", "regional", "tecnologia", "remoto", "freelance", "empresa", "nicho"];
@@ -29,7 +30,7 @@ export const FormAdicionar: React.FC<Props> = ({ onSalvar, onCancelar }) => {
     setErro(null);
     setSalvando(true);
     try {
-      await onSalvar(nome, url, tipo, pais.trim() ? pais.trim() : null);
+      await onSalvar(nome, url, tipo, normalizarPais(pais));
     } catch (err) {
       setErro(String(err));
       setSalvando(false);

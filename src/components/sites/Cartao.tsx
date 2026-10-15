@@ -29,6 +29,7 @@ export const Cartao: React.FC<Props> = ({ site, agora, erro, onAbrir, onLogado, 
   return (
     <Interruptor
       className="st-card"
+      chave={site.chave}
       ligado={site.ia_pode_usar}
       bloqueado={bloq}
       nome={`${site.nome}: ${situacao}`}

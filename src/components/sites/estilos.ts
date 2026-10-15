@@ -2,6 +2,7 @@
 // Tokens come from the app (src/styles/tokens.css). Injected once by index.tsx inside `.sites-tela`.
 export const ESTILOS = `
 .sites-tela :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sites-tela .st-card:focus-visible, .sites-tela .st-linha:focus-visible, .sites-tela .st-switch-faixa:focus-visible { outline-color: var(--text-primary); }
 .sites-tela label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .st-pill { display: inline-block; font-size: 11px; font-weight: 500; background: var(--bg-sunken); color: var(--text-secondary); border-radius: 6px; padding: 2px 8px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -18,8 +19,9 @@ export const ESTILOS = `
 .st-nota { font-size: 11px; color: var(--text-tertiary); }
 .st-erro { font-size: 12px; color: var(--danger); overflow-wrap: anywhere; }
 
-.st-faixa { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; font-size: 12px; font-weight: 500; border-top: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-secondary); }
+.st-faixa { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; white-space: nowrap; padding: 8px 12px; font-size: 12px; font-weight: 500; border-top: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-secondary); }
 .st-faixa.solta { border: 1px solid var(--border); border-radius: 8px; }
+.st-faixa > span:not(.marca) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .st-faixa .marca { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--text-tertiary); flex: 0 0 auto; box-sizing: border-box; }
 .st-faixa.aberta { background: var(--accent-soft); color: var(--accent-strong); }
 .st-faixa.aberta .marca { background: var(--accent); border-color: var(--accent); position: relative; }
@@ -28,7 +30,7 @@ export const ESTILOS = `
 .st-faixa.bloqueada .marca { border-style: dashed; }
 .st-faixa .logou { margin-left: auto; font: inherit; font-size: 12px; font-weight: 500; color: var(--accent-strong); background: none; border: 0; cursor: pointer; padding: 0; text-decoration: underline; }
 
-.st-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+.st-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
 .st-card { position: relative; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; min-width: 0; transition: border-color .12s; }
 .st-card:hover { border-color: var(--accent); }
 .st-card.aberta { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -53,7 +55,9 @@ export const ESTILOS = `
 .st-linha .quem { min-width: 0; padding: 6px 0; }
 .st-linha .n { display: block; max-width: 100%; text-align: left; font: inherit; font-size: 14px; font-weight: 500; color: var(--text-primary); background: none; border: 0; padding: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-linha .n:hover { color: var(--accent-strong); text-decoration: underline; }
-.st-linha .d { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-linha .d { display: flex; font-size: 12px; color: var(--text-secondary); white-space: nowrap; min-width: 0; }
+.st-linha .d .dom { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.st-linha .d .resto { flex: 0 0 auto; }
 .st-linha .ia { font-size: 12px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; min-width: 84px; text-align: right; }
 .st-linha.aberta { border-color: var(--accent); background: linear-gradient(0deg, var(--accent-soft), var(--accent-soft)), var(--bg-surface); }
 .st-linha.aberta .ia { color: var(--accent-strong); }

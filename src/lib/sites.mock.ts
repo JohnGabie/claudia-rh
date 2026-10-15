@@ -102,10 +102,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
       if (!TIPOS.includes(String(args.tipo))) return Promise.reject("Tipo de site inválido.");
       const dono = sites.find((y) => y.dominios.some((d) => host === d || host.endsWith("." + d)));
       if (dono) return Promise.reject(`Este endereço já está coberto pelo site ${dono.nome}.`);
-      const pais = args.pais ? String(args.pais).trim().toUpperCase() : null;
+      const pais = args.pais ? String(args.pais).trim() : null;
+      if (pais !== null && !/^[A-Z]{2}$/.test(pais)) return Promise.reject("O país precisa ser o código de 2 letras (ex.: DK).");
       let chave = slug(nome) || host;
       while (sites.some((y) => y.chave === chave)) chave += "-2";
-      sites = [...sites, s(chave, nome, host, String(args.tipo), "GLOBAL", pais, { embutida: false, url_login: String(args.url).trim() })];
+      sites = [...sites, s(chave, nome, host, String(args.tipo), "GLOBAL", pais, {
+        embutida: false, regra_login: "manual", ia_pode_usar: false, estado: "desconhecido", papel: "candidatura", url_login: String(args.url).trim(),
+      })];
       return r(chave);
     }
     case "remover_site": {

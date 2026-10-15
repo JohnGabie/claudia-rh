@@ -27,3 +27,11 @@ test("unknown or malformed codes fall back to the code without throwing", () => 
   assert.doesNotThrow(() => nomePais("not a code", "pt"));
   assert.equal(nomePais("not a code", "en"), "not a code");
 });
+
+test("the add form normalises the country field", async () => {
+  const { normalizarPais } = await import("../../src/components/sites/paises.ts");
+  assert.equal(normalizarPais(""), null);
+  assert.equal(normalizarPais("   "), null);
+  assert.equal(normalizarPais(" dk "), "DK");
+  assert.equal(normalizarPais("BR"), "BR");
+});

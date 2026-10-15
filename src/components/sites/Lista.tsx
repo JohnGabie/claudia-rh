@@ -22,6 +22,7 @@ const Linha: React.FC<LinhaProps> = ({ site, agora, erro, onAbrir, onIa, onDetal
     <div>
       <Interruptor
         className="st-linha"
+        chave={site.chave}
         ligado={site.ia_pode_usar}
         bloqueado={bloq}
         nome={`${site.nome}: ${situacao}`}
@@ -32,8 +33,11 @@ const Linha: React.FC<LinhaProps> = ({ site, agora, erro, onAbrir, onIa, onDetal
         <div className="quem">
           <button type="button" className="n" title={site.nome} onClick={(e) => { e.stopPropagation(); onDetalhe(site); }}>{site.nome}</button>
           <div className="d">
-            {site.dominios[0]} · {localDoSite(site, locale, t.sites.regions)} · {rotulo(t.sites.types, site.tipo)}
-            {!site.padrao_atual && ` · ${t.sites.notDefault}`}
+            <span className="dom" title={site.dominios[0]}>{site.dominios[0]}</span>
+            <span className="resto">
+              {" · "}{localDoSite(site, locale, t.sites.regions)} · {rotulo(t.sites.types, site.tipo)}
+              {!site.padrao_atual && ` · ${t.sites.notDefault}`}
+            </span>
           </div>
         </div>
         <button type="button" className="st-abrir" onClick={(e) => { e.stopPropagation(); onAbrir(site); }}>{t.sites.openArrow}</button>

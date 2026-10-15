@@ -4,6 +4,7 @@ interface Props {
   ligado: boolean;
   bloqueado: boolean;
   nome: string;
+  chave: string;
   className: string;
   onMudar: () => void;
   children: React.ReactNode;
@@ -12,10 +13,10 @@ interface Props {
 // Makes a whole card or row the AI toggle: role="switch" + aria-checked, Space/Enter, visible focus.
 // A blocked site is not a switch; a click still reaches onMudar so the backend's refusal is shown.
 // Keys only count when the focus is on the element itself, so inner links and buttons keep their own.
-export const Interruptor: React.FC<Props> = ({ ligado, bloqueado, nome, className, onMudar, children }) => {
+export const Interruptor: React.FC<Props> = ({ ligado, bloqueado, nome, chave, className, onMudar, children }) => {
   const classes = `${className}${ligado && !bloqueado ? " aberta" : ""}${bloqueado ? " bloqueada" : ""}`;
   if (bloqueado) {
-    return <div className={classes} aria-label={nome} onClick={onMudar}>{children}</div>;
+    return <div className={classes} role="group" aria-label={nome} data-chave={chave} tabIndex={-1} onClick={onMudar}>{children}</div>;
   }
   return (
     <div
@@ -24,6 +25,7 @@ export const Interruptor: React.FC<Props> = ({ ligado, bloqueado, nome, classNam
       aria-checked={ligado}
       aria-label={nome}
       tabIndex={0}
+      data-chave={chave}
       onClick={onMudar}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;

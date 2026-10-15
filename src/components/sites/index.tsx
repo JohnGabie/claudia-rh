@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../i18n";
 import { sitesApi, type AvisoSite } from "../../lib/sites-api";
 import { AvisosFaixa } from "./AvisosFaixa";
@@ -31,7 +31,8 @@ const btn: React.CSSProperties = {
   background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)",
 };
 
-export const Sites: React.FC = () => {
+// `voltarSinal` changes each time the sidebar item is clicked: the detail page closes and the list shows.
+export const Sites: React.FC<{ voltarSinal?: number }> = ({ voltarSinal = 0 }) => {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [avisos, setAvisos] = useState<AvisoSite[]>([]);
@@ -43,6 +44,10 @@ export const Sites: React.FC = () => {
   const [adicionando, setAdicionando] = useState(false);
   const [aberto, setAberto] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
+  const telaRef = useRef<HTMLDivElement>(null);
+  const tituloRef = useRef<HTMLHeadingElement>(null);
+  const rolagem = useRef(0);
+  const ultimo = useRef<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -77,17 +82,30 @@ export const Sites: React.FC = () => {
     onLogado: (s: Site) => agir(s.chave, () => sitesApi.marcarLogado(s.chave)),
     onIa: (s: Site, v: boolean) => agir(s.chave, () => sitesApi.definirIa(s.chave, v)),
     onRemover: (s: Site) => agir(s.chave, () => sitesApi.remover(s.chave)),
-    onDetalhe: (s: Site) => setAberto(s.chave),
+    onDetalhe: (s: Site) => { rolagem.current = telaRef.current?.scrollTop ?? 0; ultimo.current = s.chave; setAberto(s.chave); },
   };
   const detalhe = sites?.find((s) => s.chave === aberto) ?? null;
+  const chaveAberta = detalhe?.chave ?? null;
+
+  // The list stays mounted (hidden) under the detail page, so filters, sort and view survive. When the
+  // detail closes (back button, sidebar, or the site was removed) restore the scroll and move focus
+  // to the card that was open, or to the heading when that card is gone.
+  const antes = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (antes.current !== null && chaveAberta === null) {
+      if (telaRef.current) telaRef.current.scrollTop = rolagem.current;
+      const alvo = telaRef.current?.querySelector<HTMLElement>(`[data-chave="${CSS.escape(antes.current)}"]`) ?? tituloRef.current;
+      alvo?.focus({ preventScroll: true });
+    }
+    antes.current = chaveAberta;
+  }, [chaveAberta]);
+  useEffect(() => { if (aberto !== null && sites !== null && detalhe === null) setAberto(null); }, [aberto, sites, detalhe]);
+  useEffect(() => { setAberto(null); }, [voltarSinal]);
 
   const visiveis = useMemo(() => (sites ? ordenar(filtrar(sites, filtros), ordem) : []), [sites, filtros, ordem]);
 
   let corpo: React.ReactNode;
-  if (detalhe) {
-    const { onDetalhe: _d, ...porSite } = acoes;
-    corpo = <Detalhe site={detalhe} agora={agora} erro={erros[detalhe.chave]} onVoltar={() => setAberto(null)} {...porSite} />;
-  } else if (erro && sites === null) {
+  if (erro && sites === null) {
     corpo = (
       <div role="alert" style={{ border: "1px solid var(--danger)", background: "var(--bg-surface)", borderRadius: 8, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ flex: 1, fontSize: 13, color: "var(--danger)", overflowWrap: "anywhere" }}>{t.sites.error}: {erro}</span>
@@ -124,10 +142,18 @@ export const Sites: React.FC = () => {
   }
 
   return (
-    <div className="sites-tela" style={{ padding: 24, overflow: "auto", height: "100%" }}>
-      {!detalhe && <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 16px" }}>{t.sites.title}</h1>}
-      <AvisosFaixa avisos={avisos} onAbrir={(chave) => agir(chave, () => sitesApi.abrir(chave))} />
-      {corpo}
+    <div ref={telaRef} className="sites-tela" style={{ padding: 24, overflow: "auto", height: "100%" }}>
+      <div style={{ display: detalhe ? "none" : undefined }}>
+        <h1 ref={tituloRef} tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 16px", outline: "none" }}>{t.sites.title}</h1>
+        <AvisosFaixa avisos={avisos} onAbrir={(chave) => agir(chave, () => sitesApi.abrir(chave))} />
+        {corpo}
+      </div>
+      {detalhe && (
+        <Detalhe
+          site={detalhe} agora={agora} erro={erros[detalhe.chave]} onVoltar={() => setAberto(null)}
+          onAbrir={acoes.onAbrir} onLogado={acoes.onLogado} onIa={acoes.onIa} onRemover={acoes.onRemover}
+        />
+      )}
       <style>{ESTILOS}</style>
     </div>
   );

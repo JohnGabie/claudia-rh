@@ -30,3 +30,6 @@ export function localDoSite(site: Pick<Site, "pais" | "regiao">, idioma: Idioma,
   if (site.pais) return nomePais(site.pais, idioma);
   return regioes[site.regiao] ?? site.regiao;
 }
+
+/** Country field of the add form: empty -> null, otherwise trimmed and upper-cased (the backend refuses "dk"). */
+export const normalizarPais = (v: string): string | null => (v.trim() ? v.trim().toUpperCase() : null);

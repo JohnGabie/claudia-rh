@@ -87,3 +87,21 @@ test("days since accepts an ISO string that already has a zone", () => {
   assert.equal(diasDesde("2026-10-11T14:00:00+02:00", agora), 3);
   assert.equal(diasDesde("2026-10-11 12:00:00", agora), 3);
 });
+
+test("search folds letters that NFD does not decompose", () => {
+  const lista = [
+    s("orsted", "Ørsted Careers", { dominios: ["orsted.com"] }),
+    s("strasse", "Straße Jobs", { dominios: ["strasse.de"] }),
+    s("other", "Other", { dominios: ["other.com"] }),
+  ];
+  const busca = (q: string) => filtrar(lista, { busca: q, tipo: "", regiao: "", pais: "" }).map((x) => x.chave);
+  assert.deepEqual(busca("orsted"), ["orsted"]);
+  assert.deepEqual(busca("orsted careers"), ["orsted"]);
+  assert.deepEqual(busca("ØRSTED"), ["orsted"]);
+  assert.deepEqual(busca("strasse"), ["strasse"]);
+});
+
+test("name sort is numeric-aware", () => {
+  const lista = [s("a", "Número 29"), s("b", "Número 3"), s("c", "Número 100")];
+  assert.deepEqual(ordenar(lista, { campo: "nome", desc: false }).map((x) => x.nome), ["Número 3", "Número 29", "Número 100"]);
+});
