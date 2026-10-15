@@ -471,6 +471,12 @@ mod migration_tests {
         assert!(p.contains("browser_contas"));
         assert!(p.contains("site fora da lista"), "the exact skip motive");
         assert!(p.contains("não tente outro caminho para o mesmo site"));
+        // The tool list paragraph must name browser_contas too, independently of the rule item.
+        let intro = p
+            .lines()
+            .find(|l| l.starts_with("Você controla um browser próprio da Claudia"))
+            .expect("the browser tool-list paragraph is missing from the runtime prompt");
+        assert!(intro.contains("browser_contas"), "the tool-list paragraph must name browser_contas");
         // The rule must live in the same list item that mentions browser_contas.
         let item = p
             .lines()
