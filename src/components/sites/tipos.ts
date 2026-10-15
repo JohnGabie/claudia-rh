@@ -6,6 +6,8 @@ export interface AcoesSite {
   onLogado: (s: Site) => void;
   onIa: (s: Site, valor: boolean) => void;
   onRemover: (s: Site) => void;
+  onSemLogin: (s: Site, valor: boolean) => void;
+  onNaoLogado: (s: Site) => void;
 }
 
 export interface ListaProps extends AcoesSite {

@@ -65,11 +65,23 @@ export function valoresDe(sites: Site[], campo: "tipo" | "regiao" | "pais"): str
   return [...new Set(sites.map((s) => s[campo]).filter((v): v is string => !!v))].sort();
 }
 
+function parseUtc(ts: string | null): number | null {
+  if (!ts) return null;
+  const zoned = /(Z|[+-]\d{2}:?\d{2})$/i.test(ts);
+  const t = Date.parse(zoned ? ts : ts.replace(" ", "T") + "Z");
+  return Number.isNaN(t) ? null : t;
+}
+
 /** Whole days since a SQLite `datetime('now')` timestamp (UTC), or null when absent or unreadable. Strings that already carry a zone (Z or an offset) are parsed as given. */
 export function diasDesde(verificadaEm: string | null, agora: Date): number | null {
-  if (!verificadaEm) return null;
-  const zoned = /(Z|[+-]\d{2}:?\d{2})$/i.test(verificadaEm);
-  const t = Date.parse(zoned ? verificadaEm : verificadaEm.replace(" ", "T") + "Z");
-  if (Number.isNaN(t)) return null;
+  const t = parseUtc(verificadaEm);
+  if (t === null) return null;
   return Math.max(0, Math.floor((agora.getTime() - t) / 86_400_000));
+}
+
+/** A SQLite UTC timestamp as a local date in the app locale, or null when absent or unreadable (never "Invalid Date"). */
+export function dataLocal(ts: string | null, locale: string): string | null {
+  const t = parseUtc(ts);
+  if (t === null) return null;
+  return new Date(t).toLocaleDateString(locale === "pt" ? "pt-BR" : "en-GB");
 }

@@ -526,7 +526,7 @@ export const pt: Strings = {
     roleApplication: "Candidatura de ponta a ponta",
     roleDiscovery: "Só descoberta de vagas",
     domains: "Domínios",
-    noLogin: "Sem login",
+    noLogin: "Não pede login",
     loggedAgo: (d: number) => (d === 0 ? "Logada · hoje" : `Logada · há ${d} ${d === 1 ? "dia" : "dias"}`),
     rowOpen: "✓ Liberada",
     rowClosed: "Fechada",

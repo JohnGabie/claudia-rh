@@ -19,6 +19,7 @@ const s = (
 
 const inicial = (): Site[] => [
   s("linkedin", "LinkedIn", "linkedin.com", "geral", "GLOBAL", null, { regra_login: "manual", estado: "logada", verificada_em: diasAtras(3) }),
+  s("linkedin-jobs", "LinkedIn Jobs", "jobs.linkedin.com", "geral", "GLOBAL", null, { regra_login: "cookie_sessao", estado: "logada", verificada_em: diasAtras(1) }),
   s("indeed", "Indeed", "indeed.com", "geral", "GLOBAL", null, { regra_login: "manual", estado: "precisa_login", ia_pode_usar: false }),
   s("glassdoor", "Glassdoor", "glassdoor.com", "geral", "GLOBAL", null, { regra_login: "manual", ia_pode_usar: false }),
   s("jobindex", "Jobindex", "jobindex.dk", "regional", "EU", "DK", { estado: "logada", verificada_em: diasAtras(0) }),

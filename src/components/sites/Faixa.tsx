@@ -8,7 +8,7 @@ export const Faixa: React.FC<{ situacao: SituacaoFaixa; nome: string; onClick: (
   const t = useT();
   if (situacao === "falta") {
     return (
-      <button type="button" className={`st-faixa falta ${className}`} onClick={onClick}>
+      <button type="button" aria-label={`${nome}: ${t.sites.needStep1}`} className={`st-faixa falta ${className}`} onClick={onClick}>
         <span className="marca" aria-hidden="true" />
         <span className="txt">{t.sites.needStep1}</span>
         <span className="seta">{t.sites.enterArrow}</span>

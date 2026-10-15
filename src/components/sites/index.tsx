@@ -82,6 +82,8 @@ export const Sites: React.FC<{ voltarSinal?: number }> = ({ voltarSinal = 0 }) =
     onLogado: (s: Site) => agir(s.chave, () => sitesApi.marcarLogado(s.chave)),
     onIa: (s: Site, v: boolean) => agir(s.chave, () => sitesApi.definirIa(s.chave, v)),
     onRemover: (s: Site) => agir(s.chave, () => sitesApi.remover(s.chave)),
+    onSemLogin: (s: Site, v: boolean) => agir(s.chave, () => sitesApi.definirSemLogin(s.chave, v)),
+    onNaoLogado: (s: Site) => agir(s.chave, () => sitesApi.marcarNaoLogado(s.chave)),
     onDetalhe: (s: Site) => { rolagem.current = telaRef.current?.scrollTop ?? 0; ultimo.current = s.chave; setAberto(s.chave); },
   };
   const detalhe = sites?.find((s) => s.chave === aberto) ?? null;
@@ -150,8 +152,9 @@ export const Sites: React.FC<{ voltarSinal?: number }> = ({ voltarSinal = 0 }) =
       </div>
       {detalhe && (
         <Detalhe
-          site={detalhe} agora={agora} erro={erros[detalhe.chave]} onVoltar={() => setAberto(null)}
+          key={detalhe.chave} site={detalhe} agora={agora} erro={erros[detalhe.chave]} onVoltar={() => setAberto(null)}
           onAbrir={acoes.onAbrir} onLogado={acoes.onLogado} onIa={acoes.onIa} onRemover={acoes.onRemover}
+          onSemLogin={acoes.onSemLogin} onNaoLogado={acoes.onNaoLogado}
         />
       )}
       <style>{ESTILOS}</style>

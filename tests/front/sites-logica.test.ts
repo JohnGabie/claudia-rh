@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diasDesde, filtrar, ordenar, valoresDe, type Site } from "../../src/components/sites/logica.ts";
+import { dataLocal, diasDesde, filtrar, ordenar, valoresDe, type Site } from "../../src/components/sites/logica.ts";
 
 const base: Omit<Site, "chave" | "nome"> = {
   url_login: "https://x.com/", dominios: ["x.com"], dominios_ats: [], caminho_ats: null, tipo: "geral", regiao: "GLOBAL", pais: null,
@@ -104,4 +104,10 @@ test("search folds letters that NFD does not decompose", () => {
 test("name sort is numeric-aware", () => {
   const lista = [s("a", "Número 29"), s("b", "Número 3"), s("c", "Número 100")];
   assert.deepEqual(ordenar(lista, { campo: "nome", desc: false }).map((x) => x.nome), ["Número 3", "Número 29", "Número 100"]);
+});
+
+test("dataLocal formats a UTC timestamp and never yields Invalid Date", () => {
+  assert.match(dataLocal("2026-10-11 12:00:00", "pt") ?? "", /^11\/10\/2026$/);
+  assert.equal(dataLocal(null, "pt"), null);
+  assert.equal(dataLocal("lixo", "en"), null);
 });
