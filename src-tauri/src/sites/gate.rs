@@ -48,7 +48,16 @@ pub fn decidir(conn: &Connection, url: &str) -> Decision {
     if s.regra_login != "nenhuma" && s.estado != "logada" {
         return Decision::Refuse(format!("RECUSADO: o site \"{}\" não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", s.nome));
     }
+    registrar_abertura(conn, &s.chave);
     Decision::Allow(s.chave)
+}
+
+/// Counts an open the gate accepted. A failure to count never refuses the open.
+pub fn registrar_abertura(conn: &Connection, chave: &str) {
+    let _ = conn.execute(
+        "UPDATE contas_browser SET aberturas = aberturas + 1, ultima_abertura = datetime('now') WHERE chave = ?1",
+        [chave],
+    );
 }
 
 /// The gate backed by the main database file. Opens its own connection per call: the MCP server
@@ -107,6 +116,37 @@ mod tests {
     }
     fn refused(d: Decision) -> String {
         match d { Decision::Refuse(m) => m, Decision::Allow(k) => panic!("allowed {k}") }
+    }
+
+    fn aberturas(c: &Connection, chave: &str) -> (i64, Option<String>) {
+        c.query_row("SELECT aberturas, ultima_abertura FROM contas_browser WHERE chave = ?1", [chave], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    }
+
+    #[test]
+    fn an_allowed_open_is_counted_with_its_date() {
+        let c = db();
+        // "pub" is a public site (regra_login = nenhuma): releasing the AI is enough.
+        repo::definir_ia_pode_usar(&c, "pub", true).unwrap();
+        assert!(matches!(decidir(&c, "https://pub.com/careers"), Decision::Allow(_)));
+        assert!(matches!(decidir(&c, "https://pub.com/careers/x"), Decision::Allow(_)));
+        let (n, ultima) = aberturas(&c, "pub");
+        assert_eq!(n, 2);
+        assert!(ultima.is_some());
+    }
+
+    #[test]
+    fn refused_opens_are_never_counted() {
+        let c = db();
+        // closed for the AI
+        assert!(matches!(decidir(&c, "https://pub.com/careers"), Decision::Refuse(_)));
+        // off the list and not https
+        assert!(matches!(decidir(&c, "https://fora.example/x"), Decision::Refuse(_)));
+        assert!(matches!(decidir(&c, "http://pub.com/careers"), Decision::Refuse(_)));
+        // needs login and is not logged in
+        repo::marcar_precisa_login(&c, "linkedin").unwrap();
+        assert!(matches!(decidir(&c, "https://www.linkedin.com/jobs/"), Decision::Refuse(_)));
+        assert_eq!(aberturas(&c, "pub").0, 0);
+        assert_eq!(aberturas(&c, "linkedin").0, 0);
     }
 
     #[test]

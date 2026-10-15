@@ -19,6 +19,8 @@ pub(crate) fn apply(conn: &Connection) -> Result<()> {
         ("ALTER TABLE vagas ADD COLUMN fonte_conexao TEXT;", "vagas.fonte_conexao"),
         // Fresh databases get it from schema.sql; this is for databases created before it existed.
         ("ALTER TABLE candidaturas ADD COLUMN documento_id INTEGER REFERENCES documentos(id) ON DELETE SET NULL;", "candidaturas.documento_id"),
+        ("ALTER TABLE contas_browser ADD COLUMN aberturas INTEGER NOT NULL DEFAULT 0;", "contas_browser.aberturas"),
+        ("ALTER TABLE contas_browser ADD COLUMN ultima_abertura TEXT;", "contas_browser.ultima_abertura"),
     ] {
         if let Err(e) = conn.execute_batch(sql) {
             if !e.to_string().contains("duplicate column") {
@@ -90,6 +92,24 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         apply(&conn).expect("first apply");
         apply(&conn).expect("second apply must not fail");
+    }
+
+    #[test]
+    fn contas_browser_gains_the_open_counters_and_keeps_its_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The table as it was before the counters existed.
+        conn.execute_batch(
+            "CREATE TABLE contas_browser (chave TEXT PRIMARY KEY, nome TEXT NOT NULL, url_login TEXT NOT NULL, dominios TEXT NOT NULL,
+                tipo TEXT NOT NULL, regiao TEXT NOT NULL);
+             INSERT INTO contas_browser VALUES ('x', 'X', 'https://x.com/', '[\"x.com\"]', 'geral', 'GLOBAL');",
+        )
+        .unwrap();
+        apply(&conn).expect("apply over the old table");
+        let (n, ultima): (i64, Option<String>) = conn
+            .query_row("SELECT aberturas, ultima_abertura FROM contas_browser WHERE chave = 'x'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(n, 0);
+        assert!(ultima.is_none());
     }
 
     fn doc_row(conn: &Connection, arquivo: &str) -> Result<usize> {
