@@ -249,6 +249,7 @@ export const en = {
       extensao_chrome: "Chrome extension",
       sem_curriculo: "No resume in the library",
       sem_carta: "No cover letter in the library",
+      site_login: "Site needs login",
     },
   },
   feedback: {

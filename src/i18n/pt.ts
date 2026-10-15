@@ -254,6 +254,7 @@ export const pt: Strings = {
       extensao_chrome: "Extensão Chrome",
       sem_curriculo: "Sem currículo na biblioteca",
       sem_carta: "Sem carta na biblioteca",
+      site_login: "Site pede login",
     },
   },
   feedback: {
