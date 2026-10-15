@@ -68,3 +68,22 @@ test("days since the confirmation read the SQLite UTC timestamp", () => {
   assert.equal(diasDesde(null, agora), null);
   assert.equal(diasDesde("lixo", agora), null);
 });
+
+test("sorting by country puts sites without a country last in both directions", () => {
+  const asc = ordenar(sites, { campo: "pais", desc: false }).map((x) => x.pais);
+  assert.deepEqual(asc.filter((p) => p !== null), ["BR", "CH", "DK", "DK"]);
+  assert.deepEqual(asc.slice(-1), [null]);
+  assert.equal(asc.length, 5);
+  const desc = ordenar(sites, { campo: "pais", desc: true }).map((x) => x.pais);
+  assert.deepEqual(desc.filter((p) => p !== null), ["DK", "DK", "CH", "BR"]);
+  assert.deepEqual(desc.slice(-1), [null]);
+  assert.equal(ordenar(sites, { campo: "pais", desc: true })[4].chave, "linkedin");
+  assert.equal(ordenar(sites, { campo: "pais", desc: false })[4].chave, "linkedin");
+});
+
+test("days since accepts an ISO string that already has a zone", () => {
+  const agora = new Date("2026-10-14T12:00:00Z");
+  assert.equal(diasDesde("2026-10-11T12:00:00Z", agora), 3);
+  assert.equal(diasDesde("2026-10-11T14:00:00+02:00", agora), 3);
+  assert.equal(diasDesde("2026-10-11 12:00:00", agora), 3);
+});
