@@ -99,6 +99,47 @@ pub async fn wait_ready(port: u16, timeout: Duration) -> Result<String, String> 
     Err(format!("the browser did not answer on port {port} within {timeout:?}"))
 }
 
+/// Builds the request target for `PUT /json/new?<url>`. Only https is allowed, and any control
+/// character (CR/LF would split the request line or smuggle a header) is refused. Space and `#`
+/// are percent-encoded so they cannot end the request line or turn into a fragment.
+fn new_tab_target(url: &str) -> Result<String, String> {
+    if !url.starts_with("https://") {
+        return Err("só endereços https podem ser abertos".into());
+    }
+    if url.chars().any(|c| c.is_control()) {
+        return Err("endereço com caracteres de controle".into());
+    }
+    let mut out = String::with_capacity(url.len());
+    for c in url.chars() {
+        match c {
+            ' ' => out.push_str("%20"),
+            '#' => out.push_str("%23"),
+            _ => out.push(c),
+        }
+    }
+    Ok(format!("/json/new?{out}"))
+}
+
+/// Opens `url` in a new tab of the browser on `port` (`PUT /json/new?<url>`); Chrome brings the
+/// new tab to the front. Same HTTP helper as `probe` (reqwest, no proxy); only a 200 is accepted.
+pub async fn open_tab(port: u16, url: &str) -> Result<(), String> {
+    let target = new_tab_target(url)?;
+    let r = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?
+        .put(format!("http://127.0.0.1:{port}{target}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if r.status() == reqwest::StatusCode::OK {
+        Ok(())
+    } else {
+        Err(format!("o browser recusou abrir a aba (HTTP {})", r.status().as_u16()))
+    }
+}
+
 /// One launch at a time in this process: two callers (the startup task and a tool
 /// call, say) must never start two Chromes on the same profile.
 static LAUNCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -371,6 +412,65 @@ mod tests {
             }
         });
         port
+    }
+
+    /// Fake endpoint that answers `status` and reports the first request line it saw.
+    async fn fake_new_tab(status: &'static str) -> (u16, tokio::sync::mpsc::UnboundedReceiver<String>) {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut b = [0u8; 4096];
+                let n = s.read(&mut b).await.unwrap_or(0);
+                let text = String::from_utf8_lossy(&b[..n]).to_string();
+                let _ = tx.send(text.lines().next().unwrap_or("").to_string());
+                let _ = s.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}").as_bytes()).await;
+            }
+        });
+        (port, rx)
+    }
+
+    #[tokio::test]
+    async fn open_tab_sends_put_json_new_with_the_encoded_url() {
+        let (port, mut rx) = fake_new_tab("200 OK").await;
+        open_tab(port, "https://example.com/a b?x=1#frag").await.unwrap();
+        let line = rx.recv().await.unwrap();
+        assert!(line.starts_with("PUT /json/new?https://"), "{line}");
+        assert!(line.contains("a%20b") && line.contains("%23frag") && !line.contains("a b"), "{line}");
+        assert!(line.ends_with(" HTTP/1.1"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn open_tab_turns_a_non_200_into_an_error() {
+        let (port, _rx) = fake_new_tab("404 Not Found").await;
+        assert!(open_tab(port, "https://example.com/").await.is_err());
+        let (port, _rx) = fake_new_tab("500 Internal Server Error").await;
+        assert!(open_tab(port, "https://example.com/").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn open_tab_refuses_cr_lf_and_non_https_without_sending_anything() {
+        let (port, mut rx) = fake_new_tab("200 OK").await;
+        for bad in [
+            "https://example.com/\r\nX-Evil: 1",
+            "https://example.com/\nPUT /x",
+            "https://example.com/\r",
+            "https://example.com/\tx",
+            "http://example.com/",
+            "javascript:alert(1)",
+            "file:///C:/x",
+            "",
+        ] {
+            assert!(open_tab(port, bad).await.is_err(), "{bad:?}");
+        }
+        assert!(rx.try_recv().is_err(), "a refused URL must never reach the browser");
+    }
+
+    #[test]
+    fn the_new_tab_target_encodes_space_and_hash_only() {
+        assert_eq!(new_tab_target("https://a.dk/x y#z").unwrap(), "/json/new?https://a.dk/x%20y%23z");
+        assert_eq!(new_tab_target("https://a.dk/p?q=1&r=%20").unwrap(), "/json/new?https://a.dk/p?q=1&r=%20");
     }
 
     #[test]

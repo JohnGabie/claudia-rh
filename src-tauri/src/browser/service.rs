@@ -216,6 +216,23 @@ pub fn request_start(app: &AppHandle) {
     }
 }
 
+/// Starts the browser if it is not running, waits for its debug port and opens `url` in a new tab
+/// (`PUT /json/new?<url>`), which Chrome brings to the front. Used by the Sites screen.
+pub async fn open_tab_when_ready(app: &AppHandle, url: &str) -> Result<(), String> {
+    request_start(app);
+    let local = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let state_path = super::state_file(&local);
+    for _ in 0..60 {
+        if let Some(st) = manager::read_state(&state_path) {
+            if manager::probe(st.port).await.is_some() {
+                return manager::open_tab(st.port, url).await;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    Err("o browser da Claudia não ficou pronto a tempo".into())
+}
+
 /// Runs when the app opens. The browser is NOT launched here: it only runs when the AI is called (a
 /// session starts) or the user presses the open button. This only makes sure the pinned Chrome is on
 /// disk, so the first session does not wait for a 200 MB download, and ends in the `installed` stage.

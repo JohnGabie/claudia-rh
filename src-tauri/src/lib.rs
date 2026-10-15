@@ -209,6 +209,12 @@ pub fn run() {
             let conn = db::init(&data_dir.join("claudia_rh.db"))?;
             let conn_arc = Arc::new(Mutex::new(conn));
             app.manage(DbState(Arc::clone(&conn_arc)));
+            // A failed seed merge must never abort startup: log it and carry on.
+            if let Ok(conn) = conn_arc.lock() {
+                if let Err(e) = crate::sites::seed::merge_embedded(&conn) {
+                    eprintln!("[sites] {e}");
+                }
+            }
             diagnostics::watchdog::start(app.handle().clone(), Arc::clone(&conn_arc));
 
             // MCP push-notification listener (instant UI refresh on tool writes)
@@ -390,6 +396,14 @@ pub fn run() {
             browser::service::browser_status,
             browser::service::browser_retry,
             browser::service::browser_abrir,
+            commands::sites::listar_sites,
+            commands::sites::definir_ia_pode_usar,
+            commands::sites::marcar_site_logado,
+            commands::sites::adicionar_site,
+            commands::sites::remover_site,
+            commands::sites::listar_avisos_sites,
+            commands::sites::contar_avisos_sites,
+            commands::sites::abrir_site,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
