@@ -127,8 +127,8 @@ pub fn marcar_nao_logado(conn: &Connection, chave: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Login wall seen: estado = precisa_login and the AI permission closed, in ONE statement (a site that
-/// needs login never has the AI on). `true` when anything changed; a site already red with the flag
+/// Login wall seen: estado = precisa_login and the AI permission closed, in ONE statement (a manual-login
+/// site, regra_login != nenhuma, in precisa_login never has the AI on). `true` when anything changed; a site already red with the flag
 /// off changes nothing (`verificada_em` is only renewed when the state itself flips).
 pub fn marcar_precisa_login(conn: &Connection, chave: &str) -> Result<bool, String> {
     exigir(conn, chave)?;

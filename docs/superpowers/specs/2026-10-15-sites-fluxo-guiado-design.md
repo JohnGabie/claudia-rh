@@ -136,7 +136,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 - **T16:** a página do site abre no topo, com o foco no título.
 - **T17, correções da revisão final:** a tela Sites também recarrega em `novo-aviso-site` e `aviso-site-resolvido` (antes só em `db-atualizada` e `sites-mudaram`); `browser_contas` só lista o site que o porteiro deixaria abrir (`regra_login = nenhuma` ou `logada`, com a IA ligada); textos de docs corrigidos.
 - **T20:** a lista padrão não define login de nenhum site (todos manual); VTEX e Hugging Face entram (165 sites); a linha do prompt sobre `browser_open` corrigida.
-- T18: a parede de login fecha a permissão da IA (invariante: site precisa_login nunca tem a IA ligada).
+- **T18:** a parede de login fecha a permissão da IA (invariante: um site de login manual (`regra_login != nenhuma`) em `precisa_login` nunca tem a IA ligada).
 - **T21:** site sem configuração aparece limpo (sem rótulo nem bolinha); vermelho só para `precisa_login`.
 
 **Decisões do usuário**
@@ -158,7 +158,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 
 **Decisão pendente do usuário** (não implementada)
 
-- **Parede de login deixa a IA ligada num site vermelho.** `marcar_precisa_login` não zera `ia_pode_usar`: o site fica vermelho, mas a permissão continua gravada e volta a valer sozinha depois de "Já entrei". Decidir: zerar a IA ao registrar a parede, ou manter como está (hoje o porteiro e o `browser_contas` já tratam o site como fechado).
+- **Parede de login deixa a IA ligada num site vermelho:** decidido em 2026-10-16 ("Desligar na parede"), ver §12 e T18.
 - **Amplitude de alguns domínios do seed.** `google.com` alcança e-mail, documentos, drive e sites; `personio.com` cobre `*.jobs.personio.com`; `gupy.io` cobre o portal de toda empresa. O usuário já disse "deixar como está" uma vez; fica registrado aqui como **risco explícito aceito** até nova decisão.
 
 **Outros pendentes**
