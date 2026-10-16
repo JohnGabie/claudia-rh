@@ -144,7 +144,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 
 **Smoke e testes**
 
-- **Smoke de uso real no Sandbox (2026-10-15):** feito no app Tauri de verdade, com o relatório em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/smoke-report.md`: 27 PASS, 9 achados e 6 itens não verificados. Os achados foram tratados em tarefas posteriores ou são os itens menores abaixo.
+- **Smoke de uso real no Sandbox (2026-10-15):** feito no app Tauri de verdade, com o relatório em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/smoke-report.md`: 27 PASS, 9 achados e 6 itens não verificados. Tratados na T15 e na T16: F3 (texto antigo "Já estou logado" na recusa), F6 (ordem e mensagem do porteiro do MCP) e F4 (a página do site abria rolada). **Não tratados** (rótulos do próprio relatório): F1, LEGO aparece em vermelho (pergunta em aberto ao usuário); F2, a faixa "Entre de novo em X" continua em âmbar (pergunta em aberto); F5, "Ordenar por: Estado de login" não agrupa nada enquanto os 163 sites estão não confirmados (pergunta em aberto); F7, a dica de "browser_open repetido" conta URLs diferentes (já existia antes); F8, "Confirmado em" mostra data num site que nunca teve login (e "Relogins" conta alternâncias, ver itens menores); F9, a recusa antiga continua no cartão depois de trocar modo ou idioma; e o espaço que falta depois do domínio na linha da lista ("domínio· País", comportamento antigo restaurado pela reversão do usuário).
 - **`cargo test --lib`:** 689 testes passaram no Sandbox no HEAD `a96b1e3` (clippy sem avisos novos na branch); a T17 acrescenta 2 testes de `browser_contas` (691 passaram no Sandbox depois dela).
 
 **Não verificado / pendente**
