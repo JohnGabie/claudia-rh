@@ -124,6 +124,37 @@ mod tests {
         assert!(problems.is_empty(), "seed problems:\n{}", problems.join("\n"));
     }
 
+    /// Keys of the seed sites that pre-decide the login (anything but the default manual one).
+    fn predefined_login_sites(sites: &[SeedSite]) -> Vec<String> {
+        sites.iter().filter(|s| s.regra_login != "manual").map(|s| s.chave.clone()).collect()
+    }
+
+    /// Spec 2026-10-15-sites-fluxo-guiado §11: the default list never predefines a no-login site;
+    /// the user decides that, by hand, on the site page.
+    #[test]
+    fn the_default_list_never_predefines_a_no_login_site() {
+        let s = embedded().expect("the shipped seed must parse and validate");
+        let bad = predefined_login_sites(&s);
+        assert!(bad.is_empty(), "seed sites with a predefined login rule: {}", bad.join(", "));
+        assert!(s.iter().all(|x| x.regra_login != "nenhuma"));
+    }
+
+    #[test]
+    fn the_no_login_guard_catches_a_site_marked_nenhuma() {
+        let mut s = embedded().unwrap();
+        s[0].regra_login = "nenhuma".into();
+        assert!(predefined_login_sites(&s).contains(&s[0].chave));
+    }
+
+    #[test]
+    fn the_default_list_has_vtex_and_hugging_face_straight_to_their_ats() {
+        let s = embedded().unwrap();
+        let by = |k: &str| s.iter().find(|x| x.chave == k).unwrap_or_else(|| panic!("{k} is in the seed"));
+        let (v, h) = (by("vtex"), by("huggingface"));
+        assert_eq!((v.url_login.as_str(), v.caminho_ats.as_deref()), ("https://job-boards.greenhouse.io/vtex", Some("/vtex")));
+        assert_eq!((h.url_login.as_str(), h.caminho_ats.as_deref()), ("https://apply.workable.com/huggingface/", Some("/huggingface")));
+    }
+
     #[test]
     fn the_seed_guard_catches_a_shared_ats_host_without_a_path() {
         let mut s = embedded().unwrap();
