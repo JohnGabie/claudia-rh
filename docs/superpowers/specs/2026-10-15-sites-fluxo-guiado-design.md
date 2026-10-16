@@ -106,3 +106,11 @@ Conforme P3. Rótulos em `src/i18n/pt.ts` e `en.ts`; filtro, selos, ordenação 
 - **Em aberto:** "Relogins" conta avisos criados; um site que caiu duas vezes sem o aviso ser resolvido entre elas conta uma ou duas. Hoje assumo uma por aviso criado.
 - **Em aberto:** em sites `cookie_sessao`, mostrar ou não o botão de "pede login" (P5 propõe ocultar).
 - **Em aberto:** a visão em lista (P4) ainda não foi desenhada; o usuário aprova o desenho antes da implementação da lista.
+
+## 9. Emenda de 2026-10-15 (pedido do usuário, por cima de §2.7, P4 e §4.2)
+
+Pedido, nas palavras dele: "é muito fácil, volta isso, e somente faz o que eu disser. Onde está escrito logado, ou não precisa de login, muda para algo em vermelho escrito algo do tipo, Precisa de login, já fica impossibilitado de usar; caso o agent acesse o site usando o mcp, o mcp devolve dizendo que precisa de login, e pula e continua. Simples."
+
+- **Lista (volta ao comportamento antigo):** a visão em lista volta a ser como era antes da Tarefa 7: **a linha inteira liga e desliga a IA** (o nome abre a página, "Abrir ↗" abre o site). **Substitui P4** ("a linha abre a página; só o status liga a IA"). A galeria **não muda**.
+- **Rótulo de login simplificado:** todo site que exige login e **não está logado** (`precisa_login` **ou** `desconhecido`) mostra **vermelho "Precisa de login"** (en "Login required") e fica **bloqueado para a IA**. Some o âmbar "Sem confirmação". Verde continua só para `logada` e para "Não pede login". **Substitui o texto "Exige login" e a regra do âmbar de §4.2.**
+- **MCP:** nada muda no backend. O bloqueio já recusa o site que não está logado, com a mensagem "RECUSADO: o site ... não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", e o agente segue para a próxima fonte.
