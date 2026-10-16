@@ -488,6 +488,20 @@ mod migration_tests {
     }
 
     #[test]
+    fn the_runtime_prompt_opens_sites_only_through_browser_open_over_https() {
+        let p = DEFAULT_RUNTIME;
+        let item = p
+            .lines()
+            .find(|l| l.starts_with("- Você abre sites **somente** com `browser_open`"))
+            .expect("the browser_open rule is missing from the runtime prompt");
+        assert_eq!(
+            item,
+            "- Você abre sites **somente** com `browser_open` (servidor `claudia`): ele digita o endereço na barra do browser, numa aba só sua, e só aceita `https`. Endereços locais ou de rede interna são recusados. Não use nenhum outro meio para abrir um site."
+        );
+        assert!(!p.contains("abre uma URL `http` ou `https`"), "the old line that allowed http is gone");
+    }
+
+    #[test]
     fn the_runtime_prompt_teaches_reading_by_text_the_state_line_and_no_longer_says_to_scroll_to_read() {
         let p = DEFAULT_RUNTIME;
         // The old instruction told the model to scroll, with no scroll tool: it improvised with Tab.
