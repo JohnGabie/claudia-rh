@@ -59,7 +59,8 @@ Conforme §2.4 a §2.6. Regras:
 
 - "Já entrei" só é oferecido depois de "Abrir o site ↗" nesta visita à página. Grava `estado = logada` e `verificada_em` (comando que já existe).
 - "Não estou mais logado" grava `precisa_login` **e fecha a IA** do site.
-- "Este site não pede login" grava `regra_login = nenhuma`. "Este site pede login" grava `regra_login = manual` e, **se o estado não for `logada`, força `ia_pode_usar = 0`** na mesma transação. O mesmo vale se o estado for `precisa_login`.
+- "Este site não pede login" grava `regra_login = nenhuma`. "Este site pede login" grava `regra_login = manual`, **marca o site como `precisa_login`, fecha a IA (`ia_pode_usar = 0`) e cria o aviso "relogar em X"** (aparece nas pendências e no selo da sidebar), tudo na mesma transação. **Mudança de 2026-10-15, pedida pelo usuário** ("muda algo em vermelho Exige login, e vai para as notificações"): antes a spec mantinha a IA aberta se o site estava `logada`; o login confirmado antes de "não pede login" não vale depois dele.
+- **Aparência do estado `precisa_login`:** bolinha **vermelha** (`--danger`) e o texto **"Exige login"** (en: "Login required"), no cartão, na página, na lista e na lateral da linha. `desconhecido` continua âmbar "Sem confirmação".
 - O passo 3 só liga a IA se o site está pronto. O backend continua recusando (falha fechada) mesmo que a tela erre.
 
 ### 4.3 "Sobre o site": Conta e Uso pela IA
@@ -85,7 +86,7 @@ Conforme P3. Rótulos em `src/i18n/pt.ts` e `en.ts`; filtro, selos, ordenação 
 
 ## 6. Testes
 
-- **Back (Sandbox):** `definir_site_sem_login` liga e desliga; desligar com `estado != logada` fecha a IA; desligar com `logada` mantém; recusa chave inexistente; recusa `cookie_sessao` (P5); migração idempotente; o bloqueio soma só aberturas aceitas (recusa e site `precisa_login` não somam). Prova de mutação em cada regra.
+- **Back (Sandbox):** `definir_site_sem_login` liga e desliga; voltar a "pede login" sempre marca `precisa_login`, fecha a IA e cria o aviso (inclusive com `logada`; sem duplicar o aviso se já houver um aberto); recusa chave inexistente; recusa `cookie_sessao` (P5); migração idempotente; o bloqueio soma só aberturas aceitas (recusa e site `precisa_login` não somam). Prova de mutação em cada regra.
 - **Front (node `--test`):** lógica pura de "pronto", da faixa (3 situações), do passo atual e da ordem dos passos; rótulos dos tipos nos dois idiomas.
 - **Revisor de front (app aberto):** galeria e lista; página com site logado, sem login, não logado e recém-adicionado; estados vazio, erro e com dados; pt e en; interruptor e zona de risco recolhível; teclado (Enter na faixa, foco visível); largura estreita; prints.
 - **Smoke de uso real:** `/claudia-teste-e2e`, sem site real e sem enviar candidatura.
