@@ -10,6 +10,13 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-15-sites-fluxo-guiado-design.md` (aprovada pelo usuário em 2026-10-15). Referência visual aprovada: `docs/superpowers/specs/assets/2026-10-15-sites-fluxo-guiado-mock.html` e `.css` (medidas, cores e estrutura; os números de "Uso pela IA" nele são inventados). Spec-base: `2026-10-14-lista-de-sites-design.md`.
 
+## Emendas de 2026-10-15 (decisões do usuário durante a execução)
+
+- **Task 3b (nova, backend):** "Este site pede login" passa a marcar o site `precisa_login`, fechar a IA e criar o aviso "relogar em X", **sempre** (também se estava `logada`). **Substitui** a regra da Task 3 em que `logada` mantinha a IA (as linhas da Task 3 abaixo que dizem isso estão superadas). Spec §4.2 emendada (commit 99a9cd3). Feita no commit b68846f.
+- **Task 4b (nova, front):** `precisa_login` aparece **vermelho** com o texto "Exige login" (en: "Login required") no cartão, na página, na lista e na lateral da linha; `desconhecido` continua âmbar "Sem confirmação"; o mock de dev aplica a regra da 3b.
+- **Task 14:** sites que proíbem automação por escrito ficam **fora** do seed (decisão do usuário).
+- **Task 6, ajuste R3:** "Vagas analisadas", "Candidaturas" e "Taxa" **não** são exibidas (a vaga não guarda a chave do site); só Aberturas, Relogins e "Confirmado em".
+
 ## Global Constraints
 
 - Branch de trabalho: `feat/lista-de-sites-impl` (esta worktree). Sem push, sem merge, sem PR. `main` nunca.
