@@ -25,7 +25,7 @@ export const podeAlternarSemLogin = (s: Site): boolean => s.regra_login !== "coo
 /** "Already logged in" appears only after the site was opened from the page in this visit. */
 export const mostraJaEntrei = (jaAbriu: boolean, s: Site): boolean => jaAbriu && passo1(s) === "pendente";
 
-/** Dot color and text of the login state: green logged in or no login, amber unconfirmed, grey needs login. */
+/** Dot color and text of the login state: green logged in or no login, amber unconfirmed, red login required. */
 export function estadoVisual(s: Site, agora: Date, t: Strings): { cor: CorEstado; texto: string } {
   if (s.estado === "logada") {
     const d = diasDesde(s.verificada_em, agora);

@@ -92,3 +92,47 @@ test("estadoVisual of a not logged cookie_sessao site is a login state, never 'd
   const c = estadoVisual(site({ regra_login: "cookie_sessao", estado: "logada", verificada_em: null }), agora, pt);
   assert.equal(c.cor, "logada");
 });
+
+test("estadoVisual table: precisa_login red, desconhecido amber, no-login green, logada green", () => {
+  const agora = new Date();
+  for (const regra of ["manual", "cookie_sessao"] as const) {
+    const r = estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, pt);
+    assert.equal(r.cor, "precisa");
+    assert.equal(r.texto, "Exige login");
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, en).texto, "Login required");
+    const d = estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, pt);
+    assert.equal(d.cor, "sem");
+    assert.equal(d.texto, "Sem confirmação");
+  }
+  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "desconhecido" }), agora, pt).cor, "semlogin");
+  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "precisa_login" }), agora, pt).cor, "semlogin");
+  assert.equal(estadoVisual(site({ regra_login: "manual", estado: "logada" }), agora, pt).cor, "logada");
+});
+
+test("login-required strings exist in both dictionaries, old wording is gone", () => {
+  assert.equal(pt.sites.state.precisa_login, "Exige login");
+  assert.equal(en.sites.state.precisa_login, "Login required");
+  assert.equal(pt.sites.state.desconhecido, "Sem confirmação");
+  assert.equal(en.sites.state.desconhecido, "Unconfirmed");
+});
+
+test("mock definir_site_sem_login(false) mirrors the backend: red state, AI closed, one open notice", async () => {
+  const { mockInvoke } = await import("../../src/lib/sites.mock.ts");
+  type S = { regra_login: string; estado: string; ia_pode_usar: boolean };
+  const get = async (chave: string) => (await mockInvoke<S[] & { chave: string }[]>("listar_sites", {})).find((x) => x.chave === chave) as unknown as S;
+  const avisos = async () => (await mockInvoke<{ chave: string }[]>("listar_avisos_sites", {})).filter((a) => a.chave === "jobindex");
+  // jobindex starts as a no-login site; going to "asks for login" while logged in must still redden it.
+  await mockInvoke("definir_site_sem_login", { chave: "jobindex", valor: false });
+  let x = await get("jobindex");
+  assert.equal(x.regra_login, "manual");
+  assert.equal(x.estado, "precisa_login");
+  assert.equal(x.ia_pode_usar, false);
+  assert.equal((await avisos()).length, 1);
+  await mockInvoke("definir_site_sem_login", { chave: "jobindex", valor: false });
+  assert.equal((await avisos()).length, 1, "never duplicates an open notice");
+  await mockInvoke("definir_site_sem_login", { chave: "jobindex", valor: true });
+  x = await get("jobindex");
+  assert.equal(x.regra_login, "nenhuma");
+  assert.equal((await avisos()).length, 0, "valor=true resolves the notices");
+  await assert.rejects(mockInvoke("definir_site_sem_login", { chave: "linkedin-jobs", valor: false }));
+});

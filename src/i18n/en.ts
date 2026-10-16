@@ -495,7 +495,7 @@ export const en = {
     open: "Open", loggedIn: "I am logged in", remove: "Remove", removeConfirm: "Remove this site from the list?",
     aiCanUse: "AI can use",
     notDefault: "no longer a default",
-    state: { logada: "Logged in", precisa_login: "Needs login", desconhecido: "Unconfirmed" },
+    state: { logada: "Logged in", precisa_login: "Login required", desconhecido: "Unconfirmed" },
     confirmedDaysAgo: (d: number) => (d === 0 ? "confirmed today" : `confirmed ${d} ${d === 1 ? "day" : "days"} ago`),
     discovery: "discovery",
     types: { geral: "Job board", regional: "Regional job board", tecnologia: "Tech jobs", remoto: "Remote jobs", freelance: "Freelance platform", empresa: "Company site", nicho: "Niche job board" },

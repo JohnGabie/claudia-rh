@@ -120,9 +120,14 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
         x.regra_login = "nenhuma";
         avisos = avisos.filter((a) => a.chave !== x.chave);
       } else {
+        // Mirrors the backend (definir_sem_login): manual login, red state, AI closed, one open notice.
         x.regra_login = "manual";
-        // Back to manual login without a confirmed login: the AI permission closes too.
-        if (x.estado !== "logada") x.ia_pode_usar = false;
+        x.estado = "precisa_login";
+        x.ia_pode_usar = false;
+        if (!avisos.some((a) => a.chave === x.chave)) {
+          const id = avisos.reduce((m, a) => Math.max(m, a.id), 0) + 1;
+          avisos = [...avisos, { id, chave: x.chave, nome: x.nome, criado_em: diasAtras(0) }];
+        }
       }
       return r(undefined);
     }

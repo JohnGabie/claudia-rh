@@ -498,7 +498,7 @@ export const pt: Strings = {
     open: "Abrir", loggedIn: "Já estou logado", remove: "Remover", removeConfirm: "Remover este site da lista?",
     aiCanUse: "IA pode usar",
     notDefault: "não é mais padrão",
-    state: { logada: "Logada", precisa_login: "Precisa de login", desconhecido: "Sem confirmação" },
+    state: { logada: "Logada", precisa_login: "Exige login", desconhecido: "Sem confirmação" },
     confirmedDaysAgo: (d: number) => (d === 0 ? "confirmada hoje" : `confirmada há ${d} ${d === 1 ? "dia" : "dias"}`),
     discovery: "descoberta",
     types: { geral: "Portal de vagas", regional: "Portal regional", tecnologia: "Vagas de tecnologia", remoto: "Vagas remotas", freelance: "Plataforma freelance", empresa: "Site da empresa", nicho: "Portal especializado" },
