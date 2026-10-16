@@ -114,3 +114,44 @@ Pedido, nas palavras dele: "é muito fácil, volta isso, e somente faz o que eu 
 - **Lista (volta ao comportamento antigo):** a visão em lista volta a ser como era antes da Tarefa 7: **a linha inteira liga e desliga a IA** (o nome abre a página, "Abrir ↗" abre o site). **Substitui P4** ("a linha abre a página; só o status liga a IA"). A galeria **não muda**.
 - **Rótulo de login simplificado:** todo site que exige login e **não está logado** (`precisa_login` **ou** `desconhecido`) mostra **vermelho "Precisa de login"** (en "Login required") e fica **bloqueado para a IA**. Some o âmbar "Sem confirmação". Verde continua só para `logada` e para "Não pede login". **Substitui o texto "Exige login" e a regra do âmbar de §4.2.**
 - **MCP:** nada muda no backend. O bloqueio já recusa o site que não está logado, com a mensagem "RECUSADO: o site ... não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", e o agente segue para a próxima fonte.
+
+## 10. Estado da implementação (2026-10-16)
+
+Branch `feat/lista-de-sites-impl`, cada tarefa pelo ciclo executor e revisor ("Looks good to me" escrito). O registro por tarefa está em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/progress.md`.
+
+**O que foi construído**
+
+- **T1, aberturas:** colunas `contas_browser.aberturas` e `ultima_abertura` (migração idempotente); o porteiro soma uma abertura a cada `browser_open` que **aceita**, nunca nas recusas.
+- **T2, estatísticas:** comando `estatisticas_site` (relogins, aberturas, última abertura, vagas, candidaturas, última candidatura). Vagas e candidaturas por site saem do casamento de domínio da URL da vaga e **não são confiáveis**; ver "não verificado" abaixo.
+- **T3 e T3b, regra de login:** `definir_site_sem_login` e `marcar_site_nao_logado`. "Não pede login" vira `regra_login = nenhuma` e resolve os avisos (recusado em `cookie_sessao`). Voltar a "pede login" marca `precisa_login`, fecha a IA e cria **um** aviso, numa transação, também quando o site estava `logada` (decisão do usuário, §4.2 emendado; a T3b substituiu o comportamento da T3, em que `logada` mantinha a IA aberta).
+- **T4 e T4b, lógica e rótulos:** lógica pura de "pronto", da faixa e dos passos; rótulos dos tipos (Portal de vagas, Portal regional, Vagas de tecnologia, Vagas remotas, Plataforma freelance, Site da empresa, Portal especializado); texto "Não pede login".
+- **T5, cartão:** cartão retangular de 300px, capa de 52px, faixa de 42px com três situações; só a faixa liga a IA.
+- **T6, página do site:** "Sobre o site" (Cadastro, Conta, Uso pela IA), os três passos, zona de risco recolhível, linha de alerta das recusas, grade em consulta de contêiner (duas colunas acima de 700px). Vagas, candidaturas e taxa por site ficaram **ocultas** (§8).
+- **T7, lista nova:** construída e aprovada no mock, depois **revertida a pedido do usuário** (§9); `Lista.tsx` e `Interruptor.tsx` voltaram byte a byte à versão da T4b.
+- **T9, reversão e vermelho:** a lista volta ao comportamento antigo (a linha inteira liga a IA) e todo site que exige login e não está logado mostra vermelho "Precisa de login", bloqueado para a IA. Some o âmbar "Sem confirmação".
+
+**Decisões do usuário**
+
+- Site que **proíbe automação** fica **fora** do seed (Tarefa 14).
+- **"Precisa de login" para todo site não logado** (`precisa_login` e nunca confirmado), em vermelho; o porteiro já recusa os dois com "Pule esta fonte" e o agente segue.
+- **A lista volta ao comportamento antigo** (§9). Com isso, a dúvida da §4.2 sobre um `logada` antigo que sobrevive ao ciclo "não pede login" e volta é **moot**: voltar a "pede login" sempre fica vermelho e fecha a IA.
+
+**Não verificado / pendente**
+
+- **Smoke de uso real no app Tauri de verdade: não feito.** A tela foi vista só no mock de desenvolvimento (revisores com prints) e nos comandos por teste; o fluxo de ponta a ponta com o backend real (clicar na página, ver o banco mudar, o aviso no badge) não foi exercitado.
+- **`cargo test` completo:** rodado no Sandbox ao fim de cada tarefa de backend (681 testes de lib na T3b). **Não foi rodado de novo** depois das tarefas só de front (T4b a T9), que não mexem no Rust.
+- **Vagas, candidaturas e taxa por site: ocultas.** Voltam só quando a vaga guardar a chave do site (`register_vaga`); isso é mudança de dados e exige **spec nova** e aprovação. Hoje o desejo "quantas vezes me candidatei neste site" **não é atendido**.
+- **Seed completo de ~100 sites (Tarefa 14): não carregado.** O app ainda traz os 9 sites de antes.
+- **ATS compartilhado sem `caminho_ats`:** um site assim casa **toda** vaga daquele host e pode autorizar, no porteiro, páginas de outras empresas. O seed e `adicionar_site` deveriam recusar domínio de ATS compartilhado sem caminho (o seed de hoje é seguro). **A registrar no Linear.**
+- **Rótulo "Cadastro":** a chave `sectionRegistry` existe em `src/i18n/pt.ts` mas a página não desenha divisor com esse título (o primeiro bloco abre sem título); decidir se entra.
+
+**Itens menores adiados (ainda verdadeiros)**
+
+- "Relogins" conta avisos criados (um por queda), não quedas de fato; dizer isso na tela se confundir.
+- `jaAbriu` na página vale mesmo se `abrir_site` falhar; no passo 1, os botões somem após o clique e o foco cai no corpo.
+- `.st-painel .vazio` sobrescreve a cor de `.st-erro`, então "Não foi possível carregar o uso deste site." não sai em vermelho; "2vezes" na leitura de tela (o espaço de "Relogins" é só CSS).
+- `marcar_site_nao_logado` aceita site `nenhuma` (a UI não oferece); a verificação de `cookie_sessao` em `definir_site_sem_login` é lida antes da transação (sem exploração possível, escritor único); a atomicidade do `definir_site_sem_login` é protegida por teste do revisor, não por teste commitado; a asserção do porteiro em `repo.rs` é fraca (a IA já está em 0 antes de `decidir`).
+- `resolver` consulta `listar` antes de ler a URL (URL inválida mais banco quebrado dá "não foi possível consultar" em vez de "fora da lista"; continua sendo recusa).
+- Teste de migração aplica uma vez só; `schema.sql` não declara as colunas novas (só `ALTER`); nenhum teste commitado conta aberturas pelo `DbSiteGate` de arquivo.
+- Linha da lista: risco vermelho sem texto de estado (desenho antigo); o domínio da linha não é link.
+- `sites.mock.ts`: não atualiza `verificada_em` ao voltar a "pede login" (o backend atualiza).
