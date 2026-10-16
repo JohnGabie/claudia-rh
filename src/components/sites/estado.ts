@@ -3,7 +3,7 @@ import type { Strings } from "../../i18n/en";
 import { diasDesde, type Site } from "./logica.ts";
 
 /** "semlogin" = green dot, the site does not ask for login. */
-export type CorEstado = "logada" | "sem" | "precisa" | "semlogin";
+export type CorEstado = "logada" | "precisa" | "semlogin";
 
 export const semLogin = (s: Site): boolean => s.regra_login === "nenhuma";
 
@@ -25,13 +25,12 @@ export const podeAlternarSemLogin = (s: Site): boolean => s.regra_login !== "coo
 /** "Already logged in" appears only after the site was opened from the page in this visit. */
 export const mostraJaEntrei = (jaAbriu: boolean, s: Site): boolean => jaAbriu && passo1(s) === "pendente";
 
-/** Dot color and text of the login state: green logged in or no login, amber unconfirmed, red login required. */
+/** Dot color and text of the login state: green logged in or no login, red for any other state (login required). */
 export function estadoVisual(s: Site, agora: Date, t: Strings): { cor: CorEstado; texto: string } {
   if (s.estado === "logada") {
     const d = diasDesde(s.verificada_em, agora);
     return { cor: "logada", texto: d === null ? t.sites.state.logada : t.sites.loggedAgo(d) };
   }
   if (semLogin(s)) return { cor: "semlogin", texto: t.sites.noLogin };
-  if (s.estado === "desconhecido") return { cor: "sem", texto: t.sites.state.desconhecido };
   return { cor: "precisa", texto: t.sites.state.precisa_login };
 }

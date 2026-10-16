@@ -88,21 +88,23 @@ test("estadoVisual of a not logged cookie_sessao site is a login state, never 'd
   assert.equal(a.cor, "precisa");
   assert.equal(a.texto, pt.sites.state.precisa_login);
   const b = estadoVisual(site({ regra_login: "cookie_sessao", estado: "desconhecido" }), agora, pt);
-  assert.equal(b.cor, "sem");
+  assert.equal(b.cor, "precisa");
+  assert.equal(b.texto, "Precisa de login");
   const c = estadoVisual(site({ regra_login: "cookie_sessao", estado: "logada", verificada_em: null }), agora, pt);
   assert.equal(c.cor, "logada");
 });
 
-test("estadoVisual table: precisa_login red, desconhecido amber, no-login green, logada green", () => {
+test("estadoVisual table: precisa_login and desconhecido both red, no-login green, logada green", () => {
   const agora = new Date();
   for (const regra of ["manual", "cookie_sessao"] as const) {
     const r = estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, pt);
     assert.equal(r.cor, "precisa");
-    assert.equal(r.texto, "Exige login");
+    assert.equal(r.texto, "Precisa de login");
     assert.equal(estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, en).texto, "Login required");
     const d = estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, pt);
-    assert.equal(d.cor, "sem");
-    assert.equal(d.texto, "Sem confirmação");
+    assert.equal(d.cor, "precisa");
+    assert.equal(d.texto, "Precisa de login");
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, en).texto, "Login required");
   }
   assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "desconhecido" }), agora, pt).cor, "semlogin");
   assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "precisa_login" }), agora, pt).cor, "semlogin");
@@ -110,10 +112,8 @@ test("estadoVisual table: precisa_login red, desconhecido amber, no-login green,
 });
 
 test("login-required strings exist in both dictionaries, old wording is gone", () => {
-  assert.equal(pt.sites.state.precisa_login, "Exige login");
+  assert.equal(pt.sites.state.precisa_login, "Precisa de login");
   assert.equal(en.sites.state.precisa_login, "Login required");
-  assert.equal(pt.sites.state.desconhecido, "Sem confirmação");
-  assert.equal(en.sites.state.desconhecido, "Unconfirmed");
 });
 
 test("mock definir_site_sem_login(false) mirrors the backend: red state, AI closed, one open notice", async () => {

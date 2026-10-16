@@ -9,7 +9,6 @@ export const ESTILOS = `
 .st-estado { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); min-width: 0; }
 .st-estado::before { content: ""; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
 .st-estado.logada::before { background: var(--success); }
-.st-estado.sem::before { background: var(--warning); }
 .st-estado.precisa::before { background: var(--danger); }
 .st-estado.semlogin::before { background: var(--success); }
 .st-abrir { font: inherit; font-size: 12px; font-weight: 500; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
@@ -55,7 +54,6 @@ export const ESTILOS = `
 .st-linha .risco { align-self: stretch; background: var(--text-tertiary); }
 .st-linha .risco.logada { background: var(--success); }
 .st-linha .risco.semlogin { background: var(--success); }
-.st-linha .risco.sem { background: var(--warning); }
 .st-linha .risco.precisa { background: var(--danger); }
 .st-mono { width: 28px; height: 28px; border-radius: 6px; background: var(--bg-sunken); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .st-linha .quem { min-width: 0; padding: 6px 0; }
