@@ -30,7 +30,7 @@ Nas palavras dele, em ordem:
    - **3 Liberar para a IA:** bloqueado até o passo 1 ficar pronto; depois mostra a mesma faixa do card.
 5. **Site que não pede login:** o passo 1 aparece como "Feito" ("Este site não pede login.") com o botão "Este site pede login" para desfazer.
 6. **Zona de risco** recolhida por padrão, com "Remover da lista", habilitado só para sites adicionados pelo usuário.
-7. **Sobre o site**, com divisórias: **Cadastro** (endereço, tipo, região, país, papel, origem, domínios), **Conta** e **Uso pela IA** (§4.3).
+7. **Sobre o site**, com divisórias: **Cadastro** (endereço, tipo, região, país, papel, origem, domínios), **Conta** e **Uso pela IA** (§4.3) (ver §10: o divisor titulado "Cadastro" não foi desenhado).
 8. **Nomes de tipo** mais específicos (§4.4).
 
 "Já entrei" continua sendo a palavra do usuário. A verificação real é "outra história" (fora do escopo, §7).
@@ -115,18 +115,18 @@ Pedido, nas palavras dele: "é muito fácil, volta isso, e somente faz o que eu 
 - **Rótulo de login simplificado:** todo site que exige login e **não está logado** (`precisa_login` **ou** `desconhecido`) mostra **vermelho "Precisa de login"** (en "Login required") e fica **bloqueado para a IA**. Some o âmbar "Sem confirmação". Verde continua só para `logada` e para "Não pede login". **Substitui o texto "Exige login" e a regra do âmbar de §4.2.**
 - **MCP:** nada muda no backend. O bloqueio já recusa o site que não está logado, com a mensagem "RECUSADO: o site ... não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", e o agente segue para a próxima fonte.
 
-## 10. Estado da implementação (2026-10-16)
+## 10. Estado da implementação (2026-10-15)
 
-Branch `feat/lista-de-sites-impl`, cada tarefa pelo ciclo executor e revisor ("Looks good to me" escrito). O registro por tarefa está em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/progress.md`.
+Branch `feat/lista-de-sites-impl`, T1 a T7 e T9 passaram pelo ciclo executor e revisor ("Looks good to me" escrito); a T8, esta documentação, é revisada à parte. O registro por tarefa está em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/progress.md`.
 
 **O que foi construído**
 
 - **T1, aberturas:** colunas `contas_browser.aberturas` e `ultima_abertura` (migração idempotente); o porteiro soma uma abertura a cada `browser_open` que **aceita**, nunca nas recusas.
 - **T2, estatísticas:** comando `estatisticas_site` (relogins, aberturas, última abertura, vagas, candidaturas, última candidatura). Vagas e candidaturas por site saem do casamento de domínio da URL da vaga e **não são confiáveis**; ver "não verificado" abaixo.
 - **T3 e T3b, regra de login:** `definir_site_sem_login` e `marcar_site_nao_logado`. "Não pede login" vira `regra_login = nenhuma` e resolve os avisos (recusado em `cookie_sessao`). Voltar a "pede login" marca `precisa_login`, fecha a IA e cria **um** aviso, numa transação, também quando o site estava `logada` (decisão do usuário, §4.2 emendado; a T3b substituiu o comportamento da T3, em que `logada` mantinha a IA aberta).
-- **T4 e T4b, lógica e rótulos:** lógica pura de "pronto", da faixa e dos passos; rótulos dos tipos (Portal de vagas, Portal regional, Vagas de tecnologia, Vagas remotas, Plataforma freelance, Site da empresa, Portal especializado); texto "Não pede login".
+- **T4 e T4b, lógica e rótulos:** lógica pura de "pronto", da faixa e dos passos; rótulos dos tipos (Portal de vagas, Portal regional, Vagas de tecnologia, Vagas remotas, Plataforma freelance, Site da empresa, Portal especializado).
 - **T5, cartão:** cartão retangular de 300px, capa de 52px, faixa de 42px com três situações; só a faixa liga a IA.
-- **T6, página do site:** "Sobre o site" (Cadastro, Conta, Uso pela IA), os três passos, zona de risco recolhível, linha de alerta das recusas, grade em consulta de contêiner (duas colunas acima de 700px). Vagas, candidaturas e taxa por site ficaram **ocultas** (§8).
+- **T6, página do site:** "Sobre o site" (Cadastro, Conta, Uso pela IA), os três passos, zona de risco recolhível, linha de alerta das recusas, grade em consulta de contêiner (duas colunas acima de 700px). Vagas, candidaturas e taxa por site ficaram **ocultas** (§8). O texto "Não pede login" (antes "Sem login") também é desta tarefa (commit `dca40ca`).
 - **T7, lista nova:** construída e aprovada no mock, depois **revertida a pedido do usuário** (§9); `Lista.tsx` e `Interruptor.tsx` voltaram byte a byte à versão da T4b.
 - **T9, reversão e vermelho:** a lista volta ao comportamento antigo (a linha inteira liga a IA) e todo site que exige login e não está logado mostra vermelho "Precisa de login", bloqueado para a IA. Some o âmbar "Sem confirmação".
 
@@ -155,3 +155,5 @@ Branch `feat/lista-de-sites-impl`, cada tarefa pelo ciclo executor e revisor ("L
 - Teste de migração aplica uma vez só; `schema.sql` não declara as colunas novas (só `ALTER`); nenhum teste commitado conta aberturas pelo `DbSiteGate` de arquivo.
 - Linha da lista: risco vermelho sem texto de estado (desenho antigo); o domínio da linha não é link.
 - `sites.mock.ts`: não atualiza `verificada_em` ao voltar a "pede login" (o backend atualiza).
+- Na página de um site vermelho, "Confirmado em" mostra `verificada_em`, que é a data em que o login foi perdido (o backend grava now ao marcar `precisa_login`); cosmético.
+- A mensagem do backend ao tentar liberar a IA num site bloqueado (`src-tauri/src/sites/repo.rs`, `definir_ia_pode_usar`) ainda cita o botão antigo "Já estou logado"; o botão atual é "Já entrei" (passo 1 da página). Correção de código adiada: o usuário pediu para fazer só o que ele disse.
