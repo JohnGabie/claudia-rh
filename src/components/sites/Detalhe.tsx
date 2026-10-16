@@ -19,7 +19,7 @@ type Props = { site: Site; agora: Date; erro?: string; onVoltar: () => void } & 
 export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes }) => {
   const t = useT();
   const { locale } = useLocale();
-  const { cor, texto } = estadoVisual(site, agora, t);
+  const visual = estadoVisual(site, agora, t);
   const local = localDoSite(site, locale, t.sites.regions);
   // Local to this visit: leaving and re-entering the page resets it.
   const [jaAbriu, setJaAbriu] = useState(false);
@@ -48,7 +48,7 @@ export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes
         <h2 id="st-titulo" tabIndex={-1} style={{ outline: "none" }} title={site.nome}>{site.nome}</h2>
         <Pill>{local}</Pill>
         <Pill>{rotulo(t.sites.types, site.tipo)}</Pill>
-        <span style={{ marginLeft: "auto" }}><EstadoLinha cor={cor} texto={texto} /></span>
+        {visual && <span style={{ marginLeft: "auto" }}><EstadoLinha cor={visual.cor} texto={visual.texto} /></span>}
       </header>
       {erro && <div role="alert" className="st-erro" style={{ marginBottom: 12 }}>{erro}</div>}
       <div className="grade-p">

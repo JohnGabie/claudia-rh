@@ -55,6 +55,7 @@ export const ESTILOS = `
 .st-linha .risco.logada { background: var(--success); }
 .st-linha .risco.semlogin { background: var(--success); }
 .st-linha .risco.precisa { background: var(--danger); }
+.st-linha .risco.nenhum { background: var(--border); }
 .st-mono { width: 28px; height: 28px; border-radius: 6px; background: var(--bg-sunken); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .st-linha .quem { min-width: 0; padding: 6px 0; }
 .st-linha .n { display: block; max-width: 100%; text-align: left; font: inherit; font-size: 14px; font-weight: 500; color: var(--text-primary); background: none; border: 0; padding: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

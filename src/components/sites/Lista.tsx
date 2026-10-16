@@ -15,7 +15,7 @@ const Linha: React.FC<LinhaProps> = ({ site, agora, erro, onAbrir, onIa, onDetal
   const t = useT();
   const { locale } = useLocale();
   const bloq = estaBloqueado(site);
-  const { cor } = estadoVisual(site, agora, t);
+  const cor = estadoVisual(site, agora, t)?.cor ?? "nenhum";
   const fim = bloq ? t.sites.rowBlocked : site.ia_pode_usar ? t.sites.rowOpen : t.sites.rowClosed;
   const situacao = bloq ? t.sites.aiBlocked : site.ia_pode_usar ? t.sites.aiOpen : t.sites.aiClosed;
   return (

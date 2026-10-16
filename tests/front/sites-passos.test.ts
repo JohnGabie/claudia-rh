@@ -53,7 +53,7 @@ test("mostraJaEntrei only after opening and while step 1 is pending", () => {
 });
 
 test("estadoVisual of a no-login site is semlogin with the noLogin text", () => {
-  const v = estadoVisual(site({ regra_login: "nenhuma" }), new Date(), pt);
+  const v = estadoVisual(site({ regra_login: "nenhuma" }), new Date(), pt)!;
   assert.equal(v.cor, "semlogin");
   assert.equal(v.texto, pt.sites.noLogin);
 });
@@ -82,33 +82,30 @@ test("cookie_sessao follows the same release rule as manual: ready only when log
   assert.equal(bloqueado(sim), false);
 });
 
-test("estadoVisual of a not logged cookie_sessao site is a login state, never 'does not ask for login'", () => {
+test("estadoVisual of a not logged cookie_sessao site: red only for precisa_login, nothing for desconhecido", () => {
   const agora = new Date();
-  const a = estadoVisual(site({ regra_login: "cookie_sessao", estado: "precisa_login" }), agora, pt);
+  const a = estadoVisual(site({ regra_login: "cookie_sessao", estado: "precisa_login" }), agora, pt)!;
   assert.equal(a.cor, "precisa");
   assert.equal(a.texto, pt.sites.state.precisa_login);
-  const b = estadoVisual(site({ regra_login: "cookie_sessao", estado: "desconhecido" }), agora, pt);
-  assert.equal(b.cor, "precisa");
-  assert.equal(b.texto, "Precisa de login");
-  const c = estadoVisual(site({ regra_login: "cookie_sessao", estado: "logada", verificada_em: null }), agora, pt);
+  assert.equal(estadoVisual(site({ regra_login: "cookie_sessao", estado: "desconhecido" }), agora, pt), null);
+  const c = estadoVisual(site({ regra_login: "cookie_sessao", estado: "logada", verificada_em: null }), agora, pt)!;
   assert.equal(c.cor, "logada");
 });
 
-test("estadoVisual table: precisa_login and desconhecido both red, no-login green, logada green", () => {
+test("estadoVisual table: precisa_login red, desconhecido nothing, no-login green, logada green", () => {
   const agora = new Date();
   for (const regra of ["manual", "cookie_sessao"] as const) {
-    const r = estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, pt);
+    const r = estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, pt)!;
     assert.equal(r.cor, "precisa");
     assert.equal(r.texto, "Precisa de login");
-    assert.equal(estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, en).texto, "Login required");
-    const d = estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, pt);
-    assert.equal(d.cor, "precisa");
-    assert.equal(d.texto, "Precisa de login");
-    assert.equal(estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, en).texto, "Login required");
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "precisa_login" }), agora, en)!.texto, "Login required");
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, pt), null);
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "desconhecido" }), agora, en), null);
+    assert.equal(estadoVisual(site({ regra_login: regra, estado: "logada" }), agora, pt)!.cor, "logada");
   }
-  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "desconhecido" }), agora, pt).cor, "semlogin");
-  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "precisa_login" }), agora, pt).cor, "semlogin");
-  assert.equal(estadoVisual(site({ regra_login: "manual", estado: "logada" }), agora, pt).cor, "logada");
+  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "desconhecido" }), agora, pt)!.cor, "semlogin");
+  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "precisa_login" }), agora, pt)!.cor, "semlogin");
+  assert.equal(estadoVisual(site({ regra_login: "nenhuma", estado: "logada" }), agora, pt)!.cor, "logada");
 });
 
 test("login-required strings exist in both dictionaries, old wording is gone", () => {

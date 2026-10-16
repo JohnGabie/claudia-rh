@@ -21,7 +21,7 @@ export const Cartao: React.FC<Props> = ({ site, agora, erro, onAbrir, onIa, onDe
   const t = useT();
   const { locale } = useLocale();
   const abrirSite = (e: React.SyntheticEvent) => { e.stopPropagation(); e.preventDefault(); onAbrir(site); };
-  const { cor, texto } = estadoVisual(site, agora, t);
+  const visual = estadoVisual(site, agora, t);
   const situacao = situacaoFaixa(site);
 
   return (
@@ -39,7 +39,7 @@ export const Cartao: React.FC<Props> = ({ site, agora, erro, onAbrir, onIa, onDe
           <Pill>{localDoSite(site, locale, t.sites.regions)}</Pill>
           <Pill>{rotulo(t.sites.types, site.tipo)}</Pill>
           {site.papel === "descoberta" && <PapelPill />}
-          <EstadoLinha cor={cor} texto={texto} />
+          {visual && <EstadoLinha cor={visual.cor} texto={visual.texto} />}
         </div>
         {!site.padrao_atual && <span className="st-nota">{t.sites.notDefault}</span>}
         {erro && <div role="alert" className="st-erro">{erro}</div>}
