@@ -496,7 +496,7 @@ mod migration_tests {
             .expect("the browser_open rule is missing from the runtime prompt");
         assert_eq!(
             item,
-            "- Você abre sites **somente** com `browser_open` (servidor `claudia`): ele digita o endereço na barra do browser, numa aba só sua, e só aceita `https`. Endereços locais ou de rede interna são recusados. Não use nenhum outro meio para abrir um site."
+            "- Você abre sites **somente** com `browser_open` (servidor `claudia`): ele abre o endereço numa aba só sua e só aceita `https`. Endereços locais ou de rede interna são recusados. Não use nenhum outro meio para abrir um site."
         );
         assert!(!p.contains("abre uma URL `http` ou `https`"), "the old line that allowed http is gone");
     }
