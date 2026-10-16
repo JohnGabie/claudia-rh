@@ -114,6 +114,7 @@ Pedido, nas palavras dele: "é muito fácil, volta isso, e somente faz o que eu 
 - **Lista (volta ao comportamento antigo):** a visão em lista volta a ser como era antes da Tarefa 7: **a linha inteira liga e desliga a IA** (o nome abre a página, "Abrir ↗" abre o site). **Substitui P4** ("a linha abre a página; só o status liga a IA"). A galeria **não muda**.
 - **Rótulo de login simplificado:** todo site que exige login e **não está logado** (`precisa_login` **ou** `desconhecido`) mostra **vermelho "Precisa de login"** (en "Login required") e fica **bloqueado para a IA**. Some o âmbar "Sem confirmação". Verde continua só para `logada` e para "Não pede login". **Substitui o texto "Exige login" e a regra do âmbar de §4.2.**
 - **MCP:** nada muda no backend. O bloqueio já recusa o site que não está logado, com a mensagem "RECUSADO: o site ... não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", e o agente segue para a próxima fonte.
+(Atualizado na T15, §10: o texto agora é "precisa de login e o usuário ainda não entrou nele. Pule esta fonte e siga para a próxima." e o login é conferido antes da liberação.)
 
 ## 10. Estado da implementação (2026-10-15)
 
