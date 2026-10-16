@@ -94,6 +94,11 @@ export const Sites: React.FC<{ voltarSinal?: number }> = ({ voltarSinal = 0 }) =
   // to the card that was open, or to the heading when that card is gone.
   const antes = useRef<string | null>(null);
   useLayoutEffect(() => {
+    if (antes.current === null && chaveAberta !== null) {
+      // Opening the page: the list was scrolled, so start the page at its top with focus on its heading.
+      if (telaRef.current) telaRef.current.scrollTop = 0;
+      telaRef.current?.querySelector<HTMLElement>("#st-titulo")?.focus({ preventScroll: true });
+    }
     if (antes.current !== null && chaveAberta === null) {
       if (telaRef.current) telaRef.current.scrollTop = rolagem.current;
       const alvo = telaRef.current?.querySelector<HTMLElement>(`[data-chave="${CSS.escape(antes.current)}"]`) ?? tituloRef.current;

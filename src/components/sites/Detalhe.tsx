@@ -45,7 +45,7 @@ export const Detalhe: React.FC<Props> = ({ site, agora, erro, onVoltar, ...acoes
     <section className="st-pagina" aria-labelledby="st-titulo">
       <header className="topo-p">
         <button type="button" className="st-abrir" onClick={onVoltar}>{t.sites.back}</button>
-        <h2 id="st-titulo" title={site.nome}>{site.nome}</h2>
+        <h2 id="st-titulo" tabIndex={-1} style={{ outline: "none" }} title={site.nome}>{site.nome}</h2>
         <Pill>{local}</Pill>
         <Pill>{rotulo(t.sites.types, site.tipo)}</Pill>
         <span style={{ marginLeft: "auto" }}><EstadoLinha cor={cor} texto={texto} /></span>
