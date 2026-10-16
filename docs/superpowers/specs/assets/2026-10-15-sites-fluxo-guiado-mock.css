@@ -147,3 +147,21 @@ details.config > summary:hover { background: var(--bg-base); }
 
 /* estado de login sempre na própria linha, alinhado à esquerda */
 .linha-pills .estado { margin-left: 0; flex-basis: 100%; margin-top: 2px; }
+
+/* ---- visão em lista (proposta) ---- */
+.modo { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 0 0 14px; background: var(--bg-surface); }
+.modo button { border: 0; background: none; padding: 6px 14px; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+.modo button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
+.lista { display: grid; gap: 8px; max-width: 980px; }
+.linha-site { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 18px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
+.linha-site:hover { border-color: var(--text-tertiary); }
+.linha-site .risco { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--text-tertiary); }
+.linha-site .risco.ok, .linha-site .risco.sem { background: var(--success); }
+.linha-site .avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-sunken); display: grid; place-items: center; font-weight: 600; color: var(--text-secondary); flex: 0 0 auto; }
+.linha-site .quem { flex: 1 1 auto; min-width: 0; }
+.linha-site .n { font-weight: 500; font-size: 14px; }
+.linha-site .d { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.linha-site .status { flex: 0 0 auto; min-width: 118px; text-align: center; font-size: 12px; font-weight: 500; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); cursor: pointer; }
+.linha-site .status.ligada { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.linha-site .status.falta { background: var(--bg-surface); color: var(--accent-strong); }
+.linha-site .status:hover { border-color: var(--accent); }

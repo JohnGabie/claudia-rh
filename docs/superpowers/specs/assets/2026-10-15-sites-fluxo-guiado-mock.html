@@ -12,11 +12,13 @@
 <section id="galeria" aria-labelledby="tg">
   <h1 id="tg">Sites de vagas</h1>
   <p class="dica">
-    <b>Como testar:</b> clique em qualquer lugar do card para abrir a <b>página do site</b>.
-    Só a <b>faixa cinza de baixo</b> liga e desliga a IA. No <b>Jobindex</b> (ainda não entrou) a faixa te leva ao passo 1.
+    <b>Como testar:</b> clique em qualquer lugar do card (ou da linha, na <b>Lista</b>) para abrir a <b>página do site</b>.
+    Só a <b>faixa cinza de baixo</b> (na lista, o <b>botão de status à direita</b>) liga e desliga a IA. No <b>Jobindex</b> (ainda não entrou) a faixa te leva ao passo 1.
     O <b>Canonical</b> está marcado como "não pede login" (botão "Este site não pede login" no passo 1).
   </p>
+  <div class="modo" role="group" aria-label="Modo de exibição"><button type="button" data-modo="grade" aria-pressed="true">Galeria</button><button type="button" data-modo="lista" aria-pressed="false">Lista</button></div>
   <div class="grade" id="grade"></div>
+  <div class="lista" id="lista" hidden></div>
 </section>
 
 <section id="pagina" hidden aria-live="polite"></section>
@@ -32,6 +34,7 @@
     { id: 'canonical', url: 'https://canonical.com/careers', regiao: 'Global', papel: 'Candidatura de ponta a ponta', origem: 'Veio com o app',nome: 'Canonical', dominio: 'canonical.com', pais: 'Global', tipo: 'Site da empresa', local: 'Global · Site da empresa', entrou: false, semLogin: true,  ia: true,  u: { relogins: null, logadoDesde: null, aberturas: 22, ultAbertura: 'hoje', analisadas: 61, aplicou: 6, ultAplicou: 'há 2 dias', recusadas: 1 } }
   ];
   var abertoId = null;
+  var modo = "grade";
   var abertas = {};   // seções recolhíveis que o usuário abriu
   var jaAbriu = {};   // o "Já entrei" só aparece depois de "Abrir o site"
 
@@ -50,7 +53,22 @@
       (s.ia ? 'Liberada para a IA' : 'Fechada · clique para liberar') + '</button>';
   }
 
+  function linhaHtml(s) {
+    var e = estadoTexto(s);
+    var st = !pronto(s)
+      ? '<button class="status falta" type="button" data-faixa="' + s.id + '">Faça o passo 1 →</button>'
+      : '<button class="status ' + (s.ia ? 'ligada' : '') + '" type="button" role="switch" aria-checked="' + s.ia + '" data-faixa="' + s.id + '">' + (s.ia ? '✓ Liberada' : 'Fechada') + '</button>';
+    return '<div class="linha-site" data-abrir="' + s.id + '"><span class="risco ' + (e[0] || 'sem-estado') + '" aria-hidden="true"></span>' +
+      '<span class="avatar" aria-hidden="true">' + esc(s.nome.charAt(0)) + '</span>' +
+      '<div class="quem"><div class="n">' + esc(s.nome) + '</div><div class="d">' + esc(s.dominio) + ' · ' + esc(s.pais) + ' · ' + esc(s.tipo) + ' · <span class="estado ' + e[0] + '">' + e[1] + '</span></div></div>' +
+      '<a class="abrir" href="#" data-externo="1">Abrir ↗</a>' + st + '</div>';
+  }
+
   function desenhaGrade() {
+    document.getElementById('lista').innerHTML = sites.map(linhaHtml).join('');
+    document.getElementById('grade').hidden = modo !== 'grade';
+    document.getElementById('lista').hidden = modo !== 'lista';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-modo]'), function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-modo') === modo)); });
     document.getElementById('grade').innerHTML = sites.map(function (s) {
       var e = estadoTexto(s);
       return '<article class="card">' +
@@ -125,6 +143,8 @@
   document.addEventListener('click', function (ev) {
     var t = ev.target;
     if (t.closest('[data-externo]')) { ev.preventDefault(); ev.stopPropagation(); return; }           // "Abrir ↗" da capa: acesso rápido, não abre a página
+    var mo = t.closest('[data-modo]');
+    if (mo) { modo = mo.getAttribute('data-modo'); desenhaGrade(); return; }
     var f = t.closest('[data-faixa]');
     if (f) {
       var s = sites.filter(function (x) { return x.id === f.getAttribute('data-faixa'); })[0];
