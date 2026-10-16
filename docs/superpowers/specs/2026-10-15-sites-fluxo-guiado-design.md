@@ -136,6 +136,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 - **T16:** a página do site abre no topo, com o foco no título.
 - **T17, correções da revisão final:** a tela Sites também recarrega em `novo-aviso-site` e `aviso-site-resolvido` (antes só em `db-atualizada` e `sites-mudaram`); `browser_contas` só lista o site que o porteiro deixaria abrir (`regra_login = nenhuma` ou `logada`, com a IA ligada); textos de docs corrigidos.
 - **T20:** a lista padrão não define login de nenhum site (todos manual); VTEX e Hugging Face entram (165 sites); a linha do prompt sobre `browser_open` corrigida.
+- T18: a parede de login fecha a permissão da IA (invariante: site precisa_login nunca tem a IA ligada).
 - **T21:** site sem configuração aparece limpo (sem rótulo nem bolinha); vermelho só para `precisa_login`.
 
 **Decisões do usuário**

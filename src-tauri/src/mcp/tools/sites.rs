@@ -7,8 +7,8 @@ use crate::sites::repo;
 pub fn browser_contas(data_dir: &Path) -> Result<String, String> {
     let conn = open_db(data_dir)?;
     let all = repo::listar(&conn)?;
-    // Same predicate as the gate (sites::gate): released by the user AND no login pending. A login wall
-    // leaves `ia_pode_usar` on with `estado = precisa_login`; the gate refuses that site, so do not list it.
+    // Same predicate as the gate (sites::gate): released by the user AND no login pending. A site that
+    // needs login is refused by the gate even if an old row still has `ia_pode_usar` on, so do not list it.
     let open: Vec<_> = all
         .iter()
         .filter(|s| s.ia_pode_usar && (s.regra_login == "nenhuma" || s.estado == "logada"))
@@ -74,7 +74,7 @@ mod tests {
     fn it_does_not_list_a_site_that_needs_login_even_with_the_ai_flag_on() {
         let dir = temp_dir("browser-contas-login-wall");
         let conn = contas_with(DOIS, &dir);
-        // A login wall leaves the flag on while the state is precisa_login.
+        // Defensive: an old row with the flag on while the state is precisa_login.
         conn.execute("UPDATE contas_browser SET ia_pode_usar = 1 WHERE chave = 'man'", []).unwrap();
         let out = browser_contas(&dir).unwrap();
         assert!(!out.contains("Manual"), "{out}");

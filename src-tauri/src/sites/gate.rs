@@ -94,7 +94,7 @@ impl SiteGate for DbSiteGate {
         if repo::marcar_precisa_login(&conn, &site.chave).is_err() {
             return;
         }
-        // The site is `precisa_login` now. Create the notice whether or not the state just changed, so a
+        // The site is `precisa_login` now, with the AI permission closed in the same statement. Create the notice whether or not the state just changed, so a
         // failed insert on an earlier wall is repaired by the next one (`criar` is idempotent).
         let _ = super::avisos::criar(&conn, &site.chave);
     }
@@ -336,5 +336,99 @@ mod tests {
         assert_ne!(site.estado, "precisa_login");
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM avisos_sites WHERE chave='pub'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
+    }
+
+    const LI_SEED: &str = r#"{"versao":1,"sites":[{"chave":"linkedin","nome":"LinkedIn","url_login":"https://www.linkedin.com/jobs/","dominios":["linkedin.com"],"tipo":"geral","regiao":"GLOBAL"}]}"#;
+    const PUB_SEED: &str = r#"{"versao":1,"sites":[{"chave":"pub","nome":"Pub","url_login":"https://pub.com/careers","dominios":["pub.com"],"tipo":"empresa","regiao":"EU","regra_login":"nenhuma"}]}"#;
+
+    /// A temp database with one site; `released` = (manual site: confirmed logged in) and AI switched on.
+    fn wall_dir(tag: &str, seed: &str, key: &str, released: bool) -> PathBuf {
+        let dir = crate::mcp::tools::test_support::temp_dir(tag);
+        crate::mcp::tools::test_support::seed_db(&dir);
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        crate::sites::seed::merge(&conn, &crate::sites::seed::parse_seed(seed).unwrap()).unwrap();
+        if released {
+            if key == "linkedin" {
+                repo::marcar_logada(&conn, key).unwrap();
+            }
+            repo::definir_ia_pode_usar(&conn, key, true).unwrap();
+        }
+        dir
+    }
+    fn open_notices(conn: &Connection, key: &str) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM avisos_sites WHERE chave = ?1 AND resolvido = 0", [key], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn a_login_wall_on_a_released_site_closes_the_ai_and_raises_one_notice() {
+        let dir = wall_dir("site-gate-wall-closes", LI_SEED, "linkedin", true);
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let s = repo::obter(&conn, "linkedin").unwrap().unwrap();
+        assert_eq!(s.estado, "precisa_login");
+        assert!(!s.ia_pode_usar, "a site that needs login never keeps the AI on");
+        assert_eq!(open_notices(&conn, "linkedin"), 1);
+    }
+
+    #[test]
+    fn a_second_login_wall_keeps_one_notice_and_the_flag_closed() {
+        let dir = wall_dir("site-gate-wall-twice", LI_SEED, "linkedin", true);
+        let gate = DbSiteGate { data_dir: dir.clone() };
+        gate.login_wall("https://www.linkedin.com/authwall");
+        gate.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        assert_eq!(open_notices(&conn, "linkedin"), 1);
+        let s = repo::obter(&conn, "linkedin").unwrap().unwrap();
+        assert!(!s.ia_pode_usar && s.estado == "precisa_login");
+    }
+
+    #[test]
+    fn a_wall_on_a_site_already_red_with_the_flag_on_closes_it() {
+        let dir = wall_dir("site-gate-wall-legacy", LI_SEED, "linkedin", true);
+        {
+            // Legacy row: red state but the flag was left on by an older version.
+            let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            conn.execute("UPDATE contas_browser SET estado = 'precisa_login' WHERE chave = 'linkedin'", []).unwrap();
+        }
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        assert!(!repo::obter(&conn, "linkedin").unwrap().unwrap().ia_pode_usar);
+    }
+
+    #[test]
+    fn after_a_wall_confirming_the_login_does_not_reopen_the_ai_but_the_user_can() {
+        let dir = wall_dir("site-gate-wall-relogin", LI_SEED, "linkedin", true);
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        repo::marcar_logada(&conn, "linkedin").unwrap();
+        let s = repo::obter(&conn, "linkedin").unwrap().unwrap();
+        assert!(s.estado == "logada" && !s.ia_pode_usar, "\"Já entrei\" leaves the AI off");
+        repo::definir_ia_pode_usar(&conn, "linkedin", true).unwrap();
+        assert!(repo::obter(&conn, "linkedin").unwrap().unwrap().ia_pode_usar);
+    }
+
+    #[test]
+    fn a_wall_on_a_public_site_leaves_the_ai_flag_as_it_was() {
+        let dir = wall_dir("site-gate-wall-public-flag", PUB_SEED, "pub", true);
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://pub.com/careers/login");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let s = repo::obter(&conn, "pub").unwrap().unwrap();
+        assert!(s.ia_pode_usar, "a nenhuma site is ignored: the flag stays on");
+        assert_ne!(s.estado, "precisa_login");
+        assert_eq!(open_notices(&conn, "pub"), 0);
+    }
+
+    #[test]
+    fn a_wall_with_the_notice_table_gone_still_writes_state_and_flag_together() {
+        let dir = wall_dir("site-gate-wall-no-notices", LI_SEED, "linkedin", true);
+        {
+            let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+            conn.execute("DROP TABLE avisos_sites", []).unwrap();
+        }
+        DbSiteGate { data_dir: dir.clone() }.login_wall("https://www.linkedin.com/authwall");
+        let conn = rusqlite::Connection::open(dir.join("claudia_rh.db")).unwrap();
+        let s = repo::obter(&conn, "linkedin").unwrap().unwrap();
+        // The notice step is best-effort (repaired by the next wall); state and flag are one statement.
+        assert_eq!((s.estado.as_str(), s.ia_pode_usar), ("precisa_login", false));
     }
 }
