@@ -94,8 +94,8 @@ pub fn marcar_logada(conn: &Connection, chave: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// valor = true: the site asks for no login. valor = false: back to manual login; if the user is not
-/// logged in, the AI permission is closed in the same transaction.
+/// valor = true: the site asks for no login. valor = false: back to manual login: the site is marked
+/// precisa_login, the AI permission is closed and the relogin notice is raised, in one transaction.
 pub fn definir_sem_login(conn: &Connection, chave: &str, valor: bool) -> Result<(), String> {
     let s = exigir(conn, chave)?;
     if s.regra_login == "cookie_sessao" {
@@ -106,13 +106,15 @@ pub fn definir_sem_login(conn: &Connection, chave: &str, valor: bool) -> Result<
         tx.execute("UPDATE contas_browser SET regra_login = 'nenhuma' WHERE chave = ?1", [chave]).map_err(|e| e.to_string())?;
         super::avisos::resolver_do_site(&tx, chave)?;
     } else {
-        // Back to manual login: without a confirmed login the AI permission closes in the same step.
+        // Back to manual login: the site always goes red (a login confirmed before "no login" no longer
+        // counts), the AI permission closes and the relogin notice is raised, all in one transaction.
         tx.execute(
-            "UPDATE contas_browser SET regra_login = 'manual', \
-             ia_pode_usar = CASE WHEN estado = 'logada' THEN ia_pode_usar ELSE 0 END WHERE chave = ?1",
+            "UPDATE contas_browser SET regra_login = 'manual', estado = 'precisa_login', \
+             verificada_em = datetime('now'), ia_pode_usar = 0 WHERE chave = ?1",
             [chave],
         )
         .map_err(|e| e.to_string())?;
+        super::avisos::criar(&tx, chave)?;
     }
     tx.commit().map_err(|e| e.to_string())
 }
@@ -357,13 +359,19 @@ mod tests {
         definir_ia_pode_usar(&c, "linkedin", true).unwrap();
     }
 
+    fn estado(c: &Connection, k: &str) -> String { obter(c, k).unwrap().unwrap().estado }
+    fn regra(c: &Connection, k: &str) -> String { obter(c, k).unwrap().unwrap().regra_login }
+
     #[test]
     fn going_back_to_manual_without_being_logged_in_closes_the_ai() {
         let c = db_with(PUB); // regra_login = nenhuma, estado = desconhecido
         definir_ia_pode_usar(&c, "pub", true).unwrap();
         definir_sem_login(&c, "pub", false).unwrap();
-        assert_eq!(obter(&c, "pub").unwrap().unwrap().regra_login, "manual");
+        assert_eq!(regra(&c, "pub"), "manual");
+        assert_eq!(estado(&c, "pub"), "precisa_login");
         assert!(!ia(&c, "pub"));
+        // The gate refuses a manual site that is not logged in.
+        assert!(matches!(crate::sites::gate::decidir(&c, "https://pub.com/careers"), crate::sites::gate::Decision::Refuse(_)));
     }
 
     #[test]
@@ -373,14 +381,49 @@ mod tests {
         marcar_precisa_login(&c, "pub").unwrap();
         definir_sem_login(&c, "pub", false).unwrap();
         assert!(!ia(&c, "pub"));
+        assert_eq!(estado(&c, "pub"), "precisa_login");
     }
 
     #[test]
-    fn going_back_to_manual_while_logged_in_keeps_the_ai() {
+    fn going_back_to_manual_while_logged_in_still_marks_the_site_red_and_closes_the_ai() {
         let c = db_with(PUB);
         definir_ia_pode_usar(&c, "pub", true).unwrap();
         c.execute("UPDATE contas_browser SET estado='logada' WHERE chave='pub'", []).unwrap();
         definir_sem_login(&c, "pub", false).unwrap();
+        assert_eq!(regra(&c, "pub"), "manual");
+        assert_eq!(estado(&c, "pub"), "precisa_login");
+        assert!(!ia(&c, "pub"));
+    }
+
+    #[test]
+    fn going_back_to_manual_raises_exactly_one_relogin_notice() {
+        let c = db_with(PUB);
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 1);
+        let open = crate::sites::avisos::listar_abertos(&c).unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].chave, "pub");
+        // Toggle on, off, on, off: never more than one open notice.
+        definir_sem_login(&c, "pub", true).unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 0);
+        definir_sem_login(&c, "pub", false).unwrap();
+        definir_sem_login(&c, "pub", true).unwrap();
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 1);
+        // Repeating "off" while the notice is open does not duplicate it.
+        definir_sem_login(&c, "pub", false).unwrap();
+        assert_eq!(crate::sites::avisos::contar(&c).unwrap(), 1);
+    }
+
+    #[test]
+    fn going_back_to_manual_is_atomic() {
+        let c = db_with(PUB);
+        definir_ia_pode_usar(&c, "pub", true).unwrap();
+        c.execute("UPDATE contas_browser SET estado='logada' WHERE chave='pub'", []).unwrap();
+        c.execute("DROP TABLE avisos_sites", []).unwrap();
+        assert!(definir_sem_login(&c, "pub", false).is_err());
+        assert_eq!(regra(&c, "pub"), "nenhuma");
+        assert_eq!(estado(&c, "pub"), "logada");
         assert!(ia(&c, "pub"));
     }
 

@@ -32,8 +32,9 @@ pub fn marcar_site_logado(app: AppHandle, state: State<'_, DbState>, chave: Stri
     Ok(())
 }
 
-/// The user says the site asks for no login (or goes back to manual login). No notice is created: the
-/// user is the one who said it.
+/// The user says the site asks for no login (valor = true) or that it asks for login again
+/// (valor = false). Going back to "asks for login" marks the site red, closes the AI and raises the
+/// relogin notice.
 #[tauri::command]
 pub fn definir_site_sem_login(app: AppHandle, state: State<'_, DbState>, chave: String, valor: bool) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -41,8 +42,17 @@ pub fn definir_site_sem_login(app: AppHandle, state: State<'_, DbState>, chave: 
     if valor {
         // Turning it on resolves the open re-login notice, like marcar_site_logado does.
         let _ = app.emit("aviso-site-resolvido", chave);
+    } else if let Some(id) = open_notice_id(&conn, &chave) {
+        // Same event and payload (the notice id) the notifications poller emits for a new notice; the
+        // sidebar badge and the Pendências list refresh on it.
+        let _ = app.emit("novo-aviso-site", id);
     }
     Ok(())
+}
+
+/// Id of the site's open relogin notice, if any.
+fn open_notice_id(conn: &Connection, chave: &str) -> Option<i64> {
+    avisos::listar_abertos(conn).ok()?.into_iter().find(|a| a.chave == chave).map(|a| a.id)
 }
 
 /// "I am no longer logged in": marks the site as needing login and closes the AI permission.
@@ -111,6 +121,16 @@ mod tests {
         let c = db();
         let all = do_listar(&c).unwrap();
         assert!(all.len() >= 9 && all.iter().all(|s| !s.ia_pode_usar));
+    }
+
+    #[test]
+    fn the_notice_id_for_the_event_is_the_open_notice_of_that_site() {
+        let c = db();
+        assert!(open_notice_id(&c, "linkedin").is_none());
+        crate::sites::repo::definir_sem_login(&c, "linkedin", false).unwrap();
+        let id = open_notice_id(&c, "linkedin").unwrap();
+        assert_eq!(crate::sites::avisos::listar_abertos(&c).unwrap()[0].id, id);
+        assert!(open_notice_id(&c, "outro").is_none());
     }
 
     #[test]
