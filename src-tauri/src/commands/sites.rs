@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, State};
 pub(crate) fn do_listar(c: &Connection) -> Result<Vec<Site>, String> { repo::listar(c) }
 pub(crate) fn do_definir_ia(c: &Connection, chave: &str, valor: bool) -> Result<(), String> { repo::definir_ia_pode_usar(c, chave, valor) }
 pub(crate) fn do_marcar_logado(c: &Connection, chave: &str) -> Result<(), String> { repo::marcar_logada(c, chave) }
+pub(crate) fn do_dispensar(c: &Connection, id: i64) -> Result<Option<String>, String> { avisos::dispensar(c, id) }
 
 #[tauri::command]
 pub fn listar_sites(state: State<'_, DbState>) -> Result<Vec<Site>, String> {
@@ -29,6 +30,17 @@ pub fn marcar_site_logado(app: AppHandle, state: State<'_, DbState>, chave: Stri
     do_marcar_logado(&conn, &chave)?;
     // The Pendências list and the sidebar badge listen to this event.
     let _ = app.emit("aviso-site-resolvido", chave);
+    Ok(())
+}
+
+/// "Dismiss" on a log-in-again notice: resolves only that notice. The site stays red with the AI closed.
+/// Emits the same event as `marcar_site_logado` (payload = site key) only when a notice was dismissed.
+#[tauri::command]
+pub fn dispensar_aviso_site(app: AppHandle, state: State<'_, DbState>, id: i64) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(chave) = do_dispensar(&conn, id)? {
+        let _ = app.emit("aviso-site-resolvido", chave);
+    }
     Ok(())
 }
 
@@ -131,6 +143,18 @@ mod tests {
         let id = open_notice_id(&c, "linkedin").unwrap();
         assert_eq!(crate::sites::avisos::listar_abertos(&c).unwrap()[0].id, id);
         assert!(open_notice_id(&c, "outro").is_none());
+    }
+
+    #[test]
+    fn dismissing_gives_the_key_for_the_event_only_when_a_notice_was_dismissed() {
+        let c = db();
+        crate::sites::repo::marcar_precisa_login(&c, "linkedin").unwrap();
+        crate::sites::avisos::criar(&c, "linkedin").unwrap();
+        let id = open_notice_id(&c, "linkedin").unwrap();
+        assert_eq!(do_dispensar(&c, id).unwrap(), Some("linkedin".to_string()));
+        assert_eq!(do_dispensar(&c, id).unwrap(), None, "no event for a second dismissal");
+        assert_eq!(do_dispensar(&c, 424242).unwrap(), None);
+        assert_eq!(crate::sites::repo::obter(&c, "linkedin").unwrap().unwrap().estado, "precisa_login");
     }
 
     #[test]
