@@ -167,7 +167,7 @@ Escrito ao fechar a implementação em `feat/lista-de-sites-impl`; não reescrev
 **Decisões tomadas durante a implementação:**
 - **Cartão:** o usuário escolheu a opção A (capa gerada com o nome) a partir dos mockups; a lista usa a opção C (linha densa). O cartão inteiro é o interruptor de "IA pode usar", e a faixa inferior é só o indicador.
 - **Avisos:** ficam numa tabela própria (`avisos_sites`) **e** aparecem em Pendências (item, badge, notificação nativa), além da faixa na tela Sites.
-- **Seed entregue:** só **9 sites iniciais** (`src-tauri/sites-padrao.json`). A lista curada de cerca de 100 sites é a Task 14 e está **pendente do usuário**.
+- **Seed entregue:** o seed agora tem **163 sites** (`src-tauri/sites-padrao.json`; Task 14, 2026-10-15: 9 + 154). A versão original entregou só 9. Ver a spec de 2026-10-15 (`2026-10-15-sites-fluxo-guiado-design.md`, §10).
 - **Pesquisa:** DeepL, Mozilla e Docker saíram da lista por reputação (nota do Glassdoor abaixo de 3,0 ou no limite; ver `docs/pesquisa/2026-10-14-lista-de-sites-pesquisa.md`).
 - A tela mostra o estado `precisa_login` em cinza (estado de espera, não erro) e o texto "Logada · há N dias" no lugar de "confirmada há N dias" (a chave `confirmedDaysAgo` existe nos dicionários e não é usada).
 - **https no porteiro (decisão de 2026-10-15):** o porteiro agora recusa URL que não seja `https` (esquema sem diferença de maiúsculas), antes de resolver o site e sem contar em `dominios_recusados`; corrige a lacuna da §4.6 achada ao documentar.
@@ -177,4 +177,4 @@ Escrito ao fechar a implementação em `feat/lista-de-sites-impl`; não reescrev
 - Navegação por clique ou redirecionamento depois de um `browser_open` aprovado não é barrada (§4.5).
 - O front trata só `regra_login = "manual"` como site que exige login (`src/components/sites/estado.ts`), enquanto o backend exige login para tudo que não seja `"nenhuma"` (`repo.rs`, `gate.rs`): latente, porque nenhum caminho cria `cookie_sessao` ainda.
 - O botão **Abrir** (`open_tab_when_ready`, `src-tauri/src/browser/service.rs`) confere que algo responde na porta de debug, mas não que é o browser fixado da Claudia (o caminho do agente confere `is_pinned`).
-- Seed com 9 sites e `url_login` não visitados (continua não verificado, como em §8).
+- Seed com 163 sites (T14, 2026-10-15; eram 9 na entrega original, ver a spec de 2026-10-15, §10) e `url_login` não visitados (continua não verificado, como em §8).
