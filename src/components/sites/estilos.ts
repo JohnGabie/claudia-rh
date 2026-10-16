@@ -2,7 +2,6 @@
 // Tokens come from the app (src/styles/tokens.css). Injected once by index.tsx inside `.sites-tela`.
 export const ESTILOS = `
 .sites-tela :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.sites-tela .st-linha:focus-visible, .sites-tela .st-switch-faixa:focus-visible { outline-color: var(--text-primary); }
 .sites-tela label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .st-pill { display: inline-block; font-size: 11px; font-weight: 500; background: var(--bg-sunken); color: var(--text-secondary); border-radius: 6px; padding: 2px 8px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -50,26 +49,29 @@ export const ESTILOS = `
 .st-card .linha .st-estado { flex-basis: 100%; margin-top: 2px; }
 
 .st-lista { display: flex; flex-direction: column; gap: 8px; }
-.st-linha { display: grid; grid-template-columns: 4px 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 0 10px 0 0; min-height: 52px; cursor: pointer; overflow: hidden; }
-.st-linha:hover { border-color: var(--accent); }
-.st-linha .risco { align-self: stretch; background: var(--text-tertiary); }
-.st-linha .risco.logada { background: var(--success); }
-.st-linha .risco.semlogin { background: var(--success); }
+.st-linha { position: relative; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px 8px 18px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
+.st-linha:hover { border-color: var(--text-tertiary); }
+.st-linha .risco { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--text-tertiary); }
+.st-linha .risco.logada, .st-linha .risco.semlogin { background: var(--success); }
 .st-linha .risco.sem { background: var(--warning); }
 .st-linha .risco.precisa { background: var(--danger); }
-.st-mono { width: 28px; height: 28px; border-radius: 6px; background: var(--bg-sunken); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.st-linha .quem { min-width: 0; padding: 6px 0; }
+.st-mono { width: 28px; height: 28px; border-radius: 6px; background: var(--bg-sunken); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); flex: 0 0 auto; }
+.st-linha .quem { flex: 1 1 auto; min-width: 0; }
 .st-linha .n { display: block; max-width: 100%; text-align: left; font: inherit; font-size: 14px; font-weight: 500; color: var(--text-primary); background: none; border: 0; padding: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-linha .n:hover { color: var(--accent-strong); text-decoration: underline; }
-.st-linha .d { display: flex; font-size: 12px; color: var(--text-secondary); white-space: nowrap; min-width: 0; }
-.st-linha .d .dom { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
-.st-linha .d .resto { flex: 0 0 auto; }
-.st-linha .ia { font-size: 12px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; min-width: 84px; text-align: right; }
-.st-linha.aberta { border-color: var(--accent); background: linear-gradient(0deg, var(--accent-soft), var(--accent-soft)), var(--bg-surface); }
-.st-linha.aberta .ia { color: var(--accent-strong); }
-.st-linha.bloqueada { cursor: default; }
-.st-linha.bloqueada:hover { border-color: var(--border); }
-.st-linha.bloqueada .ia { color: var(--text-tertiary); }
+.st-linha .n::after { content: ""; position: absolute; inset: 0; }
+.st-linha .n:focus-visible { outline: none; }
+.st-linha:has(.n:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.st-linha:has(.n:hover) .n { color: var(--accent-strong); text-decoration: underline; }
+.st-linha .d { display: flex; overflow: hidden; font-size: 12px; color: var(--text-secondary); white-space: nowrap; min-width: 0; }
+.st-linha .d .dom { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; cursor: default; }
+.st-linha .d .resto { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.st-linha .d .est { flex: 0 0 auto; }
+.st-linha .st-abrir, .st-linha .st-status { position: relative; z-index: 1; flex: 0 0 auto; }
+.st-linha .st-abrir { color: var(--text-secondary); }
+.st-linha .st-status { min-width: 118px; text-align: center; font: inherit; font-size: 12px; font-weight: 500; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+.st-linha .st-status:hover { border-color: var(--accent); }
+.st-linha .st-status.ligada { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.st-linha .st-status.falta { background: var(--bg-surface); color: var(--accent-strong); }
 
 .st-pagina { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; max-width: 1000px; container-type: inline-size; }
 .st-pagina .topo-p { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 14px; }
@@ -108,7 +110,6 @@ export const ESTILOS = `
 .st-risco .linha-risco strong { display: block; font-size: 14px; font-weight: 500; }
 .st-risco .linha-risco small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-secondary); max-width: 62ch; }
 .st-risco .st-erro { padding: 0 16px 14px; }
-.st-switch-faixa { cursor: pointer; border-radius: 8px; }
 .st-btn { font: inherit; font-size: 13px; font-weight: 500; border-radius: 8px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); text-align: left; }
 .st-btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; }
 .st-btn.perigo { color: var(--danger); }
