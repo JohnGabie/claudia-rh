@@ -76,7 +76,7 @@ fn exigir(conn: &Connection, chave: &str) -> Result<Site, String> {
 pub fn definir_ia_pode_usar(conn: &Connection, chave: &str, valor: bool) -> Result<(), String> {
     let s = exigir(conn, chave)?;
     if valor && s.regra_login != "nenhuma" && s.estado != "logada" {
-        return Err("Confirme o login neste site (botão \"Já estou logado\") antes de liberar a IA.".into());
+        return Err("Entre neste site (passo 1 da página do site) antes de liberar a IA.".into());
     }
     conn.execute("UPDATE contas_browser SET ia_pode_usar = ?2 WHERE chave = ?1", params![chave, valor as i64])
         .map_err(|e| e.to_string())?;
@@ -230,8 +230,16 @@ mod tests {
     fn the_ai_permission_cannot_be_turned_on_for_a_site_that_needs_login() {
         let c = db_with(LI);
         let e = definir_ia_pode_usar(&c, "linkedin", true).unwrap_err();
-        assert!(e.contains("login"), "{e}");
+        assert!(e.contains("Entre neste site"), "{e}");
         assert!(!obter(&c, "linkedin").unwrap().unwrap().ia_pode_usar);
+    }
+
+    #[test]
+    fn the_refusal_to_turn_the_ai_on_points_to_step_one_of_the_site_page() {
+        let c = db_with(LI);
+        let e = definir_ia_pode_usar(&c, "linkedin", true).unwrap_err();
+        assert_eq!(e, "Entre neste site (passo 1 da página do site) antes de liberar a IA.");
+        assert!(!e.contains("Já estou logado") && !e.contains('\u{c3}') && !e.contains('\u{c2}'), "{e}");
     }
 
     #[test]

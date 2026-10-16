@@ -42,11 +42,13 @@ pub fn decidir(conn: &Connection, url: &str) -> Decision {
         registrar_recusa(conn, url);
         return Decision::Refuse(MSG_FORA_DA_LISTA.to_string());
     };
+    // The login check comes first: a site that needs login says so even when it was never released,
+    // so the agent skips it for the right reason. Both are refusals.
+    if s.regra_login != "nenhuma" && s.estado != "logada" {
+        return Decision::Refuse(format!("RECUSADO: o site \"{}\" precisa de login e o usuário ainda não entrou nele. Pule esta fonte e siga para a próxima.", s.nome));
+    }
     if !s.ia_pode_usar {
         return Decision::Refuse(format!("RECUSADO: o usuário não liberou o site \"{}\" para a IA. Pule esta fonte e siga para a próxima.", s.nome));
-    }
-    if s.regra_login != "nenhuma" && s.estado != "logada" {
-        return Decision::Refuse(format!("RECUSADO: o site \"{}\" não está com login confirmado. Pule esta fonte; o usuário precisa entrar nele de novo.", s.nome));
     }
     registrar_abertura(conn, &s.chave);
     Decision::Allow(s.chave)
@@ -176,6 +178,53 @@ mod tests {
         assert_eq!(decidir(&c, "https://www.linkedin.com/jobs/1"), Decision::Allow("linkedin".into()));
         repo::marcar_precisa_login(&c, "linkedin").unwrap();
         assert!(refused(decidir(&c, "https://www.linkedin.com/jobs/1")).contains("login"));
+    }
+
+    fn force_ai_on(c: &Connection, chave: &str) {
+        // Bypasses `definir_ia_pode_usar` (which refuses a site that needs login) to simulate stale data.
+        c.execute("UPDATE contas_browser SET ia_pode_usar = 1 WHERE chave = ?1", [chave]).unwrap();
+    }
+
+    #[test]
+    fn a_site_that_needs_login_says_so_even_when_it_was_never_released() {
+        let c = db();
+        repo::marcar_precisa_login(&c, "linkedin").unwrap();
+        assert!(!repo::obter(&c, "linkedin").unwrap().unwrap().ia_pode_usar);
+        let m = refused(decidir(&c, "https://www.linkedin.com/jobs/1"));
+        assert!(m.contains("precisa de login"), "{m}");
+        assert!(!m.contains("não liberou"), "{m}");
+        // Same answer when the AI flag is on (forced through SQL).
+        force_ai_on(&c, "linkedin");
+        let m = refused(decidir(&c, "https://www.linkedin.com/jobs/1"));
+        assert!(m.contains("precisa de login"), "{m}");
+        assert!(!m.contains("não liberou"), "{m}");
+        assert_eq!(aberturas(&c, "linkedin").0, 0, "a refusal is never counted");
+    }
+
+    #[test]
+    fn a_never_confirmed_site_gets_the_same_login_message() {
+        let c = db();
+        assert_eq!(repo::obter(&c, "linkedin").unwrap().unwrap().estado, "desconhecido");
+        let m = refused(decidir(&c, "https://www.linkedin.com/jobs/1"));
+        assert!(m.contains("precisa de login") && m.contains("\"LinkedIn\""), "{m}");
+        assert!(m.contains("Pule esta fonte e siga para a próxima."), "{m}");
+        assert!(!m.contains('\u{c3}') && !m.contains('\u{c2}'), "mojibake: {m}");
+        force_ai_on(&c, "linkedin");
+        assert!(refused(decidir(&c, "https://www.linkedin.com/jobs/1")).contains("precisa de login"));
+        assert_eq!(aberturas(&c, "linkedin").0, 0);
+    }
+
+    #[test]
+    fn a_logged_site_that_was_not_released_still_says_not_released() {
+        let c = db();
+        repo::marcar_logada(&c, "linkedin").unwrap();
+        let m = refused(decidir(&c, "https://www.linkedin.com/jobs/1"));
+        assert!(m.contains("não liberou") && !m.contains("precisa de login"), "{m}");
+        // A public site (regra_login = nenhuma) behaves the same way.
+        let m = refused(decidir(&c, "https://pub.com/careers"));
+        assert!(m.contains("não liberou") && !m.contains("precisa de login"), "{m}");
+        assert_eq!(aberturas(&c, "linkedin").0, 0);
+        assert_eq!(aberturas(&c, "pub").0, 0);
     }
 
     #[test]

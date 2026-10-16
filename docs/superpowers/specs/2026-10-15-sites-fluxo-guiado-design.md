@@ -129,6 +129,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7 e T9 passaram pelo ciclo executor e r
 - **T6, página do site:** "Sobre o site" (Cadastro, Conta, Uso pela IA), os três passos, zona de risco recolhível, linha de alerta das recusas, grade em consulta de contêiner (duas colunas acima de 700px). Vagas, candidaturas e taxa por site ficaram **ocultas** (§8). O texto "Não pede login" (antes "Sem login") também é desta tarefa (commit `dca40ca`).
 - **T7, lista nova:** construída e aprovada no mock, depois **revertida a pedido do usuário** (§9); `Lista.tsx` e `Interruptor.tsx` voltaram byte a byte à versão da T4b.
 - **T9, reversão e vermelho:** a lista volta ao comportamento antigo (a linha inteira liga a IA) e todo site que exige login e não está logado mostra vermelho "Precisa de login", bloqueado para a IA. Some o âmbar "Sem confirmação".
+- **T15:** o bloqueio do MCP confere o login antes da liberação (a IA recebe "precisa de login"), e a mensagem de liberar a IA cita o passo 1 da página.
 
 **Decisões do usuário**
 
@@ -156,4 +157,3 @@ Branch `feat/lista-de-sites-impl`, T1 a T7 e T9 passaram pelo ciclo executor e r
 - Linha da lista: risco vermelho sem texto de estado (desenho antigo); o domínio da linha não é link.
 - `sites.mock.ts`: não atualiza `verificada_em` ao voltar a "pede login" (o backend atualiza).
 - Na página de um site vermelho, "Confirmado em" mostra `verificada_em`, que é a data em que o login foi perdido (o backend grava now ao marcar `precisa_login`); cosmético.
-- A mensagem do backend ao tentar liberar a IA num site bloqueado (`src-tauri/src/sites/repo.rs`, `definir_ia_pode_usar`) ainda cita o botão antigo "Já estou logado"; o botão atual é "Já entrei" (passo 1 da página). Correção de código adiada: o usuário pediu para fazer só o que ele disse.
