@@ -63,7 +63,7 @@ export const ESTILOS = `
 .st-linha:has(.n:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -2px; }
 .st-linha:has(.n:hover) .n { color: var(--accent-strong); text-decoration: underline; }
 .st-linha .d { display: flex; overflow: hidden; font-size: 12px; color: var(--text-secondary); white-space: nowrap; min-width: 0; }
-.st-linha .d .dom { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; cursor: default; }
+.st-linha .d .dom { flex: 0 0 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; cursor: default; }
 .st-linha .d .resto { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .st-linha .d .est { flex: 0 0 auto; }
 .st-linha .st-abrir, .st-linha .st-status { position: relative; z-index: 1; flex: 0 0 auto; }
