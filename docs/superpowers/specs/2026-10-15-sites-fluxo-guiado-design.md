@@ -118,7 +118,7 @@ Pedido, nas palavras dele: "é muito fácil, volta isso, e somente faz o que eu 
 
 ## 10. Estado da implementação (2026-10-15)
 
-Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo executor e revisor ("Looks good to me" escrito); a T8, esta documentação, é revisada à parte. A revisão final da branch inteira (Opus, 2026-10-16) deu "sim, com correções", aplicadas na T17. O registro por tarefa está em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/progress.md`.
+Branch `feat/lista-de-sites-impl`, T1 a T7, T9, T14 a T16 e T17 a T22 (T17 correções da revisão final, T18 parede de login, T19 faixa vermelha, T20 seed e prompt, T21 cartão limpo, T22 texto do prompt) passaram pelo ciclo executor e revisor, cada uma com o "Looks good to me" escrito do revisor; a T8, esta documentação, é revisada à parte. A revisão final da branch inteira (Opus, 2026-10-16) deu "sim, com correções", aplicadas na T17. O registro por tarefa está em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/progress.md`.
 
 **O que foi construído**
 
@@ -130,24 +130,26 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 - **T6, página do site:** "Sobre o site" (Cadastro, Conta, Uso pela IA), os três passos, zona de risco recolhível, linha de alerta das recusas, grade em consulta de contêiner (duas colunas acima de 700px). Vagas, candidaturas e taxa por site ficaram **ocultas** (§8). O texto "Não pede login" (antes "Sem login") também é desta tarefa (commit `dca40ca`).
 - **T7, lista nova:** construída e aprovada no mock, depois **revertida a pedido do usuário** (§9); `Lista.tsx` e `Interruptor.tsx` voltaram byte a byte à versão da T4b.
 - **T9, reversão e vermelho:** a lista volta ao comportamento antigo (a linha inteira liga a IA) e todo site que exige login e não está logado mostra vermelho "Precisa de login", bloqueado para a IA. Some o âmbar "Sem confirmação".
-- **T14, seed de 163 sites:** o seed passou de 9 para 163 sites (9 + 154, `src-tauri/sites-padrao.json`). Ficaram **fora** os sites que proíbem automação, e também a VTEX e o Hugging Face (pergunta em aberto: entram ou não).
+- **T14, seed de 163 sites:** o seed passou de 9 para 163 sites (9 + 154, `src-tauri/sites-padrao.json`). Ficaram **fora** os sites que proíbem automação. A VTEX e o Hugging Face ficaram em pergunta aberta e depois **entraram** por decisão do usuário (T20, 165 sites).
 - **T14b, login manual:** seis empresas do seed pedem login manual: redhat, suse, booking, orsted, accenture e wise.
 - **T15:** o bloqueio do MCP confere o login antes da liberação (a IA recebe "precisa de login"), e a mensagem de liberar a IA cita o passo 1 da página.
 - **T16:** a página do site abre no topo, com o foco no título.
 - **T17, correções da revisão final:** a tela Sites também recarrega em `novo-aviso-site` e `aviso-site-resolvido` (antes só em `db-atualizada` e `sites-mudaram`); `browser_contas` só lista o site que o porteiro deixaria abrir (`regra_login = nenhuma` ou `logada`, com a IA ligada); textos de docs corrigidos.
 - **T20:** a lista padrão não define login de nenhum site (todos manual); VTEX e Hugging Face entram (165 sites); a linha do prompt sobre `browser_open` corrigida.
-- **T18:** a parede de login fecha a permissão da IA (invariante: um site de login manual (`regra_login != nenhuma`) em `precisa_login` nunca tem a IA ligada).
+- **T18:** a parede de login fecha a permissão da IA, decidido pelo usuário em 2026-10-16 ("Desligar na parede", §12). Invariante: um site de login manual (`regra_login != nenhuma`) em `precisa_login` nunca tem a IA ligada. A parede renova `verificada_em` só quando o estado de fato muda; `marcar_nao_logado` nunca o grava.
+- **T19:** faixa de avisos em vermelho (`--danger`), ver "Smoke e testes".
 - **T21:** site sem configuração aparece limpo (sem rótulo nem bolinha); vermelho só para `precisa_login`.
+- **T22:** a linha 94 do prompt descreve o `browser_open` fielmente (abre o endereço numa aba só sua, só https).
 
 **Decisões do usuário**
 
 - Site que **proíbe automação** fica **fora** do seed (Tarefa 14).
-- **"Precisa de login" para todo site não logado** (`precisa_login` e nunca confirmado), em vermelho; o porteiro já recusa os dois com "Pule esta fonte" e o agente segue.
+- **Vermelho "Precisa de login" só para `estado = precisa_login`** (T21, §12, `src/components/sites/estado.ts`). Um site de login manual nunca configurado não mostra rótulo de estado; o porteiro continua recusando os dois com "Pule esta fonte" e o agente segue. Isto substitui a decisão anterior (T9) de pintar de vermelho também o nunca confirmado.
 - **A lista volta ao comportamento antigo** (§9). Com isso, a dúvida da §4.2 sobre um `logada` antigo que sobrevive ao ciclo "não pede login" e volta é **moot**: voltar a "pede login" sempre fica vermelho e fecha a IA.
 
 **Smoke e testes**
 
-- **Smoke de uso real no Sandbox (2026-10-15):** feito no app Tauri de verdade, com o relatório em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/smoke-report.md`: 27 PASS, 9 achados e 6 itens não verificados. Tratados na T15 e na T16: F3 (texto antigo "Já estou logado" na recusa), F6 (ordem e mensagem do porteiro do MCP) e F4 (a página do site abria rolada). **Não tratados** (rótulos do próprio relatório): F1, LEGO aparece em vermelho (pergunta em aberto ao usuário); F5, "Ordenar por: Estado de login" não agrupa nada enquanto os 163 sites estão não confirmados (pergunta em aberto); F7, a dica de "browser_open repetido" conta URLs diferentes (já existia antes); F8, "Confirmado em" mostra data num site que nunca teve login (e "Relogins" conta alternâncias, ver itens menores); F9, a recusa antiga continua no cartão depois de trocar modo ou idioma; e o espaço que falta depois do domínio na linha da lista ("domínio· País", comportamento antigo restaurado pela reversão do usuário).
+- **Smoke de uso real no Sandbox (2026-10-15):** feito no app Tauri de verdade, com o relatório em `.superpowers/sdd/2026-10-15-sites-fluxo-guiado/smoke-report.md`: 27 PASS, 9 achados e 6 itens não verificados. Tratados na T15 e na T16: F3 (texto antigo "Já estou logado" na recusa), F6 (ordem e mensagem do porteiro do MCP) e F4 (a página do site abria rolada). **Não tratados** (rótulos do próprio relatório): F1, LEGO aparecia em vermelho (hoje LEGO fica manual e, sem configuração, sem rótulo, pela T21; decisão do usuário); F5, "Ordenar por: Estado de login" não agrupa nada enquanto os 163 sites estão não confirmados (pergunta em aberto); F7, a dica de "browser_open repetido" conta URLs diferentes (já existia antes); F8, "Confirmado em" mostra data num site que nunca teve login (e "Relogins" conta alternâncias, ver itens menores); F9, a recusa antiga continua no cartão depois de trocar modo ou idioma; e o espaço que falta depois do domínio na linha da lista ("domínio· País", comportamento antigo restaurado pela reversão do usuário).
 - **T19: faixa de avisos em vermelho (decisão do usuário em 2026-10-16).** A faixa "Entre de novo em <site>" no topo da tela Sites passou de `--warning` para `--danger` (borda, ícone e fundo de 10%); o texto segue em `--text-primary`. Era o achado F2 do smoke.
 - **`cargo test --lib`:** 689 testes passaram no Sandbox no HEAD `a96b1e3` (clippy sem avisos novos na branch); a T17 acrescenta 2 testes de `browser_contas` (691 passaram no Sandbox depois dela).
 
@@ -156,10 +158,17 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 - **Não verificado no smoke** (nada disto foi visto no app real): a contagem de abertura aceita (`aberturas` e `ultima_abertura`; só os testes unitários cobrem); o botão "Já entrei" depois de abrir um site; o `definir_site_sem_login` em site `cookie_sessao` (nenhum site assim no seed nem no mock); a tela do Activity log; as colunas da mesma altura em janelas largas reais (só emuladas por CDP).
 - A recarga da tela pelos eventos Tauri `novo-aviso-site` e `aviso-site-resolvido` é coberta por teste unitário; **fora do Tauri não dá para vê-la** (o mock só dispara o evento local).
 
-**Decisão pendente do usuário** (não implementada)
+**Decisões pendentes e riscos aceitos**
 
-- **Parede de login deixa a IA ligada num site vermelho:** decidido em 2026-10-16 ("Desligar na parede"), ver §12 e T18.
 - **Amplitude de alguns domínios do seed.** `google.com` alcança e-mail, documentos, drive e sites; `personio.com` cobre `*.jobs.personio.com`; `gupy.io` cobre o portal de toda empresa. O usuário já disse "deixar como está" uma vez; fica registrado aqui como **risco explícito aceito** até nova decisão.
+- **Já decidido, fora desta lista:** a parede de login desliga a IA (T18); VTEX e Hugging Face entram (T20); a faixa de avisos é vermelha (T19); LEGO fica manual. Níveis de permissão, campanha e banidos são outra spec: `docs/superpowers/specs/2026-10-16-vigia-campanha-banidos-notas.md`.
+
+**Para o usuário decidir**
+
+- Site `nenhuma` que mostra parede de login: virar `manual` + `precisa_login` + IA fechada + aviso (§12)? Decidir junto com os níveis de permissão.
+- Cor do cartão da tela Pendências (`AvisoSiteItem` ainda é âmbar): âmbar ou vermelho, como a faixa?
+- A listra neutra da lista para site sem configuração é muito fraca (`--border`): manter ou reforçar.
+- Bug da atualização do prompt instalado (CLA-74) e itens menores adiados (CLA-75) estão no Linear.
 
 **Outros pendentes**
 
@@ -177,7 +186,7 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9 e T14 a T16 passaram pelo ciclo e
 - Teste de migração aplica uma vez só; `schema.sql` não declara as colunas novas (só `ALTER`); nenhum teste commitado conta aberturas pelo `DbSiteGate` de arquivo.
 - Linha da lista: risco vermelho sem texto de estado (desenho antigo); o domínio da linha não é link.
 - `sites.mock.ts`: não atualiza `verificada_em` ao voltar a "pede login" (o backend atualiza).
-- Na página de um site vermelho, "Confirmado em" mostra `verificada_em`, que é a data em que o login foi perdido (o backend grava now ao marcar `precisa_login`); cosmético.
+- Na página de um site vermelho, "Confirmado em" mostra `verificada_em`. Desde a T18 a parede só renova essa data quando o estado de fato muda, e `marcar_nao_logado` nunca a grava; cosmético.
 
 ## 11. Emenda de 2026-10-16 (pedido do usuário): a lista padrão não decide quem pede login
 
