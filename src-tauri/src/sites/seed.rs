@@ -72,6 +72,81 @@ mod tests {
         assert!(s.len() >= 9);
     }
 
+    /// Hosts shared by many companies: an entry on one of them is only safe with its own `caminho_ats`.
+    const SHARED_ATS_HOSTS: &[&str] = &[
+        "job-boards.greenhouse.io",
+        "boards.greenhouse.io",
+        "job-boards.eu.greenhouse.io",
+        "jobs.lever.co",
+        "jobs.ashbyhq.com",
+        "apply.workable.com",
+    ];
+
+    /// Structural problems of a seed that `validate_all` cannot see because they span several sites.
+    fn seed_problems(sites: &[SeedSite]) -> Vec<String> {
+        let mut out = Vec::new();
+        // (domain, path of the ATS entry, key of the site); a career-site domain has no path.
+        let mut entries: Vec<(&str, Option<&str>, &str)> = Vec::new();
+        for s in sites {
+            for d in &s.dominios {
+                entries.push((d.as_str(), None, s.chave.as_str()));
+                if super::super::modelo::is_public_suffix(d) {
+                    out.push(format!("{}: public suffix '{d}' as a domain", s.chave));
+                }
+            }
+            for d in &s.dominios_ats {
+                entries.push((d.as_str(), s.caminho_ats.as_deref(), s.chave.as_str()));
+                if SHARED_ATS_HOSTS.contains(&d.as_str()) && s.caminho_ats.is_none() {
+                    out.push(format!("{}: shared ATS host '{d}' without caminho_ats", s.chave));
+                }
+            }
+        }
+        for (i, (da, pa, ka)) in entries.iter().enumerate() {
+            for (db, pb, kb) in &entries[i + 1..] {
+                if ka == kb {
+                    continue;
+                }
+                let overlap = super::super::dominio::host_matches(da, db) || super::super::dominio::host_matches(db, da);
+                let distinct_paths = matches!((pa, pb), (Some(x), Some(y)) if x != y) && da == db;
+                if overlap && !distinct_paths {
+                    out.push(format!("{ka} and {kb} overlap on '{da}' / '{db}'"));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_embedded_seed_is_structurally_sound() {
+        let s = embedded().expect("the shipped seed must parse and validate");
+        assert!(s.len() >= 100, "the default list must have at least 100 sites, has {}", s.len());
+        let problems = seed_problems(&s);
+        assert!(problems.is_empty(), "seed problems:\n{}", problems.join("\n"));
+    }
+
+    #[test]
+    fn the_seed_guard_catches_a_shared_ats_host_without_a_path() {
+        let mut s = embedded().unwrap();
+        let g = s.iter_mut().find(|x| x.dominios_ats.iter().any(|d| d == "job-boards.greenhouse.io")).expect("a Greenhouse company");
+        g.caminho_ats = None;
+        assert!(seed_problems(&s).iter().any(|p| p.contains("without caminho_ats")));
+    }
+
+    #[test]
+    fn the_seed_guard_catches_a_repeated_domain() {
+        let mut s = embedded().unwrap();
+        let d = s[1].dominios[0].clone();
+        s[0].dominios.push(d);
+        assert!(seed_problems(&s).iter().any(|p| p.contains("overlap")));
+    }
+
+    #[test]
+    fn the_seed_guard_catches_a_public_suffix() {
+        let mut s = embedded().unwrap();
+        s[0].dominios.push("co.uk".into());
+        assert!(seed_problems(&s).iter().any(|p| p.contains("public suffix")));
+    }
+
     #[test]
     fn defaults_are_candidatura_and_manual() {
         let s = parse_seed(&file(&[site("x")])).unwrap();
