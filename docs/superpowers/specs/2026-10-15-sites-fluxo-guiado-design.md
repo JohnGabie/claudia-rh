@@ -207,3 +207,13 @@ Pedidos, nas palavras dele:
 **Tarefa 18 (backend): a parede de login fecha a permissão da IA.** Quando o MCP registra uma parede de login (`login_wall`, `sites/gate.rs`), o site vai para `precisa_login` e o app cria o aviso (como hoje), e **também grava `ia_pode_usar = 0`**, no mesmo passo. Depois do "Já entrei" o usuário liga a IA de novo, de propósito. Teste de mutação: tirar o fechamento faz o teste nomeado falhar. A regra atual de que um site `nenhuma` com caixa de login não é "deslogado" **não muda nesta tarefa** (ver abaixo).
 
 **Decisão pendente do usuário (NÃO implementada):** um site marcado "não pede login" (`nenhuma`) que mostra uma parede de login deveria virar `manual` + `precisa_login` + IA fechada + aviso, como um tratamento de erro? Risco: uma página pública com caixa de login viraria "Precisa de login" sem precisar. O usuário respondeu com a ideia de **níveis de permissão** (ver o documento de notas da vigia, 2026-10-16); decidir junto com ela.
+
+## 13. Emenda de 2026-10-16 (pedido do usuário): fechar os avisos "Entre de novo em X"
+
+Pedido: "esse bug aqui, ele não permite fechar essas notificações" (print da faixa do topo da tela de Sites com três avisos: SAP, Zup, Accenture). **Leitura:** não é defeito de implementação; hoje o aviso só some por "Já entrei" ou "Este site não pede login", e nem a faixa nem o item de Pendências têm botão de fechar.
+
+**Decisões (2026-10-16):** o X **só dispensa o aviso** (marca-o resolvido); o site **continua** `precisa_login` com a IA fechada, até o usuário entrar ou marcar "não pede login"; uma nova parede de login cria um aviso novo (a regra de "no máximo um aviso aberto por site" não muda). **Só o X em cada aviso**, sem "Fechar todos".
+
+**Tarefa 24 (backend):** comando Tauri `dispensar_aviso_site(id: i64)` que marca `avisos_sites.resolvido = 1` e `resolvido_em` do aviso com esse id, **sem tocar** em `contas_browser`; id inexistente ou já resolvido: não é erro grave (devolve Ok sem efeito, idempotente); emite `aviso-site-resolvido` com a chave do site para a tela e o selo recarregarem. Registrado em `lib.rs`; função em `sites/avisos.rs` testada em memória com prova de mutação (a função deve resolver só o aviso pedido, nunca outro aviso do mesmo site que o pedido não nomeou e nunca alterar o estado do site).
+
+**Tarefa 25 (front):** botão X (ícone, `aria-label` "Dispensar aviso"/"Dismiss notice", foco visível, alvo de pelo menos 24 px) na linha da faixa (`AvisosFaixa.tsx`) e no cartão de Pendências (`AvisoSiteItem.tsx`), chamando `sitesApi.dispensarAviso(id)`; a linha some e o selo da barra lateral diminui; erro de backend aparece na própria linha. Mock de desenvolvimento aplica a mesma regra. Textos nos dois idiomas.
