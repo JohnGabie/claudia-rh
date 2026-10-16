@@ -515,6 +515,7 @@ export const pt: Strings = {
     enteredBtn: "Já entrei",
     openArrow: "Abrir ↗",
     openSite: "Abrir o site ↗",
+    dismissNotice: "Dispensar aviso",
     configure: "Configurar conta (em breve)",
     configureHint: "Fica para uma próxima etapa.",
     removeFromList: "Remover da lista",

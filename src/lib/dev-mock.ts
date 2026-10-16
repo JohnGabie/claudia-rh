@@ -127,6 +127,7 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
     case "listar_sites":
     case "listar_avisos_sites":
     case "contar_avisos_sites":
+    case "dispensar_aviso_site":
     case "abrir_site":
     case "definir_ia_pode_usar":
     case "marcar_site_logado":

@@ -9,7 +9,7 @@ export interface SiteStats { relogins: number; aberturas: number; ultima_abertur
 
 // Fired after any write, so the screen reloads even when the backend event never arrives (mock).
 export const SITES_MUDARAM = "sites-mudaram";
-const ESCRITAS = new Set(["definir_ia_pode_usar", "marcar_site_logado", "adicionar_site", "remover_site", "definir_site_sem_login", "marcar_site_nao_logado"]);
+const ESCRITAS = new Set(["definir_ia_pode_usar", "marcar_site_logado", "adicionar_site", "remover_site", "definir_site_sem_login", "marcar_site_nao_logado", "dispensar_aviso_site"]);
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const r = await invoke<T>(cmd, args);
@@ -29,5 +29,6 @@ export const sitesApi = {
   marcarNaoLogado: (chave: string) => call<void>("marcar_site_nao_logado", { chave }),
   abrir: (chave: string) => call<void>("abrir_site", { chave }),
   avisos: () => call<AvisoSite[]>("listar_avisos_sites"),
+  dispensarAviso: (id: number) => call<void>("dispensar_aviso_site", { id }),
   contarAvisos: () => call<number>("contar_avisos_sites"),
 };

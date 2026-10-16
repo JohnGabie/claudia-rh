@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { useT } from "../i18n";
 import { sitesApi, type AvisoSite } from "../lib/sites-api";
 import { acoesAvisoSite } from "./avisoSiteAcoes";
@@ -48,6 +48,19 @@ export const AvisoSiteItem: React.FC<{ a: AvisoSite; tempo: string; onResolved: 
     }
   };
 
+  const dispensar = async () => {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await sitesApi.dispensarAviso(a.id);
+      onResolved();
+    } catch (e) {
+      setErro(String(e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
       <div style={{ width: 3, flexShrink: 0, background: "var(--warning)", borderRadius: "10px 0 0 10px" }} />
@@ -79,6 +92,10 @@ export const AvisoSiteItem: React.FC<{ a: AvisoSite; tempo: string; onResolved: 
               {t.sites.enteredBtn}
             </button>
           )}
+          <button type="button" onClick={dispensar} disabled={ocupado} aria-label={t.sites.dismissNotice} title={t.sites.dismissNotice}
+            style={{ ...ghostBtn, display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, minHeight: 24, opacity: ocupado ? 0.5 : 1 }}>
+            <X size={14} aria-hidden="true" />
+          </button>
         </div>
       </div>
     </div>

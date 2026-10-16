@@ -140,6 +140,8 @@ Branch `feat/lista-de-sites-impl`, T1 a T7, T9, T14 a T16 e T17 a T22 (T17 corre
 - **T19:** faixa de avisos em vermelho (`--danger`), ver "Smoke e testes".
 - **T21:** site sem configuração aparece limpo (sem rótulo nem bolinha); vermelho só para `precisa_login`.
 - **T22:** a linha 94 do prompt descreve o `browser_open` fielmente (abre o endereço numa aba só sua, só https).
+- **T24:** `dispensar_aviso_site` (só dispensa o aviso; o site continua vermelho).
+- **T25:** botão X para dispensar o aviso na faixa e em Pendências.
 
 **Decisões do usuário**
 

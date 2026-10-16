@@ -512,6 +512,7 @@ export const en = {
     enteredBtn: "I logged in",
     openArrow: "Open ↗",
     openSite: "Open the site ↗",
+    dismissNotice: "Dismiss notice",
     configure: "Set up account (coming soon)",
     configureHint: "Comes in a later step.",
     removeFromList: "Remove from list",

@@ -88,6 +88,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown>):
     case "listar_avisos_sites": return r(avisos);
     case "contar_avisos_sites": return r(avisos.length);
     case "abrir_site": return r(undefined);
+    // Dismisses only the notice (idempotent); the site keeps its state.
+    case "dispensar_aviso_site": avisos = avisos.filter((a) => a.id !== args.id); return r(undefined);
     case "definir_ia_pode_usar": {
       const x = achar();
       if (!x) return naoAchou();
