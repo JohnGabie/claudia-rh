@@ -1,6 +1,6 @@
 # Regras de agentes, ciclo de vida das specs e controle de versão — spec
 
-Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9.
+Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9. Ampliação §10 (revisão 3): rascunho, aguardando aprovação.
 
 Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis, convenção de specs, hooks de contexto). Não toca código de produto nem o prompt de runtime.
 
@@ -132,3 +132,80 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 |---|---|---|---|---|
 | 2026-10-19 | todas | criada | Versão inicial com P1 a P10 e as 4 decisões do usuário. | "blz bora" (2026-10-19) |
 | 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | usuário confirmou na conversa em 2026-10-19 (spec aprovada e extras mantidos) |
+| 2026-10-19 | §10 | ampliada (rascunho) | P11 a P14: guardião de estabilidade, espelho do público no backup, PR e CI, pacote de recuperação. | aguardando o usuário |
+
+## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação — **rascunho, aguardando aprovação**
+
+Marcador: `ampliada 2026-10-19` (rascunho). Amplia a P7; não contradiz o que está aprovado. Só este trecho pede nova aprovação.
+
+### 10.1 Pedido do usuário (palavras dele)
+
+- "algo que eu gostaria de add é agent-versao, ele tem que cuidar para apenas cuidar para dev e main serem sempre versoes e branch estaveis. e no outro sempre dando push quando puder, naquele backup vamos subir as skills etc... nao env, mas configuracoes para ajudar caso se perca podemos recupear onde paramos sem dor de cabeça, nesse backup é importante ser uma copia exata da publica, alem de conter essa versao de backup"
+- "A publica sempre vai conter as versoes "estavel" na dev sao as fetures em desenvolvimento para compor a 0.3v na man vai compor ai a 0.3v fechada e estavel. Na privada, talvez nao precise da main da publica, mas a dev sim, e la vai ser o backup da publica, onde vai haver mais commits constantes. isso faz sentido? Esse agente é resoposnavel tbm para lidar com os pr, CI, em caso de falha repassar a outros agentes responsavel, para pedir sugestao."
+- Cadência do push: "Só o agente de versão" (sem hook automático).
+- Pacote de recuperação: config do projeto, config global e memória, estado de trabalho; "cuidado com a limpeza desses dados, para nao contaminar a publica".
+- Sobre o que é "estável": "falei da publica, mas eu expliquei melhor agora" (vale o que ele descreveu acima).
+
+### 10.2 Leitura do pedido
+
+1. No **público** (`origin`): `dev` junta as features já estáveis rumo à 0.3; `main` recebe só a 0.3 fechada e estável (release).
+2. No **privado** (`backup`): o `dev` é o backup do `dev` público, com mais commits e mais constantes; o `main` talvez não precise.
+3. Só o agente de versão faz push (ao backup e, quando o usuário mandar, ao origin). Sem hook automático.
+4. O agente de versão também cuida de PR e CI e, se algo falhar, repassa a quem é responsável e pede sugestão.
+5. O backup guarda também um pacote para retomar o trabalho sem dor (config do projeto, config global e memória, estado de trabalho), limpo de segredos e sem nunca ir ao repo público.
+
+### 10.3 "Isso faz sentido?"
+
+Sim, com três ressalvas que viram regra:
+- Os "commits constantes" só existem em **branches `feat/*` e `fix/*`**, porque commit direto em `dev` continua proibido. Logo o `dev` do backup é o `origin/dev` mais os merges ainda não publicados, e **sempre contém o `origin/dev`** (invariante verificável). Os commits constantes aparecem nas branches de feature no backup.
+- "Estável" no `dev` público é por **feature completa**, não por commit: a feature só entra quando passou pela porta da P11.
+- Se o `main` não for ao backup, a release fica restaurável só pelo `origin` e pelas tags. Custa quase nada espelhar o `main` e as tags `v*`; recomendo espelhar (P12).
+
+### 10.4 Propostas do assistente (NÃO DECIDIDAS, cada uma com recomendação)
+
+**P11. Guardião da estabilidade de `dev` e `main` públicos.**
+- `main`: só release (`dev` → `main` + tag `vX.Y.Z`) da versão **fechada**, depois do smoke de uso real anexado; o usuário manda.
+- `origin/dev`: só feature completa, com "Looks good to me" por tarefa, unitários, integração e regressão verdes (`cargo test` só no Sandbox; `tsc`, build e clippy no PC) e smoke da feature quando couber. Feature incompleta fica em branch e vai só ao backup.
+- `dev` nunca fica atrás de `main`; sem commit direto; só `merge --no-ff` aprovado pelo usuário.
+- `dev` ou `main` quebrou: `git revert` do merge (nunca reset, nunca force push), aviso ao usuário e ao arquiteto, tarefa no Linear.
+- O agente **recusa** o merge se faltar o "Looks good to me", a evidência das rodadas ou o CI verde, e diz o que falta.
+- Ponto em aberto: `main` e `dev` **não têm proteção de branch no GitHub** (verificado em 2026-10-19: "Branch not protected"). Ativar proteção (PR obrigatório, CI obrigatório) é decisão do usuário; sem ela a estabilidade depende só do agente e das regras locais.
+- **Recomendo.**
+
+**P12. Backup como espelho do público mais o que ainda não foi publicado.**
+- Invariantes, verificadas por um relatório só de leitura que compara `git ls-remote origin` com `git ls-remote backup`: toda ponta de branch e toda tag do `origin` é igual ou **ancestral** da mesma ref no `backup`; nenhuma ref do `backup` apaga ou reescreve história do `origin`.
+- Espelhar também `main` e as tags `v*` (a restauração da release fica completa). *Alternativa: dispensar o `main`, como o usuário sugeriu; perde a restauração direta da release.*
+- Push só pelo agente de versão, nos momentos descritos em `agents/versao.md` (fim de tarefa aprovada, depois de merge, antes de operação arriscada, ao encerrar a sessão). `--all` e `--tags`, nunca `--mirror`.
+- **Recomendo.**
+
+**P13. PR e CI sob o agente de versão.**
+- Quando o usuário manda integrar: o agente abre o PR no `origin` (`gh pr create`, com o modelo de `.github/PULL_REQUEST_TEMPLATE.md`), acompanha o CI (`gh pr checks`; o `ci.yml` roda em push para `main` e `dev` e em PR) e só faz o merge com CI verde e a aprovação do usuário na conversa.
+- **CI falhou:** o agente **não corrige**. Lê o log (`gh run view --log-failed`, só leitura), classifica e repassa no formato de brief, com o trecho do log, **pedindo sugestão** e não só correção: falha de código ou teste vai para o executor da tarefa (o revisor confere); contradição com a spec vai para o arquiteto; falha de ambiente, instável ou de infraestrutura vira tarefa no Linear e pergunta ao usuário; qualquer coisa de segurança vai para o revisor em FORTE. Conta as rodadas; na 5ª, para e pergunta ao usuário.
+- O `release.yml` roda em tag e **publica** (release e npm). O agente nunca cria tag `v*` sem o usuário mandar.
+- **Recomendo.**
+
+**P14. Pacote de recuperação na branch órfã `recovery`, só no backup.**
+- Conteúdo (escolhido pelo usuário): (a) config do projeto: `.claude/` (skills, comandos, `settings.json`, `settings.local.json` se a varredura passar) e `.mcp.json` sem segredos; (b) config global e memória: `CLAUDE.md` global, lista de plugins instalados, a pasta de memória deste projeto, `settings.json` global só se a varredura passar; (c) estado de trabalho: `STATE.md` (branches, worktrees, o que está parado, próximo passo, ligação com o Linear), patches do trabalho não commitado e o último `.journal/`.
+- **Fora, sempre:** `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil (`candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `disparo.json`, `notif.json`, `modo_autonomo.json`) e o banco do usuário.
+- **Limpeza antes de gravar:** lista de caminhos permitidos (allowlist: nada entra por padrão) mais varredura de segredos, com os mesmos padrões usados em 2026-10-19, no que vai ser commitado; achou algo, não grava e avisa. O script só cria e sobrescreve arquivos **dentro da sua própria worktree temporária**; não apaga nada.
+- **Isolamento para não contaminar o público:** a branch `recovery` é órfã (sem ancestral comum com `dev`), então não há merge acidental; o agente só empurra ao `origin` o que está na lista permitida (`main`, `dev`, `feat/*` e `fix/*` com PR, tags `v*`) e nunca `recovery` ou `wip/*`; um hook `pre-push` versionado recusa `recovery*` no `origin`; o conteúdo do pacote nunca vive numa pasta rastreada do repo de trabalho.
+- Atualização do pacote: pelo agente de versão, no fim da tarefa, ao mudar a config e antes de operação arriscada. Não é automática.
+- **Recomendo.**
+
+### 10.5 Impacto
+
+- Documentos: `agents/versao.md` ampliado (P11 a P14), `CLAUDE.md` (Git, "O humano decide") e o template de PR.
+- Scripts novos, só de leitura ou que só criam: relatório de verificação do backup (`scripts/dev/verify-backup.ps1`), geração do pacote de recuperação (`scripts/dev/recovery-pack.ps1`, em worktree temporária) e o hook `pre-push` que bloqueia `recovery*` no `origin`.
+- Configuração: nenhuma mudança no GitHub sem o usuário (proteção de branch, secrets).
+- Segurança: pacote de recuperação com varredura obrigatória; nenhuma deleção em lote.
+
+### 10.6 Fora do escopo
+
+Ativar proteção de branch no GitHub; criar a release 0.3; backup do disco fora do git; qualquer mudança em `ci.yml` ou `release.yml`.
+
+### 10.7 Não verificado
+
+- O conteúdo dos arquivos de config global (`settings.json` com ou sem segredo) e do `settings.local.json`: não lidos.
+- Se o hook `pre-push` em PowerShell roda no Git for Windows como esperado.
+- O que o `ci.yml` cobre exatamente além de build (a leitura foi parcial); os testes Rust do CI não substituem o Sandbox.
+- Se `gh pr checks` e `gh run view` bastam para o fluxo do usuário sem abrir o GitHub.
