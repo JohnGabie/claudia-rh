@@ -51,6 +51,7 @@ workspace/
 # Git não permite re-incluir dentro de um diretório excluído, daí `.claude/*`
 # em vez de `.claude/` — settings.local.json e dados de sessão continuam fora.
 !.claude/skills/
+!.claude/settings.json
 
 # Signing keys — never commit
 *.key

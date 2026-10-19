@@ -41,7 +41,7 @@ Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de 
 | Remote | Repo | Uso |
 |---|---|---|
 | `origin` | `JohnGabie/claudia-rh` (público) | `dev`, `main`, tags de release e branches que viram PR. Aqui se faz como deve ser feito. |
-| `backup` | `JohnGabie/claudia-rh-backup` (privado) | Cópia de segurança. Push constante de todas as branches (`git push backup --all` e `--tags`, nunca `--mirror`). Nunca recebe PR. |
+| `backup` | `JohnGabie/claudia-rh-backup` (privado) | Cópia de segurança. Push constante de todas as branches, feito pelo agente de versão depois do primeiro OK do usuário (`git push backup --all` e `--tags`, nunca `--mirror`). Nunca recebe PR. |
 
 O `backup` só é configurado e recebe o primeiro push com pedido do usuário, depois da varredura de segredos. O push não cobre trabalho não commitado nem arquivos do `.gitignore`.
 
@@ -121,10 +121,10 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 
 | Etapa | Papel | Camada | Critério |
 |---|---|---|---|
-| Levantamento de requisitos, brainstorm, spec e plano | Arquiteto (`agents/arquiteto.md`) | FORTE ou MÉDIO | FORTE se a decisão é ampla, ambígua, ou toca segurança, dados ou arquitetura; MÉDIO se o escopo é claro. A spec exige aprovação do usuário (seção 1). |
+| Levantamento de requisitos, brainstorm, spec e plano | Arquiteto (`agents/arquiteto.md`) | FORTE, sempre | Arquiteto e Revisor ficam sempre em FORTE. A spec exige aprovação do usuário (seção 1). |
 | Execução | Executor (`agents/executor.md`) em **git worktree**, sempre | RÁPIDO para tarefa mecânica e bem delimitada; MÉDIO quando há lógica nova, vários arquivos ou decisão de desenho; FORTE se toca segurança, dados ou ferramenta do agente | O brief da tarefa traz a camada. |
 | Revisão de código | Revisor (`agents/revisor.md`) | FORTE, sempre | Independente de quem escreveu. Obrigatória para segurança, dados e ferramentas do agente. |
-| Teste | QA (`agents/qa.md`) | MÉDIO (FORTE se os critérios forem ambíguos) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
+| Teste | QA (`agents/qa.md`) | FORTE (recomendado; como já era com Opus) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
 | Branches, backup, aprovação e merge pelo terminal | Versão (`agents/versao.md`) | MÉDIO (FORTE em recuperação de histórico) | Não implementa nem revisa mérito. |
 
 **Brief e retorno têm formato fixo** (brief do arquiteto, resposta do executor, veredito do revisor, relatório do QA), descritos nos arquivos de `agents/`. Cada agente recebe um brief curto e os caminhos dos arquivos relevantes, **não o histórico da conversa**.
@@ -140,7 +140,7 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 - **Cada agente usa o próprio `CARGO_TARGET_DIR`**, fora do `target/` do repositório (o app em desenvolvimento pode estar usando esse).
 - **O orquestrador não repassa "passou" sem ter rodado.** Depois de integrar, roda de novo as rodadas da seção 3 e confere o código de saída.
 - **O agente não decide fora da spec.** O que a spec não cobre, ele relata e para. Escopo, segurança e edição do prompt de runtime (`src-tauri/src/prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
-- **Limites do agente:** sem push, sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
+- **Limites do agente:** sem push (ao `origin` nunca; ao `backup` só o agente de versão, ver "Dois remotes"), sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
 - **Agente que falha** (limite de sessão, erro de API) deve ser tratado como se não tivesse entregado nada: confira a worktree e relance com o mesmo escopo.
 - **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado.
 
@@ -209,7 +209,7 @@ Uma mudança só está pronta quando **todos** os itens são verdadeiros, com ev
 5. Revisão de código pelo Revisor (camada FORTE, `agents/revisor.md`) feita, com os achados corrigidos ou registrados, e **cada tarefa passou pelo ciclo executor ↔ revisor (seção 2) e tem o "Looks good to me" escrito do revisor**.
 6. Nada em "não verificado" que contradiga o que foi afirmado.
 
-**Integrar (merge, push, PR, release) é sempre decisão do usuário**, nunca automática ao fim de um ramo.
+**Integrar (merge, push ao `origin`, PR, release) é sempre decisão do usuário**, nunca automática ao fim de um ramo.
 
 ### 7. Superpowers
 
@@ -250,8 +250,8 @@ Antes de **qualquer** compactação (manual ou automática) o agente escreve um 
 
 - Os hooks de `.claude/settings.json` aplicam isto: `PreCompact` bloqueia o `/compact` manual enquanto houver marcador (a compactação automática nunca bloqueia) e `SessionStart` reinjeta o último diário ao retomar.
 - O diário é rascunho local, não fonte da verdade. O que for durável vai para spec, plano ou `docs/`. Nunca leva segredo.
-- Estado de verificação: os scripts foram testados com entrada simulada; o comportamento numa compactação real do Claude Code **não verificado**.
+- Estado de verificação: os scripts foram testados com entrada simulada (`scripts/dev/test-diario.ps1`). **Não verificado:** o comportamento numa compactação real do Claude Code, o nome real do campo de entrada do `PreCompact` (o script lê `trigger` e aceita `compaction_type`; tipo desconhecido nunca bloqueia) e qual shell executa o comando do hook no Windows.
 
 ## O humano decide
 
-Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, push ao `origin`, release**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina (publicar, enviar candidatura, apagar branch, criar remote). Na dúvida entre decidir e perguntar, pergunte.
+Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, push ao `origin`, release**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina, **exceto o push ao `backup`**, que o agente de versão faz depois do primeiro OK (publicar, enviar candidatura, apagar branch, criar remote). Na dúvida entre decidir e perguntar, pergunte.

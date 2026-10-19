@@ -21,7 +21,7 @@ Manter o repositório saudável, previsível e recuperável: branches limpas, co
 ## Princípios
 
 - Histórico compartilhado é sagrado: sem force push, sem reescrever histórico publicado no `origin`, sem apagar commits.
-- Rebase só em branch **nunca publicada no `origin`**. Se já foi ao `backup`, o rebase exige `--force-with-lease` ao backup e o usuário avisado. Preferir rebasear **antes** do primeiro push.
+- Rebase só em branch **nunca publicada no `origin`**. Se já foi ao `backup`, o rebase exige `--force-with-lease` ao backup **e o OK explícito do usuário**. Preferir rebasear **antes** do primeiro push.
 - Atualizar `dev` com `main` (merge); `dev` nunca fica atrás de `main`. Atualizar uma branch parada com `dev` antes de retomá-la, reler a spec e rodar as rodadas de novo.
 - Tudo é recuperável: antes de remover qualquer branch, existe tag `archive/<branch>` empurrada ao `backup`.
 - Ação irreversível ou que sai da máquina = o usuário aprova (merge, apagar branch remota, release, mudar visibilidade de repo, criar remote).

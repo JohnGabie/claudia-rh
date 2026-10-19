@@ -54,3 +54,21 @@ Decisões do usuário já fechadas: spec viva por área; 5 rodadas de recusa; ag
 
 ## Fora deste plano
 Remote `backup` e primeiro push (depois da varredura de segredos e do OK do usuário), rebase das branches paradas, migração das specs antigas para specs vivas.
+
+## Adiado (registrado após a revisão independente)
+
+- Script próprio de relatório de saúde de branches e script de backup: **adiados**. O relatório é descrito em `agents/versao.md` e feito com comandos git; o backup só roda por pedido do usuário. Motivo: evitar script que mexe em remote antes da primeira decisão do usuário.
+
+## Extras adotados do smart-pets, fora da spec (o usuário confirma ou manda tirar)
+
+- Executor líder com no máximo 2 níveis (`agents/executor.md`, `agents/modelos.md`).
+- Alvo de ≲ 400 linhas por PR e aviso para binário > 5 MB (`agents/versao.md`).
+- Seções "Risks" e "Spec and review" no template de PR.
+- Executor em camada FORTE quando a tarefa toca segurança, dados ou ferramenta do agente (`CLAUDE.md`).
+
+## Estado das tarefas
+
+| Tarefa | Estado | Revisor | Observação |
+|---|---|---|---|
+| T1 a T6 | feitas | REJEITADO-CORRIGIR na rodada 1 (13 achados); correções aplicadas, nova revisão pendente | |
+| T7 | em andamento | pendente | |

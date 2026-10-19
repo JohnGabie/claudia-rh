@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreCompact": [
+      { "matcher": "manual|auto", "hooks": [ { "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/dev/pre-compact.ps1\"", "timeout": 20 } ] }
+    ],
+    "SessionStart": [
+      { "matcher": "compact|resume", "hooks": [ { "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/dev/session-start.ps1\"", "timeout": 10 } ] }
+    ]
+  }
+}

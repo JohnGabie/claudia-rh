@@ -1,6 +1,6 @@
 # Regras de agentes, ciclo de vida das specs e controle de versão — spec
 
-Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aguardando aprovação do usuário**.
+Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19 (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9.
 
 Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis, convenção de specs, hooks de contexto). Não toca código de produto nem o prompt de runtime.
 
@@ -99,13 +99,13 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 
 - **Documentos**: `CLAUDE.md` (do repo e a ponte do workspace, se fizer sentido) reescrito em partes; novos `agents/*.md`, `docs/superpowers/INDEX.md`, `docs/estado-do-projeto.md`; template de PR.
 - **Configuração**: `.claude/settings.json` novo (hooks), `.gitignore` com `.journal/`, remote `backup`.
-- **Scripts**: PowerShell para o diário, para o relatório de saúde de branches e para o backup. O script de backup só roda por pedido do usuário na primeira vez.
+- **Scripts**: PowerShell para o diário de contexto e seus hooks (entregues). O relatório de saúde de branches é feito por comandos git descritos em `agents/versao.md`; um script próprio e o script de backup ficam **adiados** (o primeiro push ao backup só acontece por pedido do usuário).
 - **Dados/segurança**: nenhum código que apague arquivo. A remoção de branch é `git branch -d` com tag de arquivo antes; nenhum script apaga pasta. Segue o `CLAUDE.md` global de deleção.
 - **Fora do repo**: o repo `claudia-rh-backup` recebe commits assim que o usuário autorizar o primeiro push.
 
 ## 6. Fora do escopo
 
-- Migrar as 18 specs e 15 planos existentes para specs vivas (ciclo próprio, por área, com aprovação do usuário a cada área).
+- Migrar as 21 specs e 17 planos existentes para specs vivas (ciclo próprio, por área, com aprovação do usuário a cada área).
 - O rebase das branches paradas sobre `dev` e a limpeza das integradas: operação feita **depois** desta spec aprovada e **antes** do primeiro push ao backup, uma branch por vez, parando em conflito.
 - Backup de dados fora do git (`debug-logs`, `.sandbox-work`, dados do usuário).
 - Qualquer mudança em `prompt_sistema_runtime.md` ou em código de produto.
@@ -120,8 +120,15 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 
 ## 8. Pontos em aberto / não verificado
 
-- Se o hook `PreCompact` do Claude Code no Windows realmente bloqueia `/compact` e recebe `compaction_type` no mesmo formato do smart-pets: **não verificado**.
+- Se o hook `PreCompact` do Claude Code no Windows realmente bloqueia `/compact` e e qual é o nome real do campo de entrada (o script lê `trigger` e, como reserva, `compaction_type`; tipo desconhecido nunca bloqueia): **não verificado**. Também **não verificado**: qual shell executa o comando do hook no Windows (Git Bash, PowerShell ou cmd), de que depende a expansão de `${CLAUDE_PROJECT_DIR}`.
 - Se o template de PR atual tem "NÃO verificado": **não verificado**.
 - Se `gh pr merge` por terminal basta para o fluxo do usuário sem abrir o GitHub: **não verificado**.
 - Nome final das áreas (`browser`, `sandbox`, `documentos`, `perfil`, `testes`, `processo`...): proposta, o usuário ajusta ao migrar.
 - Se o `CLAUDE.md` da pasta workspace (`curriculum-apply/`, fora do git) também será ajustado: **não verificado**; fora do repo.
+
+## 9. Histórico de revisões desta spec
+
+| Data | Seções | Tipo | O que mudou | Aprovação |
+|---|---|---|---|---|
+| 2026-10-19 | todas | criada | Versão inicial com P1 a P10 e as 4 decisões do usuário. | "blz bora" (2026-10-19) |
+| 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | a confirmar com o usuário |

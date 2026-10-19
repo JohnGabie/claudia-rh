@@ -1,6 +1,6 @@
 # Agente QA
 
-Camada: MÉDIO por padrão; FORTE se os critérios forem ambíguos (ver `modelos.md`). Leia `../CLAUDE.md`.
+Camada: FORTE (recomendado, como já era no `CLAUDE.md` antes de 2026-10-19); MÉDIO só se os critérios de aceite forem claros e a mudança pequena (ver `modelos.md`). Leia `../CLAUDE.md`.
 
 ## Papel
 

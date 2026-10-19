@@ -15,7 +15,7 @@ Estados: `viva` (é a spec vigente da área), `histórica` (valeu na época, o c
 | `specs/2026-09-16-fonte-de-verdade-design.md` | spec | histórica (ciclo 1: fonte única) |
 | `plans/2026-09-16-fonte-de-verdade.md` | plano | histórico |
 | `specs/2026-09-24-skill-linear-claudia-design.md` | spec | a confirmar (skill `linear-claudia` existe no repo) |
-| `specs/2026-10-19-regras-agentes-design.md` | spec | aprovada em 2026-10-19; em implementação |
+| `specs/2026-10-19-regras-agentes-design.md` | spec | aprovada em 2026-10-19 (mensagem "blz bora"); em implementação; revisão 2 aguarda confirmação do usuário |
 | `plans/2026-10-19-regras-agentes.md` | plano | em execução |
 
 ## Sessão Claude (arranque, prompt, ambiente)
@@ -70,7 +70,7 @@ Estados: `viva` (é a spec vigente da área), `histórica` (valeu na época, o c
 
 | Arquivo | Tipo | Estado |
 |---|---|---|
-| `specs/2026-10-14-lista-de-sites-design.md` | spec | aprovada em 2026-10-14; implementada em `feat/lista-de-sites-impl` (integrada em `dev`) |
+| `specs/2026-10-14-lista-de-sites-design.md` | spec | aprovada em 2026-10-14. O cabeçalho ainda diz "Nenhum código foi escrito"; a informação de que foi implementada vem do git (`feat/lista-de-sites-impl` está em `dev`), não do cabeçalho |
 | `plans/2026-10-14-lista-de-sites.md` | plano | a confirmar |
 | `specs/2026-10-15-sites-fluxo-guiado-design.md` | spec | o cabeçalho diz "rascunho", o plano diz "aprovada em 2026-10-15": **a confirmar** |
 | `plans/2026-10-15-sites-fluxo-guiado.md` | plano | a confirmar |
@@ -100,6 +100,7 @@ Situação de 2026-10-19, só leitura. Ligação com as áreas: **a confirmar** 
 | `feat/guarda-navegacao` | 1 commit à frente de `dev`, sem backup | a confirmar |
 | `feat/teste-injecao` | 21 commits à frente de `dev`, sem backup | a confirmar |
 | `feat/teste-injecao-cota` | 22 commits à frente de `dev`, sem backup | a confirmar |
+| `feat/lista-de-sites` | 1 commit à frente de `dev` (patch equivalente a um já integrado, mas o commit não é alcançável de `dev`, então `git branch -d` recusaria apagá-la); é a branch do checkout principal, que tem trabalho não commitado (`Cargo.toml`) | sites |
 | `feat/regras-agentes` | esta frente | processo e agentes |
 
 Branches já integradas em `dev` e candidatas a arquivo: `feat/clean-machine-testing`, `feat/perfil-escrita-segura`, `feat/lista-de-sites-impl`. Remoção só pelo agente de versão, com tag `archive/*` e OK do usuário.

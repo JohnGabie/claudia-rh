@@ -1,6 +1,8 @@
 # Test for the context-diary hooks (pre-compact.ps1, session-start.ps1, journal-skeleton.ps1).
-# Simulated input only. Every repo it touches is a fresh temp folder created here; nothing is deleted.
+# Simulated input only. Every folder it touches is a fresh temp folder created here; nothing is deleted.
 # Usage: powershell -NoProfile -File scripts/dev/test-diario.ps1   -> exit 0 when all cases pass, 1 otherwise.
+# The hook input format of a real Claude Code compaction is UNVERIFIED; these cases cover the documented
+# "trigger" field, the "compaction_type" fallback, and inputs that must never block.
 $ErrorActionPreference = "Stop"
 $scripts = $PSScriptRoot
 $pre = Join-Path $scripts "pre-compact.ps1"
@@ -11,6 +13,11 @@ function New-TempRepo {
     New-Item -ItemType Directory -Path $t | Out-Null
     git -C $t init -q
     git -C $t -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+    return $t
+}
+function New-TempPlainDir {
+    $t = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $t | Out-Null
     return $t
 }
 function Invoke-Hook($script, $json) {
@@ -27,18 +34,24 @@ function Check($name, $got, $want) {
 $repo = New-TempRepo
 $env:CLAUDE_PROJECT_DIR = $repo
 
-Check "manual compaction with an unfilled diary is blocked" (Invoke-Hook $pre '{"compaction_type":"manual"}') 2
-Check "auto compaction is never blocked" (Invoke-Hook $pre '{"compaction_type":"auto"}') 0
+Check "trigger manual with an unfilled diary is blocked" (Invoke-Hook $pre '{"hook_event_name":"PreCompact","trigger":"manual"}') 2
+Check "trigger auto is never blocked" (Invoke-Hook $pre '{"hook_event_name":"PreCompact","trigger":"auto"}') 0
+Check "compaction_type manual (fallback field) is blocked" (Invoke-Hook $pre '{"compaction_type":"manual"}') 2
+Check "compaction_type auto (fallback field) is never blocked" (Invoke-Hook $pre '{"compaction_type":"auto"}') 0
+Check "unknown type (no field) never blocks" (Invoke-Hook $pre '{}') 0
+Check "unreadable stdin never blocks" (Invoke-Hook $pre "not json") 0
 
 $diary = Get-ChildItem (Join-Path $repo ".journal") -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $text = [IO.File]::ReadAllText($diary.FullName).Replace("<!-- TODO-CONTEXT -->", "filled by the test")
 [IO.File]::WriteAllText($diary.FullName, $text)
 
-Check "manual compaction with a complete diary passes" (Invoke-Hook $pre '{"compaction_type":"manual"}') 0
-Check "unreadable stdin falls back to manual and still passes with a complete diary" (Invoke-Hook $pre "not json") 0
+Check "trigger manual with a complete diary passes" (Invoke-Hook $pre '{"trigger":"manual"}') 0
 
 $out = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
 Check "session-start re-injects the newest diary" ([int](($out | Select-Object -First 1) -match "Latest context diary")) 1
+
+$env:CLAUDE_PROJECT_DIR = New-TempPlainDir
+Check "a folder that is not a git repository does not crash or block" (Invoke-Hook $pre '{"trigger":"manual"}') 0
 
 Remove-Item Env:CLAUDE_PROJECT_DIR
 exit $fail

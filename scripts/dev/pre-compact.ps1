@@ -1,7 +1,7 @@
 # PreCompact hook. Enforces the "context diary before compaction" rule (CLAUDE.md).
 # manual /compact: blocks (exit 2) until the newest diary (< 30 min) has no TODO-CONTEXT markers left.
-# auto compaction: never blocks (it could stall the session); makes sure a skeleton with automatic facts exists.
-# Reads the hook JSON from stdin; "compaction_type" defaults to "manual" when absent or unreadable.
+# auto compaction (or unknown type): never blocks (it could stall the session); makes sure a skeleton with automatic facts exists.
+# Reads the hook JSON from stdin; only an explicit "manual" blocks. An absent, unreadable or unknown type never blocks.
 # Only reads and creates files. Never deletes anything.
 $ErrorActionPreference = "Stop"
 
@@ -9,14 +9,17 @@ $projectDir = $env:CLAUDE_PROJECT_DIR
 if (-not $projectDir) { $projectDir = (Get-Location).Path }
 Set-Location -LiteralPath $projectDir
 
-$type = "manual"
+# The documented field is "trigger" ("manual" or "auto"); "compaction_type" is accepted as a fallback.
+# When the type cannot be determined it stays "unknown", and "unknown" never blocks.
+$type = "unknown"
 try {
     $raw = [Console]::In.ReadToEnd()
     if ($raw) {
         $json = $raw | ConvertFrom-Json
-        if ($json.compaction_type) { $type = [string]$json.compaction_type }
+        if ($json.trigger) { $type = [string]$json.trigger }
+        elseif ($json.compaction_type) { $type = [string]$json.compaction_type }
     }
-} catch { $type = "manual" }
+} catch { $type = "unknown" }
 
 $latest = $null
 $journalDir = Join-Path $projectDir ".journal"

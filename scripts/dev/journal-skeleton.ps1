@@ -10,7 +10,8 @@ function Invoke-Git([string[]]$GitArgs) {
     try { (& git @GitArgs 2>&1 | Out-String).TrimEnd() } catch { "(git unavailable)" }
 }
 
-$root = (& git rev-parse --show-toplevel 2>$null)
+$root = $null
+try { $root = (& git rev-parse --show-toplevel 2>$null) } catch { $root = $null }
 if (-not $root) { [Console]::Error.WriteLine("journal-skeleton: not inside a git repository"); exit 1 }
 Set-Location $root
 
