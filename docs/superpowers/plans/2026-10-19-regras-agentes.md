@@ -70,13 +70,14 @@ Remote `backup` e primeiro push (depois da varredura de segredos e do OK do usu�
 
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
-| T1 a T6 | feitas | REJEITADO-CORRIGIR na rodada 1 (13 achados); correções aplicadas, nova revisão pendente | |
-| T7 | em andamento | pendente | |
+| T1 a T6 | feitas | Rodada 1: REJEITADO-CORRIGIR (13 achados). Rodada 2: REJEITADO-CORRIGIR (2 regressões). Rodada 3 (2026-10-19): APROVADO, "Looks good to me" | Commit revisado: `d1756e5` |
+| T7 | feita | coberta pelas rodadas de revisão acima | Fica pendente a confirmação do usuário (spec revisão 2 e extras) |
 
 ## Prova de mutação do `scripts/dev/test-diario.ps1` (2026-10-19)
 
 Cópia dos scripts em pasta temporária, repositório intocado. Linhas coladas da execução:
 
 - Mutação "ignorar `trigger` e assumir manual": `FAILED  trigger auto is never blocked (expected 0, got 2)`, `FAILED  compaction_type auto (fallback field) is never blocked (expected 0, got 2)`, `FAILED  unknown type (no field) never blocks (expected 0, got 2)`, `FAILED  unreadable stdin never blocks (expected 0, got 2)`.
-- Mutação `exit 2` trocado por `exit 0` (prova independente do revisor): `FAILED  trigger manual with an unfilled diary is blocked (expected 2, got 0)`.
+- Mutação `exit 2` trocado por `exit 0` (prova independente do revisor): `FAILED  trigger manual with an unfilled diary is blocked (expected 2, got 0)` e `FAILED  compaction_type manual (fallback field) is blocked (expected 2, got 0)`.
+- A mutação "ignorar `trigger` e assumir manual" que eu rodei removeu a leitura de `trigger` e trocou o padrão `unknown` por `manual`; por isso o caso `compaction_type auto` também falhou. A versão do revisor desligou só o `trigger`.
 - Sem mutação: 9 casos `PASS`, código de saída 0.
