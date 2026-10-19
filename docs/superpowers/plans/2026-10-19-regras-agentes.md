@@ -26,7 +26,7 @@ Decisões do usuário já fechadas: spec viva por área; 5 rodadas de recusa; ag
 - Criar `docs/superpowers/INDEX.md` com todas as specs e planos existentes (cada um uma vez): área, status (`viva`, `histórica`, `absorvida por <área>`), branches ativas.
 - Criar `docs/superpowers/CONVENCAO.md`: nome estável por área, histórico de revisões, marcador por seção, quando ampliar, reescrever ou criar nova, plano com tarefas `feita`/`obsoleta`/`nova`.
 - Ler o cabeçalho de cada spec e plano antes de classificar. Em caso de dúvida, `a confirmar` no índice.
-- Aceite: contagem do índice = contagem de arquivos (18 specs, 15 planos, mais os de roadmap/evidências citados).
+- Aceite: cada spec, plano e evidência existente aparece exatamente uma vez no índice (21 specs, 17 planos, 3 evidências em 2026-10-19).
 
 ### T4. `CLAUDE.md` reescrito
 - Remover as duas seções movidas na T1 e apontar para `docs/estado-do-projeto.md`.

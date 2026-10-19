@@ -21,7 +21,7 @@ Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis,
 4. Dois remotes: `origin` (público, PRs) e `backup` (privado, push constante).
 5. Rebase das branches paradas sobre `dev` (operação à parte, ver §6).
 
-Estado verificado em 2026-10-19 (só leitura): 18 specs e 15 planos com nome por data, várias cadeias da mesma área (browser: 4 specs; sandbox: 3); 9 branches de feature locais, nenhuma no `origin`; `dev` local 84 commits à frente do `origin/dev`; `main` parada desde julho; 3 branches já integradas ainda existentes; 5 com trabalho não integrado.
+Estado verificado em 2026-10-19 (só leitura): 21 specs e 17 planos com nome por data no `dev` (a contagem inicial de 18 e 15 veio de outro checkout, mais antigo), várias cadeias da mesma área (browser: 4 specs; sandbox: 3); 9 branches de feature locais, nenhuma no `origin`; `dev` local 84 commits à frente do `origin/dev`; `main` parada desde julho; 3 branches já integradas ainda existentes; 5 com trabalho não integrado.
 
 ## 3. Decisões do usuário (respondidas em 2026-10-19)
 
