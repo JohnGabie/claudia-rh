@@ -15,7 +15,7 @@ Estados: `viva` (é a spec vigente da área), `histórica` (valeu na época, o c
 | `specs/2026-09-16-fonte-de-verdade-design.md` | spec | histórica (ciclo 1: fonte única) |
 | `plans/2026-09-16-fonte-de-verdade.md` | plano | histórico |
 | `specs/2026-09-24-skill-linear-claudia-design.md` | spec | a confirmar (skill `linear-claudia` existe no repo) |
-| `specs/2026-10-19-regras-agentes-design.md` | spec | aprovada em 2026-10-19 (mensagem "blz bora"); em implementação; revisão 2 aguarda confirmação do usuário |
+| `specs/2026-10-19-regras-agentes-design.md` | spec | aprovada em 2026-10-19 (mensagem "blz bora"); em implementação; revisão 2 confirmada em 2026-10-19 |
 | `plans/2026-10-19-regras-agentes.md` | plano | em execução |
 
 ## Sessão Claude (arranque, prompt, ambiente)

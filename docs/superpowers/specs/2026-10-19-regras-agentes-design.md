@@ -1,6 +1,6 @@
 # Regras de agentes, ciclo de vida das specs e controle de versão — spec
 
-Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19 (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9.
+Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9.
 
 Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis, convenção de specs, hooks de contexto). Não toca código de produto nem o prompt de runtime.
 
@@ -131,4 +131,4 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 | Data | Seções | Tipo | O que mudou | Aprovação |
 |---|---|---|---|---|
 | 2026-10-19 | todas | criada | Versão inicial com P1 a P10 e as 4 decisões do usuário. | "blz bora" (2026-10-19) |
-| 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | a confirmar com o usuário |
+| 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | usuário confirmou na conversa em 2026-10-19 (spec aprovada e extras mantidos) |

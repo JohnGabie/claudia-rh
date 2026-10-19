@@ -59,7 +59,7 @@ Remote `backup` e primeiro push (depois da varredura de segredos e do OK do usu�
 
 - Script próprio de relatório de saúde de branches e script de backup: **adiados**. O relatório é descrito em `agents/versao.md` e feito com comandos git; o backup só roda por pedido do usuário. Motivo: evitar script que mexe em remote antes da primeira decisão do usuário.
 
-## Extras adotados do smart-pets, fora da spec (o usuário confirma ou manda tirar)
+## Extras adotados do smart-pets, fora da spec (o usuário confirmou em 2026-10-19: ficam todos)
 
 - Executor líder com no máximo 2 níveis (`agents/executor.md`, `agents/modelos.md`).
 - Alvo de ≲ 400 linhas por PR e aviso para binário > 5 MB (`agents/versao.md`).
@@ -71,7 +71,7 @@ Remote `backup` e primeiro push (depois da varredura de segredos e do OK do usu�
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
 | T1 a T6 | feitas | Rodada 1: REJEITADO-CORRIGIR (13 achados). Rodada 2: REJEITADO-CORRIGIR (2 regressões). Rodada 3 (2026-10-19): APROVADO, "Looks good to me" | Commit revisado: `d1756e5` |
-| T7 | feita | coberta pelas rodadas de revisão acima | Fica pendente a confirmação do usuário (spec revisão 2 e extras) |
+| T7 | feita | coberta pelas rodadas de revisão acima | Usuário confirmou em 2026-10-19: spec aprovada e extras mantidos |
 
 ## Prova de mutação do `scripts/dev/test-diario.ps1` (2026-10-19)
 
