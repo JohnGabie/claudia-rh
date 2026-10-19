@@ -1,6 +1,6 @@
 # Regras de agentes, ciclo de vida das specs e controle de versão — spec
 
-Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9. Ampliação §10 (revisão 3): rascunho, aguardando aprovação.
+Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9. Ampliação §10 (revisão 3): aprovada em 2026-10-19; a leitura dos checks obrigatórios está a confirmar (10.8).
 
 Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis, convenção de specs, hooks de contexto). Não toca código de produto nem o prompt de runtime.
 
@@ -132,11 +132,11 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 |---|---|---|---|---|
 | 2026-10-19 | todas | criada | Versão inicial com P1 a P10 e as 4 decisões do usuário. | "blz bora" (2026-10-19) |
 | 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | usuário confirmou na conversa em 2026-10-19 (spec aprovada e extras mantidos) |
-| 2026-10-19 | §10 | ampliada (rascunho) | P11 a P14: guardião de estabilidade, espelho do público no backup, PR e CI, pacote de recuperação. | aguardando o usuário |
+| 2026-10-19 | §10 | ampliada | P11 a P14 (guardião de estabilidade, espelho no backup, PR e CI, pacote de recuperação) e P15 (proteção de branch). | usuário aprovou na conversa em 2026-10-19; checks "1 + linux" a confirmar |
 
-## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação — **rascunho, aguardando aprovação**
+## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação, proteção de branch — **aprovada pelo usuário em 2026-10-19** (ver 10.8)
 
-Marcador: `ampliada 2026-10-19` (rascunho). Amplia a P7; não contradiz o que está aprovado. Só este trecho pede nova aprovação.
+Marcador: `ampliada 2026-10-19`. Amplia a P7; não contradiz o que está aprovado. Só este trecho pede nova aprovação.
 
 ### 10.1 Pedido do usuário (palavras dele)
 
@@ -209,3 +209,26 @@ Ativar proteção de branch no GitHub; criar a release 0.3; backup do disco fora
 - Se o hook `pre-push` em PowerShell roda no Git for Windows como esperado.
 - O que o `ci.yml` cobre exatamente além de build (a leitura foi parcial); os testes Rust do CI não substituem o Sandbox.
 - Se `gh pr checks` e `gh run view` bastam para o fluxo do usuário sem abrir o GitHub.
+
+### 10.8 Decisões do usuário sobre a seção 10 e a P15 (2026-10-19)
+
+Respostas dele, na conversa, depois de a seção 10 estar escrita:
+
+- Aprovou a seção 10 (P11 a P14) e pediu a proteção de branch: "vamos fazer a protecao da branch, na publica sempre abrir um pr e dps de aprovado fechar".
+- Checks obrigatórios: respondeu "1 + linux". Minha leitura, **a confirmar**: os 5 jobs do `ci.yml` (`npm ci (build)`, `npm install (fresh)`, `repo guard (lab files, keys, machine paths)`, `cargo test` e `windows (exe)`); os quatro primeiros já rodam em Linux (`ubuntu-latest`) e o último em Windows.
+- PR obrigatório, **0 reviews exigidos pelo GitHub**, administrador **sujeito às regras** (a aprovação do usuário é dada na conversa).
+- Extras: sem force push e sem apagar `dev`/`main`; branch atualizada antes do merge; só merge commit; proteger as tags `v*`.
+
+### 10.9 P15. Proteção das branches `main` e `dev` no `origin` (aprovada nas linhas acima; os detalhes de execução são propostas minhas, **não decididas**)
+
+Regras a aplicar no GitHub, por `gh api`, **só com o "pode aplicar" do usuário**:
+
+1. **Ruleset ou proteção para `main` e `dev`**: PR obrigatório com 0 aprovações; checks obrigatórios (os 5 jobs acima, confirmados); branch atualizada antes do merge (`strict`); sem force push; sem apagar a branch; administradores sujeitos às regras (`enforce_admins`).
+2. **Repositório**: `allow_squash_merge=false` e `allow_rebase_merge=false`, mantendo só merge commit.
+3. **Tags `v*`**: ruleset que impede mover e apagar. *Proposta minha:* criar a tag continua possível ao usuário, porque o `release.yml` roda em tag e precisa de um jeito de lançar; o agente de versão nunca cria tag `v*` sozinho.
+4. **Fluxo**: "sempre abrir um PR e, depois de aprovado, fechar" significa: o agente de versão abre o PR no `origin`, acompanha o CI, mostra o resumo ao usuário e, **só com a resposta afirmativa dele na conversa**, faz o merge (`gh pr merge --merge`). Nada de push direto em `main` ou `dev`.
+5. **Reversão**: os comandos para desligar cada regra ficam escritos junto dos de ativar, porque o administrador também está sujeito a elas (emergência = desligar a regra, agir, religar, tudo com aviso ao usuário).
+
+**Consequência a decidir antes de ativar (proposta minha):** o `dev` local está 84 commits à frente do `origin/dev`. Com a proteção ativa, esses commits só chegam ao `origin` por PR. Recomendo **publicar por um PR de sincronização antes ou logo depois de ativar** (branch `sync/dev-AAAA-MM-DD` apontando para o `dev` local, PR para `origin/dev`), conforme a regra "sempre PR". A alternativa, um último push direto antes de ativar, quebra a regra que o usuário pediu e **não** é recomendada.
+
+**Não verificado:** se os nomes dos jobs são aceitos como contexto de check obrigatório sem ajuste (conferir com `gh api repos/.../commits/<sha>/check-runs` antes de ativar); se o plano gratuito do GitHub aplica proteção e ruleset de tag a repositório público (aplica, mas confirmar na resposta da API); se `enforce_admins` e `strict` bloqueiam o `release.yml` em tag.
