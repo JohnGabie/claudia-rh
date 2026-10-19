@@ -81,3 +81,62 @@ Cópia dos scripts em pasta temporária, repositório intocado. Linhas coladas d
 - Mutação `exit 2` trocado por `exit 0` (prova independente do revisor): `FAILED  trigger manual with an unfilled diary is blocked (expected 2, got 0)` e `FAILED  compaction_type manual (fallback field) is blocked (expected 2, got 0)`.
 - A mutação "ignorar `trigger` e assumir manual" que eu rodei removeu a leitura de `trigger` e trocou o padrão `unknown` por `manual`; por isso o caso `compaction_type auto` também falhou. A versão do revisor desligou só o `trigger`.
 - Sem mutação: 9 casos `PASS`, código de saída 0.
+
+
+---
+
+# Parte 2: estabilidade, backup espelho, PR e CI, pacote de recuperação, proteção de branch
+
+Cumpre a spec `2026-10-19-regras-agentes-design.md`, revisão 3 (seção 10, aprovada pelo usuário em 2026-10-19; leitura dos checks obrigatórios a confirmar). Branch: `feat/regras-agentes`. Uma tarefa por ciclo executor ↔ revisor; recusa volta ao executor; cinco recusas seguidas, para e pergunta.
+
+Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: nenhum apaga, move ou sobrescreve fora de pasta temporária criada pelo próprio script ou teste; nenhum teste usa caminho real; testes rodam só com pastas temporárias e repositórios temporários criados por eles.
+
+| Tarefa | Estado | Revisor | Observação |
+|---|---|---|---|
+| T8 | nova | pendente | `agents/versao.md` ampliado (P11 a P15) |
+| T9 | nova | pendente | `CLAUDE.md`: Git, PR e CI, "O humano decide" |
+| T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
+| T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, varredura e teste |
+| T12 | nova | pendente | hook `pre-push` (bloqueia `recovery*` e refs fora da lista no `origin`) e teste |
+| T13 | nova | pendente | comandos de proteção (`gh api`) escritos com a reversão; **não executados** |
+| T14 | nova | pendente | PR de sincronização do `dev` local e ativação, **só com o "pode aplicar"** |
+
+### T8. `agents/versao.md` ampliado
+- Incluir: guardião de estabilidade de `dev` e `main` (P11), espelho no backup e invariantes (P12), PR e CI com repasse de falha a executor, arquiteto, revisor ou usuário (P13), pacote de recuperação (P14), proteção de branch (P15) e o fluxo "abre o PR, mostra o resumo, só com a resposta afirmativa do usuário faz o merge".
+- Aceite: nenhum nome de modelo; nenhuma contradição com `CLAUDE.md` (revisor confere por grep); o texto de repasse de falha usa o formato de brief do arquiteto.
+
+### T9. `CLAUDE.md`
+- Seção Git: `main` = versão fechada, `dev` = features estáveis rumo à próxima versão; `origin` sempre por PR depois da proteção; backup como espelho do `origin` mais o que ainda não foi publicado; `recovery` só no backup.
+- "O humano decide": ativar ou desligar proteção de branch, criar tag `v*`, merge no `origin`.
+- Aceite: nenhuma regra dura removida (diff); "push ao `origin`" continua só do usuário.
+
+### T10. `scripts/dev/verify-backup.ps1` (só leitura)
+- Compara `git ls-remote origin` com `git ls-remote backup`: cada ponta de branch e cada tag do `origin` precisa ser igual ou ancestral da ref no `backup`; lista o que está só no backup e o que está atrasado.
+- Teste em repositórios temporários criados pelo teste (dois remotes locais `file://`), com prova de mutação.
+- Aceite: código de saída 0 se a invariante vale, 1 se não; nenhuma escrita.
+
+### T11. Pacote de recuperação
+- `scripts/dev/recovery-pack.ps1`: monta, numa worktree temporária da branch órfã `recovery`, os arquivos da **lista permitida** (config do projeto, config global e memória, `STATE.md`, patches do trabalho não commitado, último `.journal/`); roda a varredura de segredos antes de gravar; recusa gravar se achar algo; não apaga nada.
+- Lista de exclusão sempre ativa: `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil, banco do usuário.
+- Teste só com pasta de origem falsa criada pelo teste, com segredo de mentira (padrão `sk-ant-` sintético) para provar a recusa, e prova de mutação.
+- Ler `settings.local.json` e o `settings.json` global **só dentro do script, para varrer**; o conteúdo não é impresso.
+- Aceite: com o segredo falso presente, saída diferente de 0 e nada gravado; sem ele, saída 0.
+
+### T12. Hook `pre-push`
+- Hook versionado em `scripts/dev/git-hooks/` (ativado por `git config core.hooksPath scripts/dev/git-hooks`, uma vez por clone) que recusa no remote `origin`: refs `recovery*` e `wip/*`, qualquer ref fora de `main`, `dev`, `feat/*`, `fix/*` e tags `v*`, e push direto a `main` ou `dev`.
+- Teste com remotes locais temporários, com prova de mutação.
+- **Não verificado:** como o Git for Windows executa o hook (sh chamando PowerShell).
+
+### T13. Comandos de proteção (escritos, não executados)
+- Arquivo de runbook em `docs/` com os comandos `gh api` para: proteção ou ruleset de `main` e `dev` (PR obrigatório, 0 reviews, checks obrigatórios, `strict`, sem force push, sem apagar, `enforce_admins`), desligar squash e rebase, ruleset das tags `v*`, e a **reversão** de cada um.
+- Antes de ativar: conferir os nomes dos jobs como contexto de check (`check-runs` de um commit recente) e a resposta da API para repositório público no plano atual.
+- Aceite: revisor lê o runbook; nada foi executado contra o GitHub.
+
+### T14. PR de sincronização e ativação (só com "pode aplicar" do usuário)
+- Branch `sync/dev-AAAA-MM-DD` no `dev` local, push ao `origin`, PR para `origin/dev`, CI verde, aprovação do usuário na conversa, merge.
+- Depois, ou antes se o usuário preferir, aplicar a T13 e conferir `gh api repos/.../branches/dev/protection`.
+- Pedir a leitura dos checks ("1 + linux") antes de aplicar.
+
+## Ordem
+
+T8 e T9 (documentos) → T10 → T11 → T12 → revisão do conjunto → T13 → T14.
