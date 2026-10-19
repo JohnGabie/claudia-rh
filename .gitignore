@@ -72,3 +72,6 @@ sandbox-lab/sandbox/guest.config.json
 sandbox-lab/.mcp.json
 # Sandbox work folder (deploy + guest-rw). Always the one in the main checkout.
 .sandbox-work/
+
+# Context diary written before compaction (local draft, never committed)
+.journal/
