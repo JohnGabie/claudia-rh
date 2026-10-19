@@ -93,7 +93,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
-| T8 | nova | pendente | `agents/versao.md` ampliado (P7 reescrita, P11 a P15, camada RÁPIDO/MÉDIO e FORTE só na recuperação) |
+| T8 | feita | Rodada 1: REJEITADO-CORRIGIR (13 achados). Rodada 2: APROVADO, "Looks good to me" (commit `b0b7a18`) | `agents/versao.md` ampliado (P7 reescrita, P11 a P15, camada RÁPIDO/MÉDIO e FORTE só na recuperação) |
 | T9 | nova | pendente | `CLAUDE.md` (Git, PR e CI, "O humano decide") e `agents/revisor.md` (chamar o versionador, conferir o relatório e dispensá-lo; push de branch e PR autorizados pelo "Looks good to me" da última tarefa) |
 | T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
 | T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
@@ -151,3 +151,10 @@ T8 e T9 (documentos) → T10 → T11 → T12 → revisão do conjunto → T13 �
 - **T13:** os 5 jobs como checks obrigatórios.
 - **T15 e T16:** novas (P16 e P18).
 - Ordem: T8 → T9 → T16 → T15 → T10 → T11 → T12 → revisão do conjunto → T13 → T14.
+
+### Observações do revisor da T8 para a T9 (não bloquearam a T8)
+
+- `agents/versao.md` L36: a frase "hoje falha: o `dev` local está 84 commits à frente" envelhece depois da T14; deixar claro que o push ao backup acontece mesmo quando o `--ff-only` falha.
+- `agents/versao.md` L48 x L51: "`main` só recebe release" e o revert por PR contra `main`; escrever o revert de quebra como exceção explícita.
+- `agents/versao.md` L34-35 e `agents/revisor.md`: escrever quem chama o versionador para mostrar o resumo e pedir o "pode fechar" depois de o revisor dispensá-lo (o orquestrador).
+- `CLAUDE.md` L37, L48-50, L128, L143, L212, L257 e `agents/revisor.md` L54 e o fluxo de chamar e dispensar o versionador.
