@@ -72,3 +72,11 @@ Remote `backup` e primeiro push (depois da varredura de segredos e do OK do usu�
 |---|---|---|---|
 | T1 a T6 | feitas | REJEITADO-CORRIGIR na rodada 1 (13 achados); correções aplicadas, nova revisão pendente | |
 | T7 | em andamento | pendente | |
+
+## Prova de mutação do `scripts/dev/test-diario.ps1` (2026-10-19)
+
+Cópia dos scripts em pasta temporária, repositório intocado. Linhas coladas da execução:
+
+- Mutação "ignorar `trigger` e assumir manual": `FAILED  trigger auto is never blocked (expected 0, got 2)`, `FAILED  compaction_type auto (fallback field) is never blocked (expected 0, got 2)`, `FAILED  unknown type (no field) never blocks (expected 0, got 2)`, `FAILED  unreadable stdin never blocks (expected 0, got 2)`.
+- Mutação `exit 2` trocado por `exit 0` (prova independente do revisor): `FAILED  trigger manual with an unfilled diary is blocked (expected 2, got 0)`.
+- Sem mutação: 9 casos `PASS`, código de saída 0.

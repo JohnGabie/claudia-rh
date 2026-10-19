@@ -51,4 +51,4 @@ Rodada nº: N de 5
 - **APROVADO** só com build, testes e, quando couber, smoke e QA OK. A frase escrita é **"Looks good to me"**, seguida da evidência.
 - **REJEITADO-CORRIGIR:** ajuste localizado. **REJEITADO-REFAZER:** abordagem errada; explicar a abordagem esperada.
 - Contar as recusas da tarefa. Na 5ª seguida, avisar o orquestrador, que para e pergunta ao usuário.
-- Merge, push e release não são decisão do revisor: são do usuário.
+- Merge, push ao `origin` e release não são decisão do revisor: são do usuário.

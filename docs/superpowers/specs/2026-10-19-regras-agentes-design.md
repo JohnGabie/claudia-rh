@@ -120,7 +120,7 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 
 ## 8. Pontos em aberto / não verificado
 
-- Se o hook `PreCompact` do Claude Code no Windows realmente bloqueia `/compact` e e qual é o nome real do campo de entrada (o script lê `trigger` e, como reserva, `compaction_type`; tipo desconhecido nunca bloqueia): **não verificado**. Também **não verificado**: qual shell executa o comando do hook no Windows (Git Bash, PowerShell ou cmd), de que depende a expansão de `${CLAUDE_PROJECT_DIR}`.
+- Se o hook `PreCompact` do Claude Code no Windows realmente bloqueia `/compact` e qual é o nome real do campo de entrada (o script lê `trigger` e, como reserva, `compaction_type`; tipo desconhecido nunca bloqueia): **não verificado**. Também **não verificado**: qual shell executa o comando do hook no Windows (Git Bash, PowerShell ou cmd), de que depende a expansão de `${CLAUDE_PROJECT_DIR}`.
 - Se o template de PR atual tem "NÃO verificado": **não verificado**.
 - Se `gh pr merge` por terminal basta para o fluxo do usuário sem abrir o GitHub: **não verificado**.
 - Nome final das áreas (`browser`, `sandbox`, `documentos`, `perfil`, `testes`, `processo`...): proposta, o usuário ajusta ao migrar.

@@ -124,7 +124,7 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 | Levantamento de requisitos, brainstorm, spec e plano | Arquiteto (`agents/arquiteto.md`) | FORTE, sempre | Arquiteto e Revisor ficam sempre em FORTE. A spec exige aprovação do usuário (seção 1). |
 | Execução | Executor (`agents/executor.md`) em **git worktree**, sempre | RÁPIDO para tarefa mecânica e bem delimitada; MÉDIO quando há lógica nova, vários arquivos ou decisão de desenho; FORTE se toca segurança, dados ou ferramenta do agente | O brief da tarefa traz a camada. |
 | Revisão de código | Revisor (`agents/revisor.md`) | FORTE, sempre | Independente de quem escreveu. Obrigatória para segurança, dados e ferramentas do agente. |
-| Teste | QA (`agents/qa.md`) | FORTE (recomendado; como já era com Opus) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
+| Teste | QA (`agents/qa.md`) | FORTE (recomendado, como já era antes de 2026-10-19) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
 | Branches, backup, aprovação e merge pelo terminal | Versão (`agents/versao.md`) | MÉDIO (FORTE em recuperação de histórico) | Não implementa nem revisa mérito. |
 
 **Brief e retorno têm formato fixo** (brief do arquiteto, resposta do executor, veredito do revisor, relatório do QA), descritos nos arquivos de `agents/`. Cada agente recebe um brief curto e os caminhos dos arquivos relevantes, **não o histórico da conversa**.
@@ -254,4 +254,4 @@ Antes de **qualquer** compactação (manual ou automática) o agente escreve um 
 
 ## O humano decide
 
-Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, push ao `origin`, release**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina, **exceto o push ao `backup`**, que o agente de versão faz depois do primeiro OK (publicar, enviar candidatura, apagar branch, criar remote). Na dúvida entre decidir e perguntar, pergunte.
+Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, push ao `origin`, release**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina (publicar, enviar candidatura, apagar branch, criar remote). Exceção única: o push ao `backup`, feito pelo agente de versão depois do primeiro OK do usuário. Na dúvida entre decidir e perguntar, pergunte.
