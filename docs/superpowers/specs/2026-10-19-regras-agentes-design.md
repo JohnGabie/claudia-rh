@@ -1,6 +1,6 @@
 # Regras de agentes, ciclo de vida das specs e controle de versão — spec
 
-Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9. Ampliação §10 (revisão 3): aprovada em 2026-10-19; a leitura dos checks obrigatórios está a confirmar (10.8). Revisão 4 (reescrita da P7 e propostas P16 a P18): rascunho, aguardando aprovação.
+Data: 2026-10-19. Branch: `feat/regras-agentes` (a partir de `dev`). Status: **aprovada pelo usuário em 2026-10-19** (mensagem "blz bora", depois de a spec estar escrita e de eu perguntar se aprovava; interpretei como aprovação, e o usuário pode corrigir). Revisão 2026-10-19, confirmada pelo usuário na conversa (após a primeira revisão independente): ajustes de camadas, push e hooks, ver o fim desta seção de histórico em §9. Ampliação §10 (revisão 3): aprovada em 2026-10-19.  Revisão 4 (P7 reescrita, P16 a P18): aprovada em 2026-10-19. Checks obrigatórios: os 5 jobs.
 
 Esta spec só muda documentos de regras (`CLAUDE.md`, novos arquivos de papéis, convenção de specs, hooks de contexto). Não toca código de produto nem o prompt de runtime.
 
@@ -72,8 +72,8 @@ Reúne o que hoje está espalhado: gosto e identidade visual, escopo, merge, rel
 ### P7. Agente de versão
 - **Remote `backup`** = `https://github.com/JohnGabie/claudia-rh-backup.git` (privado). `origin` continua o repo público.
 - **Push ao backup**: `git push backup --all` e `--tags`, sem cerimônia, ao fim de cada tarefa, após cada merge e antes de qualquer operação arriscada. Nunca `--mirror` (apagaria no backup o que for apagado localmente).
-- **Origin** *(reescrita 2026-10-19, rascunho)*: só `dev`, `main`, tags `v*` e as branches de PR (`feat/*`, `fix/*`, `sync/*`). **Push ao `origin` sempre com refs nomeadas uma a uma; nunca `--all`, `--tags` nem `--mirror`** (publicariam no repo público as branches de trabalho, a `recovery` e as tags internas `archive/*`, `backup/*`, `pre-rebase/*`).
-- **Do revisor ao merge** *(reescrita 2026-10-19, rascunho; substitui "merge local ou `gh pr merge`, PR é só registro")*:
+- **Origin** *(reescrita 2026-10-19, aprovada)*: só `dev`, `main`, tags `v*` e as branches de PR (`feat/*`, `fix/*`, `sync/*`). **Push ao `origin` sempre com refs nomeadas uma a uma; nunca `--all`, `--tags` nem `--mirror`** (publicariam no repo público as branches de trabalho, a `recovery` e as tags internas `archive/*`, `backup/*`, `pre-rebase/*`).
+- **Do revisor ao merge** *(reescrita 2026-10-19, aprovada; substitui "merge local ou `gh pr merge`, PR é só registro")*:
   1. O revisor escreve "Looks good to me" e **chama o agente de versão**, passando a branch, a tarefa e a evidência.
   2. O agente de versão (camada RÁPIDO ou MÉDIO, conforme a carga; decisão do usuário) empurra a branch ao `backup` e ao `origin`, abre ou atualiza o PR (`gh pr create`, modelo de `.github/PULL_REQUEST_TEMPLATE.md`) e acompanha o CI (`gh pr checks`). Não precisa de OK do usuário para isso: a autorização é o "Looks good to me" do revisor.
   3. Devolve ao revisor um relatório (o que empurrou, link do PR, estado do CI). O revisor confere e **dispensa** o agente de versão se estiver tudo certo; se não, devolve com o que falta. CI que falha segue a P13.
@@ -138,7 +138,7 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 | 2026-10-19 | todas | criada | Versão inicial com P1 a P10 e as 4 decisões do usuário. | "blz bora" (2026-10-19) |
 | 2026-10-19 | P2, P3, P7, P8, §5, §6, §8 | ajustada | Após a revisão independente: arquiteto sempre FORTE; QA mantido em FORTE recomendado (como era no `CLAUDE.md` antes); "push" nas regras de integração passa a significar `origin`, com a exceção do push ao `backup` pelo agente de versão; rebase de branch já no backup exige OK explícito; hook lê `trigger` com `compaction_type` de reserva e nunca bloqueia tipo desconhecido; `.claude/settings.json` passa a ser versionado; scripts de saúde e de backup adiados; contagens corrigidas. São correções de coerência dentro do que o usuário já aprovou; os itens "Extras" do plano pedem confirmação dele. | usuário confirmou na conversa em 2026-10-19 (spec aprovada e extras mantidos) |
 | 2026-10-19 | §10 | ampliada | P11 a P14 (guardião de estabilidade, espelho no backup, PR e CI, pacote de recuperação) e P15 (proteção de branch). | usuário aprovou na conversa em 2026-10-19; checks "1 + linux" a confirmar |
-| 2026-10-19 | P7, 10.3, P13, P14, P15, 10.10 | reescrita (rascunho) | Revisão 4: merge só por PR no GitHub e `dev` local só por `pull --ff-only`; o revisor chama o agente de versão, que empurra e abre o PR sem OK do usuário (resposta do usuário); push ao `origin` só por ref nomeada; `sync/*` na lista do hook; propostas P16 a P18. | aguardando o usuário |
+| 2026-10-19 | P7, 10.3, P13, P14, P15, 10.10 | reescrita | Revisão 4: merge só por PR no GitHub e `dev` local só por `pull --ff-only`; o revisor chama o agente de versão, que empurra e abre o PR sem OK do usuário (resposta do usuário); push ao `origin` só por ref nomeada; `sync/*` na lista do hook; propostas P16 a P18. | usuário aprovou em 2026-10-19: revisão 4, merge com o "pode fechar" dele, P16 a P18, FORTE só na recuperação, os 5 jobs obrigatórios |
 
 ## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação, proteção de branch — **aprovada pelo usuário em 2026-10-19** (ver 10.8)
 
@@ -163,11 +163,11 @@ Marcador: `ampliada 2026-10-19`. Amplia a P7; não contradiz o que está aprovad
 ### 10.3 "Isso faz sentido?"
 
 Sim, com três ressalvas que viram regra:
-- Os "commits constantes" só existem em **branches `feat/*` e `fix/*`**, porque commit direto em `dev` continua proibido. *(Reescrita 2026-10-19, rascunho:)* com o merge só por PR (P7), o `dev` do backup é **igual** ao `origin/dev` depois de cada merge, atualizado pelo agente de versão; o que é a mais no backup são as branches de trabalho e a `recovery`. Invariante verificável: toda ref do `origin` é igual ou ancestral da mesma ref no `backup`. **Exceção única, a desfazer na T14:** hoje o `dev` local está 84 commits à frente do `origin/dev`, fruto de merges locais antigos; o PR de sincronização resolve isso uma vez.
+- Os "commits constantes" só existem em **branches `feat/*` e `fix/*`**, porque commit direto em `dev` continua proibido. *(Reescrita 2026-10-19, aprovada:)* com o merge só por PR (P7), o `dev` do backup é **igual** ao `origin/dev` depois de cada merge, atualizado pelo agente de versão; o que é a mais no backup são as branches de trabalho e a `recovery`. Invariante verificável: toda ref do `origin` é igual ou ancestral da mesma ref no `backup`. **Exceção única, a desfazer na T14:** hoje o `dev` local está 84 commits à frente do `origin/dev`, fruto de merges locais antigos; o PR de sincronização resolve isso uma vez.
 - "Estável" no `dev` público é por **feature completa**, não por commit: a feature só entra quando passou pela porta da P11.
 - Se o `main` não for ao backup, a release fica restaurável só pelo `origin` e pelas tags. Custa quase nada espelhar o `main` e as tags `v*`; recomendo espelhar (P12).
 
-### 10.4 Propostas do assistente (aprovadas em 2026-10-19; os trechos marcados "reescrita 2026-10-19, rascunho" aguardam nova aprovação)
+### 10.4 Propostas do assistente (aprovadas em 2026-10-19; os trechos marcados "reescrita 2026-10-19" foram aprovados na revisão 4)
 
 **P11. Guardião da estabilidade de `dev` e `main` públicos.**
 - `main`: só release (`dev` → `main` + tag `vX.Y.Z`) da versão **fechada**, depois do smoke de uso real anexado; o usuário manda.
@@ -185,7 +185,7 @@ Sim, com três ressalvas que viram regra:
 - **Recomendo.**
 
 **P13. PR e CI sob o agente de versão.**
-- *(Reescrita 2026-10-19, rascunho:)* depois do "Looks good to me" do revisor, o agente de versão abre o PR no `origin` e acompanha o CI (o `ci.yml` roda em push para `main` e `dev` e em PR), como no fluxo "Do revisor ao merge" da P7. O merge só com CI verde e o "pode fechar" do usuário.
+- *(Reescrita 2026-10-19, aprovada:)* depois do "Looks good to me" do revisor, o agente de versão abre o PR no `origin` e acompanha o CI (o `ci.yml` roda em push para `main` e `dev` e em PR), como no fluxo "Do revisor ao merge" da P7. O merge só com CI verde e o "pode fechar" do usuário.
 - **CI falhou:** o agente **não corrige**. Lê o log (`gh run view --log-failed`, só leitura), classifica e repassa no formato de brief, com o trecho do log, **pedindo sugestão** e não só correção: falha de código ou teste vai para o executor da tarefa (o revisor confere); contradição com a spec vai para o arquiteto; falha de ambiente, instável ou de infraestrutura vira tarefa no Linear e pergunta ao usuário; qualquer coisa de segurança vai para o revisor em FORTE. Conta as rodadas; na 5ª, para e pergunta ao usuário.
 - O `release.yml` roda em tag e **publica** (release e npm). O agente nunca cria tag `v*` sem o usuário mandar.
 - **Recomendo.**
@@ -221,7 +221,7 @@ Ativar proteção de branch no GitHub; criar a release 0.3; backup do disco fora
 Respostas dele, na conversa, depois de a seção 10 estar escrita:
 
 - Aprovou a seção 10 (P11 a P14) e pediu a proteção de branch: "vamos fazer a protecao da branch, na publica sempre abrir um pr e dps de aprovado fechar".
-- Checks obrigatórios: respondeu "1 + linux". Minha leitura, **a confirmar**: os 5 jobs do `ci.yml` (`npm ci (build)`, `npm install (fresh)`, `repo guard (lab files, keys, machine paths)`, `cargo test` e `windows (exe)`); os quatro primeiros já rodam em Linux (`ubuntu-latest`) e o último em Windows.
+- Checks obrigatórios: respondeu "1 + linux" e, perguntado de novo, confirmou "Os 5 jobs" (2026-10-19): os 5 jobs do `ci.yml` (`npm ci (build)`, `npm install (fresh)`, `repo guard (lab files, keys, machine paths)`, `cargo test` e `windows (exe)`); os quatro primeiros já rodam em Linux (`ubuntu-latest`) e o último em Windows.
 - PR obrigatório, **0 reviews exigidos pelo GitHub**, administrador **sujeito às regras** (a aprovação do usuário é dada na conversa).
 - Extras: sem force push e sem apagar `dev`/`main`; branch atualizada antes do merge; só merge commit; proteger as tags `v*`.
 
@@ -229,33 +229,33 @@ Respostas dele, na conversa, depois de a seção 10 estar escrita:
 
 Regras a aplicar no GitHub, por `gh api`, **só com o "pode aplicar" do usuário**:
 
-1. **Ruleset ou proteção para `main` e `dev`**: PR obrigatório com 0 aprovações; checks obrigatórios (os 5 jobs acima, confirmados); branch atualizada antes do merge (`strict`); sem force push; sem apagar a branch; administradores sujeitos às regras (`enforce_admins`).
+1. **Ruleset ou proteção para `main` e `dev`**: PR obrigatório com 0 aprovações; checks obrigatórios (os 5 jobs acima, confirmados pelo usuário); branch atualizada antes do merge (`strict`); sem force push; sem apagar a branch; administradores sujeitos às regras (`enforce_admins`).
 2. **Repositório**: `allow_squash_merge=false` e `allow_rebase_merge=false`, mantendo só merge commit.
 3. **Tags `v*`**: ruleset que impede mover e apagar. *Proposta minha:* criar a tag continua possível ao usuário, porque o `release.yml` roda em tag e precisa de um jeito de lançar; o agente de versão nunca cria tag `v*` sozinho.
-4. **Fluxo**: "sempre abrir um PR e, depois de aprovado, fechar" segue o fluxo "Do revisor ao merge" da P7 *(reescrita 2026-10-19, rascunho)*: o revisor aprova o código e chama o agente de versão; ele empurra e abre o PR sem pedir OK ao usuário; o merge (`gh pr merge --merge`) só depois do "pode fechar" do usuário. Nada de push direto em `main` ou `dev`, nem de merge local nelas.
-6. **Hook `pre-push`** *(reescrita 2026-10-19, rascunho)*: a lista permitida no `origin` inclui `sync/*`, usada uma vez no PR de sincronização (T14); `recovery*`, `wip/*`, `archive/*`, `backup/*` e `pre-rebase/*` são sempre recusadas no `origin`.
+4. **Fluxo**: "sempre abrir um PR e, depois de aprovado, fechar" segue o fluxo "Do revisor ao merge" da P7 *(reescrita 2026-10-19, aprovada)*: o revisor aprova o código e chama o agente de versão; ele empurra e abre o PR sem pedir OK ao usuário; o merge (`gh pr merge --merge`) só depois do "pode fechar" do usuário. Nada de push direto em `main` ou `dev`, nem de merge local nelas.
+6. **Hook `pre-push`** *(reescrita 2026-10-19, aprovada)*: a lista permitida no `origin` inclui `sync/*`, usada uma vez no PR de sincronização (T14); `recovery*`, `wip/*`, `archive/*`, `backup/*` e `pre-rebase/*` são sempre recusadas no `origin`.
 5. **Reversão**: os comandos para desligar cada regra ficam escritos junto dos de ativar, porque o administrador também está sujeito a elas (emergência = desligar a regra, agir, religar, tudo com aviso ao usuário).
 
 **Consequência a decidir antes de ativar (proposta minha):** o `dev` local está 84 commits à frente do `origin/dev`. Com a proteção ativa, esses commits só chegam ao `origin` por PR. Recomendo **publicar por um PR de sincronização antes ou logo depois de ativar** (branch `sync/dev-AAAA-MM-DD` apontando para o `dev` local, PR para `origin/dev`), conforme a regra "sempre PR". A alternativa, um último push direto antes de ativar, quebra a regra que o usuário pediu e **não** é recomendada.
 
 **Não verificado:** se os nomes dos jobs são aceitos como contexto de check obrigatório sem ajuste (conferir com `gh api repos/.../commits/<sha>/check-runs` antes de ativar); se o plano gratuito do GitHub aplica proteção e ruleset de tag a repositório público (aplica, mas confirmar na resposta da API); se `enforce_admins` e `strict` bloqueiam o `release.yml` em tag.
 
-### 10.10 Revisão de 2026-10-19 (revisão 4): resposta do usuário e propostas novas — **rascunho, aguardando aprovação**
+### 10.10 Revisão de 2026-10-19 (revisão 4): resposta do usuário e propostas novas — **aprovada pelo usuário em 2026-10-19**
 
-Origem: revisão de leitura feita na camada FORTE sobre a branch inteira, depois da troca de modelo pedida pelo usuário. Os achados que mudam regra foram corrigidos **no lugar**, nos trechos marcados "reescrita 2026-10-19, rascunho" (P7 "Origin" e "Do revisor ao merge", 10.3, P13, P14, P15 itens 4 e 6).
+Origem: revisão de leitura feita na camada FORTE sobre a branch inteira, depois da troca de modelo pedida pelo usuário. Os achados que mudam regra foram corrigidos **no lugar**, nos trechos marcados "reescrita 2026-10-19" (aprovados) (P7 "Origin" e "Do revisor ao merge", 10.3, P13, P14, P15 itens 4 e 6).
 
 **Pedido do usuário (palavras dele), sobre quem empurra e abre PR:** "apos o revsior dizer que o codigo esta ok, ele vai conversar com versionador, ele vai fazer o trabalho. esse agente vai ser algo como sonnet ou haiku dependendo da carga do trabalho, ele vai devolver o que foi feito e o revisador ai dispensar do trabalho se tudo tiver ok."
 
-**Leitura:** o "Looks good to me" do revisor autoriza o agente de versão a empurrar e abrir o PR, sem pedir OK ao usuário; o agente de versão roda em RÁPIDO ou MÉDIO conforme a carga; ele devolve o que fez ao revisor, que confere e o dispensa. **Minha leitura, a confirmar:** o merge do PR continua com o "pode fechar" do usuário, como já estava na regra "integrar é decisão do usuário" e na resposta dele "na publica sempre abrir um pr e dps de aprovado fechar".
+**Leitura:** o "Looks good to me" do revisor autoriza o agente de versão a empurrar e abrir o PR, sem pedir OK ao usuário; o agente de versão roda em RÁPIDO ou MÉDIO conforme a carga; ele devolve o que fez ao revisor, que confere e o dispensa. **Confirmado pelo usuário (2026-10-19):** o merge do PR continua com o "pode fechar" dele, como já estava na regra "integrar é decisão do usuário" e na resposta dele "na publica sempre abrir um pr e dps de aprovado fechar".
 
-**Propostas novas (NÃO DECIDIDAS, cada uma com recomendação):**
+**Propostas novas (aceitas pelo usuário em 2026-10-19):**
 
-**P16. Diário de contexto no checkout principal.** Hoje o diário vai para `.journal/` dentro da pasta do projeto da sessão; numa worktree, é a pasta da worktree. Pela documentação do git, `git worktree remove` sem `--force` não recusa arquivo **ignorado**, e o `.journal/` é ignorado: o diário seria apagado junto com a worktree (não testado; teste que apaga só roda no Sandbox). Proposta: os scripts gravam e leem em `.journal/` do checkout principal, achado por `git rev-parse --git-common-dir`; e o agente de versão confere o `.journal/` antes de remover qualquer worktree. **Recomendo.**
+**P16. Diário de contexto no checkout principal.** Hoje o diário vai para `.journal/` dentro da pasta do projeto da sessão; numa worktree, é a pasta da worktree. Pela documentação do git, `git worktree remove` sem `--force` não recusa arquivo **ignorado**, e o `.journal/` é ignorado: o diário seria apagado junto com a worktree (não testado; teste que apaga só roda no Sandbox). Proposta: os scripts gravam e leem em `.journal/` do checkout principal, achado por `git rev-parse --git-common-dir`; e o agente de versão confere o `.journal/` antes de remover qualquer worktree. **Aceita pelo usuário em 2026-10-19.**
 
-**P17. Limpeza estrutural do pacote de recuperação.** A varredura por regex não pega token de formato desconhecido dentro de um `settings.json`. Proposta: antes de copiar qualquer JSON de configuração, remover sempre os campos `env`, `headers` e qualquer chave cujo nome contenha `key`, `token`, `secret` ou `password`; a regex vira segunda camada; `.credentials.json` e equivalentes nunca são lidos pelo script. **Recomendo.**
+**P17. Limpeza estrutural do pacote de recuperação.** A varredura por regex não pega token de formato desconhecido dentro de um `settings.json`. Proposta: antes de copiar qualquer JSON de configuração, remover sempre os campos `env`, `headers` e qualquer chave cujo nome contenha `key`, `token`, `secret` ou `password`; a regex vira segunda camada; `.credentials.json` e equivalentes nunca são lidos pelo script. **Aceita pelo usuário em 2026-10-19.**
 
-**P18. Estado de branch fora do índice.** A tabela de branches do `docs/superpowers/INDEX.md` ficou desatualizada no mesmo dia (dizia "sem backup" para branches que já estavam no backup). Proposta: o índice guarda só specs e planos; o estado das branches fica no relatório do agente de versão, gerado na hora. **Recomendo.**
+**P18. Estado de branch fora do índice.** A tabela de branches do `docs/superpowers/INDEX.md` ficou desatualizada no mesmo dia (dizia "sem backup" para branches que já estavam no backup). Proposta: o índice guarda só specs e planos; o estado das branches fica no relatório do agente de versão, gerado na hora. **Aceita pelo usuário em 2026-10-19.**
 
-**Camada do agente de versão** (decisão do usuário): RÁPIDO para rotina (push, abrir PR, acompanhar CI, backup), MÉDIO quando há conflito, triagem de falha de CI ou relatório de saúde. *Proposta minha:* FORTE só para recuperação de histórico (reflog, restauração de branch perdida), como já estava.
+**Camada do agente de versão** (decisão do usuário): RÁPIDO para rotina (push, abrir PR, acompanhar CI, backup), MÉDIO quando há conflito, triagem de falha de CI ou relatório de saúde. FORTE só para recuperação de histórico (reflog, restauração de branch perdida): aceito pelo usuário em 2026-10-19.
 
 **Processo, registrado para não repetir:** as tarefas T1 a T6 desta spec foram escritas pelo próprio orquestrador e um revisor avaliou as seis juntas, o que contraria o ciclo "uma tarefa por vez, executor separado" que a própria spec reforça. A parte 2 (T8 a T14) segue o ciclo completo.

@@ -87,17 +87,19 @@ Cópia dos scripts em pasta temporária, repositório intocado. Linhas coladas d
 
 # Parte 2: estabilidade, backup espelho, PR e CI, pacote de recuperação, proteção de branch
 
-Cumpre a spec `2026-10-19-regras-agentes-design.md`, revisão 3 (seção 10, aprovada pelo usuário em 2026-10-19; leitura dos checks obrigatórios a confirmar). Branch: `feat/regras-agentes`. Uma tarefa por ciclo executor ↔ revisor; recusa volta ao executor; cinco recusas seguidas, para e pergunta.
+Cumpre a spec `2026-10-19-regras-agentes-design.md`, revisões 3 e 4 (seção 10 e P7 reescrita, aprovadas pelo usuário em 2026-10-19). Checks obrigatórios: os 5 jobs do `ci.yml`. O merge do PR é sempre com o "pode fechar" do usuário. Branch: `feat/regras-agentes`. Uma tarefa por ciclo executor ↔ revisor; recusa volta ao executor; cinco recusas seguidas, para e pergunta.
 
 Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: nenhum apaga, move ou sobrescreve fora de pasta temporária criada pelo próprio script ou teste; nenhum teste usa caminho real; testes rodam só com pastas temporárias e repositórios temporários criados por eles.
 
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
-| T8 | nova | pendente | `agents/versao.md` ampliado (P11 a P15) |
+| T8 | nova | pendente | `agents/versao.md` ampliado (P7 reescrita, P11 a P15, camada RÁPIDO/MÉDIO e FORTE só na recuperação) |
 | T9 | nova | pendente | `CLAUDE.md`: Git, PR e CI, "O humano decide" |
 | T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
-| T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, varredura e teste |
-| T12 | nova | pendente | hook `pre-push` (bloqueia `recovery*` e refs fora da lista no `origin`) e teste |
+| T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
+| T12 | nova | pendente | hook `pre-push` (lista permitida com `sync/*`; bloqueia `recovery*`, `wip/*`, tags internas e `--all`/`--tags` acidentais no `origin`) e teste |
+| T15 | nova | pendente | P16: diário no checkout principal (`git rev-parse --git-common-dir`), teste e conferência do `.journal/` antes de remover worktree |
+| T16 | nova | pendente | P18: tirar a tabela de branches do `INDEX.md`; o estado vem do relatório do versionador |
 | T13 | nova | pendente | comandos de proteção (`gh api`) escritos com a reversão; **não executados** |
 | T14 | nova | pendente | PR de sincronização do `dev` local e ativação, **só com o "pode aplicar"** |
 
@@ -140,3 +142,12 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 ## Ordem
 
 T8 e T9 (documentos) → T10 → T11 → T12 → revisão do conjunto → T13 → T14.
+
+### Ajustes da revisão 4 (aprovada em 2026-10-19)
+
+- **T8:** o fluxo "Do revisor ao merge" da P7 (revisor chama o versionador; ele empurra e abre o PR sem OK do usuário; devolve relatório; o revisor dispensa; merge com o "pode fechar"); merge local em `dev`/`main` não existe mais, o `dev` local só avança por `git pull --ff-only`; push ao `origin` só por ref nomeada.
+- **T9:** `CLAUDE.md` linhas do fluxo Git e da aprovação pelo terminal alinhadas a isso (hoje ainda dizem merge local e "PR é registro").
+- **T11:** limpeza por campo antes da regex (P17).
+- **T13:** os 5 jobs como checks obrigatórios.
+- **T15 e T16:** novas (P16 e P18).
+- Ordem: T8 → T9 → T16 → T15 → T10 → T11 → T12 → revisão do conjunto → T13 → T14.
