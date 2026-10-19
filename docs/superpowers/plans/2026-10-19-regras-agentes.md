@@ -94,7 +94,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
 | T8 | nova | pendente | `agents/versao.md` ampliado (P7 reescrita, P11 a P15, camada RÁPIDO/MÉDIO e FORTE só na recuperação) |
-| T9 | nova | pendente | `CLAUDE.md`: Git, PR e CI, "O humano decide" |
+| T9 | nova | pendente | `CLAUDE.md` (Git, PR e CI, "O humano decide") e `agents/revisor.md` (chamar o versionador, conferir o relatório e dispensá-lo; push de branch e PR autorizados pelo "Looks good to me" da última tarefa) |
 | T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
 | T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
 | T12 | nova | pendente | hook `pre-push` (lista permitida com `sync/*`; bloqueia `recovery*`, `wip/*`, tags internas e `--all`/`--tags` acidentais no `origin`) e teste |
