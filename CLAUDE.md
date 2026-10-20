@@ -53,7 +53,7 @@ O usuário decide **na conversa**, não precisa abrir o GitHub. O fluxo completo
 
 1. Cada tarefa com "Looks good to me" do revisor vai **só ao `backup`**, pelo agente de versão. Feature incompleta não vai ao `origin`.
 2. Quando **todas** as tarefas da feature têm "Looks good to me", o agente de versão faz a varredura de segredos, empurra a branch ao `origin` por ref nomeada, abre o PR contra `dev` (`--base dev`) e acompanha o CI. Isso não pede outro OK: a autorização é o "Looks good to me" da última tarefa.
-3. O orquestrador mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos, estado do CI). Só depois do "pode fechar" do usuário ele chama o agente de versão para o merge do PR, com a decisão registrada no PR.
+3. **Com o CI verde**, o orquestrador mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos, estado do CI). Só depois do "pode fechar" do usuário ele chama o agente de versão para o merge do PR, com a decisão registrada no PR. O agente de versão confere o CI de novo na hora do merge e **recusa** se faltar o "Looks good to me", a evidência ou qualquer check verde.
 
 ### Branches e agente de versão
 

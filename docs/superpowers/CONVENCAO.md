@@ -76,4 +76,4 @@ Uma tarefa por ciclo executor ↔ revisor continua valendo.
 
 - Spec primeiro: sem spec aprovada, não se escreve código.
 - Estrutura da spec: pedido do usuário nas palavras dele, leitura, propostas **não decididas**, impacto, fora do escopo, pontos em aberto (`CLAUDE.md` seção 1).
-- Integrar (merge, push ao `origin`, PR, release) é decisão do usuário.
+- Merge, release e tag `v*` são decisão do usuário; empurrar a branch ao `origin` e abrir o PR são do agente de versão, depois do "Looks good to me" da feature completa (ver `agents/versao.md`).
