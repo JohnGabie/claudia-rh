@@ -1,6 +1,7 @@
 #!/bin/sh
 # pre-push hook (T12): thin launcher. The logic lives in pre-push.ps1 (same folder).
 # See the header of pre-push.ps1 for what is protected, how to activate the hook and the escape hatch.
+# It finds pre-push.ps1 next to itself (dirname of $0), so it works from any folder (the installer copies both files).
 #
 # git calls:  pre-push <remote-name> <remote-url>   (ref lines arrive on stdin, inherited by PowerShell)
 #

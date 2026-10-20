@@ -1,5 +1,5 @@
 # pre-push hook logic (T12). Protects the PUBLIC repository (origin = .../claudia-rh) from pushes by mistake
-# (git push origin --all / --tags / --mirror, work branches, the recovery branch, internal tags).
+# (git push origin --all / --tags / --mirror, several branches at once, the recovery branch, internal tags).
 # Spec: docs/superpowers/specs/2026-10-19-regras-agentes-design.md (P7, P14, 10.9 item 6); agents/versao.md.
 #
 # Called by the sh launcher "pre-push" in this folder:  pre-push.ps1 <remote-name> <remote-url>
@@ -8,7 +8,11 @@
 # means this logic did not run; the launcher then fails CLOSED for the public repository.
 #
 # ACTIVATION (once per clone, a decision of the USER; no agent runs this without being asked):
-#     git config core.hooksPath scripts/dev/git-hooks
+#     powershell -NoProfile -File scripts/dev/install-hooks.ps1
+# The installer (T22) copies the launcher and this file into the COMMON hooks folder of the repository
+# (git rev-parse --git-common-dir + /hooks), which applies to every worktree and every branch, and checks it with a
+# real push to a temporary bare repository. It never overwrites a different hook that was not installed by itself.
+# (core.hooksPath, if set, takes precedence over that folder; the installer warns about it and does not touch it.)
 # Server side: GitHub branch protection (T13/T14) is the other layer. This hook protects the machine; it does
 # not replace the server rules.
 #
@@ -19,7 +23,12 @@
 # other remote pass with no restriction.
 # For the public remote every ref must be, as REMOTE ref, one of:
 #     refs/heads/feat/*, refs/heads/fix/*, refs/heads/sync/*, refs/tags/v<digits and dots>[-suffix]
-# and must be a create/update (never a delete). main and dev change only by PR on GitHub. At most 20 refs per push.
+# and must be a create/update (never a delete). main and dev change only by PR on GitHub.
+# ONE work branch per push (T22, P7/P14/P15): at most ONE remote ref under refs/heads/ per push. Two or more branches in
+# one push are refused ("one work branch per push to the public repository; push by named ref"); that is what stops
+# "git push origin --all" (it carries every local branch; with a single local branch it equals a named push, which is
+# fine). Tags refs/tags/v* count apart: one branch plus new tags passes, subject to the tag rules below. The old limit
+# of 20 refs per push stays as a second layer, mainly for tags (--tags).
 # The tag format accepted above (v + digits and dots, optional suffix) is a decision of the USER (2026-10-20).
 # No force push (T19): for an update (remote sha not all zeros) the old remote commit must be an ancestor of the new
 # one (git merge-base --is-ancestor). Otherwise the push is refused as force push / history rewrite. If the old commit
@@ -120,6 +129,14 @@ try {
         exit 0
     }
 
+    # One work branch per push (T22): count the REMOTE refs under refs/heads/ (--all carries every local branch).
+    $branchCount = @($lines | Where-Object {
+        $f = @($_.Trim() -split '\s+')
+        ($f.Count -ge 3) -and ($f[2] -clike 'refs/heads/*')
+    }).Count
+    if ($branchCount -gt 1) {
+        [void]$problems.Add("$branchCount branches in one push: one work branch per push to the public repository; push by named ref")
+    }
     if ($lines.Count -gt $MaxRefs) {
         [void]$problems.Add("$($lines.Count) refs in one push (limit $MaxRefs): looks like --all, --tags or --mirror")
     } else {
@@ -147,6 +164,6 @@ if ($problems.Count -eq 0) { exit 0 }
 
 Write-Err "pre-push: REFUSED push to the PUBLIC repository '$remoteName' ($remoteUrl)."
 foreach ($p in $problems) { Write-Err "  refused ref -> $p" }
-Write-Err "Push to the public repo only by named ref (feat/*, fix/*, sync/*, tags v*), one at a time; never --all, --tags or --mirror."
+Write-Err "Push to the public repo only by named ref (feat/*, fix/*, sync/*, tags v*), one work branch per push; never --all, --tags or --mirror."
 Write-Err "main and dev change only by PR on GitHub (see agents/versao.md)."
 exit $RefuseCode

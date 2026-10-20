@@ -17,8 +17,24 @@ trap {
 }
 
 $GitExe = (Get-Command git).Source
-$GitCmdDir = Split-Path -Parent $GitExe
-$GitRoot = Split-Path -Parent $GitCmdDir
+# Root of Git for Windows = the nearest parent holding usr\bin\sh.exe. Walking up from git.exe works whether it was
+# found in cmd\, bin\ or mingw64\bin\ (Git Bash puts mingw64\bin first on PATH); "git --exec-path" is the fallback.
+function Find-GitRoot([string]$Start) {
+    $d = $Start
+    while ($d) {
+        if (Test-Path -LiteralPath (Join-Path $d "usr\bin\sh.exe")) { return $d }
+        $parent = Split-Path -Parent $d
+        if (-not $parent -or $parent -eq $d) { break }
+        $d = $parent
+    }
+    return $null
+}
+$GitRoot = Find-GitRoot (Split-Path -Parent $GitExe)
+if (-not $GitRoot) {
+    $exec = (& git --exec-path 2>$null | Select-Object -First 1)
+    if ($exec) { $GitRoot = Find-GitRoot ([string]$exec).Replace("/", "\") }
+}
+if (-not $GitRoot) { Write-Output "FAILED  cannot find the Git for Windows root (usr\bin\sh.exe) from $GitExe"; exit 1 }
 
 function New-TempPath([string]$prefix) {
     return (Join-Path ([IO.Path]::GetTempPath()) ($prefix + [guid]::NewGuid().ToString("N")))
@@ -107,8 +123,8 @@ Invoke-Git $W @("init", "-q") | Out-Null
 Set-Content -LiteralPath (Join-Path $W "a.txt") -Value "one"
 G @("add", "a.txt") | Out-Null
 G @("commit", "-q", "-m", "c1") | Out-Null
-foreach ($b in @("dev", "feat/x", "fix/y", "sync/dev-2026-10-20", "recovery", "wip/a")) { G @("branch", $b) | Out-Null }
-foreach ($t in @("v0.3.0", "archive/x", "pre-rebase/x", "backup/x")) { G @("tag", $t) | Out-Null }
+foreach ($b in @("dev", "feat/x", "fix/y", "sync/dev-2026-10-20", "recovery", "wip/a", "feat/z", "feat/w")) { G @("branch", $b) | Out-Null }
+foreach ($t in @("v0.3.0", "v0.3.1", "archive/x", "pre-rebase/x", "backup/x")) { G @("tag", $t) | Out-Null }
 $head = (G @("rev-parse", "HEAD")).Out.Trim()
 for ($i = 1; $i -le 21; $i++) { G @("update-ref", "refs/heads/feat/many$i", $head) | Out-Null }
 for ($i = 1; $i -le 20; $i++) { G @("update-ref", "refs/heads/fix/lim$i", $head) | Out-Null }
@@ -126,8 +142,7 @@ Assert-Pass "origin: feat/x passes" @("push", "origin", "feat/x") $pubBare @("re
 Assert-Pass "origin: fix/y passes" @("push", "origin", "fix/y") $pubBare @("refs/heads/fix/y") | Out-Null
 Assert-Pass "origin: sync/dev-2026-10-20 passes" @("push", "origin", "sync/dev-2026-10-20") $pubBare @("refs/heads/sync/dev-2026-10-20") | Out-Null
 Assert-Pass "origin: tag v0.3.0 passes" @("push", "origin", "v0.3.0") $pubBare @("refs/tags/v0.3.0") | Out-Null
-Assert-Pass "origin: exactly 20 allowed refs pass" @("push", "origin", "refs/heads/fix/lim*:refs/heads/fix/lim*") $pubBare @("refs/heads/fix/lim1", "refs/heads/fix/lim20") | Out-Null
-
+Assert-Pass "origin: one branch plus one new tag passes" @("push", "origin", "refs/heads/fix/lim1:refs/heads/fix/lim1", "refs/tags/v0.3.1:refs/tags/v0.3.1") $pubBare @("refs/heads/fix/lim1", "refs/tags/v0.3.1") | Out-Null
 # --- Public remote: refused ---
 Assert-Refuse "origin: main refused" @("push", "origin", "main") $pubBare @("refs/heads/main") "refs/heads/main" | Out-Null
 Assert-Refuse "origin: dev refused" @("push", "origin", "dev") $pubBare @("refs/heads/dev") "refs/heads/dev" | Out-Null
@@ -136,12 +151,13 @@ Assert-Refuse "origin: wip/a refused" @("push", "origin", "wip/a") $pubBare @("r
 Assert-Refuse "origin: tag archive/x refused" @("push", "origin", "refs/tags/archive/x") $pubBare @("refs/tags/archive/x") "refs/tags/archive/x" | Out-Null
 Assert-Refuse "origin: tag pre-rebase/x refused" @("push", "origin", "refs/tags/pre-rebase/x") $pubBare @("refs/tags/pre-rebase/x") "refs/tags/pre-rebase/x" | Out-Null
 Assert-Refuse "origin: tag backup/x refused" @("push", "origin", "refs/tags/backup/x") $pubBare @("refs/tags/backup/x") "refs/tags/backup/x" | Out-Null
-Assert-Refuse "origin: --all refused" @("push", "origin", "--all") $pubBare @("refs/heads/main", "refs/heads/dev", "refs/heads/recovery", "refs/heads/wip/a", "refs/heads/feat/many1") "refs in one push" | Out-Null
+Assert-Refuse "origin: --all refused" @("push", "origin", "--all") $pubBare @("refs/heads/main", "refs/heads/dev", "refs/heads/recovery", "refs/heads/wip/a", "refs/heads/feat/many1") "one work branch per push" | Out-Null
+Assert-Refuse "origin: two feat branches in one push refused" @("push", "origin", "feat/z", "feat/w") $pubBare @("refs/heads/feat/z", "refs/heads/feat/w") "one work branch per push to the public repository; push by named ref" | Out-Null
+Assert-Refuse "origin: two fix branches (lim2, lim3) refused" @("push", "origin", "refs/heads/fix/lim2:refs/heads/fix/lim2", "refs/heads/fix/lim3:refs/heads/fix/lim3") $pubBare @("refs/heads/fix/lim2", "refs/heads/fix/lim3") "one work branch per push" | Out-Null
 Assert-Refuse "origin: --tags with internal tags refused" @("push", "origin", "--tags") $pubBare @("refs/tags/archive/x", "refs/tags/pre-rebase/x", "refs/tags/backup/x") "refs/tags/" | Out-Null
 $del = Invoke-Git $W @("push", "origin", ":feat/x")
 Assert-Case "origin: deleting feat/x refused and ref kept" (($del.Code -ne 0) -and (Test-BareRef $pubBare "refs/heads/feat/x") -and ($del.Err -match "refs/heads/feat/x") -and ($del.Err -match "deleting")) "exit $($del.Code) stderr: $($del.Err)"
-Assert-Refuse "origin: 21 allowed refs refused (limit 20)" @("push", "origin", "refs/heads/feat/many*:refs/heads/feat/many*") $pubBare @("refs/heads/feat/many1", "refs/heads/feat/many21") "21 refs in one push" | Out-Null
-
+Assert-Refuse "origin: 21 allowed branches refused (one branch per push)" @("push", "origin", "refs/heads/feat/many*:refs/heads/feat/many*") $pubBare @("refs/heads/feat/many1", "refs/heads/feat/many21") "one work branch per push" | Out-Null
 # --- Backup passes with no restriction ---
 Assert-Pass "backup: main passes" @("push", "backup", "main") $bkpBare @("refs/heads/main") | Out-Null
 Assert-Pass "backup: recovery passes" @("push", "backup", "recovery") $bkpBare @("refs/heads/recovery") | Out-Null
@@ -153,8 +169,6 @@ $allow = Assert-Pass "origin: CLAUDIA_ALLOW_PUBLIC_PUSH=1 lets main through" @("
 Assert-Case "origin: escape hatch prints a warning" ($allow.Err -match "WARNING") "stderr: $($allow.Err)"
 
 # --- Fail closed ---
-G @("branch", "feat/z") | Out-Null
-G @("branch", "feat/w") | Out-Null
 Assert-Refuse "origin: logic throws -> refused (fail closed)" @("push", "origin", "feat/z") $pubBare @("refs/heads/feat/z") "unexpectedly" @{ CLAUDIA_PREPUSH_TEST_THROW = "1" } | Out-Null
 Assert-Pass "backup: logic throws -> still passes" @("push", "backup", "feat/z") $bkpBare @("refs/heads/feat/z") @{ CLAUDIA_PREPUSH_TEST_THROW = "1" } | Out-Null
 # PowerShell unavailable: PATH holds only the Git folders (git itself and its sh), no System32\WindowsPowerShell.
