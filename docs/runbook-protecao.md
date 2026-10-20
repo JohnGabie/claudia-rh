@@ -6,7 +6,7 @@ Este documento foi **escrito, não executado**. Os únicos comandos rodados ao e
 
 ## 0. Avisos
 
-- **Nada que mude estado roda sem o "pode aplicar" do usuário.** Vale para as seções 2, 3, 4, 6, 7 e 9. Agente nenhum aplica, desliga ou "contorna" proteção por conta própria. A seção 1, a seção 5 (conferência) e o `-WhatIf` da seção 8 são só leitura.
+- **Nada que mude estado roda sem o "pode aplicar" do usuário.** Vale para as seções 2, 3, 4, 6, 7 e 9 e para a execução real do pacote de recuperação (8.2, que grava objetos no `.git` e a ref `refs/heads/recovery`). Agente nenhum aplica, desliga ou "contorna" proteção por conta própria. A seção 1, a seção 5 (conferência) e o `-WhatIf` da seção 8 são só leitura.
 - **O administrador também fica sujeito às regras** (`enforce_admins` = true, ruleset de tag sem lista de bypass). Depois de ativar, nem o dono empurra direto em `main`/`dev` nem move tag `v*`. Emergência = desligar a regra (seção 6), agir, religar (seção 2 ou 4), tudo com aviso ao usuário.
 - **Ordem recomendada:**
   1. PR de sincronização do `dev` (seção 9, tarefa T14): o `dev` local está muito à frente do `origin/dev` e, com a proteção ativa, esses commits só chegam por PR. Fazer antes evita ter de desligar a regra depois. O PR de sincronização não depende do hook (o hook, passo 2, vem depois); se o hook estiver ativo, ele aceita a branch `sync/*` por ref nomeada.
@@ -217,17 +217,16 @@ Depois de desfazer, confirme com a seção 1.2 (404 nas duas branches e `ruleset
 O hook protege o `origin` no PC: recusa `--all`, `--tags`, `--mirror`, branches de trabalho, `recovery*`, tags internas, force push, deleção e atualização de tag `v*`. Lista e regras: cabeçalho de `scripts/dev/git-hooks/pre-push.ps1`. Ele protege a máquina; não substitui as regras do servidor.
 
 ```powershell
-# ativar (uma vez por clone)
-git config core.hooksPath scripts/dev/git-hooks
+# ver o que seria feito (nada é gravado)
+powershell -NoProfile -File scripts/dev/install-hooks.ps1 -WhatIf
 
-# conferir
-git config --get core.hooksPath      # esperado: scripts/dev/git-hooks
-
-# desligar
-git config --unset core.hooksPath
+# ativar (uma vez por clone); o instalador também confere
+powershell -NoProfile -File scripts/dev/install-hooks.ps1
 ```
 
-- Vale para o clone em que o comando foi rodado. Outro clone ou outra worktree com configuração própria precisa do mesmo comando (a configuração fica no `.git/config` compartilhado do repositório; confira com `--get` na worktree em que você vai empurrar).
+- **Conferência = o próprio instalador.** Exit 0: instalado (ou já estava) e conferido por um push de teste a um repositório temporário. Exit 1: conflito com outro hook que ele não instalou, ou o hook NÃO está em vigor porque `core.hooksPath` aponta para outra pasta (ele mostra as duas opções: remover o `core.hooksPath` ou instalar nessa pasta; nunca mexe na configuração). Exit 2: problema de ambiente.
+- **Desligar é decisão do usuário:** remover à mão os dois arquivos (`pre-push` e `pre-push.ps1`) da pasta de hooks comum (`git rev-parse --git-common-dir`, subpasta `hooks`), ou ajustar o `core.hooksPath` se for ele que está em vigor. O agente não faz.
+- Vale para todas as worktrees e branches do clone, porque a pasta de hooks é comum (não depende de a branch ter `scripts/dev/git-hooks`). O hook aceita no máximo **uma branch de trabalho por push** ao público. Outro clone precisa do mesmo comando.
 - **Válvula de escape (só o usuário):** `CLAUDIA_ALLOW_PUBLIC_PUSH=1` libera o push ao repositório público **inteiro**, deleções incluídas, com um aviso. Use só de propósito, na mesma linha do comando (`$env:CLAUDIA_ALLOW_PUBLIC_PUSH = '1'; git push ...; Remove-Item Env:CLAUDIA_ALLOW_PUBLIC_PUSH`), e nunca deixe a variável definida na sessão. **Agente nenhum a usa sem pedido explícito do usuário.**
 - Ativar e desligar o hook é decisão do usuário, como a proteção de branch.
 
@@ -269,6 +268,10 @@ Objetivo: levar ao `origin/dev` os commits que só existem no `dev` local, por P
 # 1. branch de sincronização a partir do dev local (troque AAAA-MM-DD pela data)
 git switch -c sync/dev-AAAA-MM-DD dev
 
+# 1.1 varredura de segredos ANTES do push (só leitura); exit 1 ou 2: PARE e avise o usuário
+powershell -NoProfile -File scripts/dev/scan-secrets.ps1 -Range origin/dev..sync/dev-AAAA-MM-DD
+# Avisos (caminhos pessoais, e-mails) não bloqueiam: repasse a lista ao usuário e só siga com o OK dele.
+
 # 2. publicar só essa branch (a lista do hook aceita sync/*)
 git push origin sync/dev-AAAA-MM-DD
 
@@ -287,19 +290,19 @@ gh pr checks sync/dev-AAAA-MM-DD
 gh pr merge sync/dev-AAAA-MM-DD --merge
 
 # 7. avançar o dev local só por fast-forward
-git switch dev
-git fetch origin
-git pull --ff-only
+git fetch origin dev:dev
 
 # 8. backup e conferência da invariante
 git push backup --all
+git push backup --tags
 powershell -NoProfile -File scripts/dev/verify-backup.ps1
 ```
 
 Regras do passo a passo:
 
 - **Nunca** `--admin` (contorna a proteção) e **nunca** `--delete-branch`/`-d` (apaga a branch remota sem o usuário decidir).
-- Se o `git pull --ff-only` falhar (o `dev` local divergiu do `origin/dev`), pare e avise o usuário; nunca `git pull` sem `--ff-only`, nunca `reset`.
+- `git fetch origin dev:dev` só avança por fast-forward e não troca de branch. Se recusar (o `dev` local divergiu do `origin/dev`), pare e avise o usuário; nunca `git pull` sem `--ff-only`, nunca `reset`.
+- Se a varredura do passo 1.1 der exit 1 ou 2, não empurre.
 - Se o `strict` estiver ativo e o `dev` andar durante o PR, atualize a branch e espere o CI de novo antes do merge.
-- Com o `dev` à frente do `origin/dev` em muitos commits, o PR será grande (acima da meta de cerca de 400 linhas); por ser PR de sincronização de histórico já revisado, é uma exceção esperada. O `dev` também não pode ficar atrás de `main`: se `main` tiver algo que o `dev` não tem, faça antes o PR `main` → `dev` (com o OK do usuário).
+- Com o `dev` à frente do `origin/dev` em muitos commits, o PR será grande (não há limite de tamanho de PR); é PR de sincronização de histórico já revisado. O `dev` também não pode ficar atrás de `main`: se `main` tiver algo que o `dev` não tem, faça antes o PR `main` → `dev` (com o OK do usuário).
 - Remover a branch `sync/dev-AAAA-MM-DD` depois (local e remota) é decisão do usuário, com a tag `archive/<branch>` antes, como em `agents/versao.md`.

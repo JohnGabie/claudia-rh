@@ -120,7 +120,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 - Aceite: código de saída 0 se a invariante vale, 1 se não; nenhuma escrita.
 
 ### T11. Pacote de recuperação
-- `scripts/dev/recovery-pack.ps1`: monta, numa worktree temporária da branch órfã `recovery`, os arquivos da **lista permitida** (config do projeto, config global e memória, `STATE.md`, patches do trabalho não commitado, último `.journal/`); roda a varredura de segredos antes de gravar; recusa gravar se achar algo; não apaga nada.
+- `scripts/dev/recovery-pack.ps1`: monta, numa worktree temporária da branch órfã `recovery` (mecanismo real: índice temporário, sem worktree; ver T18), os arquivos da **lista permitida** (config do projeto, config global e memória, `STATE.md`, patches do trabalho não commitado, último `.journal/`); roda a varredura de segredos antes de gravar; recusa gravar se achar algo; não apaga nada.
 - Lista de exclusão sempre ativa: `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil, banco do usuário.
 - Teste só com pasta de origem falsa criada pelo teste, com segredo de mentira (padrão `sk-ant-` sintético) para provar a recusa, e prova de mutação.
 - Ler `settings.local.json` e o `settings.json` global **só dentro do script, para varrer**; o conteúdo não é impresso.

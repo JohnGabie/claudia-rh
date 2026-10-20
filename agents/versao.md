@@ -28,12 +28,12 @@ Manter o repositório saudável, previsível e recuperável: branches limpas, ba
 
 Merge local em `dev` ou `main` **não existe mais**: um merge local e o merge do PR geram commits diferentes para o mesmo trabalho, e o `dev` local diverge do `origin/dev`.
 
-1. O revisor escreve "Looks good to me" da tarefa e **chama o versionador**, passando branch, tarefa e evidência.
-2. **A cada tarefa aprovada, a branch vai SÓ ao `backup`.** Nada de feature incompleta no `origin`.
-3. **Quando todas as tarefas do plano da feature tiverem "Looks good to me"**, o versionador, nesta ordem: (a) faz a **varredura de segredos**; achou algo, para (ver "Varredura de segredos"); (b) empurra a branch ao `origin` por ref nomeada; (c) abre ou atualiza o PR **contra `dev`**: `gh pr create --base dev --head <branch>` (modelo de `.github/PULL_REQUEST_TEMPLATE.md`, com "Como foi verificado" e "NÃO verificado"); (d) acompanha o CI com `gh pr checks`. A branch padrão do `origin` é `main`, então `--base dev` é obrigatório; PR para `main` só existe na release (`dev` → `main`), por ordem do usuário. Empurrar e abrir o PR não pede OK do usuário: a autorização é o "Looks good to me" da última tarefa.
+1. O revisor escreve "Looks good to me" da tarefa e **pede ao orquestrador que chame o versionador** (um subagente pode não conseguir lançar outro), passando branch, tarefa e evidência.
+2. **A cada tarefa aprovada, a branch vai SÓ ao `backup`.** Nada de feature incompleta no `origin`. **Integração da tarefa na branch da feature:** só depois do "Looks good to me", fast-forward da branch da tarefa para a `feat/*` (`git merge --ff-only`); se a `feat/*` andou, rebase da branch da tarefa antes (ela nunca foi ao `origin`; ver "Princípios"). A worktree da tarefa sai com `git worktree remove` sem `--force`, depois de conferir os diários (P16, abaixo).
+3. **Quando todas as tarefas do plano da feature tiverem "Looks good to me"**, o versionador, nesta ordem: (a) faz a **varredura de segredos** do que vai ao `origin`: `powershell -NoProfile -File scripts/dev/scan-secrets.ps1 -Range origin/dev..<branch>`; exit 1 ou 2 (ou segredo achado): para (ver "Varredura de segredos"); (b) empurra a branch ao `origin` por ref nomeada; (c) abre ou atualiza o PR **contra `dev`**: `gh pr create --base dev --head <branch>` (modelo de `.github/PULL_REQUEST_TEMPLATE.md`, com "Como foi verificado" e "NÃO verificado"); (d) acompanha o CI com `gh pr checks`. A branch padrão do `origin` é `main`, então `--base dev` é obrigatório; PR para `main` só existe na release (`dev` → `main`), por ordem do usuário. Empurrar e abrir o PR não pede OK do usuário: a autorização é o "Looks good to me" da última tarefa.
 4. Devolve ao **revisor** um relatório: o que empurrou, link do PR, estado do CI. O revisor confere e **dispensa** o versionador; se faltar algo, devolve com o que falta.
 5. Com o CI verde, o **orquestrador** (não o versionador) mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos, estado do CI, a partir do relatório do versionador) e pede "pode fechar" **na conversa**. Só depois do "pode fechar", o **orquestrador chama o versionador de novo** para o merge. Antes do `gh pr merge --merge`, o versionador confere de novo `gh pr checks <pr>` (o CI pode ter mudado, por exemplo se `dev` andou e a regra de branch atualizada refez os checks); algum check não verde: **não faz o merge** e volta ao orquestrador. Estando tudo verde: `gh pr merge --merge` e registro da decisão no PR (`Approved by the user in session, AAAA-MM-DD`). **Proibido** `--admin` (contorna a proteção) e `--delete-branch`/`-d` (apaga a branch remota sem o usuário).
-6. Depois do merge: `git fetch origin`; o `dev` (ou `main`) local avança **só por `git pull --ff-only`**; push ao `backup`. O push ao `backup` acontece mesmo quando o `--ff-only` falha. Se o `--ff-only` falhar (o `dev` local divergiu do `origin/dev`; a divergência já existente se resolve na T14), **parar e avisar o usuário**; nunca `git pull` sem `--ff-only`, nunca `reset`.
+6. Depois do merge: o `dev` (ou `main`) local avança por `git fetch origin dev:dev` (ou `main:main`): só avança por fast-forward e não troca de branch. O push ao `backup` acontece mesmo quando o fetch é recusado. Se o fetch recusar (o `dev` local divergiu do `origin/dev`; a divergência existente se resolve pelo PR de sincronização), **parar e avisar o usuário**; nunca `git pull` sem `--ff-only`, nunca `reset`.
 
 ## Guardião da estabilidade (P11)
 
@@ -69,7 +69,7 @@ O `backup` é o espelho do `origin` mais o que ainda não foi publicado (branche
 
 - **Invariante:** toda ponta de branch do `origin` é igual ou **ancestral** da mesma ref no `backup`; toda **tag** do `origin` aponta para o **mesmo** commit no `backup` (tag diferente é erro, mesmo que o backup esteja à frente); nenhuma ref do `backup` apaga ou reescreve história do `origin`. Verificada por `powershell -NoProfile -File scripts/dev/verify-backup.ps1` (só leitura, não faz fetch nem push): exit 0 = todas as refs do `origin` OK ou OK-ANCESTRAL; exit 1 = alguma FALTA, DIVERGE, ATRASADO, TAG-DIFERE ou NAO-VERIFICAVEL; exit 2 = um remote não respondeu. O script roda **depois de cada push ao backup** e **antes de declarar o backup feito**.
 - **Quando empurrar:** fim de tarefa aprovada, depois de cada merge, antes de operação arriscada, ao encerrar a sessão e ao atualizar o pacote de recuperação.
-- **Exceção única, a desfazer na T14:** o `dev` local está 84 commits à frente do `origin/dev` (merges locais antigos). Resolve-se uma vez, por PR de sincronização (`sync/dev-AAAA-MM-DD` para `origin/dev`), nunca por push direto.
+- **Exceção única:** o `dev` local está à frente do `origin/dev` (merges locais antigos). A divergência existente se resolve uma vez, por PR de sincronização (`sync/dev-AAAA-MM-DD` para `origin/dev`; antes, varredura de segredos em `origin/dev..sync/dev-AAAA-MM-DD`), nunca por push direto.
 
 ## Pacote de recuperação (P14 e P17)
 
@@ -78,13 +78,14 @@ Branch órfã `recovery`, **só no `backup`** (sem ancestral comum com `dev`; nu
 - **Entra (allowlist; nada entra por padrão):** config do projeto (de `.claude/`: skills, comandos, `settings.json` e `settings.local.json` se a varredura passar; **exclui `.claude/worktrees/` explicitamente**, são cópias completas do repo; mais `.mcp.json` sem segredos); config global e memória (`CLAUDE.md` global, lista de plugins, memória deste projeto, `settings.json` global só se a varredura passar); estado de trabalho (`STATE.md`, patches do trabalho não commitado, todos os diários do `.journal\` do checkout principal, não só o último, e os que só existem no `.journal\` de alguma worktree).
 - **Fica sempre de fora:** `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil (`candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `disparo.json`, `notif.json`, `modo_autonomo.json`) e o banco do usuário.
 - **Limpeza por campo antes da regex:** em todo JSON de configuração, remover `env`, `headers` e qualquer chave cujo nome contenha `key`, `token`, `secret` ou `password`. A regex é a segunda camada. **Nunca ler `.credentials.json`** nem equivalentes. Achou segredo: não grava e avisa.
-- O script (`powershell -NoProfile -File scripts/dev/recovery-pack.ps1`; `-WhatIf` só lista o que entraria) monta o conteúdo numa pasta temporária e grava um commit na branch órfã `recovery` por índice temporário e plumbing do git: sem worktree, sem mexer em HEAD, no índice nem nas branches do usuário. **Não faz push** (o versionador empurra com `git push backup recovery`) e **não apaga nada**. Se a varredura de segredos achar algo, não grava e avisa que a cópia ficou na pasta temporária, para o usuário apagar à mão. A primeira execução real nos dados do usuário é decisão dele.
+- O script (`powershell -NoProfile -File scripts/dev/recovery-pack.ps1`; `-WhatIf` só lista o que entraria) monta o conteúdo numa pasta temporária e grava um commit na branch órfã `recovery` por índice temporário e plumbing do git: sem worktree, sem mexer em HEAD, no índice nem nas branches do usuário. **Não faz push** (o versionador empurra com `git push backup recovery`) e **não apaga nada**. Se a varredura de segredos achar algo, não grava e avisa que a cópia ficou na pasta temporária, para o usuário apagar à mão. A primeira execução real nos dados do usuário é decisão dele: se `git show-ref --verify --quiet refs/heads/recovery` falhar (o pacote nunca rodou), rodar só com `-WhatIf` e perguntar ao usuário antes da execução real.
 - Atualização: no fim da tarefa, ao mudar a config e antes de operação arriscada. Não é automática.
 
 ## Proteção de branch (P15)
 
 Ativa, ou a ativar, no `origin` (`main` e `dev`): PR obrigatório com 0 aprovações do GitHub; os 5 checks acima obrigatórios; branch atualizada antes do merge; sem force push e sem apagar; só merge commit; tags `v*` protegidas contra mover e apagar.
 - Comandos de ativar, conferir e desfazer cada item (e do hook local): `docs/runbook-protecao.md`.
+- **Hook local `pre-push`:** instalado por `powershell -NoProfile -File scripts/dev/install-hooks.ps1` (com `-WhatIf` antes), que copia o hook para a pasta de hooks comum do repositório e vale para todas as worktrees e branches. A conferência é o próprio instalador: exit 0 = instalado e conferido; exit 1 = conflito com outro hook ou hook NÃO em vigor por causa de `core.hooksPath` (ele mostra as duas opções); exit 2 = problema de ambiente. O hook aceita no máximo **uma branch de trabalho por push** ao público. Desligar é decisão do usuário (remover à mão os dois arquivos do hook na pasta de hooks comum, ou ajustar `core.hooksPath`); o agente não faz.
 
 - **Ativar e desligar é do usuário**, só com o "pode aplicar" dele. O versionador não aplica, não desliga, nem sugere contornar.
 - O **administrador também está sujeito às regras**. Emergência = o usuário desliga a regra, age, religa; os comandos de desligar ficam escritos junto dos de ativar.
@@ -103,8 +104,8 @@ Ativa, ou a ativar, no `origin` (`main` e `dev`): PR obrigatório com 0 aprovaç
 
 - Branches `feat/<nome>` e `fix/<nome>`, curtas, a partir de `dev` atualizado; uma por tarefa ou preocupação. Executores em paralelo usam worktrees em `.claude/worktrees/`.
 - Commits em inglês, atômicos, com o rodapé de coautoria exigido pelo ambiente. Nada de segredo, caminho pessoal ou e-mail.
-- PR alvo de até cerca de 400 linhas; acima disso, pedir ao arquiteto para dividir.
-- Tags: SemVer anotado (`vX.Y.Z`) só em release, a pedido do usuário. `archive/<branch>` para branch integrada ou descartada.
+- Testes dos scripts: `powershell -NoProfile -File scripts/dev/test-*.ps1`, pelo PowerShell ou pelo Git Bash.
+- Tags: anotadas, só em release, a pedido do usuário; formato aceito: `v` seguido de dígitos e pontos, com sufixo opcional (`vX.Y.Z`). `archive/<branch>` para branch integrada ou descartada.
 - Binário > 5 MB: sinalizar antes de commitar.
 
 ## Saúde das branches (relatório sob demanda, e ao voltar de uma pausa)
@@ -121,7 +122,12 @@ Só leitura, **gerado na hora**. O estado das branches não vive em arquivo vers
 
 ## Varredura de segredos (antes do primeiro push ao backup e antes de cada PR)
 
-Procurar no histórico a ser enviado: chaves e tokens, arquivos de credencial, `candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, caminhos pessoais e e-mails. Segredo encontrado: parar, avisar o usuário, rotacionar a credencial (remover do histórico não basta); só então, com aprovação, limpar o histórico.
+Comando (só leitura): `powershell -NoProfile -File scripts/dev/scan-secrets.ps1 -Range <base>..<branch>`. Exemplos: `origin/dev..feat/x` antes do PR; para o primeiro push ao `backup`, o intervalo do que ainda não está lá. A lista de padrões é `scripts/dev/lib/secret-patterns.ps1`. Procura chaves e tokens, arquivos e pastas de credencial, `candidate_base.yaml`, `search_variants.yaml`, `strategy.md`.
+
+- **exit 0:** nada achado e tudo varrido. Segue.
+- **exit 1:** algo achado **ou** arquivo não varrido (binário grande demais, por exemplo; a mensagem diz "NAO varrido(s): conferir a mao"). Achou segredo: parar, avisar o usuário, rotacionar a credencial (remover do histórico não basta); só então, com aprovação, limpar o histórico. Arquivo não varrido: conferir à mão antes de enviar; não enviar até conferir.
+- **exit 2:** erro de ambiente (git ausente, intervalo inválido ou vazio, não é repositório). Corrigir o intervalo ou o ambiente e rodar de novo; não enviar sem varredura.
+- **Avisos (não bloqueiam, o exit continua 0):** caminhos pessoais e e-mails aparecem na seção "Avisos (nao bloqueiam)". O agente de versão **repassa a lista ao usuário antes do push e só segue com o OK dele**.
 
 ## Recuperação
 

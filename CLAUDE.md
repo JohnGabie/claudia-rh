@@ -148,14 +148,14 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 - **O agente não decide fora da spec.** O que a spec não cobre, ele relata e para. Escopo, segurança e edição do prompt de runtime (`src-tauri/src/prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
 - **Limites do agente:** sem push (ao `origin` só o agente de versão, por ref nomeada, depois do "Looks good to me" da feature completa; ao `backup` só o agente de versão; ver "Dois remotes"), sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
 - **Agente que falha** (limite de sessão, erro de API) deve ser tratado como se não tivesse entregado nada: confira a worktree e relance com o mesmo escopo.
-- **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado.
+- **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado **e conferindo os diários da worktree** (ver P16 em `agents/versao.md`: nenhum diário é apagado).
 
 #### Ciclo obrigatório executor ↔ revisor (uma tarefa por vez)
 
 Motivo desta regra: a branch já quebrou quando o trabalho foi tocado inteiro numa tacada só, sem passar por desenvolver, testar, validar e aprovar ou recusar. Por isso:
 
 1. **Uma tarefa do plano por ciclo.** Nunca entregar várias tarefas, nem a feature inteira, numa única execução. A tarefa seguinte só começa depois do OK da atual.
-2. **O ciclo é:** o **Executor** desenvolve e faz commit → um **Revisor** (agente separado do executor, camada FORTE quando a tarefa toca segurança, dados ou ferramenta do agente; ver `agents/revisor.md`) valida → **aprova ou recusa** → se recusa, o executor corrige e o ciclo recomeça (teste, validação, nova decisão) → repete até o revisor escrever **"Looks good to me"**.
+2. **O ciclo é:** o **Executor** desenvolve e faz commit → um **Revisor** (agente separado do executor, camada FORTE, sempre; ver `agents/revisor.md`) valida → **aprova ou recusa** → se recusa, o executor corrige e o ciclo recomeça (teste, validação, nova decisão) → repete até o revisor escrever **"Looks good to me"**.
 3. **O executor não é encerrado, descartado nem substituído enquanto o revisor não der o "Looks good to me".** Dar a tarefa por concluída, matar o executor ou seguir para a próxima antes disso é violação. Quem corrige é o próprio executor; o orquestrador **nunca corrige no lugar dele** (a correção pularia a revisão). Só se troca de executor nas exceções já previstas: o agente falhou (limite de sessão, erro de API) ou falhou **2 vezes na mesma coisa**, caso em que o orquestrador relança com o mesmo escopo, uma camada acima (`agents/modelos.md`), e o ciclo continua.
 4. **Limite de rodadas:** cinco recusas seguidas na mesma tarefa, e o orquestrador **para e pergunta ao usuário**; não segue adiante com a tarefa aberta.
 5. **O que o Revisor faz (não basta ler o diff):**
@@ -230,6 +230,7 @@ Em `npm run tauri dev`, lê `debug-logs/events.jsonl` e `debug-logs/pty-tail.log
 - Frontend: `npm run build` (`tsc` + vite). Typecheck: `npx tsc --noEmit`.
 - Backend: em `src-tauri/`, `cargo check` / `cargo clippy --all-targets` / `cargo test --no-run` no PC. **`cargo test` (qualquer um, inclusive `--lib`) roda só no Sandbox**: vários testes criam e apagam pastas, e um deles já apagou o disco do usuário.
 - App: `npm run tauri dev`.
+- Testes dos scripts de `scripts/dev/` (hooks, varredura, pacote de recuperação, backup): `powershell -NoProfile -File scripts/dev/test-<nome>.ps1`, pelo PowerShell ou pelo Git Bash.
 - Testes live (Chrome real, `#[ignore]`; **só no Sandbox, nunca no PC**): `CLAUDIA_TEST_CHROME=%TEMP%\cft\chrome-win64\chrome.exe cargo test --test browser_live --test viewport_live -- --ignored --test-threads=2 --skip icon`. Os de ícone abrem janela visível e rodam à parte.
 - Se o app estiver aberto, use `CARGO_TARGET_DIR` fora do `target/` do repo: o Windows trava o `.exe` em uso.
 
