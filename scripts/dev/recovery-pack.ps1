@@ -50,7 +50,8 @@
 # -TestPretendNoRecovery exists only for tests: behaves as if refs/heads/recovery did not exist yet (simulates a
 #   concurrent writer), so update-ref must fail on the expected old value.
 # Exit: 0 committed or nothing changed (also -WhatIf); 1 the scan found something, the ref guard refused, the ref
-#   moved during the run, or another content error; 2 environment error (git missing, not a repository).
+#   moved during the run, or another content error; 2 environment error (git missing, not a repository, or any
+#   unhandled exception such as an unreadable file: printed masked by the script-level trap).
 param(
     [string]$RepoDir = (Get-Location).Path,
     [string]$GlobalClaudeDir = "",
@@ -89,6 +90,19 @@ function Say([string]$Text) { Write-Output (Hide-Secrets $Text) }
 function Say-Err([string]$Text) { [Console]::Error.WriteLine((Hide-Secrets $Text)) }
 # Text of a git error (stderr lines joined), masked. Used for every git failure that is printed or recorded.
 function Format-GitError($Result) { return (Hide-Secrets (($Result.Err -join ' ').Trim())) }
+
+# Any unhandled exception (access denied, path too long, I/O error...) would be printed by PowerShell with the raw
+# message, which may hold a path with a secret. This trap prints only the masked message (never the stack trace or
+# the invocation info), warns about the temp folder if one was already made, and exits 2 (environment error).
+$tmp = $null
+trap {
+    Say-Err ("ERRO: " + $_.Exception.Message)
+    if ($script:tmp -and (Test-Path -LiteralPath $script:tmp)) {
+        Say-Err "ATENCAO: a pasta temporaria $($script:tmp) pode conter uma copia parcial. Apague-a a mao: este script nao apaga nada, por regra."
+    }
+    [Environment]::SetEnvironmentVariable("GIT_INDEX_FILE", $null, "Process")
+    exit 2
+}
 
 # Early ref guard: refuse before building anything.
 if ($TargetRef -cne "refs/heads/recovery" -and -not $TestLateGuard) {

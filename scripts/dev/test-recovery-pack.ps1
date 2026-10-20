@@ -444,6 +444,23 @@ New-Item -ItemType Directory -Path $NR2 | Out-Null
 $res = Invoke-Pack -RepoDir $NR2 -GlobalClaudeDir $G -MemoryDir $M
 Assert-Exit $res "17b not-a-repository message: exit 2" 2
 Assert-Case "17b not-a-repository message: masked" ($res.Text.Contains("[oculto]") -and -not $res.Text.Contains($v)) "output:`n$($res.Text)"
+# 17c. Unhandled exception: a memory file whose NAME is a synthetic secret and that cannot be read (read denied by
+# an ACL on this file only, inside this test's temp folder; left behind like everything else).
+$v = "sk-ant-" + (Get-Letters 30)
+$memDeny = Join-Path $root "mem-deny"
+Write-Text (Join-Path $memDeny "MEMORY.md") "- note one`n"
+$denyFile = Join-Path $memDeny "$v-note.md"
+Write-Text $denyFile "harmless`n"
+& icacls $denyFile /deny "${env:USERNAME}:(R)" | Out-Null
+$unreadable = $false
+try { [void][IO.File]::ReadAllBytes($denyFile) } catch { $unreadable = $true }
+Assert-Case "17c setup: the file is really unreadable" $unreadable "read succeeded; the ACL was not applied"
+$beforeDeny = Get-Recovery
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $memDeny
+Assert-Exit $res "17c unreadable file: exit 2 (environment error)" 2
+Assert-Case "17c unreadable file: error message printed, masked" ($res.Text.Contains("ERRO:") -and $res.Text.Contains("[oculto]")) "output:`n$($res.Text)"
+Assert-Case "17c unreadable file: value never shown" (-not $res.Text.Contains($v)) "value leaked. Output:`n$($res.Text)"
+Assert-Case "17c unreadable file: recovery ref unchanged" ((Get-Recovery) -eq $beforeDeny) "recovery moved to $(Get-Recovery)"
 Write-Output "Temp folder (left behind): $root"
 
 # ================================================================== world E: a git error that carries a secret is masked
