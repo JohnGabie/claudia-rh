@@ -95,7 +95,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 |---|---|---|---|
 | T8 | feita | Rodada 1: REJEITADO-CORRIGIR (13 achados). Rodada 2: APROVADO, "Looks good to me" (commit `b0b7a18`) | `agents/versao.md` ampliado (P7 reescrita, P11 a P15, camada RÁPIDO/MÉDIO e FORTE só na recuperação) |
 | T9 | feita | Rodada 1: REJEITADO-CORRIGIR (recusa do merge sumiu; CONVENCAO.md L79). Rodada 2: APROVADO, "Looks good to me" | `CLAUDE.md` (Git, PR e CI, "O humano decide") e `agents/revisor.md` (chamar o versionador, conferir o relatório e dispensá-lo; push de branch e PR autorizados pelo "Looks good to me" da última tarefa) |
-| T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
+| T10 | feita | Rodada 1: REJEITADO-CORRIGIR (prompt de credencial, origin inexistente sem teste; tags iguais por decisão do usuário). Rodada 2: REJEITADO-CORRIGIR (teste 12 aceitava linhas comentadas). Rodada 3: APROVADO, "Looks good to me" | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
 | T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
 | T12 | nova | pendente | hook `pre-push` (lista permitida com `sync/*`; bloqueia `recovery*`, `wip/*`, tags internas e `--all`/`--tags` acidentais no `origin`) e teste |
 | T15 | feita | Rodadas 1, 2 e 3: REJEITADO-CORRIGIR (isolamento por branch, heurística dependente da árvore, HEAD destacado, repo sem commit, regra sem prova). Executor relançado em FORTE após 3 recusas. Rodada 4: APROVADO, "Looks good to me" (commit `c8ad62a`) | P16: diário no checkout principal (`git rev-parse --git-common-dir`), teste e conferência do `.journal/` antes de remover worktree |
