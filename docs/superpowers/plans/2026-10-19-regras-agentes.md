@@ -98,8 +98,9 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 | T10 | nova | pendente | `scripts/dev/verify-backup.ps1` (só leitura) e teste |
 | T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
 | T12 | nova | pendente | hook `pre-push` (lista permitida com `sync/*`; bloqueia `recovery*`, `wip/*`, tags internas e `--all`/`--tags` acidentais no `origin`) e teste |
-| T15 | nova | pendente | P16: diário no checkout principal (`git rev-parse --git-common-dir`), teste e conferência do `.journal/` antes de remover worktree |
+| T15 | feita | Rodadas 1, 2 e 3: REJEITADO-CORRIGIR (isolamento por branch, heurística dependente da árvore, HEAD destacado, repo sem commit, regra sem prova). Executor relançado em FORTE após 3 recusas. Rodada 4: APROVADO, "Looks good to me" (commit `c8ad62a`) | P16: diário no checkout principal (`git rev-parse --git-common-dir`), teste e conferência do `.journal/` antes de remover worktree |
 | T16 | feita | Rodada 1: APROVADO, "Looks good to me" (commit `13be975`; relato do executor fora do formato, registrado) | P18: tirar a tabela de branches do `INDEX.md`; o estado vem do relatório do versionador |
+| T17 | nova | pendente | Sobras da T15: `agents/versao.md` (antes de remover worktree, conferir `<principal>.journal` filtrando pela branch ou pela worktree, e o `.journal/` da worktree só nos casos de volta) e a menção ao nome do diário na spec (`<stamp>-<branch>-<tag>-<motivo>.md`) |
 | T13 | nova | pendente | comandos de proteção (`gh api`) escritos com a reversão; **não executados** |
 | T14 | nova | pendente | PR de sincronização do `dev` local e ativação, **só com o "pode aplicar"** |
 
