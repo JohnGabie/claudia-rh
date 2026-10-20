@@ -2,6 +2,7 @@
 # manual /compact: blocks (exit 2) until the newest diary (< 30 min) has no TODO-CONTEXT markers left.
 # auto compaction (or unknown type): never blocks (it could stall the session); makes sure a skeleton with automatic facts exists.
 # Reads the hook JSON from stdin; only an explicit "manual" blocks. An absent, unreadable or unknown type never blocks.
+# A session with neither a branch nor a worktree (not a git folder) never blocks.
 # Only reads and creates files. Never deletes anything.
 $ErrorActionPreference = "Stop"
 
@@ -23,38 +24,66 @@ try {
 
 $latest = $null
 # --- Shared diary helpers (identical in journal-skeleton.ps1, pre-compact.ps1 and session-start.ps1) ---
+# Output lines of a git command run in $Dir; empty when git fails or is missing. Windows PowerShell 5.1
+# turns native stderr into a terminating error under "Stop", so stderr is dropped with "Continue" here.
+function Get-GitLines([string]$Dir, [string[]]$GitArgs) {
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = @(& git -C $Dir @GitArgs 2>$null)
+        if ($LASTEXITCODE -ne 0) { return @() }
+        return @($out | ForEach-Object { [string]$_ })
+    } catch { return @() }
+}
+# First non-empty output line of a git command, or $null.
+function Get-GitLine([string]$Dir, [string[]]$GitArgs) {
+    $l = @(Get-GitLines $Dir $GitArgs | Where-Object { $_.Trim() } | Select-Object -First 1)
+    if ($l.Count -eq 0) { return $null }
+    return $l[0].Trim()
+}
 function ConvertTo-NormPath([string]$P) { return [IO.Path]::GetFullPath($P.Trim()).TrimEnd('\') }
+# True when $Parent is the main checkout that owns $CommonDir. git must see $Parent as the top of a work tree
+# whose git dir is exactly $CommonDir. git cannot tell that apart from a separate git dir named ".git"
+# (git init --separate-git-dir <store>\.git): for both it reports <store> as the main work tree. So a folder
+# holding nothing but the git dir (and .journal) is rejected when HEAD has files to check out: the real work
+# tree of that repository is elsewhere. A main checkout of an empty HEAD tree (or no commit) is accepted.
+function Test-MainCheckout([string]$Parent, [string]$CommonDir) {
+    $pgd = Get-GitLine $Parent @("rev-parse", "--path-format=absolute", "--git-dir")
+    if (-not $pgd -or ((ConvertTo-NormPath $pgd) -ine $CommonDir)) { return $false }
+    if ((Get-GitLine $Parent @("rev-parse", "--is-inside-work-tree")) -ne "true") { return $false }
+    $ptop = Get-GitLine $Parent @("rev-parse", "--show-toplevel")
+    if (-not $ptop -or ((ConvertTo-NormPath $ptop) -ine $Parent)) { return $false }
+    $other = @(Get-ChildItem -LiteralPath $Parent -Force | Where-Object { $_.Name -ne ".git" -and $_.Name -ne ".journal" })
+    if ($other.Count -gt 0) { return $true }
+    return (-not (Get-GitLine $Parent @("ls-tree", "HEAD")))
+}
 # Root of the MAIN checkout, so the diary survives removing a worktree. Falls back to the session folder.
 function Get-MainRoot([string]$Dir) {
     try {
-        $gd = (& git -C $Dir rev-parse --path-format=absolute --git-dir 2>$null)
-        if ($LASTEXITCODE -ne 0 -or -not $gd) { return $Dir }
-        $cd = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null)
-        if ($LASTEXITCODE -ne 0 -or -not $cd) { return $Dir }
-        $gd = ConvertTo-NormPath ([string]($gd | Select-Object -First 1))
-        $cd = ConvertTo-NormPath ([string]($cd | Select-Object -First 1))
+        $gd = Get-GitLine $Dir @("rev-parse", "--path-format=absolute", "--git-dir")
+        $cd = Get-GitLine $Dir @("rev-parse", "--path-format=absolute", "--git-common-dir")
+        if (-not $gd -or -not $cd) { return $Dir }
+        $gd = ConvertTo-NormPath $gd
+        $cd = ConvertTo-NormPath $cd
         if ($gd -ieq $cd) {
             # Session is in the main checkout itself (also covers --separate-git-dir).
-            $top = (& git -C $Dir rev-parse --show-toplevel 2>$null)
-            if ($LASTEXITCODE -ne 0 -or -not $top) { return $Dir }
-            return ConvertTo-NormPath ([string]($top | Select-Object -First 1))
+            $top = Get-GitLine $Dir @("rev-parse", "--show-toplevel")
+            if (-not $top) { return $Dir }
+            return ConvertTo-NormPath $top
         }
-        # Linked worktree: the common dir must be "<main>\.git" and a real folder.
+        # Linked worktree: the common dir must be "<main>\.git" and <main> a real main checkout of it.
         if ((Split-Path -Leaf $cd) -ne ".git") { return $Dir }
         $parent = Split-Path -Parent $cd
-        if (Test-Path -LiteralPath (Join-Path $parent ".git") -PathType Container) { return $parent }
+        if (Test-MainCheckout $parent $cd) { return $parent }
         return $Dir
     } catch { return $Dir }
 }
-# Identity of the session: Branch (null when detached or unknown) and Worktree (its top-level folder, null when unknown).
+# Identity of the session: Branch and Worktree (its top-level folder, null when unknown).
+# Branch is null when HEAD is detached or unknown. In a repository without any commit
+# "symbolic-ref" still names the unborn branch (e.g. master), so that case filters by branch.
 function Get-SessionId([string]$Dir) {
-    $branch = $null; $top = $null
-    try {
-        $b = (& git -C $Dir symbolic-ref --short -q HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $b) { $branch = ([string]($b | Select-Object -First 1)).Trim() }
-        $t = (& git -C $Dir rev-parse --show-toplevel 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $t) { $top = ConvertTo-NormPath ([string]($t | Select-Object -First 1)) }
-    } catch { }
+    $branch = Get-GitLine $Dir @("symbolic-ref", "--short", "-q", "HEAD")
+    $top = Get-GitLine $Dir @("rev-parse", "--show-toplevel")
+    if ($top) { try { $top = ConvertTo-NormPath $top } catch { $top = $null } }
     return [pscustomobject]@{ Branch = $branch; Worktree = $top }
 }
 # True when the diary belongs to this session: exact branch when named, exact worktree path otherwise.
@@ -86,8 +115,15 @@ if ($latest) {
 }
 
 if (-not $fresh) {
+    # The skeleton reports its own failures on stderr; never let them end this hook with a terminating error.
     $skeleton = Join-Path $PSScriptRoot "journal-skeleton.ps1"
-    $latest = (& powershell -NoProfile -ExecutionPolicy Bypass -File $skeleton "pre-compact-$type" | Select-Object -Last 1)
+    $latest = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        $made = @(& powershell -NoProfile -ExecutionPolicy Bypass -File $skeleton "pre-compact-$type" 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $made.Count -gt 0) { $latest = ([string]$made[-1]).Trim() }
+    } catch { $latest = $null } finally { $ErrorActionPreference = "Stop" }
+    if ($latest -and -not (Test-Path -LiteralPath $latest)) { $latest = $null }
 }
 
 if ($latest -and (Select-String -LiteralPath $latest -SimpleMatch "<!-- TODO-CONTEXT -->" -Quiet)) {
