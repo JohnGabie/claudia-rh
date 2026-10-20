@@ -172,7 +172,7 @@ Nesta sessão, os passos de versionador depois de cada "Looks good to me" (fast-
 | Tarefa | Estado | Revisor | Observação |
 |---|---|---|---|
 | T19 | feita | Rodada 1: REJEITADO-CORRIGIR (tag publicada podia ser movida para frente ou recriada). Rodada 2: APROVADO, "Looks good to me" | Hook pre-push: normalizar a URL antes de reconhecer o público (`%xx`, `.`, `..`, barra final, maiúsculas) e recusar force push ao público (o sha remoto antigo, quando não for zeros, tem de ser ancestral do novo; se o objeto antigo não existir localmente, recusar). Testes e mutação. |
-| T20 | nova | pendente | Pacote de recuperação: regex para `accessToken`, `apiKey`, `clientSecret` e parecidos em texto (camelCase); recusar junction nos níveis entre `-GlobalClaudeDir` e a memória; máscara nas mensagens de erro do git. Testes e mutação. |
+| T20 | feita | Rodada 1: REJEITADO-CORRIGIR (exceção não tratada sem máscara). Rodada 2: REJEITADO-CORRIGIR (aviso da pasta temporária sem teste). Rodada 3: APROVADO, "Looks good to me" | Pacote de recuperação: regex para `accessToken`, `apiKey`, `clientSecret` e parecidos em texto (camelCase); recusar junction nos níveis entre `-GlobalClaudeDir` e a memória; máscara nas mensagens de erro do git. Testes e mutação. |
 
 A T18 (docs) passa a incluir também: o formato de tag decidido ("manter") no `agents/versao.md` e no cabeçalho do hook, e a ativação do hook no runbook da T13.
 
