@@ -210,14 +210,44 @@ Assert-Exit $r "11d branch ahead + equal tag: exit 0" 0
 Assert-Status $r "11d branch ahead + equal tag: branch OK-ANCESTRAL" "OK-ANCESTRAL" "refs/heads/main"
 Assert-Status $r "11d branch ahead + equal tag: tag OK" "OK" "refs/tags/t"
 
-# 12. Static check: the no-prompt env vars are set BEFORE the first git call (provoking a real credential
-# prompt would open a window on the user's machine, so this is checked on the script text).
+# 12. Behavior check: the script must run git with GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never (an expired
+# token on the private backup must not open a credential window). Provoking a real prompt would open a window on
+# the user's machine, so a FAKE git.cmd in a fresh temp folder just echoes those variables to stderr and fails (128).
+# The child process gets that folder at the FRONT of its own PATH (System.Diagnostics.ProcessStartInfo); the PATH
+# of this session and of the user is never changed. Resolution order: PowerShell's `& git` is an application lookup
+# through PATH, so the first PATH folder that holds git.cmd/git.exe wins; the fake folder is first, hence it wins.
+# Expected: exit 2 and an ERRO message containing GTP=0 and GCM=never.
+$fakeDir = New-TempPath "vb-fakegit-"
+New-Item -ItemType Directory -Path $fakeDir | Out-Null
+Set-Content -LiteralPath (Join-Path $fakeDir "git.cmd") -Encoding ASCII -Value @(
+    '@echo GTP=%GIT_TERMINAL_PROMPT% GCM=%GCM_INTERACTIVE% 1>&2',
+    '@exit /b 128')
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = "powershell.exe"
+$psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -RepoDir `"$script:W`""
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.EnvironmentVariables["PATH"] = $fakeDir + ";" + $psi.EnvironmentVariables["PATH"]
+# Make sure the variables are NOT inherited from this test session: only the script under test may set them.
+$psi.EnvironmentVariables.Remove("GIT_TERMINAL_PROMPT")
+$psi.EnvironmentVariables.Remove("GCM_INTERACTIVE")
+$proc = [System.Diagnostics.Process]::Start($psi)
+$errText = $proc.StandardError.ReadToEnd()
+$outText = $proc.StandardOutput.ReadToEnd()
+$proc.WaitForExit()
+$fr = [pscustomobject]@{ Code = $proc.ExitCode; Text = ($errText + "`n" + $outText) }
+Assert-Exit $fr "12 fake git: exit 2" 2
+Assert-Case "12 fake git: ERRO message" ($fr.Text -match "ERRO") "output:`n$($fr.Text)"
+Assert-Case "12 fake git saw GIT_TERMINAL_PROMPT=0" ($fr.Text -match "GTP=0\b") "output:`n$($fr.Text)"
+Assert-Case "12 fake git saw GCM_INTERACTIVE=never" ($fr.Text -match "GCM=never\b") "output:`n$($fr.Text)"
+
+# 12b. Second layer, static: the assignments are real (not commented) lines placed before the first git call.
 $text = Get-Content -Raw -LiteralPath $ScriptPath
 $iGit = $text.IndexOf("& git")
-$iTerm = $text.IndexOf('$env:GIT_TERMINAL_PROMPT = "0"')
-$iGcm = $text.IndexOf('$env:GCM_INTERACTIVE = "never"')
-Assert-Case "12 GIT_TERMINAL_PROMPT=0 before first git call" ($iTerm -ge 0 -and $iGit -ge 0 -and $iTerm -lt $iGit) "indexes: env=$iTerm git=$iGit"
-Assert-Case "12 GCM_INTERACTIVE=never before first git call" ($iGcm -ge 0 -and $iGit -ge 0 -and $iGcm -lt $iGit) "indexes: env=$iGcm git=$iGit"
-
+$mT = [regex]::Match($text, '(?m)^\s*\$env:GIT_TERMINAL_PROMPT\s*=\s*"0"')
+$mG = [regex]::Match($text, '(?m)^\s*\$env:GCM_INTERACTIVE\s*=\s*"never"')
+Assert-Case "12b GIT_TERMINAL_PROMPT=0 uncommented, before first git call" ($mT.Success -and $iGit -ge 0 -and $mT.Index -lt $iGit) "env=$($mT.Index) git=$iGit"
+Assert-Case "12b GCM_INTERACTIVE=never uncommented, before first git call" ($mG.Success -and $iGit -ge 0 -and $mG.Index -lt $iGit) "env=$($mG.Index) git=$iGit"
 if ($fail -eq 0) { Write-Output "ALL PASSED" } else { Write-Output "SOME FAILED" }
 exit $fail
