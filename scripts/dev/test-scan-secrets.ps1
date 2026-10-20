@@ -215,14 +215,16 @@ $c11b = Commit-All $R11 "add utf16 without bom"
 $res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R11
 Assert-Exit $res "11b UTF-16 without BOM (seen as binary): exit 1" 1
 Assert-Case "11b UTF-16 without BOM: file and pattern named" ($res.Text.Contains("$c11b wide.txt (binario) :: github-token")) "output:`n$($res.Text)"
-# 11c. a binary over 20 MB is listed as not scanned, without failing.
+# 11c. a binary over 20 MB is listed as not scanned and, on the safe side, the result is exit 1.
 $big = New-Object byte[] (21MB)
 $big[10] = 1
 Write-Bytes (Join-Path $R11 "big.bin") $big
 $c11c = Commit-All $R11 "add big binary"
 $res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R11
-Assert-Exit $res "11c binary over 20 MB: exit 0" 0
+Assert-Exit $res "11c binary over 20 MB: exit 1 (not scanned)" 1
 Assert-Case "11c binary over 20 MB: listed as not scanned" ($res.Text.Contains("$c11c big.bin: binario nao varrido")) "output:`n$($res.Text)"
+Assert-Case "11c binary over 20 MB: closing line asks for a manual check" ($res.Text.Contains("Nada encontrado no que foi varrido; 1 arquivo(s) NAO varrido(s): conferir a mao antes de enviar")) "output:`n$($res.Text)"
+Assert-Case "11c binary over 20 MB: never a plain 'Nada encontrado.'" (-not $res.Text.Contains("Nada encontrado.")) "output:`n$($res.Text)"
 
 # ------------------------------------------------------------------ 12. a change made in a MERGE commit itself
 $R12 = New-Repo "merge"
@@ -304,6 +306,44 @@ $res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R15
 Assert-Exit $res "15d personal path plus secret: exit 1" 1
 Assert-Case "15d personal path plus secret: finding and warning both listed" ($res.Text.Contains("$c15d both.md :: anthropic-key") -and $res.Text.Contains("$c15d both.md :: caminho pessoal C:\Users\[oculto]")) "output:`n$($res.Text)"
 Assert-Case "15d personal path plus secret: neither value shown" (-not $res.Text.Contains($v) -and -not $res.Text.Contains($n2)) "value leaked"
+
+# ------------------------------------------------------------------ 16. a line with a finding gives NO warning
+$R16 = New-Repo "nowarn"
+$p1 = Get-Letters 8
+$p2 = Get-Letters 24
+Write-Text (Join-Path $R16 "app.env.txt") "DB_PASSWORD=abc@$p1.$p2`n"
+$c16 = Commit-All $R16 "password with an at sign"
+$res = Invoke-Scan -Range "base..HEAD" -RepoDir $R16
+Assert-Exit $res "16 secret line that looks like an e-mail: exit 1" 1
+Assert-Case "16 secret line: finding named" ($res.Text.Contains("$c16 app.env.txt :: generic-assignment")) "output:`n$($res.Text)"
+Assert-Case "16 secret line: no warning for that line" (-not $res.Text.Contains("Avisos")) "output:`n$($res.Text)"
+Assert-Case "16 secret line: no piece of the value anywhere" (-not $res.Text.Contains($p1) -and -not $res.Text.Contains($p2)) "value leaked. Output:`n$($res.Text)"
+
+# ------------------------------------------------------------------ 17. secret in a branch or tag NAME of the range
+$R17 = New-Repo "refname"
+Write-Text (Join-Path $R17 "a.txt") "harmless`n"
+Commit-All $R17 "clean" | Out-Null
+$vb = "ghp_" + (Get-Letters 30)
+Invoke-G -C $R17 branch "feat/$vb" | Out-Null
+$res = Invoke-Scan -Range "base..feat/$vb" -RepoDir $R17
+Assert-Exit $res "17a branch name with a secret: exit 1" 1
+Assert-Case "17a branch name with a secret: named" ($res.Text.Contains("intervalo nome no intervalo :: github-token")) "output:`n$($res.Text)"
+Assert-Case "17a branch name with a secret: value never shown" (-not $res.Text.Contains($vb)) "value leaked. Output:`n$($res.Text)"
+$vt = "sk-ant-" + (Get-Letters 30)
+Invoke-G -C $R17 tag "rel-$vt" | Out-Null
+$res = Invoke-Scan -Range "base..rel-$vt" -RepoDir $R17
+Assert-Exit $res "17b tag name with a secret: exit 1" 1
+Assert-Case "17b tag name with a secret: named" ($res.Text.Contains("intervalo nome no intervalo :: anthropic-key")) "output:`n$($res.Text)"
+Assert-Case "17b tag name with a secret: value never shown" (-not $res.Text.Contains($vt)) "value leaked. Output:`n$($res.Text)"
+# 17d. the secret is only in the ref that HEAD resolves to (the range text is innocent).
+Invoke-G -C $R17 checkout -q "feat/$vb" | Out-Null
+$res = Invoke-Scan -Range "base..HEAD" -RepoDir $R17
+Assert-Exit $res "17d resolved ref name (HEAD) with a secret: exit 1" 1
+Assert-Case "17d resolved ref name: named, value never shown" ($res.Text.Contains("intervalo nome no intervalo :: github-token") -and -not $res.Text.Contains($vb)) "output:`n$($res.Text)"
+Invoke-G -C $R17 checkout -q main | Out-Null
+# 17c. an innocent range in the same repository is still clean.
+$res = Invoke-Scan -Range "base..main" -RepoDir $R17
+Assert-Exit $res "17c innocent range name: exit 0" 0
 
 # ------------------------------------------------------------------ 13. read only: refs, HEAD and index unchanged
 $snap = { param($repo) ((Invoke-G -C $repo for-each-ref "--format=%(refname) %(objectname)") -join "|") + "#" + ((Invoke-G -C $repo rev-parse HEAD) -join "") + "#" + ((Invoke-G -C $repo status --porcelain) -join "|") }

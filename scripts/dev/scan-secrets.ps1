@@ -12,7 +12,10 @@
 #   - a file git reports as binary ("Binary files ... differ"): the blob of the new version is read raw and scanned as
 #     text (a UTF-16 BOM decodes as UTF-16; otherwise byte by byte, and again with the NUL bytes dropped, which
 #     catches ASCII stored as UTF-16 without BOM). A blob over 20 MB is not scanned and is listed as
-#     "binario nao varrido" (a note, not a finding: it does not change the exit code).
+#     "binario nao varrido". Safe side: ANY file not scanned makes the exit 1 with "Nada encontrado no que foi
+#     varrido; N arquivo(s) NAO varrido(s): conferir a mao antes de enviar" (never a plain "Nada encontrado.").
+#   - the text of -Range and the full names of the refs it resolves to ("nome no intervalo"): a branch or tag
+#     name that holds a secret would be published by the push itself.
 #   - the commit message.
 #   - the NAME (full path) of every file added or changed (a deleted file is not a new name).
 #   - forbidden file names, without regex (same "always out" list as recovery-pack.ps1, case-insensitive, on the
@@ -25,13 +28,14 @@
 #   - "caminho pessoal": absolute user-folder paths, any slash: X:\Users\<name>, X:/Users/<name>, /home/<name>,
 #     /Users/<name>, and "X:Users<name>" (slashes lost). Placeholders such as C:\Users\<nome> are not matched.
 #   - "e-mail": e-mail addresses, except noreply@... and ...@users.noreply.github.com.
+#   An added line that already holds a finding never gives a warning (the warning would echo part of the value).
 #   Printed in the section "Avisos (nao bloqueiam)" with commit, file and kind; the user name and the local part of
 #   the e-mail are masked ("C:\Users\[oculto]", "[oculto]@domain"). Reason: the public dev already has known
 #   personal paths (CLA-54); blocking would stop the sync PR, a warning lets the user see them.
 # Patterns: scripts/dev/lib/secret-patterns.ps1 (the project's single reference list, dot-sourced).
 # Output: one line per finding with the short commit, the place (file name masked by Hide-Secrets, or "mensagem do
 #   commit") and the pattern name. NEVER the value. Every message printed (own and git's) goes through Hide-Secrets.
-# Exit: 0 nothing found (warnings allowed); 1 something found; 2 environment error (git missing, folder missing, not a repository,
+# Exit: 0 nothing found and everything scanned (warnings allowed); 1 something found or something not scanned; 2 environment error (git missing, folder missing, not a repository,
 #   invalid or empty -Range, or any unhandled exception: printed masked by the script-level trap).
 # Git is run through System.Diagnostics.Process with stdout read as raw bytes (decoded as UTF-8) and stderr read
 # apart: in Windows PowerShell 5.1 native stderr under "Stop" becomes a terminating error (the same care as
@@ -154,7 +158,9 @@ $Findings = New-Object System.Collections.ArrayList
 $Notes = New-Object System.Collections.ArrayList
 $Seen = @{}
 function Add-Finding([string]$Sha, [string]$Where, [string]$Pattern) {
-    $line = "$(Short $Sha) $(Hide-Secrets $Where) :: $Pattern"
+    # $Sha is a commit id, or a label such as "intervalo" (shown whole).
+    $label = if ($Sha -match '^[0-9a-f]{40}$') { Short $Sha } else { $Sha }
+    $line = "$label $(Hide-Secrets $Where) :: $Pattern"
     if ($script:Seen.ContainsKey($line)) { return }
     $script:Seen[$line] = $true
     [void]$script:Findings.Add($line)
@@ -246,6 +252,16 @@ $commits = @($r.Text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object {
 
 Say "Varredura de segredos: $Range ($($commits.Count) commit(s))"
 
+# ---------------------------------------------------------------- the range text and the refs it names
+# A branch or tag name that holds a secret would be published by the push itself.
+Test-Text "intervalo" "nome no intervalo" $Range
+$sym = Get-GitText @("rev-parse", "--symbolic-full-name", $Range, "--")
+if ($sym.Code -eq 0) {
+    foreach ($ref in ($sym.Text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "--" })) {
+        Test-Text "intervalo" "nome no intervalo" $ref
+    }
+}
+
 # ---------------------------------------------------------------- commit messages
 foreach ($c in $commits) {
     $m = Get-GitText @("log", "-1", "--format=%B", $c, "--")
@@ -275,8 +291,11 @@ if ($commits.Count -gt 0) {
         if ($inHunk) {
             if ($line.StartsWith("+")) {
                 $added = $line.Substring(1)
-                Test-Text $sha $path $added
-                Test-Warnings $sha $path $added
+                $hits = @(Get-Matches $added)
+                foreach ($h in $hits) { Add-Finding $sha $path $h }
+                # A line that already holds a finding never gives a warning: the warning would echo part of the
+                # value (e.g. "password=abc@x.y" would show "[oculto]@x.y").
+                if ($hits.Count -eq 0) { Test-Warnings $sha $path $added }
             }
             continue
         }
@@ -297,6 +316,12 @@ if ($Findings.Count -gt 0) {
     Say "ACHOU POSSIVEL SEGREDO ($($Findings.Count)): commit, lugar e padrao (o valor nunca e mostrado)."
     foreach ($f in $Findings) { Say "  $f" }
     Say "Pare, avise o usuario e rotacione a credencial antes de enviar (remover do historico nao basta)."
+    if ($Notes.Count -gt 0) { Say "Alem disso, $($Notes.Count) arquivo(s) NAO varrido(s): conferir a mao antes de enviar." }
+    exit 1
+}
+# Safe side: anything that could not be scanned keeps the result from being "nothing found".
+if ($Notes.Count -gt 0) {
+    Say "Nada encontrado no que foi varrido; $($Notes.Count) arquivo(s) NAO varrido(s): conferir a mao antes de enviar"
     exit 1
 }
 Say "Nada encontrado."
