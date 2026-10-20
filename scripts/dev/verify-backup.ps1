@@ -1,5 +1,6 @@
 # Read-only report for the P12 backup invariant (agents/versao.md, "Backup (P12)"):
-# every branch tip and every tag of <Origin> is equal to, or an ANCESTOR of, the same ref on <Backup>.
+# every branch tip of <Origin> is equal to, or an ANCESTOR of, the same branch on <Backup>; every TAG of <Origin>
+# points to exactly the SAME commit on <Backup> (a tag that differs is an error even if the backup is ahead).
 # Usage: powershell -NoProfile -File scripts/dev/verify-backup.ps1 [-Origin origin] [-Backup backup] [-RepoDir <folder>]
 #
 # Reads only: `git ls-remote --heads --tags` on both remotes, `git cat-file -e` and `git merge-base --is-ancestor`
@@ -14,6 +15,9 @@
 #   ATRASADO        backup commit is an ancestor of the origin commit (the backup is behind)
 #   DIVERGE         neither is an ancestor of the other
 #   FALTA           the ref does not exist on the backup
+#   TAG-DIFERE      TAGS ONLY: the tag points to a different commit on the backup (user decision, P12). A tag must
+#                   point to the SAME commit on both remotes, so this is an error even when the backup is ahead,
+#                   and also when the backup is behind (tag moved on the origin). Never OK-ANCESTRAL/ATRASADO.
 #   NAO-VERIFICAVEL a commit object is missing locally (a `git fetch` done by the user would resolve it)
 # Exit: 0 all refs OK or OK-ANCESTRAL; 1 any other status; 2 an ls-remote failed (message on stderr).
 param(
@@ -23,6 +27,12 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+# Never let git or the credential manager (GCM) open a login prompt: an unattended agent would hang on it when
+# the token of the private backup has expired. These only affect this process and its children.
+# Keep these two lines ABOVE the first git call (test-verify-backup.ps1 checks that statically).
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:GCM_INTERACTIVE = "never"
+
 # Windows PowerShell 5.1 turns native stderr into a terminating error under "Stop", so native calls run
 # with "Continue" inside these helpers (same care as Get-GitLines in pre-compact.ps1).
 function Invoke-Git([string[]]$GitArgs) {
@@ -30,7 +40,11 @@ function Invoke-Git([string[]]$GitArgs) {
     $out = @(); $err = @()
     try {
         foreach ($item in @(& git -C $RepoDir @GitArgs 2>&1)) {
-            if ($item -is [System.Management.Automation.ErrorRecord]) { $err += [string]$item } else { $out += [string]$item }
+            if ($item -is [System.Management.Automation.ErrorRecord]) {
+                # PS 5.1 wraps blank stderr lines as a RemoteException record; drop those.
+                $s = ([string]$item).Trim()
+                if ($s -and $s -ne "System.Management.Automation.RemoteException") { $err += $s }
+            } else { $out += [string]$item }
         }
         return [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out; Err = $err }
     } catch {
@@ -94,6 +108,10 @@ foreach ($ref in ($originRefs.Keys | Sort-Object { $_ } -CaseSensitive)) {
         $detail = "$(Short $o) / $(Short $b)"
         if ($o -eq $b) {
             $status = "OK"
+        } elseif ($ref.StartsWith("refs/tags/")) {
+            # Tags must be identical on both remotes; no ancestry check applies (objects need not exist locally).
+            $status = "TAG-DIFERE"
+            $detail += " (tag deve apontar para o mesmo commit nos dois remotes)"
         } elseif (-not (Test-HasCommit $o) -or -not (Test-HasCommit $b)) {
             $status = "NAO-VERIFICAVEL"
             $detail += " (objeto ausente localmente; um 'git fetch' feito por voce resolveria)"

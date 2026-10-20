@@ -166,5 +166,58 @@ $r = Invoke-Verify
 Assert-Exit $r "10 annotated tag, same commit: exit 0" 0
 Assert-Status $r "10 annotated tag, same commit: OK" "OK" "refs/tags/t"
 
+# 8b. Nonexistent ORIGIN (backup fine) -> exit 2 with a clean message
+$b = New-Bare
+Set-Remotes (New-TempPath "vb-nao-existe-") $b
+$r = Invoke-Verify
+Assert-Exit $r "8b missing origin: exit 2" 2
+Assert-Case "8b missing origin: message" ($r.Text -match "ERRO") "expected an ERRO message, got:`n$($r.Text)"
+Assert-Case "8b missing origin: no RemoteException noise" ($r.Text -notmatch "RemoteException") "noise in:`n$($r.Text)"
+
+# 11. Tags must point to the SAME commit: any difference is TAG-DIFERE, exit 1 (branches may be ahead)
+Invoke-G -C $W tag -a a2 -m "annotated at c2" $c2 | Out-Null
+# 11a. lightweight tag, backup ahead
+$o = New-Bare; $b = New-Bare
+Push-To $o "main:refs/heads/main"; Push-To $b "main:refs/heads/main"
+Push-To $o "${c1}:refs/tags/t"; Push-To $b "${c2}:refs/tags/t"
+Set-Remotes $o $b
+$r = Invoke-Verify
+Assert-Exit $r "11a lightweight tag, backup ahead: exit 1" 1
+Assert-Status $r "11a lightweight tag, backup ahead: TAG-DIFERE" "TAG-DIFERE" "refs/tags/t"
+# 11b. annotated tag, backup ahead
+$o = New-Bare; $b = New-Bare
+Push-To $o "main:refs/heads/main"; Push-To $b "main:refs/heads/main"
+Push-To $o "refs/tags/v2:refs/tags/t"; Push-To $b "refs/tags/a2:refs/tags/t"
+Set-Remotes $o $b
+$r = Invoke-Verify
+Assert-Exit $r "11b annotated tag, backup ahead: exit 1" 1
+Assert-Status $r "11b annotated tag, backup ahead: TAG-DIFERE" "TAG-DIFERE" "refs/tags/t"
+# 11c. tag moved on the origin (backup behind): also TAG-DIFERE
+$o = New-Bare; $b = New-Bare
+Push-To $o "main:refs/heads/main"; Push-To $b "main:refs/heads/main"
+Push-To $o "${c2}:refs/tags/t"; Push-To $b "${c1}:refs/tags/t"
+Set-Remotes $o $b
+$r = Invoke-Verify
+Assert-Exit $r "11c tag moved on origin: exit 1" 1
+Assert-Status $r "11c tag moved on origin: TAG-DIFERE" "TAG-DIFERE" "refs/tags/t"
+# 11d. branch ahead stays OK-ANCESTRAL while an equal tag is OK
+$o = New-Bare; $b = New-Bare
+Push-To $o "${c1}:refs/heads/main"; Push-To $b "${c2}:refs/heads/main"
+Push-To $o "${c1}:refs/tags/t"; Push-To $b "${c1}:refs/tags/t"
+Set-Remotes $o $b
+$r = Invoke-Verify
+Assert-Exit $r "11d branch ahead + equal tag: exit 0" 0
+Assert-Status $r "11d branch ahead + equal tag: branch OK-ANCESTRAL" "OK-ANCESTRAL" "refs/heads/main"
+Assert-Status $r "11d branch ahead + equal tag: tag OK" "OK" "refs/tags/t"
+
+# 12. Static check: the no-prompt env vars are set BEFORE the first git call (provoking a real credential
+# prompt would open a window on the user's machine, so this is checked on the script text).
+$text = Get-Content -Raw -LiteralPath $ScriptPath
+$iGit = $text.IndexOf("& git")
+$iTerm = $text.IndexOf('$env:GIT_TERMINAL_PROMPT = "0"')
+$iGcm = $text.IndexOf('$env:GCM_INTERACTIVE = "never"')
+Assert-Case "12 GIT_TERMINAL_PROMPT=0 before first git call" ($iTerm -ge 0 -and $iGit -ge 0 -and $iTerm -lt $iGit) "indexes: env=$iTerm git=$iGit"
+Assert-Case "12 GCM_INTERACTIVE=never before first git call" ($iGcm -ge 0 -and $iGit -ge 0 -and $iGcm -lt $iGit) "indexes: env=$iGcm git=$iGit"
+
 if ($fail -eq 0) { Write-Output "ALL PASSED" } else { Write-Output "SOME FAILED" }
 exit $fail
