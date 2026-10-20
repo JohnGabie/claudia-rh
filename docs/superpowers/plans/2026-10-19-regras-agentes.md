@@ -164,3 +164,16 @@ T8 e T9 (documentos) → T10 → T11 → T12 → revisão do conjunto → T13 �
 ### Nota de processo (2026-10-19)
 
 Nesta sessão, os passos de versionador depois de cada "Looks good to me" (fast-forward na `feat/regras-agentes`, push ao `backup`, remoção da worktree sem `--force`) foram feitos pelo orquestrador, por serem mecânicos e só locais ou no backup. Nada foi ao `origin`. A partir da T14, que mexe no `origin` e no GitHub, os passos ficam com o agente de versão.
+
+### Decisões do usuário sobre as sobras da T11 e da T12 (2026-10-20)
+
+- URL do público: **normalizar** no hook. Force push ao público: **recusar** no hook. Formato de tag: **manter** (`v` + dígitos e pontos). Três lacunas do pacote de recuperação: **corrigir**.
+
+| Tarefa | Estado | Revisor | Observação |
+|---|---|---|---|
+| T19 | nova | pendente | Hook pre-push: normalizar a URL antes de reconhecer o público (`%xx`, `.`, `..`, barra final, maiúsculas) e recusar force push ao público (o sha remoto antigo, quando não for zeros, tem de ser ancestral do novo; se o objeto antigo não existir localmente, recusar). Testes e mutação. |
+| T20 | nova | pendente | Pacote de recuperação: regex para `accessToken`, `apiKey`, `clientSecret` e parecidos em texto (camelCase); recusar junction nos níveis entre `-GlobalClaudeDir` e a memória; máscara nas mensagens de erro do git. Testes e mutação. |
+
+A T18 (docs) passa a incluir também: o formato de tag decidido ("manter") no `agents/versao.md` e no cabeçalho do hook, e a ativação do hook no runbook da T13.
+
+Ordem daqui em diante: T18 → T19 → T20 → T13 → revisão do conjunto → T14 (só com o "pode aplicar" do usuário).
