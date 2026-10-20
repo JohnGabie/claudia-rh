@@ -110,7 +110,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 ### T9. `CLAUDE.md`
 - Seção Git: `main` = versão fechada, `dev` = features estáveis rumo à próxima versão; `origin` sempre por PR depois da proteção; backup como espelho do `origin` mais o que ainda não foi publicado; `recovery` só no backup.
 - "O humano decide": ativar ou desligar proteção de branch, criar tag `v*`, merge no `origin`.
-- Aceite: nenhuma regra dura removida (diff); "push ao `origin`" continua só do usuário.
+- Aceite: nenhuma regra dura removida (diff); merge, release e tag `v*` continuam do usuário; empurrar a branch ao `origin` e abrir o PR são do agente de versão, depois do "Looks good to me" da feature completa (revisão 4).
 
 ### T10. `scripts/dev/verify-backup.ps1` (só leitura)
 - Compara `git ls-remote origin` com `git ls-remote backup`: cada ponta de branch e cada tag do `origin` precisa ser igual ou ancestral da ref no `backup`; lista o que está só no backup e o que está atrasado.
