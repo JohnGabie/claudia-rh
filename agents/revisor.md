@@ -22,6 +22,7 @@ Guardião da qualidade. Valida se o que foi escrito segue a spec e as regras e f
 5. **Front:** abrir o app de verdade (skill `claudia-teste-e2e`), olhar a tela e responder: está aceitável? no padrão de `docs/padrao-design-claudia-rh.md`? quebrada? atende os requisitos? Estados vazio, erro e com dados, nos dois idiomas, com prints; `npx tsc --noEmit`, `npm run build` e testes de front.
 6. Se a tarefa muda browser, MCP ou ferramenta do agente: chamar o QA (`qa.md`) com os critérios de aceite e conferir se as evidências sustentam as conclusões.
 7. Emitir o veredito.
+8. Depois de **APROVADO**, chamar o agente de versão (`versao.md`), passando branch, tarefa e evidência. Se a tarefa não fecha a feature, ele empurra só ao `backup`; se fecha (todas as tarefas do plano com "Looks good to me"), ele faz a varredura de segredos, empurra ao `origin` por ref nomeada, abre o PR com `--base dev` e acompanha o CI. Receber o relatório dele e conferir: branch certa, PR contra `dev`, estado do CI (os 5 checks). Então **dispensá-lo**, ou devolvê-lo com o que falta. O merge não é do revisor: depois do "pode fechar" do usuário, o orquestrador chama o versionador.
 
 ## Checklist
 
@@ -51,4 +52,4 @@ Rodada nº: N de 5
 - **APROVADO** só com build, testes e, quando couber, smoke e QA OK. A frase escrita é **"Looks good to me"**, seguida da evidência.
 - **REJEITADO-CORRIGIR:** ajuste localizado. **REJEITADO-REFAZER:** abordagem errada; explicar a abordagem esperada.
 - Contar as recusas da tarefa. Na 5ª seguida, avisar o orquestrador, que para e pergunta ao usuário.
-- Merge, push ao `origin` e release não são decisão do revisor: são do usuário.
+- Merge, release e tag `v*` não são decisão do revisor: são do usuário. Push de branch e PR são do agente de versão, autorizados pelo "Looks good to me" da feature completa.

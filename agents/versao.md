@@ -32,12 +32,12 @@ Merge local em `dev` ou `main` **não existe mais**: um merge local e o merge do
 2. **A cada tarefa aprovada, a branch vai SÓ ao `backup`.** Nada de feature incompleta no `origin`.
 3. **Quando todas as tarefas do plano da feature tiverem "Looks good to me"**, o versionador, nesta ordem: (a) faz a **varredura de segredos**; achou algo, para (ver "Varredura de segredos"); (b) empurra a branch ao `origin` por ref nomeada; (c) abre ou atualiza o PR **contra `dev`**: `gh pr create --base dev --head <branch>` (modelo de `.github/PULL_REQUEST_TEMPLATE.md`, com "Como foi verificado" e "NÃO verificado"); (d) acompanha o CI com `gh pr checks`. A branch padrão do `origin` é `main`, então `--base dev` é obrigatório; PR para `main` só existe na release (`dev` → `main`), por ordem do usuário. Empurrar e abrir o PR não pede OK do usuário: a autorização é o "Looks good to me" da última tarefa.
 4. Devolve ao **revisor** um relatório: o que empurrou, link do PR, estado do CI. O revisor confere e **dispensa** o versionador; se faltar algo, devolve com o que falta.
-5. Com o CI verde, o versionador mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos) e pede "pode fechar" **na conversa**. Quando o usuário diz "pode fechar", o **orquestrador chama o versionador de novo** para o merge. Só então: `gh pr merge --merge` e registro da decisão no PR (`Approved by the user in session, AAAA-MM-DD`). **Proibido** `--admin` (contorna a proteção) e `--delete-branch`/`-d` (apaga a branch remota sem o usuário).
-6. Depois do merge: `git fetch origin`; o `dev` (ou `main`) local avança **só por `git pull --ff-only`**; push ao `backup`. Se o `--ff-only` falhar (hoje falha: o `dev` local está 84 commits à frente), **parar e avisar o usuário**; nunca `git pull` sem `--ff-only`, nunca `reset`.
+5. Com o CI verde, o **orquestrador** (não o versionador) mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos, estado do CI, a partir do relatório do versionador) e pede "pode fechar" **na conversa**. Só depois do "pode fechar", o **orquestrador chama o versionador de novo** para o merge. Então: `gh pr merge --merge` e registro da decisão no PR (`Approved by the user in session, AAAA-MM-DD`). **Proibido** `--admin` (contorna a proteção) e `--delete-branch`/`-d` (apaga a branch remota sem o usuário).
+6. Depois do merge: `git fetch origin`; o `dev` (ou `main`) local avança **só por `git pull --ff-only`**; push ao `backup`. O push ao `backup` acontece mesmo quando o `--ff-only` falha. Se o `--ff-only` falhar (o `dev` local divergiu do `origin/dev`; a divergência já existente se resolve na T14), **parar e avisar o usuário**; nunca `git pull` sem `--ff-only`, nunca `reset`.
 
 ## Guardião da estabilidade (P11)
 
-Antes de pedir o "pode fechar", precisa existir, e o versionador **recusa** pedir se faltar, dizendo o que falta:
+Antes de o orquestrador pedir o "pode fechar", precisa existir, e o versionador **recusa** declarar a feature pronta para fechar se faltar, dizendo o que falta:
 
 - "Looks good to me" do revisor em **cada** tarefa: feature completa (todas as tarefas do plano).
 - Rodadas de teste verdes com evidência (comando, código de saída). `cargo test` só no Sandbox; `tsc`, build e clippy no PC. Smoke da feature quando couber.
@@ -46,9 +46,9 @@ Antes de pedir o "pode fechar", precisa existir, e o versionador **recusa** pedi
 Regras:
 
 - `origin/dev` só recebe feature **completa**. Feature incompleta fica em branch e vai só ao `backup`.
-- `main` só recebe release (`dev` → `main` + tag) da versão **fechada**, depois do smoke de uso real anexado, quando o usuário manda.
+- `main` só recebe release (`dev` → `main` + tag) da versão **fechada**, depois do smoke de uso real anexado, quando o usuário manda. Única exceção: o revert de quebra, abaixo.
 - `dev` nunca fica atrás de `main`; sem commit direto em nenhum dos dois. Para cumprir: PR de `main` para `dev`, com o OK do usuário.
-- `dev` ou `main` quebrou: `git revert` do merge, feito numa branch `fix/revert-<...>` e levado por PR contra a branch afetada, com o "pode fechar" do usuário (push direto é recusado pela proteção e commit direto em `dev`/`main` é proibido). **Nunca `reset`, nunca force push.** Avisa o usuário e o arquiteto e abre tarefa no Linear.
+- `dev` ou `main` quebrou (**exceção explícita** a "`main` só recebe release"): `git revert` do merge, feito numa branch `fix/revert-<...>` e levado por PR contra a branch afetada, com o "pode fechar" do usuário (push direto é recusado pela proteção e commit direto em `dev`/`main` é proibido). **Nunca `reset`, nunca force push.** Avisa o usuário e o arquiteto e abre tarefa no Linear.
 
 ## CI falhou (P13)
 

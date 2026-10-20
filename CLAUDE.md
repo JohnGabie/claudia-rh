@@ -28,30 +28,36 @@ Este arquivo é o ponto de entrada de qualquer sessão de coding **neste reposit
 ## Git
 
 ```
-main     → só releases (tag vX.Y.Z). Nunca commit direto.
-dev      → integração. Sempre contém main + features já merged.
+main     → versão fechada. Só recebe release (dev → main + tag vX.Y.Z). Nunca commit direto.
+dev      → features completas e estáveis rumo à próxima versão. Nunca commit direto.
 feat/*   → uma preocupação por branch, criada a partir de dev atualizado.
 fix/*    → igual, para correções.
 ```
 
-Fluxo: atualizar `dev` com `main` → `git checkout -b feat/<nome>` a partir de `dev` → review → merge em `dev` → release faz merge `dev` → `main` + tag.
+Fluxo: `dev` nunca fica atrás de `main` → `git checkout -b feat/<nome>` a partir de `dev` → cada tarefa com "Looks good to me" vai só ao `backup` → feature completa vira PR contra `dev` → merge só depois do "pode fechar" do usuário → release = PR `dev` → `main` + tag, por ordem do usuário.
+
+**Merge em `dev` e em `main` só por PR no GitHub.** Nenhum merge é feito fora do PR; o `dev` e o `main` locais só avançam por `git pull --ff-only`. Detalhes em `agents/versao.md`.
 
 ### Dois remotes
 
 | Remote | Repo | Uso |
 |---|---|---|
-| `origin` | `JohnGabie/claudia-rh` (público) | `dev`, `main`, tags de release e branches que viram PR. Aqui se faz como deve ser feito. |
-| `backup` | `JohnGabie/claudia-rh-backup` (privado) | Cópia de segurança. Push constante de todas as branches, feito pelo agente de versão depois do primeiro OK do usuário (`git push backup --all` e `--tags`, nunca `--mirror`). Nunca recebe PR. |
+| `origin` | `JohnGabie/claudia-rh` (público) | `main`, `dev`, tags `v*` e as branches que viram PR. Push **só por ref nomeada**, uma a uma (nunca `--all`, `--tags` nem `--mirror`), e só da lista permitida: `main`, `dev`, `feat/*`, `fix/*`, `sync/*` e tags `v*`. |
+| `backup` | `JohnGabie/claudia-rh-backup` (privado) | Espelho do `origin` mais o que ainda não foi publicado (branches de trabalho e a branch `recovery`). `git push backup --all` e `--tags`, nunca `--mirror`. Nunca recebe PR. |
 
-O `backup` só é configurado e recebe o primeiro push com pedido do usuário, depois da varredura de segredos. O push não cobre trabalho não commitado nem arquivos do `.gitignore`.
+O `backup` só é configurado e recebe o primeiro push com o OK do usuário, depois da varredura de segredos. O push não cobre trabalho não commitado nem arquivos do `.gitignore`. A lista completa e o porquê estão em `agents/versao.md`.
 
-### Aprovação e merge pelo terminal
+### Do revisor ao merge
 
-O usuário aprova e manda integrar **na conversa**, não precisa abrir o GitHub. O agente de versão (`agents/versao.md`) mostra o resumo (tarefa, commits, verificado, **não** verificado, riscos), pergunta, e só com a resposta afirmativa do usuário faz o merge em `dev`, registrando a decisão no commit de merge. O PR no `origin` é o registro público.
+O usuário decide **na conversa**, não precisa abrir o GitHub. O fluxo completo está em `agents/versao.md`; em resumo:
+
+1. Cada tarefa com "Looks good to me" do revisor vai **só ao `backup`**, pelo agente de versão. Feature incompleta não vai ao `origin`.
+2. Quando **todas** as tarefas da feature têm "Looks good to me", o agente de versão faz a varredura de segredos, empurra a branch ao `origin` por ref nomeada, abre o PR contra `dev` (`--base dev`) e acompanha o CI. Isso não pede outro OK: a autorização é o "Looks good to me" da última tarefa.
+3. O orquestrador mostra ao usuário o resumo (tarefa, commits, verificado, **não** verificado, riscos, estado do CI). Só depois do "pode fechar" do usuário ele chama o agente de versão para o merge do PR, com a decisão registrada no PR.
 
 ### Branches e agente de versão
 
-O agente de versão (`agents/versao.md`) cuida do backup, do relatório de saúde das branches (integradas, paradas, sem backup, worktrees sobrando), de tag `archive/*` antes de remover qualquer branch e do rebase de branch parada sobre `dev` (só em branch nunca publicada no `origin`, de preferência antes do primeiro push ao backup). Remover branch ou worktree: só `git branch -d` e `git worktree remove` sem `--force`, depois da tag de arquivo e com o OK do usuário.
+O agente de versão (`agents/versao.md`) cuida do backup, do push da branch e do PR (com o acompanhamento do CI), do guardião de estabilidade (recusa declarar a feature pronta para fechar sem revisão em todas as tarefas, rodadas verdes e CI verde), do pacote de recuperação (branch `recovery`, **só no `backup`**), do relatório de saúde das branches (integradas, paradas, sem backup, worktrees sobrando), de tag `archive/*` antes de remover qualquer branch e do rebase de branch parada sobre `dev` (só em branch nunca publicada no `origin`, de preferência antes do primeiro push ao backup). A proteção de branch no `origin` é ativada e desligada só pelo usuário. Remover branch ou worktree: só `git branch -d` e `git worktree remove` sem `--force`, depois da tag de arquivo, de conferir o `.journal/` e o trabalho não commitado da worktree, e com o OK do usuário.
 
 ### Ao voltar ao projeto depois de uma pausa
 
@@ -125,7 +131,7 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 | Execução | Executor (`agents/executor.md`) em **git worktree**, sempre | RÁPIDO para tarefa mecânica e bem delimitada; MÉDIO quando há lógica nova, vários arquivos ou decisão de desenho; FORTE se toca segurança, dados ou ferramenta do agente | O brief da tarefa traz a camada. |
 | Revisão de código | Revisor (`agents/revisor.md`) | FORTE, sempre | Independente de quem escreveu. Obrigatória para segurança, dados e ferramentas do agente. |
 | Teste | QA (`agents/qa.md`) | FORTE (recomendado, como já era antes de 2026-10-19) | Observa o app e o browser do app (seção 5) e cruza com o que o agente relatou. |
-| Branches, backup, aprovação e merge pelo terminal | Versão (`agents/versao.md`) | MÉDIO (FORTE em recuperação de histórico) | Não implementa nem revisa mérito. |
+| Branches, backup, push, PR e CI, merge do PR | Versão (`agents/versao.md`) | RÁPIDO na rotina; MÉDIO em conflito, triagem de CI e relatório de saúde; FORTE só em recuperação de histórico | Não implementa nem revisa mérito. |
 
 **Brief e retorno têm formato fixo** (brief do arquiteto, resposta do executor, veredito do revisor, relatório do QA), descritos nos arquivos de `agents/`. Cada agente recebe um brief curto e os caminhos dos arquivos relevantes, **não o histórico da conversa**.
 
@@ -140,7 +146,7 @@ O modelo depende da complexidade da tarefa, não do hábito. As regras falam em 
 - **Cada agente usa o próprio `CARGO_TARGET_DIR`**, fora do `target/` do repositório (o app em desenvolvimento pode estar usando esse).
 - **O orquestrador não repassa "passou" sem ter rodado.** Depois de integrar, roda de novo as rodadas da seção 3 e confere o código de saída.
 - **O agente não decide fora da spec.** O que a spec não cobre, ele relata e para. Escopo, segurança e edição do prompt de runtime (`src-tauri/src/prompt_sistema_runtime.md`) só com pedido ou aprovação do usuário.
-- **Limites do agente:** sem push (ao `origin` nunca; ao `backup` só o agente de versão, ver "Dois remotes"), sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
+- **Limites do agente:** sem push (ao `origin` só o agente de versão, por ref nomeada, depois do "Looks good to me" da feature completa; ao `backup` só o agente de versão; ver "Dois remotes"), sem tocar nos dados do usuário, no app que o usuário está usando ou em sites reais, salvo autorização explícita daquela rodada.
 - **Agente que falha** (limite de sessão, erro de API) deve ser tratado como se não tivesse entregado nada: confira a worktree e relance com o mesmo escopo.
 - **Remover worktree** só depois de integrar, ou de descartar de propósito olhando antes se há trabalho não commitado.
 
@@ -209,11 +215,11 @@ Uma mudança só está pronta quando **todos** os itens são verdadeiros, com ev
 5. Revisão de código pelo Revisor (camada FORTE, `agents/revisor.md`) feita, com os achados corrigidos ou registrados, e **cada tarefa passou pelo ciclo executor ↔ revisor (seção 2) e tem o "Looks good to me" escrito do revisor**.
 6. Nada em "não verificado" que contradiga o que foi afirmado.
 
-**Integrar (merge, push ao `origin`, PR, release) é sempre decisão do usuário**, nunca automática ao fim de um ramo.
+**Empurrar a branch ao `origin` e abrir o PR são autorizados pelo "Looks good to me" da feature completa** e feitos pelo agente de versão. **Merge, release, tag `v*` e ativar ou desligar proteção de branch são sempre decisão do usuário**, nunca automáticos ao fim de um ramo.
 
 ### 7. Superpowers
 
-O Superpowers é o esqueleto do processo, **mas as regras deste arquivo vencem** onde forem mais estritas: aprovação explícita da spec como passo próprio, smoke de uso real obrigatório e integração decidida pelo usuário. Skills a usar: `brainstorming` e `writing-plans` antes de criar; `using-git-worktrees` e `subagent-driven-development` na execução; `requesting-code-review` na revisão; `systematic-debugging` em bugs; `verification-before-completion` antes de afirmar que algo funciona.
+O Superpowers é o esqueleto do processo, **mas as regras deste arquivo vencem** onde forem mais estritas: aprovação explícita da spec como passo próprio, smoke de uso real obrigatório e merge e release decididos pelo usuário. Skills a usar: `brainstorming` e `writing-plans` antes de criar; `using-git-worktrees` e `subagent-driven-development` na execução; `requesting-code-review` na revisão; `systematic-debugging` em bugs; `verification-before-completion` antes de afirmar que algo funciona.
 
 ## Diagnóstico
 
@@ -254,4 +260,4 @@ Antes de **qualquer** compactação (manual ou automática) o agente escreve um 
 
 ## O humano decide
 
-Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, push ao `origin`, release**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina (publicar, enviar candidatura, apagar branch, criar remote). Exceção única: o push ao `backup`, feito pelo agente de versão depois do primeiro OK do usuário. Na dúvida entre decidir e perguntar, pergunte.
+Cabe ao usuário, nunca ao agente: gosto e identidade visual, escopo e prioridade, aprovação de spec, **merge, release, criar tag `v*`, ativar ou desligar proteção de branch**, segurança e dados do usuário, edição do `prompt_sistema_runtime.md`, qualquer ação irreversível ou que saia da máquina (publicar, enviar candidatura, apagar branch, criar remote). Exceções, feitas pelo agente de versão: o push ao `backup` (depois do primeiro OK do usuário) e o push da branch ao `origin` com a abertura do PR (autorizados pelo "Looks good to me" da feature completa). Na dúvida entre decidir e perguntar, pergunte.
