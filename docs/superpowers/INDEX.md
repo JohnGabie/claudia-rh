@@ -89,21 +89,9 @@ Estados: `viva` (é a spec vigente da área), `histórica` (valeu na época, o c
 | `specs/2026-10-07-sandbox-ambiente-declarativo-design.md` | spec | aprovada em 2026-10-07 e implementada; o adendo 9 (2026-10-08) vale para o ambiente `testes`; candidata a absorção por `sandbox` |
 | `plans/2026-10-07-sandbox-ambiente-declarativo.md` | plano | a confirmar |
 
-## Branches de feature fora de `dev` (para o agente de versão)
+## Branches
 
-Situação de 2026-10-19, só leitura. Ligação com as áreas: **a confirmar** onde não está escrito.
-
-| Branch | Situação | Área |
-|---|---|---|
-| `feat/curriculo-por-variante` | 1 commit à frente de `dev`, sem backup | documentos (a spec de anexar currículo diz que o conteúdo por variante saiu para cá) |
-| `feat/dados-falsos-teste` | 5 commits à frente de `dev`, sem backup | teste e Sandbox (CLA-53, dados falsos): a confirmar |
-| `feat/guarda-navegacao` | 1 commit à frente de `dev`, sem backup | a confirmar |
-| `feat/teste-injecao` | 21 commits à frente de `dev`, sem backup | a confirmar |
-| `feat/teste-injecao-cota` | 22 commits à frente de `dev`, sem backup | a confirmar |
-| `feat/lista-de-sites` | 1 commit à frente de `dev` (patch equivalente a um já integrado, mas o commit não é alcançável de `dev`, então `git branch -d` recusaria apagá-la); é a branch do checkout principal, que tem trabalho não commitado (`Cargo.toml`) | sites |
-| `feat/regras-agentes` | esta frente | processo e agentes |
-
-Branches já integradas em `dev` e candidatas a arquivo: `feat/clean-machine-testing`, `feat/perfil-escrita-segura`, `feat/lista-de-sites-impl`. Remoção só pelo agente de versão, com tag `archive/*` e OK do usuário.
+O estado das branches não fica neste índice, porque muda a cada commit. Ele vem do relatório do agente de versão, gerado na hora (`agents/versao.md`, "Saúde das branches").
 
 ## Fora do índice
 
