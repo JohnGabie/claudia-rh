@@ -75,7 +75,7 @@ O `backup` é o espelho do `origin` mais o que ainda não foi publicado (branche
 
 Branch órfã `recovery`, **só no `backup`** (sem ancestral comum com `dev`; nunca vai ao `origin`). O conteúdo nunca vive numa pasta rastreada do repo de trabalho.
 
-- **Entra (allowlist; nada entra por padrão):** config do projeto (de `.claude/`: skills, comandos, `settings.json` e `settings.local.json` se a varredura passar; **exclui `.claude/worktrees/` explicitamente**, são cópias completas do repo; mais `.mcp.json` sem segredos); config global e memória (`CLAUDE.md` global, lista de plugins, memória deste projeto, `settings.json` global só se a varredura passar); estado de trabalho (`STATE.md`, patches do trabalho não commitado, último `.journal\` do checkout principal, ou da worktree se o checkout principal não pude ser achado).
+- **Entra (allowlist; nada entra por padrão):** config do projeto (de `.claude/`: skills, comandos, `settings.json` e `settings.local.json` se a varredura passar; **exclui `.claude/worktrees/` explicitamente**, são cópias completas do repo; mais `.mcp.json` sem segredos); config global e memória (`CLAUDE.md` global, lista de plugins, memória deste projeto, `settings.json` global só se a varredura passar); estado de trabalho (`STATE.md`, patches do trabalho não commitado, último `.journal\` do checkout principal e também os diários que só existem no `.journal\` de alguma worktree, anteriores a 2026-10-19 ou de quando o checkout principal não pôde ser achado).
 - **Fica sempre de fora:** `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil (`candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `disparo.json`, `notif.json`, `modo_autonomo.json`) e o banco do usuário.
 - **Limpeza por campo antes da regex:** em todo JSON de configuração, remover `env`, `headers` e qualquer chave cujo nome contenha `key`, `token`, `secret` ou `password`. A regex é a segunda camada. **Nunca ler `.credentials.json`** nem equivalentes. Achou segredo: não grava e avisa.
 - O script (`scripts/dev/recovery-pack.ps1`) gera numa worktree temporária própria e **não apaga nada**.
@@ -96,7 +96,7 @@ Ativa, ou a ativar, no `origin` (`main` e `dev`): PR obrigatório com 0 aprovaç
 - Atualizar uma branch parada com `dev` antes de retomá-la, reler a spec e rodar as rodadas de novo.
 - Tudo é recuperável: antes de remover qualquer branch, existe tag `archive/<branch>` empurrada ao `backup`.
 - **Desconfiança máxima com apagar** (ver o `CLAUDE.md` global): só `git branch -d` (nunca `-D`), só `git worktree remove` sem `--force`, nunca `rm -rf`, `Remove-Item -Recurse`, `git clean`. Olhar o alvo antes.
-- **Antes de remover uma worktree (P16):** (a) procurar os diários desta worktree em `.journal\` **da pasta pai** do resultado de `git rev-parse --path-format=absolute --git-common-dir` (o checkout principal; não dentro de `.git`), escolhendo os que contêm a linha `- Branch: <branch da worktree> @` (comparação exata; no nome do arquivo a branch aparece saneada, ex.: `feat/x` vira `feat-x`) ou, se a worktree está em HEAD destacado, a linha `- Worktree: <pasta da worktree>`; (b) **como volta apenas** (quando o checkout principal não pode ser achado): procurar em `.journal\` dentro da própria worktree, que contém diários anteriores à mudança de 2026-10-19 ou de contextos perdidos; (c) conferir o trabalho não commitado da worktree. **Nenhum diário é apagado.** O que importar e estiver só em (b) é copiado para `.journal\` do checkout principal antes de `worktree remove`.
+- **Antes de remover uma worktree (P16):** (a) procurar os diários desta worktree em `.journal\` na pasta **pai** de `git rev-parse --path-format=absolute --git-common-dir` (o checkout principal; não dentro de `.git`): os que têm a linha `- Branch: <branch da worktree> @` (comparação exata; no nome do arquivo a branch aparece saneada, ex.: `feat/x` vira `feat-x`) ou, se a worktree está em HEAD destacado, a linha `- Worktree: <pasta da worktree>`. (b) **Sempre** conferir também o `.journal\` dentro da própria worktree: ele guarda diários anteriores a 2026-10-19 e os de quando o checkout principal não pôde ser achado, e seria apagado junto com a worktree. Se houver ali diário que não esteja no checkout principal, copiá-lo para o `.journal\` do checkout principal antes de remover. Se o checkout principal não puder ser achado, **não remover a worktree**: avisar o usuário. (c) Conferir o trabalho não commitado. **Nenhum diário é apagado.**
 
 ## Convenções
 
@@ -137,7 +137,7 @@ Merge do PR (o "pode fechar"); apagar branch (local ou remota); push de tag `v*`
 ```
 Data / estado (dev @ sha, main @ sha, origin/dev, backup):
 Branches: integradas (arquivar?) | paradas (>14 dias) | sem backup | divergentes
-Worktrees: caminho, branch, trabalho não commitado, diários (principal; volta: worktree): achados | copiados | nenhum
+Worktrees: caminho, branch, trabalho não commitado, diários (checkout principal e `.journal\` da worktree): achados | copiados | nenhum
 Backup: último push (quando), invariante vale?, o que ficou de fora
 PR / CI: link, os 5 checks, rodada de falha (n de 5)
 Segredos: varredura feita? achados
