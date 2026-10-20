@@ -22,45 +22,60 @@ try {
 } catch { $type = "unknown" }
 
 $latest = $null
-# The diary is kept in the MAIN checkout (parent of the git common dir); falls back to the project folder.
+# --- Shared diary helpers (identical in journal-skeleton.ps1, pre-compact.ps1 and session-start.ps1) ---
+function ConvertTo-NormPath([string]$P) { return [IO.Path]::GetFullPath($P.Trim()).TrimEnd('\') }
+# Root of the MAIN checkout, so the diary survives removing a worktree. Falls back to the session folder.
 function Get-MainRoot([string]$Dir) {
-    $common = $null
-    try { $common = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null) } catch { return $Dir }
-    if ($LASTEXITCODE -ne 0 -or -not $common) { return $Dir }
-    $common = ([string]($common | Select-Object -First 1)).Trim()
-    if ((Split-Path -Leaf $common) -ne ".git") { return $Dir }
-    $parent = [IO.Path]::GetFullPath((Split-Path -Parent $common))
-    # Only accept the parent when it is itself a work tree root (rejects --separate-git-dir layouts).
-    $top = $null
-    try { $top = (& git -C $parent rev-parse --show-toplevel 2>$null) } catch { return $Dir }
-    if ($LASTEXITCODE -ne 0 -or -not $top) { return $Dir }
-    $top = [IO.Path]::GetFullPath(([string]($top | Select-Object -First 1)).Trim())
-    if ($top.TrimEnd('\') -ine $parent.TrimEnd('\')) { return $Dir }
-    # A separate git dir looks like a work tree to git but has no checked-out files: the first tracked file must exist on disk.
-    $first = $null
-    try { $first = (& git -C $parent -c core.quotepath=false ls-files 2>$null | Select-Object -First 1) } catch { return $Dir }
-    if ($first -and -not (Test-Path -LiteralPath (Join-Path $parent ([string]$first)))) { return $Dir }
-    return $parent
-}
-$journalDir = Join-Path (Get-MainRoot $projectDir) ".journal"
-# Newest diary written by THIS session's branch (exact match on the "- Branch: <name> @" line the skeleton writes).
-# When the branch cannot be determined, any diary matches.
-function Get-SessionBranch([string]$Dir) {
     try {
-        $b = (& git -C $Dir rev-parse --abbrev-ref HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $b) { return ([string]($b | Select-Object -First 1)).Trim() }
+        $gd = (& git -C $Dir rev-parse --path-format=absolute --git-dir 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $gd) { return $Dir }
+        $cd = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $cd) { return $Dir }
+        $gd = ConvertTo-NormPath ([string]($gd | Select-Object -First 1))
+        $cd = ConvertTo-NormPath ([string]($cd | Select-Object -First 1))
+        if ($gd -ieq $cd) {
+            # Session is in the main checkout itself (also covers --separate-git-dir).
+            $top = (& git -C $Dir rev-parse --show-toplevel 2>$null)
+            if ($LASTEXITCODE -ne 0 -or -not $top) { return $Dir }
+            return ConvertTo-NormPath ([string]($top | Select-Object -First 1))
+        }
+        # Linked worktree: the common dir must be "<main>\.git" and a real folder.
+        if ((Split-Path -Leaf $cd) -ne ".git") { return $Dir }
+        $parent = Split-Path -Parent $cd
+        if (Test-Path -LiteralPath (Join-Path $parent ".git") -PathType Container) { return $parent }
+        return $Dir
+    } catch { return $Dir }
+}
+# Identity of the session: Branch (null when detached or unknown) and Worktree (its top-level folder, null when unknown).
+function Get-SessionId([string]$Dir) {
+    $branch = $null; $top = $null
+    try {
+        $b = (& git -C $Dir symbolic-ref --short -q HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $b) { $branch = ([string]($b | Select-Object -First 1)).Trim() }
+        $t = (& git -C $Dir rev-parse --show-toplevel 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $t) { $top = ConvertTo-NormPath ([string]($t | Select-Object -First 1)) }
     } catch { }
-    return $null
+    return [pscustomobject]@{ Branch = $branch; Worktree = $top }
 }
-function Test-DiaryBranch([string]$Path, $Branch) {
-    if (-not $Branch) { return $true }
-    $m = Select-String -LiteralPath $Path -Pattern '^- Branch: (.*) @ ' | Select-Object -First 1
-    return [bool]($m -and ($m.Matches[0].Groups[1].Value -ceq $Branch))
+# True when the diary belongs to this session: exact branch when named, exact worktree path otherwise.
+# With neither known, nothing matches.
+function Test-DiaryOwner([string]$Path, $Id) {
+    if ($Id.Branch) {
+        $m = Select-String -LiteralPath $Path -Pattern '^- Branch: (.*) @ ' | Select-Object -First 1
+        return [bool]($m -and ($m.Matches[0].Groups[1].Value -ceq $Id.Branch))
+    }
+    if ($Id.Worktree) {
+        $m = Select-String -LiteralPath $Path -Pattern '^- Worktree: (.*)$' | Select-Object -First 1
+        return [bool]($m -and ((ConvertTo-NormPath $m.Matches[0].Groups[1].Value) -ieq $Id.Worktree))
+    }
+    return $false
 }
+# --- end of shared helpers ---
+$journalDir = Join-Path (Get-MainRoot $projectDir) ".journal"
+$sessionId = Get-SessionId $projectDir
 if (Test-Path -LiteralPath $journalDir) {
-    $sessionBranch = Get-SessionBranch $projectDir
     $newest = Get-ChildItem -LiteralPath $journalDir -Filter "*.md" -File |
-        Sort-Object LastWriteTime -Descending | Where-Object { Test-DiaryBranch $_.FullName $sessionBranch } | Select-Object -First 1
+        Sort-Object LastWriteTime -Descending | Where-Object { Test-DiaryOwner $_.FullName $sessionId } | Select-Object -First 1
     if ($newest) { $latest = $newest.FullName }
 }
 
@@ -76,7 +91,7 @@ if (-not $fresh) {
 }
 
 if ($latest -and (Select-String -LiteralPath $latest -SimpleMatch "<!-- TODO-CONTEXT -->" -Quiet)) {
-    if ($type -eq "manual") {
+    if ($type -eq "manual" -and ($sessionId.Branch -or $sessionId.Worktree)) {
         [Console]::Error.WriteLine("Context diary incomplete: $latest still has '<!-- TODO-CONTEXT -->' markers. Ask the agent to fill every section (and remove the markers), then run /compact again.")
         exit 2
     }

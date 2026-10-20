@@ -73,13 +73,55 @@ function Unfill-Diary($path) {
     [IO.File]::WriteAllText($path, [IO.File]::ReadAllText($path) + "`n### x  <!-- TODO-CONTEXT -->`n")
 }
 function Get-DiaryFor($repoDir, $branchName) {
-    # The diary whose skeleton recorded exactly this branch.
-    Get-ChildItem (Join-Path $repoDir ".journal") -Filter "*.md" |
-        Where-Object { (Select-String -LiteralPath $_.FullName -Pattern '^- Branch: (.*) @ ' | Select-Object -First 1).Matches[0].Groups[1].Value -ceq $branchName } |
-        Select-Object -First 1
+    # The diary whose skeleton recorded exactly this branch (null when there is none).
+    $dir = Join-Path $repoDir ".journal"
+    if (-not (Test-Path -LiteralPath $dir)) { return $null }
+    Get-ChildItem $dir -Filter "*.md" | Where-Object {
+        $m = Select-String -LiteralPath $_.FullName -Pattern '^- Branch: (.*) @ ' | Select-Object -First 1
+        $m -and ($m.Matches[0].Groups[1].Value -ceq $branchName)
+    } | Select-Object -First 1
+}
+function Get-DiaryForWorktree($repoDir, $wtDir) {
+    # The diary whose skeleton recorded exactly this worktree folder (null when there is none).
+    $dir = Join-Path $repoDir ".journal"
+    if (-not (Test-Path -LiteralPath $dir)) { return $null }
+    $want = [IO.Path]::GetFullPath($wtDir).TrimEnd('\')
+    Get-ChildItem $dir -Filter "*.md" | Where-Object {
+        $m = Select-String -LiteralPath $_.FullName -Pattern '^- Worktree: (.*)$' | Select-Object -First 1
+        $m -and ([IO.Path]::GetFullPath($m.Matches[0].Groups[1].Value.Trim()).TrimEnd('\') -ieq $want)
+    } | Select-Object -First 1
+}
+function Test-Exists($name, $item) {
+    # Registers a failing check (instead of throwing) when a diary the case needs is missing.
+    Check $name ([int]($null -ne $item)) 1 | Out-Host
+    return ($null -ne $item)
+}
+function Test-IsolationPair($label, $wtA, $wtB, $repoDir, $finder) {
+    # $finder: scriptblock(diaryRepoDir, sessionDir) -> the diary of that session.
+    $env:CLAUDE_PROJECT_DIR = $wtA
+    Check "$label`: A manual with an unfilled diary is blocked" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+    $dA = & $finder $repoDir $wtA
+    if (-not (Test-Exists "$label`: diary of A exists" $dA)) { return }
+    Fill-Diary $dA.FullName
+    Check "$label`: A manual passes after filling A" (Invoke-Hook $pre '{"trigger":"manual"}') 0
+    $env:CLAUDE_PROJECT_DIR = $wtB
+    $o0 = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
+    Check "$label`: session-start of B does not show the diary of A" $o0.Count 0
+    Check "$label`: a complete diary of A does not free the manual compaction of B" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+    $dB = & $finder $repoDir $wtB
+    if (-not (Test-Exists "$label`: diary of B exists" $dB)) { return }
+    Fill-Diary $dB.FullName
+    Unfill-Diary $dA.FullName
+    Check "$label`: an incomplete diary of A does not block B once B is filled" (Invoke-Hook $pre '{"trigger":"manual"}') 0
+    $o1 = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
+    Check "$label`: session-start of B shows the diary of B" ([int]([string]($o1 | Select-Object -First 1)).Contains($dB.Name)) 1
+    # Make B the newest diary (deterministic), then A must still be blocked by its own incomplete diary.
+    [IO.File]::SetLastWriteTime($dB.FullName, (Get-Date).AddMinutes(1))
+    $env:CLAUDE_PROJECT_DIR = $wtA
+    Check "$label`: A is still blocked by its own incomplete diary" (Invoke-Hook $pre '{"trigger":"manual"}') 2
 }
 
-Fill-Diary $inMain[0].FullName
+if ($inMain.Count -ge 1) { Fill-Diary $inMain[0].FullName }
 Check "worktree: manual compaction passes after filling the main-checkout diary" (Invoke-Hook $pre '{"trigger":"manual"}') 0
 
 # Isolation between two worktrees of the same repository (branch B name has branch A name as a prefix).
@@ -88,25 +130,52 @@ $wtA = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGui
 $wtB = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
 git -C $repo2 worktree add -q -b "feat/aaa" $wtA
 git -C $repo2 worktree add -q -b "feat/aaa-b" $wtB
-$env:CLAUDE_PROJECT_DIR = $wtA
-Check "isolation: A manual with an unfilled diary is blocked" (Invoke-Hook $pre '{"trigger":"manual"}') 2
-$diaryA = Get-DiaryFor $repo2 "feat/aaa"
-Fill-Diary $diaryA.FullName
-Check "isolation: A manual passes after filling A" (Invoke-Hook $pre '{"trigger":"manual"}') 0
-$env:CLAUDE_PROJECT_DIR = $wtB
-$outB0 = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
-Check "isolation: session-start of B does not show the diary of A" $outB0.Count 0
-Check "isolation: a complete diary of A does not free the manual compaction of B" (Invoke-Hook $pre '{"trigger":"manual"}') 2
-$diaryB = Get-DiaryFor $repo2 "feat/aaa-b"
-Fill-Diary $diaryB.FullName
-Unfill-Diary $diaryA.FullName
-Check "isolation: an incomplete diary of A does not block B once B is filled" (Invoke-Hook $pre '{"trigger":"manual"}') 0
-$outB1 = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
-Check "isolation: session-start of B shows the diary of B" ([int]([string]($outB1 | Select-Object -First 1)).Contains($diaryB.Name)) 1
-$env:CLAUDE_PROJECT_DIR = $wtA
-Start-Sleep -Milliseconds 1100
-Fill-Diary $diaryB.FullName  # newer than A, and its branch name extends the name of A
-Check "isolation: A is still blocked by its own incomplete diary" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+Test-IsolationPair "isolation" $wtA $wtB $repo2 { param($r, $s) Get-DiaryFor $r $(if ($s -eq $wtA) { "feat/aaa" } else { "feat/aaa-b" }) }
+
+# Detached HEAD in two worktrees of the same repository: isolation falls back to the worktree folder.
+$repo4 = New-TempRepo
+$dA = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
+$dB = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
+git -C $repo4 worktree add -q --detach $dA
+git -C $repo4 worktree add -q --detach $dB
+Test-IsolationPair "detached" $dA $dB $repo4 { param($r, $s) Get-DiaryForWorktree $r $s }
+
+# The main-root detection must not depend on the state of the main work tree.
+$repo5 = New-TempRepo
+[IO.File]::WriteAllText((Join-Path $repo5 "a.txt"), "a")
+[IO.File]::WriteAllText((Join-Path $repo5 "b.txt"), "b")
+git -C $repo5 add a.txt b.txt
+git -C $repo5 -c user.name=t -c user.email=t@t commit -q -m files
+$wt5 = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
+git -C $repo5 worktree add -q -b "feat/five" $wt5
+Move-Item -LiteralPath (Join-Path $repo5 "a.txt") (Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-moved-" + [guid]::NewGuid().ToString("N")))
+$env:CLAUDE_PROJECT_DIR = $wt5
+Check "main-root: first tracked file deleted without commit: manual blocked" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+Check "main-root: first tracked file deleted without commit: diary in the main checkout" ([int](Test-Path -LiteralPath (Join-Path $repo5 ".journal"))) 1
+Check "main-root: first tracked file deleted without commit: nothing in the worktree" ([int](Test-Path -LiteralPath (Join-Path $wt5 ".journal"))) 0
+
+$repo6 = New-TempRepo
+[IO.File]::WriteAllText((Join-Path $repo6 "a.txt"), "a")
+[IO.File]::WriteAllText((Join-Path $repo6 "b.txt"), "b")
+git -C $repo6 add a.txt b.txt
+git -C $repo6 -c user.name=t -c user.email=t@t commit -q -m files
+$wt6 = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
+git -C $repo6 worktree add -q -b "feat/six" $wt6
+git -C $repo6 sparse-checkout init --no-cone
+git -C $repo6 sparse-checkout set "/b.txt"
+$env:CLAUDE_PROJECT_DIR = $wt6
+Check "main-root: sparse checkout excluding the first tracked file: manual blocked" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+Check "main-root: sparse checkout excluding the first tracked file: diary in the main checkout" ([int](Test-Path -LiteralPath (Join-Path $repo6 ".journal"))) 1
+Check "main-root: sparse checkout excluding the first tracked file: nothing in the worktree" ([int](Test-Path -LiteralPath (Join-Path $wt6 ".journal"))) 0
+
+# Repository without any commit: a diary of another branch must not be re-injected.
+$repo7 = New-TempPlainDir
+git -C $repo7 init -q
+New-Item -ItemType Directory -Path (Join-Path $repo7 ".journal") | Out-Null
+[IO.File]::WriteAllText((Join-Path $repo7 ".journal\2026-01-01-000000-other-x.md"), "# other`n- Branch: other-branch @ abc`n- Worktree: $repo7`n")
+$env:CLAUDE_PROJECT_DIR = $repo7
+$o7 = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
+Check "unborn branch: session-start does not re-inject the diary of another branch" $o7.Count 0
 
 # .journal ignores itself, even when the repository .gitignore has no rule for it.
 $repo3 = New-TempRepo
@@ -133,5 +202,7 @@ Check "separate-git-dir: nothing is created beside the git dir" ([int](Test-Path
 $env:CLAUDE_PROJECT_DIR = New-TempPlainDir
 Check "a folder that is not a git repository does not crash or block" (Invoke-Hook $pre '{"trigger":"manual"}') 0
 
-Remove-Item Env:CLAUDE_PROJECT_DIR
+
+$oPlain = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
+Check "no git identity: session-start injects nothing" $oPlain.Count 0
 exit $fail
