@@ -5,7 +5,8 @@
 # Nothing is deleted or reset; the temp folders are left behind. Never touches the real remotes of any repository.
 # Usage: powershell -NoProfile -File scripts/dev/test-pre-push.ps1 [-HooksDir <folder with pre-push + pre-push.ps1>]
 #   -> exit 0 when all cases pass, 1 otherwise. -HooksDir exists so mutants (copies in a temp folder) can be tested.
-param([string]$HooksDir = (Join-Path $PSScriptRoot "git-hooks"))
+param([string]$HooksDir = (Join-Path $PSScriptRoot "git-hooks"),
+      [string]$AttributesFile = (Join-Path (Join-Path $PSScriptRoot "..\..") ".gitattributes"))
 $ErrorActionPreference = "Stop"
 $fail = 0
 
@@ -137,6 +138,32 @@ Assert-Pass "backup: logic throws -> still passes" @("push", "backup", "feat/z")
 $cleanPath = (Join-Path $GitRoot "cmd") + ";" + (Join-Path $GitRoot "usr\bin") + ";" + (Join-Path $GitRoot "mingw64\bin")
 Assert-Refuse "origin: PowerShell not found -> refused (fail closed)" @("push", "origin", "feat/w") $pubBare @("refs/heads/feat/w") "could not run" @{ PATH = $cleanPath } | Out-Null
 Assert-Pass "backup: PowerShell not found -> still passes" @("push", "backup", "feat/w") $bkpBare @("refs/heads/feat/w") @{ PATH = $cleanPath } | Out-Null
+
+# --- Checkout with core.autocrlf=true: the sh launcher must stay LF and the hook must still run ---
+# Source repo holds the hook files and the repository .gitattributes; the clone is made with autocrlf=true.
+$src = Join-Path $root "crlf-src"
+$clone = Join-Path $root "crlf-clone"
+$pub2 = Join-Path (Join-Path $root "pub2") "claudia-rh.git"
+foreach ($d in @($src, $pub2)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+Invoke-Git $pub2 @("init", "-q", "--bare") | Out-Null
+Invoke-Git $src @("init", "-q") | Out-Null
+$srcHooks = Join-Path $src "scripts\dev\git-hooks"
+New-Item -ItemType Directory -Path $srcHooks -Force | Out-Null
+foreach ($f in @("pre-push", "pre-push.ps1")) { Copy-Item -LiteralPath (Join-Path $HooksDir $f) -Destination (Join-Path $srcHooks $f) }
+if (Test-Path -LiteralPath $AttributesFile) { Copy-Item -LiteralPath $AttributesFile -Destination (Join-Path $src ".gitattributes") }
+Invoke-Git $src @("add", "-A") | Out-Null
+Invoke-Git $src @("commit", "-q", "-m", "hooks") | Out-Null
+$cl = Invoke-Git $root @("clone", "-q", "-c", "core.autocrlf=true", $src, $clone)
+$script:W = $clone
+$crBytes = -1
+$launcher = Join-Path $clone "scripts\dev\git-hooks\pre-push"
+if (Test-Path -LiteralPath $launcher) { $crBytes = @([IO.File]::ReadAllBytes($launcher) | Where-Object { $_ -eq 13 }).Count }
+Assert-Case "autocrlf clone: pre-push launcher has 0 CR bytes" ($crBytes -eq 0) "CR bytes: $crBytes (clone exit $($cl.Code) $($cl.Err))"
+Invoke-Git $clone @("config", "core.hooksPath", (Join-Path $clone "scripts/dev/git-hooks").Replace("\", "/")) | Out-Null
+Invoke-Git $clone @("remote", "set-url", "origin", $pub2.Replace("\", "/")) | Out-Null
+Invoke-Git $clone @("branch", "feat/x") | Out-Null
+Assert-Pass "autocrlf clone: hook runs, feat/x passes" @("push", "origin", "feat/x") $pub2 @("refs/heads/feat/x") | Out-Null
+Assert-Refuse "autocrlf clone: hook runs, main refused" @("push", "origin", "main") $pub2 @("refs/heads/main") "refs/heads/main" | Out-Null
 
 if ($fail -eq 0) { Write-Output "ALL PASS" } else { Write-Output "SOME CASES FAILED" }
 exit $fail
