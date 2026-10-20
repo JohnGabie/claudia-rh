@@ -84,6 +84,7 @@ Branch órfã `recovery`, **só no `backup`** (sem ancestral comum com `dev`; nu
 ## Proteção de branch (P15)
 
 Ativa, ou a ativar, no `origin` (`main` e `dev`): PR obrigatório com 0 aprovações do GitHub; os 5 checks acima obrigatórios; branch atualizada antes do merge; sem force push e sem apagar; só merge commit; tags `v*` protegidas contra mover e apagar.
+- Comandos de ativar, conferir e desfazer cada item (e do hook local): `docs/runbook-protecao.md`.
 
 - **Ativar e desligar é do usuário**, só com o "pode aplicar" dele. O versionador não aplica, não desliga, nem sugere contornar.
 - O **administrador também está sujeito às regras**. Emergência = o usuário desliga a regra, age, religa; os comandos de desligar ficam escritos junto dos de ativar.
