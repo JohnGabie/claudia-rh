@@ -72,7 +72,13 @@ function Get-PackAll {
     foreach ($p in (Get-PackPaths)) { $all += "`n=== $p`n" + (Get-PackBlob $p) }
     return $all
 }
-function Get-FileHashOrNone([string]$p) { if (Test-Path -LiteralPath $p) { return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash } return "none" }
+# SHA256 by .NET, not Get-FileHash: launched from Git Bash, Windows PowerShell inherits a PSModulePath that puts
+# the PowerShell 7 modules first, and Get-FileHash (defined in a script module) is then not found.
+function Get-FileHashOrNone([string]$p) {
+    if (-not (Test-Path -LiteralPath $p)) { return "none" }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return (-join ($sha.ComputeHash([IO.File]::ReadAllBytes($p)) | ForEach-Object { $_.ToString("x2") })) } finally { $sha.Dispose() }
+}
 # Everything of the user's repository that the script must never change (all refs except refs/heads/recovery).
 function Get-Snapshot {
     $parts = @()
