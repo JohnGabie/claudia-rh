@@ -99,7 +99,7 @@ Regras de deleção do `CLAUDE.md` global valem para todo script desta parte: ne
 | T11 | nova | pendente | pacote de recuperação: `recovery-pack.ps1`, limpeza por campo (P17), varredura e teste |
 | T12 | nova | pendente | hook `pre-push` (lista permitida com `sync/*`; bloqueia `recovery*`, `wip/*`, tags internas e `--all`/`--tags` acidentais no `origin`) e teste |
 | T15 | nova | pendente | P16: diário no checkout principal (`git rev-parse --git-common-dir`), teste e conferência do `.journal/` antes de remover worktree |
-| T16 | nova | pendente | P18: tirar a tabela de branches do `INDEX.md`; o estado vem do relatório do versionador |
+| T16 | feita | Rodada 1: APROVADO, "Looks good to me" (commit `13be975`; relato do executor fora do formato, registrado) | P18: tirar a tabela de branches do `INDEX.md`; o estado vem do relatório do versionador |
 | T13 | nova | pendente | comandos de proteção (`gh api`) escritos com a reversão; **não executados** |
 | T14 | nova | pendente | PR de sincronização do `dev` local e ativação, **só com o "pode aplicar"** |
 
@@ -158,3 +158,7 @@ T8 e T9 (documentos) → T10 → T11 → T12 → revisão do conjunto → T13 �
 - `agents/versao.md` L48 x L51: "`main` só recebe release" e o revert por PR contra `main`; escrever o revert de quebra como exceção explícita.
 - `agents/versao.md` L34-35 e `agents/revisor.md`: escrever quem chama o versionador para mostrar o resumo e pedir o "pode fechar" depois de o revisor dispensá-lo (o orquestrador).
 - `CLAUDE.md` L37, L48-50, L128, L143, L212, L257 e `agents/revisor.md` L54 e o fluxo de chamar e dispensar o versionador.
+
+### Nota de processo (2026-10-19)
+
+Nesta sessão, os passos de versionador depois de cada "Looks good to me" (fast-forward na `feat/regras-agentes`, push ao `backup`, remoção da worktree sem `--force`) foram feitos pelo orquestrador, por serem mecânicos e só locais ou no backup. Nada foi ao `origin`. A partir da T14, que mexe no `origin` e no GitHub, os passos ficam com o agente de versão.
