@@ -250,6 +250,61 @@ $res = Invoke-Scan -Range "base..HEAD" -RepoDir $R12b
 Assert-Exit $res "12b path with spaces: exit 1" 1
 Assert-Case "12b path with spaces: full path named" ($res.Text.Contains("$c12b pasta com espaco/relat") -and $res.Text.Contains("rio final.txt :: openai-project-key")) "output:`n$($res.Text)"
 
+# ------------------------------------------------------------------ 14. forbidden FOLDERS (any level, any case) -> exit 1
+$R14 = New-Repo "folders"
+foreach ($case in @(
+        @("config/.Env.d/inner.txt", ".env*/"),
+        @("deep/a/Secrets/s.txt", "secrets/"),
+        @("x/My-Credentials/c.txt", "*credential*/"),
+        @("sandbox-lab/shared/secrets/k.txt", "sandbox-lab/shared/secrets/"))) {
+    Write-Text (Join-Path $R14 ($case[0] -replace '/', '\')) "harmless`n"
+    $c14 = Commit-All $R14 "add $($case[0])"
+    $res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R14
+    Assert-Exit $res "14 file inside forbidden folder $($case[0]): exit 1" 1
+    Assert-Case "14 file inside forbidden folder $($case[0]): named" ($res.Text.Contains("$c14 $($case[0]) (dentro de pasta proibida) :: pasta-proibida $($case[1])")) "output:`n$($res.Text)"
+}
+# 14 control: similar names that are not forbidden folders.
+Write-Text (Join-Path $R14 "docs\secretsauce\a.txt") "harmless`n"
+Write-Text (Join-Path $R14 "docs\secrets.md") "harmless`n"
+Commit-All $R14 "control" | Out-Null
+$res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R14
+Assert-Exit $res "14 control: secretsauce/ and secrets.md are not forbidden: exit 0" 0
+
+# ------------------------------------------------------------------ 15. WARNINGS: personal paths and e-mails (exit 0)
+$R15 = New-Repo "warnings"
+$n = Get-Letters 9
+Write-Text (Join-Path $R15 "notes.md") ("a C:\Users\$n\proj`nb C:/Users/$n/proj`nc D:\\Users\\$n\\x`nd /home/$n/src`ne /Users/$n/src`n" +
+    "f C:Users$n" + "PycharmProjects`ng placeholder C:\Users\<nome>\x stays quiet`n")
+$c15 = Commit-All $R15 "paths"
+$res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R15
+Assert-Exit $res "15a personal paths only: exit 0" 0
+Assert-Case "15a personal paths: warning section with count" ($res.Text.Contains("Avisos (nao bloqueiam): 6")) "output:`n$($res.Text)"
+foreach ($shown in @("C:\Users\[oculto]", "C:/Users/[oculto]", "D:\\Users\\[oculto]", "/home/[oculto]", "/Users/[oculto]", "C:Users[oculto]")) {
+    Assert-Case "15a personal path warned and masked: $shown" ($res.Text.Contains("$c15 notes.md :: caminho pessoal $shown")) "output:`n$($res.Text)"
+}
+Assert-Case "15a personal paths: user name never shown" (-not $res.Text.Contains($n)) "name leaked. Output:`n$($res.Text)"
+Assert-Case "15a personal paths: says nothing found (only warnings)" ($res.Text.Contains("Nada encontrado")) "output:`n$($res.Text)"
+$local = Get-Letters 8
+Write-Text (Join-Path $R15 "contact.md") "write to $($local).x@exemplo.com.br please`n"
+$c15b = Commit-All $R15 "email"
+$res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R15
+Assert-Exit $res "15b ordinary e-mail: exit 0" 0
+Assert-Case "15b ordinary e-mail: warned with the local part masked" ($res.Text.Contains("$c15b contact.md :: e-mail [oculto]@exemplo.com.br") -and $res.Text.Contains("Avisos (nao bloqueiam): 1")) "output:`n$($res.Text)"
+Assert-Case "15b ordinary e-mail: local part never shown" (-not $res.Text.Contains($local)) "local part leaked"
+Write-Text (Join-Path $R15 "bot.md") "Co-Authored-By: Bot <noreply@anthropic.com>`nby 12345+someone@users.noreply.github.com`n"
+Commit-All $R15 "noreply" | Out-Null
+$res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R15
+Assert-Exit $res "15c noreply addresses: exit 0" 0
+Assert-Case "15c noreply addresses: no warning" (-not $res.Text.Contains("Avisos")) "output:`n$($res.Text)"
+$n2 = Get-Letters 9
+$v = "sk-ant-" + (Get-Letters 30)
+Write-Text (Join-Path $R15 "both.md") "path C:\Users\$n2\x`nkey $v`n"
+$c15d = Commit-All $R15 "both"
+$res = Invoke-Scan -Range "HEAD~1..HEAD" -RepoDir $R15
+Assert-Exit $res "15d personal path plus secret: exit 1" 1
+Assert-Case "15d personal path plus secret: finding and warning both listed" ($res.Text.Contains("$c15d both.md :: anthropic-key") -and $res.Text.Contains("$c15d both.md :: caminho pessoal C:\Users\[oculto]")) "output:`n$($res.Text)"
+Assert-Case "15d personal path plus secret: neither value shown" (-not $res.Text.Contains($v) -and -not $res.Text.Contains($n2)) "value leaked"
+
 # ------------------------------------------------------------------ 13. read only: refs, HEAD and index unchanged
 $snap = { param($repo) ((Invoke-G -C $repo for-each-ref "--format=%(refname) %(objectname)") -join "|") + "#" + ((Invoke-G -C $repo rev-parse HEAD) -join "") + "#" + ((Invoke-G -C $repo status --porcelain) -join "|") }
 $before = & $snap $R12

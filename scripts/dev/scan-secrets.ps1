@@ -18,10 +18,20 @@
 #   - forbidden file names, without regex (same "always out" list as recovery-pack.ps1, case-insensitive, on the
 #     file name): .env*, *.pem, *.key, *.pfx, *.p12, id_rsa*, .credentials.json, *credential*, candidate_base.yaml,
 #     search_variants.yaml, strategy.md, disparo.json, notif.json, modo_autonomo.json, *.db, *.sqlite*.
+#   - forbidden FOLDERS (same folder rules as recovery-pack.ps1, case-insensitive, at any level): a file added or
+#     changed inside a folder named .env*, secrets or *credential*, or under sandbox-lab/shared/secrets/.
+#   Deleting a file (forbidden name or inside a forbidden folder) is not a finding: it adds nothing new.
+# WARNINGS (do not block, exit stays 0 when there are only warnings), in the ADDED lines only:
+#   - "caminho pessoal": absolute user-folder paths, any slash: X:\Users\<name>, X:/Users/<name>, /home/<name>,
+#     /Users/<name>, and "X:Users<name>" (slashes lost). Placeholders such as C:\Users\<nome> are not matched.
+#   - "e-mail": e-mail addresses, except noreply@... and ...@users.noreply.github.com.
+#   Printed in the section "Avisos (nao bloqueiam)" with commit, file and kind; the user name and the local part of
+#   the e-mail are masked ("C:\Users\[oculto]", "[oculto]@domain"). Reason: the public dev already has known
+#   personal paths (CLA-54); blocking would stop the sync PR, a warning lets the user see them.
 # Patterns: scripts/dev/lib/secret-patterns.ps1 (the project's single reference list, dot-sourced).
 # Output: one line per finding with the short commit, the place (file name masked by Hide-Secrets, or "mensagem do
 #   commit") and the pattern name. NEVER the value. Every message printed (own and git's) goes through Hide-Secrets.
-# Exit: 0 nothing found; 1 something found; 2 environment error (git missing, folder missing, not a repository,
+# Exit: 0 nothing found (warnings allowed); 1 something found; 2 environment error (git missing, folder missing, not a repository,
 #   invalid or empty -Range, or any unhandled exception: printed masked by the script-level trap).
 # Git is run through System.Diagnostics.Process with stdout read as raw bytes (decoded as UTF-8) and stderr read
 # apart: in Windows PowerShell 5.1 native stderr under "Stop" becomes a terminating error (the same care as
@@ -52,6 +62,14 @@ $Latin1 = [Text.Encoding]::GetEncoding(28591)
 $ForbiddenNames = @(".env*", "*.pem", "*.key", "*.pfx", "*.p12", "id_rsa*", ".credentials.json", "*credential*",
     "candidate_base.yaml", "search_variants.yaml", "strategy.md", "disparo.json", "notif.json", "modo_autonomo.json",
     "*.db", "*.sqlite*")
+$ForbiddenDirs = @(".env*", "secrets", "*credential*")
+# Warning patterns: group "n" is the part that is masked (user name or e-mail local part).
+$PersonalPathPatterns = @(
+    '(?i)(?<![A-Za-z0-9])[A-Za-z]:[\\/]+Users[\\/]+(?<n>[A-Za-z0-9._-]+)',
+    '(?i)(?<![A-Za-z0-9.:/\\])[\\/]+(?:home|Users)[\\/]+(?<n>[A-Za-z0-9._-]+)',
+    '(?i)(?<![A-Za-z0-9])[A-Za-z]:Users(?<n>[A-Za-z0-9._-]+)'
+)
+$EmailPattern = '(?<![A-Za-z0-9._%+-])(?<n>[A-Za-z0-9._%+-]+)@(?<d>[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)'
 
 function Say([string]$Text) { Write-Output (Hide-Secrets $Text) }
 function Say-Err([string]$Text) { [Console]::Error.WriteLine((Hide-Secrets $Text)) }
@@ -153,9 +171,46 @@ function Test-Text([string]$Sha, [string]$Where, [string]$Text) {
 # A touched file (added or changed): its name against the patterns and against the forbidden-name list.
 function Test-FileName([string]$Sha, [string]$Path) {
     foreach ($h in (Get-Matches $Path)) { Add-Finding $Sha "$Path (no NOME do arquivo)" $h }
-    $leaf = ($Path -split '/')[-1]
+    $segs = @($Path -split '/')
+    $leaf = $segs[-1]
     foreach ($f in $script:ForbiddenNames) {
         if ($leaf -like $f) { Add-Finding $Sha "$Path (arquivo proibido pelo nome)" "nome-proibido $f"; break }
+    }
+    Test-FolderRules $Sha $Path $segs
+}
+# A file inside a forbidden folder (any level), or under sandbox-lab/shared/secrets/.
+function Test-FolderRules([string]$Sha, [string]$Path, [string[]]$Segs) {
+    if ($Path -match '(?i)(^|/)sandbox-lab/shared/secrets/') {
+        Add-Finding $Sha "$Path (dentro de pasta proibida)" "pasta-proibida sandbox-lab/shared/secrets/"; return
+    }
+    for ($i = 0; $i -lt $Segs.Count - 1; $i++) {
+        foreach ($f in $script:ForbiddenDirs) {
+            if ($Segs[$i] -like $f) { Add-Finding $Sha "$Path (dentro de pasta proibida)" "pasta-proibida $f/"; return }
+        }
+    }
+}
+
+# Warnings (personal paths and e-mails) in an added line. Never block; the masked part is replaced by [oculto].
+$Warnings = New-Object System.Collections.ArrayList
+$WarnSeen = @{}
+function Add-Warning([string]$Sha, [string]$Path, [string]$Kind, [string]$Shown) {
+    $line = "$(Short $Sha) $(Hide-Secrets $Path) :: $Kind $Shown"
+    if ($script:WarnSeen.ContainsKey($line)) { return }
+    $script:WarnSeen[$line] = $true
+    [void]$script:Warnings.Add($line)
+}
+function Test-Warnings([string]$Sha, [string]$Path, [string]$Text) {
+    foreach ($p in $script:PersonalPathPatterns) {
+        foreach ($m in [regex]::Matches($Text, $p)) {
+            $g = $m.Groups["n"]
+            Add-Warning $Sha $Path "caminho pessoal" ($m.Value.Substring(0, $g.Index - $m.Index) + "[oculto]")
+        }
+    }
+    foreach ($m in [regex]::Matches($Text, $script:EmailPattern)) {
+        $local = $m.Groups["n"].Value
+        $domain = $m.Groups["d"].Value
+        if ($local -ieq "noreply" -or $domain -match '(?i)(^|\.)users\.noreply\.github\.com$') { continue }
+        Add-Warning $Sha $Path "e-mail" ("[oculto]@" + $domain)
     }
 }
 # Binary file: scan the raw blob of the new version as text when possible.
@@ -218,7 +273,11 @@ if ($commits.Count -gt 0) {
         }
         if (-not $path) { continue }
         if ($inHunk) {
-            if ($line.StartsWith("+")) { Test-Text $sha $path $line.Substring(1) }
+            if ($line.StartsWith("+")) {
+                $added = $line.Substring(1)
+                Test-Text $sha $path $added
+                Test-Warnings $sha $path $added
+            }
             continue
         }
         if ($line.StartsWith("deleted file mode")) { $deleted = $true }
@@ -230,6 +289,10 @@ if ($commits.Count -gt 0) {
 
 # ---------------------------------------------------------------- report
 foreach ($n in $Notes) { Say "Nota: $n" }
+if ($Warnings.Count -gt 0) {
+    Say "Avisos (nao bloqueiam): $($Warnings.Count)"
+    foreach ($w in $Warnings) { Say "  $w" }
+}
 if ($Findings.Count -gt 0) {
     Say "ACHOU POSSIVEL SEGREDO ($($Findings.Count)): commit, lugar e padrao (o valor nunca e mostrado)."
     foreach ($f in $Findings) { Say "  $f" }

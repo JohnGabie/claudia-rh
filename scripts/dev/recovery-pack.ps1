@@ -40,6 +40,8 @@
 #
 # SECRET PATTERNS: $SecretPatterns and Hide-Secrets come from scripts/dev/lib/secret-patterns.ps1 (dot-sourced),
 #   the project's single reference list for secret scans, shared with scan-secrets.ps1. Change them there.
+#   Known limit (accepted): if that file is missing, the dot-source fails before Say-Err exists, the trap itself
+#   fails and the script ends with exit 1 instead of 2. It only happens with the lib missing; nothing is written.
 #
 # -MemoryDir default: <GlobalClaudeDir>\projects\<encoded main checkout path>\memory, where the encoding is the one
 #   Claude Code uses for its project folders: every character that is not an ASCII letter or digit becomes "-"
