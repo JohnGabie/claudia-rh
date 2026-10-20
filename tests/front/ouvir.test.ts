@@ -68,3 +68,20 @@ test("unmounting before listen resolves still releases the late subscription", a
   await tick();
   assert.equal(f.liberados, 1);
 });
+
+// The Sites screen listens to every Tauri event that can change what it shows.
+test("the Sites screen subscribes to db-atualizada, novo-aviso-site and aviso-site-resolvido", async () => {
+  const { fontesTauri } = await import("../../src/components/sites/ouvirEventos.ts");
+  const handlers = new Map<string, () => void>();
+  const escutar = async (ev: string, cb: () => void) => { handlers.set(ev, cb); return () => {}; };
+  const rel = relogio(); let n = 0;
+  criarOuvinte(() => n++, fontesTauri(escutar), 150, rel);
+  await tick();
+  assert.deepEqual([...handlers.keys()].sort(), ["aviso-site-resolvido", "db-atualizada", "novo-aviso-site"]);
+  for (const ev of ["novo-aviso-site", "aviso-site-resolvido"]) {
+    const antes = n;
+    handlers.get(ev)!();
+    rel.avancar();
+    assert.equal(n, antes + 1, `${ev} must reload the screen`);
+  }
+});

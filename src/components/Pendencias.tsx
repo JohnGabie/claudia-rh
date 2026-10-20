@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { X, CheckCircle2, AlertTriangle, ShieldAlert, MousePointerClick, HelpCircle, Lightbulb, FileWarning } from "lucide-react";
 import { ehSemDocumento } from "./dashboard/anexos";
 import { useT } from "../i18n";
+import { sitesApi, SITES_MUDARAM, type AvisoSite } from "../lib/sites-api";
+import { AvisoSiteItem } from "./AvisoSiteItem";
 
 interface Proposta {
   id: number;
@@ -385,14 +387,17 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
   const t = useT();
   const [pendencias, setPendencias] = useState<Pendencia[]>([]);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
+  const [avisosSites, setAvisosSites] = useState<AvisoSite[]>([]);
   const [loading, setLoading] = useState(true);
 
   const carregar = () => {
     Promise.all([
       invoke<Pendencia[]>("listar_pendencias", { apenasNaoResolvidas: true }),
       invoke<Proposta[]>("listar_propostas"),
+      // A failure here must not hide the other notification kinds.
+      sitesApi.avisos().catch((e) => { console.error(e); return [] as AvisoSite[]; }),
     ])
-      .then(([p, pr]) => { setPendencias(p); setPropostas(pr); })
+      .then(([p, pr, av]) => { setPendencias(p); setPropostas(pr); setAvisosSites(av); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
@@ -405,11 +410,18 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
       listen("nova-proposta", carregar),
       listen("proposta-resolvida", carregar),
       listen("db-atualizada", carregar),
+      listen("novo-aviso-site", carregar),
+      listen("aviso-site-resolvido", carregar),
     ];
-    return () => { unsubs.forEach((p) => p.then((f) => f())); };
+    // Plain-browser dev mode has no Tauri events; Sites writes dispatch this window event.
+    window.addEventListener(SITES_MUDARAM, carregar);
+    return () => {
+      window.removeEventListener(SITES_MUDARAM, carregar);
+      unsubs.forEach((p) => p.then((f) => f()));
+    };
   }, []);
 
-  const total = pendencias.length + propostas.length;
+  const total = pendencias.length + propostas.length + avisosSites.length;
 
   return (
     <div style={{ padding: noHeader ? "12px 16px" : "24px 24px" }}>
@@ -449,12 +461,15 @@ export const Pendencias: React.FC<{ noHeader?: boolean; onNavigateToPerfil?: () 
           {[
             ...pendencias.map((p) => ({ tipo: "pendencia" as const, criada_em: p.criada_em, item: p })),
             ...propostas.map((p) => ({ tipo: "proposta" as const, criada_em: p.criada_em, item: p })),
+            ...avisosSites.map((a) => ({ tipo: "aviso" as const, criada_em: a.criado_em, item: a })),
           ]
             .sort((a, b) => new Date(b.criada_em).getTime() - new Date(a.criada_em).getTime())
             .map((entry) =>
               entry.tipo === "pendencia"
                 ? <NotifItem key={`p-${entry.item.id}`} p={entry.item as Pendencia} onResolved={carregar} onNavigateToDocumentos={onNavigateToDocumentos} />
-                : <PropostaItem key={`s-${entry.item.id}`} p={entry.item as Proposta} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
+                : entry.tipo === "aviso"
+                  ? <AvisoSiteItem key={`a-${entry.item.id}`} a={entry.item as AvisoSite} tempo={tempoDesde(entry.criada_em)} onResolved={carregar} />
+                  : <PropostaItem key={`s-${entry.item.id}`} p={entry.item as Proposta} onResolved={carregar} onNavigateToPerfil={onNavigateToPerfil} />
             )
           }
         </div>

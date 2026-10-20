@@ -7,10 +7,12 @@ import { TitleBar } from "./components/TitleBar";
 import { BrowserBanner } from "./components/BrowserBanner";
 import { Sidebar, type View } from "./components/Sidebar";
 import { useT } from "./i18n";
+import { sitesApi, SITES_MUDARAM } from "./lib/sites-api";
 import { Dashboard } from "./components/dashboard";
 import { Feedback } from "./components/Feedback";
 import { Perfil } from "./components/perfil";
 import { Documentos } from "./components/documentos";
+import { Sites } from "./components/sites";
 import { TerminalView } from "./components/Terminal";
 import { Vagas } from "./components/Vagas";
 import { Configuracoes } from "./components/Configuracoes";
@@ -21,9 +23,11 @@ import { Welcome } from "./components/Welcome";
 function App() {
   const t = useT();
   const [view, setView] = useState<View>("dashboard");
+  const [sitesSinal, setSitesSinal] = useState(0);
   const [sugerirFeedback, setSugerirFeedback] = useState(false);
   const [pendenciasCount, setPendenciasCount] = useState(0);
   const [propostasCount, setPropostasCount] = useState(0);
+  const [avisosSitesCount, setAvisosSitesCount] = useState(0);
   const [perfilSection, setPerfilSection] = useState<string | null>(null);
   const handlePerfilSectionHandled = useCallback(() => setPerfilSection(null), []);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string } | null>(null);
@@ -42,6 +46,9 @@ function App() {
   const refreshPropostasCount = () =>
     invoke<number>("contar_propostas").then(setPropostasCount).catch(() => {});
 
+  const refreshAvisosSitesCount = () =>
+    sitesApi.contarAvisos().then(setAvisosSitesCount).catch(() => {});
+
   useEffect(() => {
     invoke<boolean>("welcome_necessario")
       .then(needed => { if (needed) setShowWelcome(true); })
@@ -55,6 +62,9 @@ function App() {
     refreshFeedbackSugestao();
     refreshPendenciasCount();
     refreshPropostasCount();
+    refreshAvisosSitesCount();
+    // Plain-browser dev mode has no Tauri events; every Sites write dispatches this one.
+    window.addEventListener(SITES_MUDARAM, refreshAvisosSitesCount);
 
     let active = true;
     const unlisteners: (() => void)[] = [];
@@ -67,7 +77,9 @@ function App() {
       listen("pendencia-resolvida", refreshPendenciasCount),
       listen("nova-proposta", refreshPropostasCount),
       listen("proposta-resolvida", refreshPropostasCount),
-      listen("db-atualizada", () => { refreshPendenciasCount(); refreshPropostasCount(); }),
+      listen("db-atualizada", () => { refreshPendenciasCount(); refreshPropostasCount(); refreshAvisosSitesCount(); }),
+      listen("novo-aviso-site", refreshAvisosSitesCount),
+      listen("aviso-site-resolvido", refreshAvisosSitesCount),
       listen("navigate-to-pendencias", () => setView("pendencias")),
     ]).then((fns) => {
       if (active) {
@@ -93,6 +105,7 @@ function App() {
     return () => {
       active = false;
       clearInterval(hb);
+      window.removeEventListener(SITES_MUDARAM, refreshAvisosSitesCount);
       unlisteners.forEach((f) => f());
     };
   }, []);
@@ -146,7 +159,7 @@ function App() {
           <Welcome onComplete={(v) => { setShowWelcome(false); setView(v); }} />
         ) : (
           <>
-            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount} />
+            <Sidebar active={view} onChange={(v) => { setActivityLogOpen(false); if (v === "sites") setSitesSinal((n) => n + 1); setView(v); }} sugerirFeedback={sugerirFeedback} pendenciasCount={pendenciasCount + propostasCount + avisosSitesCount} />
             <main style={{ flex: 1, minWidth: 0, position: "relative", background: "var(--bg-base)" }}>
 
               {/* Dashboard */}
@@ -162,6 +175,11 @@ function App() {
               {/* Currículos */}
               <div style={{ display: view === "documentos" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
                 <Documentos />
+              </div>
+
+              {/* Sites */}
+              <div style={{ display: view === "sites" ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+                <Sites voltarSinal={sitesSinal} />
               </div>
 
               {/* Terminal — nunca desmontado */}

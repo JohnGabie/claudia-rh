@@ -1,0 +1,167 @@
+/* Mock do fluxo guiado da tela Sites. Tokens do app (docs/padrao-design-claudia-rh.md, sec. 2).
+   Rascunho visual: nada aqui entra no app antes de você aprovar. */
+:root {
+  --bg-base: #FAF9F7; --bg-surface: #FFFFFF; --bg-sunken: #F1EFEA; --border: #E4E1D9;
+  --text-primary: #1F1D18; --text-secondary: #6B6759; --text-tertiary: #9D9889;
+  --accent: #D97757; --accent-strong: #B85C3E; --accent-soft: #F5E4DB;
+  --success: #3B7A52; --warning: #B8862E; --danger: #B8473D;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: var(--bg-base); color: var(--text-primary); font: 14px/1.45 Inter, "Segoe UI", system-ui, sans-serif; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 15px; font-weight: 500; margin: 0; }
+.meta { font-size: 12px; color: var(--text-secondary); }
+.wrap { max-width: 980px; }
+.dica { margin: 0 0 18px; padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; font-size: 13px; max-width: 78ch; }
+:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+button { font: inherit; }
+[hidden] { display: none !important; }
+
+/* ---- galeria ---- */
+.grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+.card:hover { border-color: var(--text-tertiary); }
+.card .corpo { all: unset; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; cursor: pointer; flex: 1 1 auto; }
+.card .corpo:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -2px; }
+.capa { position: relative; overflow: hidden; height: 52px; background: var(--bg-sunken); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; }
+.capa .inicial { position: absolute; right: 70px; top: -22px; font-size: 84px; font-weight: 600; line-height: 1; color: rgba(31, 29, 24, 0.07); user-select: none; pointer-events: none; }
+.capa .nome, .capa .abrir { position: relative; }
+.capa .nome { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.abrir { font-size: 12px; font-weight: 500; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.abrir:hover { border-color: var(--accent); color: var(--accent-strong); }
+.info { padding: 8px 12px 10px; display: grid; gap: 6px; }
+a.dominio { color: var(--text-secondary); font-size: 12px; text-decoration: none; justify-self: start; }
+a.dominio:hover { color: var(--accent-strong); text-decoration: underline; }
+.linha-pills { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.linha-pills .estado { margin-left: auto; }
+.info .linha { font-size: 12px; color: var(--text-secondary); }
+.estado { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.estado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
+.estado.ok::before { background: var(--success); }
+.estado.sem::before { background: var(--success); }
+
+/* a faixa de baixo: o ÚNICO lugar que liga a IA */
+.faixa { width: 100%; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; color: var(--text-primary); background: var(--bg-sunken); border: 0; border-top: 1px solid var(--border); cursor: pointer; }
+.faixa .marca { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--text-tertiary); background: var(--bg-surface); flex: 0 0 auto; position: relative; }
+.faixa.ligada { background: var(--accent-soft); }
+.faixa.ligada .marca { background: var(--accent); border-color: var(--accent); }
+.faixa.ligada .marca::after { content: ""; position: absolute; left: 4px; top: 0; width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.faixa.falta { color: var(--text-secondary); font-size: 12px; }
+.faixa.falta .marca { border-style: dashed; }
+.faixa.falta .seta { margin-left: auto; color: var(--accent-strong); }
+
+/* ---- página do site ---- */
+.topo { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.voltar { color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+.pill { font-size: 11px; font-weight: 500; background: var(--bg-sunken); color: var(--text-secondary); border-radius: 6px; padding: 2px 8px; }
+.passos { display: grid; gap: 10px; max-width: 640px; }
+.passo { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.passo.atual { border-color: var(--accent); }
+.num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--bg-sunken); color: var(--text-secondary); }
+.passo.atual .num { background: var(--accent); color: #fff; }
+.passo.feito .num { background: var(--success); color: #fff; }
+.passo.travado { opacity: .75; }
+.passo h3 { margin: 0 0 2px; font-size: 15px; font-weight: 500; }
+.passo p { margin: 0 0 10px; font-size: 13px; color: var(--text-secondary); max-width: 60ch; }
+.acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { font-size: 13px; font-weight: 500; border-radius: 8px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); }
+.btn:hover { border-color: var(--text-tertiary); }
+.btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn[disabled] { color: var(--text-tertiary); cursor: not-allowed; background: var(--bg-sunken); }
+.selo { font-size: 12px; font-weight: 500; border-radius: 6px; padding: 3px 8px; background: var(--bg-sunken); color: var(--text-secondary); }
+.selo.ok { background: #E3EFE7; color: var(--success); }
+.passo .faixa { border: 1px solid var(--border); border-radius: 8px; max-width: 300px; }
+.avancado { margin-top: 18px; max-width: 640px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); }
+.avancado summary { cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.avancado .dentro { padding: 4px 14px 14px; display: grid; gap: 12px; }
+.avancado label { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+.avancado label small { display: block; color: var(--text-secondary); font-size: 12px; }
+.perigo { color: var(--danger); }
+.aviso { margin: 10px 0 0; font-size: 12px; color: var(--text-secondary); }
+
+/* ---- painel Sobre o site (de volta, ao lado dos passos) ---- */
+.duas-colunas { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.painel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.painel h3 { margin: 0 0 10px; font-size: 15px; font-weight: 500; }
+.painel dl { margin: 0; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 10px; font-size: 13px; }
+.painel dt { color: var(--text-secondary); }
+.painel dd { margin: 0; overflow-wrap: anywhere; }
+.painel a.dominio { font-size: 13px; }
+.duas-colunas .passos { max-width: none; }
+.avancado { max-width: none; }
+@media (max-width: 820px) { .duas-colunas { grid-template-columns: 1fr; } }
+
+/* layout da referência: Sobre o site à esquerda, passos dentro de 'O que a IA pode fazer aqui' à direita */
+.duas-colunas { grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); }
+.painel .passos { max-width: none; gap: 10px; }
+.painel .passo { background: var(--bg-surface); }
+.topo .estado { margin-left: auto; }
+
+/* ---- alinhamento das duas colunas + configurações no padrão de mercado ---- */
+.duas-colunas { align-items: stretch; }
+.duas-colunas > .painel { height: 100%; }
+.config { margin-top: 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
+.config h3 { margin: 0; padding: 12px 16px; font-size: 15px; font-weight: 500; border-bottom: 1px solid var(--border); }
+.linha-config { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; }
+.linha-config .txt strong { display: block; font-size: 14px; font-weight: 500; }
+.linha-config .txt small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-secondary); max-width: 62ch; }
+.toggle { flex: 0 0 auto; width: 40px; height: 22px; border-radius: 11px; border: 0; padding: 2px; background: var(--border); cursor: pointer; display: flex; align-items: center; transition: background .12s; }
+.toggle .bola { width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(31,29,24,.25); transition: transform .12s; }
+.toggle[aria-checked=true] { background: var(--accent); }
+.toggle[aria-checked=true] .bola { transform: translateX(18px); }
+.zona-risco { border-color: #E5C4C0; }
+.zona-risco h3 { color: var(--danger); border-bottom-color: #F0DAD7; }
+.btn.perigo { color: var(--danger); border-color: #E5C4C0; background: var(--bg-surface); margin: 0; }
+.btn.perigo[disabled] { color: var(--text-tertiary); border-color: var(--border); background: var(--bg-sunken); }
+
+/* seções recolhíveis */
+details.config > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 15px; font-weight: 500; }
+details.config > summary::-webkit-details-marker { display: none; }
+details.config > summary::before { content: ''; width: 7px; height: 7px; border: solid var(--text-secondary); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform .12s; margin-right: 4px; }
+details.config[open] > summary::before { transform: rotate(45deg); }
+details.config[open] > summary { border-bottom: 1px solid var(--border); }
+details.config > summary .res { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+details.zona-risco[open] > summary { border-bottom-color: #F0DAD7; }
+details.zona-risco > summary .tt { color: var(--danger); }
+details.zona-risco > summary::before { border-color: var(--danger); }
+details.config > summary:hover { background: var(--bg-base); }
+
+/* divisórias do Sobre o site */
+.divisoria { display: flex; align-items: center; gap: 10px; margin: 16px 0 10px; font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.divisoria::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.painel dd .sub { color: var(--text-secondary); font-size: 12px; margin-left: 4px; }
+.painel .vazio { margin: 0; font-size: 13px; color: var(--text-secondary); }
+
+/* cards na metade da largura */
+.grade { grid-template-columns: repeat(auto-fill, 300px); }
+.faixa.falta { font-size: 12px; gap: 6px; }
+
+/* cards um pouco mais altos */
+.capa { height: 62px; }
+.info { padding: 12px 12px 14px; gap: 8px; }
+.faixa { min-height: 42px; }
+
+/* capa menor, parte branca maior */
+.capa { height: 52px; }
+.info { padding: 16px 14px 18px; gap: 10px; }
+
+/* estado de login sempre na própria linha, alinhado à esquerda */
+.linha-pills .estado { margin-left: 0; flex-basis: 100%; margin-top: 2px; }
+
+/* ---- visão em lista (proposta) ---- */
+.modo { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 0 0 14px; background: var(--bg-surface); }
+.modo button { border: 0; background: none; padding: 6px 14px; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+.modo button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
+.lista { display: grid; gap: 8px; max-width: 980px; }
+.linha-site { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 18px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
+.linha-site:hover { border-color: var(--text-tertiary); }
+.linha-site .risco { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--text-tertiary); }
+.linha-site .risco.ok, .linha-site .risco.sem { background: var(--success); }
+.linha-site .avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-sunken); display: grid; place-items: center; font-weight: 600; color: var(--text-secondary); flex: 0 0 auto; }
+.linha-site .quem { flex: 1 1 auto; min-width: 0; }
+.linha-site .n { font-weight: 500; font-size: 14px; }
+.linha-site .d { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.linha-site .status { flex: 0 0 auto; min-width: 118px; text-align: center; font-size: 12px; font-weight: 500; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); cursor: pointer; }
+.linha-site .status.ligada { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.linha-site .status.falta { background: var(--bg-surface); color: var(--accent-strong); }
+.linha-site .status:hover { border-color: var(--accent); }

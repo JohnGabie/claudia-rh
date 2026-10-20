@@ -455,7 +455,7 @@ mod migration_tests {
         let p = DEFAULT_RUNTIME;
         assert!(!p.contains("Claude in Chrome"), "the extension is gone from the default prompt");
         assert!(!p.contains("--chrome"), "and so is the flag");
-        for tool in ["browser_open", "browser_read", "browser_text", "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_crop", "browser_click_at", "browser_upload", "confirm_submit", "set_vaga_variante", "list_documentos", "get_documento", "save_cover_letter"] {
+        for tool in ["browser_open", "browser_read", "browser_text", "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_crop", "browser_click_at", "browser_upload", "browser_contas", "confirm_submit", "set_vaga_variante", "list_documentos", "get_documento", "save_cover_letter"] {
             assert!(p.contains(tool), "the prompt must teach {tool}");
         }
         assert!(!p.contains("cv_gerado_path"), "the agent no longer looks for a CV path");
@@ -463,6 +463,42 @@ mod migration_tests {
             assert!(p.contains(cat), "the prompt must mention pendencia category {cat}");
         }
         assert!(!p.contains("sem_documento"), "sem_documento is replaced by sem_curriculo and sem_carta");
+    }
+
+    #[test]
+    fn the_runtime_prompt_teaches_the_site_list_rule() {
+        let p = DEFAULT_RUNTIME;
+        assert!(p.contains("browser_contas"));
+        assert!(p.contains("site fora da lista"), "the exact skip motive");
+        assert!(p.contains("não tente outro caminho para o mesmo site"));
+        // The tool list paragraph must name browser_contas too, independently of the rule item.
+        let intro = p
+            .lines()
+            .find(|l| l.starts_with("Você controla um browser próprio da Claudia"))
+            .expect("the browser tool-list paragraph is missing from the runtime prompt");
+        assert!(intro.contains("browser_contas"), "the tool-list paragraph must name browser_contas");
+        // The rule must live in the same list item that mentions browser_contas.
+        let item = p
+            .lines()
+            .find(|l| l.starts_with("- ") && l.contains("browser_contas"))
+            .expect("a list item mentioning browser_contas");
+        for needle in ["update_vaga_status", "pulada", "site fora da lista"] {
+            assert!(item.contains(needle), "the browser_contas rule must mention {needle}");
+        }
+    }
+
+    #[test]
+    fn the_runtime_prompt_opens_sites_only_through_browser_open_over_https() {
+        let p = DEFAULT_RUNTIME;
+        let item = p
+            .lines()
+            .find(|l| l.starts_with("- Você abre sites **somente** com `browser_open`"))
+            .expect("the browser_open rule is missing from the runtime prompt");
+        assert_eq!(
+            item,
+            "- Você abre sites **somente** com `browser_open` (servidor `claudia`): ele abre o endereço numa aba só sua e só aceita `https`. Endereços locais ou de rede interna são recusados. Não use nenhum outro meio para abrir um site."
+        );
+        assert!(!p.contains("abre uma URL `http` ou `https`"), "the old line that allowed http is gone");
     }
 
     #[test]

@@ -51,6 +51,7 @@ workspace/
 # Git não permite re-incluir dentro de um diretório excluído, daí `.claude/*`
 # em vez de `.claude/` — settings.local.json e dados de sessão continuam fora.
 !.claude/skills/
+!.claude/settings.json
 
 # Signing keys — never commit
 *.key
@@ -72,3 +73,6 @@ sandbox-lab/sandbox/guest.config.json
 sandbox-lab/.mcp.json
 # Sandbox work folder (deploy + guest-rw). Always the one in the main checkout.
 .sandbox-work/
+
+# Context diary written before compaction (local draft, never committed)
+.journal/

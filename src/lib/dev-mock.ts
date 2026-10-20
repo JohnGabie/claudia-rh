@@ -124,6 +124,22 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
       return undefined;
     case "plugin:log|log":
     case "diag_heartbeat": return undefined;
+    case "listar_sites":
+    case "listar_avisos_sites":
+    case "contar_avisos_sites":
+    case "dispensar_aviso_site":
+    case "abrir_site":
+    case "definir_ia_pode_usar":
+    case "marcar_site_logado":
+    case "adicionar_site":
+    case "remover_site":
+    case "estatisticas_site":
+    case "definir_site_sem_login":
+    case "marcar_site_nao_logado": {
+      // Sites commands: answered by the Sites mock (dynamic import, DEV only).
+      const { mockInvoke: sitesMock } = await import("./sites.mock");
+      return sitesMock(cmd, args);
+    }
     default:
       if (cmd.startsWith("plugin:")) return undefined;
       return mockInvoke(cmd, args);

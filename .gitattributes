@@ -1,0 +1,2 @@
+# The pre-push launcher is a sh script: CRLF in it would break the hook (and block every push).
+scripts/dev/git-hooks/pre-push text eol=lf

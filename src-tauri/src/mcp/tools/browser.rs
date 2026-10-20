@@ -513,6 +513,8 @@ pub struct BrowserTools {
     viewport_adjusted: AtomicBool,
     /// Where browser_upload gets its file from (the document library in the app).
     docs: Arc<dyn DocumentSource>,
+    /// The site list: `browser_open` only opens what it allows. `None` only in tests with local fixtures.
+    site_gate: Option<Arc<dyn crate::browser::sitegate::SiteGate>>,
 }
 
 impl BrowserTools {
@@ -536,6 +538,7 @@ impl BrowserTools {
             gave_up_at: StdMutex::new(None),
             viewport_adjusted: AtomicBool::new(false),
             docs: Arc::new(NoDocuments),
+            site_gate: None,
         }
     }
 
@@ -549,6 +552,23 @@ impl BrowserTools {
     pub fn with_documents(mut self, docs: Arc<dyn DocumentSource>) -> Self {
         self.docs = docs;
         self
+    }
+
+    /// Plugs the site list into `browser_open`. Production (`mcp::server::run`) always sets it; tests
+    /// that open local fixtures leave it unset on purpose.
+    pub fn with_site_gate(mut self, gate: Arc<dyn crate::browser::sitegate::SiteGate>) -> Self {
+        self.site_gate = Some(gate);
+        self
+    }
+
+    /// Tells the site list when a page ended in a login wall.
+    async fn note_state(&self, c: &CdpClient, state_line: &str) {
+        if !state_line.trim_end().ends_with("login_wall") {
+            return;
+        }
+        if let Some(g) = &self.site_gate {
+            g.login_wall(&Self::page_url(c).await);
+        }
     }
 
     /// Tests only: lets browser_open load the local fixture page.
@@ -952,6 +972,12 @@ impl BrowserTools {
         if let Some(why) = url_refusal(url, self.allow_file_urls, self.allow_local_hosts) {
             return self.finish("browser_open", started, Err(why), None).await;
         }
+        // The site list decides before anything touches the browser.
+        if let Some(g) = &self.site_gate {
+            if let Err(why) = g.check_open(url) {
+                return self.finish("browser_open", started, Err(why), None).await;
+            }
+        }
         self.agent_active.store(true, Ordering::SeqCst);
         self.page_state.begin("browser_open");
         let (c, _, _) = match self.tab().await {
@@ -973,8 +999,10 @@ impl BrowserTools {
             // The state of the page we landed on (a redirect may have taken us to a login wall). If the
             // tree cannot be read the line is simply left out: opening still worked.
             if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
+                let line = Self::state_line(&c, &ax).await;
+                self.note_state(&c, &line).await;
                 message.push('\n');
-                message.push_str(&Self::state_line(&c, &ax).await);
+                message.push_str(&line);
             }
             Ok(Outcome { message, target: Some(url.to_string()), ..Default::default() })
         }
@@ -1003,7 +1031,9 @@ impl BrowserTools {
             }
             self.remember_content(&text);
             text.push('\n');
-            text.push_str(&Self::state_line(&c, &ax).await);
+            let line = Self::state_line(&c, &ax).await;
+            self.note_state(&c, &line).await;
+            text.push_str(&line);
             Ok(Outcome { message: text, loop_key: Some(scope.unwrap_or("").to_string()), ..Default::default() })
         }
         .await;
@@ -1034,7 +1064,9 @@ impl BrowserTools {
             let page = text::paginate(&full, offset, max_chars.unwrap_or(0));
             let mut message = text::render(&page);
             message.push('\n');
-            message.push_str(&Self::state_line(&c, &ax).await);
+            let line = Self::state_line(&c, &ax).await;
+            self.note_state(&c, &line).await;
+            message.push_str(&line);
             Ok(Outcome { message, loop_key: Some(format!("{}|{offset}", scope.unwrap_or(""))), ..Default::default() })
         }
         .await;
@@ -1267,8 +1299,10 @@ impl BrowserTools {
             }
             // Add the state line after constructing the message.
             if let Ok(ax) = c.call("Accessibility.getFullAXTree", json!({})).await {
+                let line = Self::state_line(&c, &ax).await;
+                self.note_state(&c, &line).await;
                 message.push('\n');
-                message.push_str(&Self::state_line(&c, &ax).await);
+                message.push_str(&line);
             }
             Ok(Outcome {
                 message,
@@ -1926,6 +1960,21 @@ mod tests {
         if !cfg!(debug_assertions) {
             assert!(!t.allow_local_hosts);
         }
+    }
+
+    struct Refusing;
+    impl crate::browser::sitegate::SiteGate for Refusing {
+        fn check_open(&self, _url: &str) -> Result<String, String> { Err("RECUSADO: teste".into()) }
+        fn login_wall(&self, _url: &str) {}
+    }
+
+    #[tokio::test]
+    async fn browser_open_stops_at_the_site_gate_before_touching_the_browser() {
+        let dir = crate::mcp::tools::test_support::temp_dir("site-gate-open");
+        let t = BrowserTools::new(dir.join("s.json"), Arc::new(DbGuardContext::new(dir.clone())), Arc::new(NoSink))
+            .with_site_gate(Arc::new(Refusing));
+        let r = t.open("https://example.com/").await;
+        assert_eq!(r.unwrap_err(), "RECUSADO: teste");
     }
 
     #[test]

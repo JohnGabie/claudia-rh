@@ -15,6 +15,7 @@ pub mod perfil;
 pub mod prompts;
 pub mod pty;
 pub mod sessao;
+pub mod sites;
 
 /// First candidate path that exists as a regular file.
 pub(crate) fn first_existing_claude(candidates: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {

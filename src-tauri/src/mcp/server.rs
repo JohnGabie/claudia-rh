@@ -338,6 +338,13 @@ impl ClaudiaMcp {
     }
 
     #[tool(
+        description = "Lista os sites em que você pode abrir páginas com browser_open: nome, tipo, região, se há login confirmado e o endereço de entrada. Qualquer endereço fora desta lista é recusado. Chame no começo da rodada para planejar a procura."
+    )]
+    async fn browser_contas(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        self.call("browser_contas", serde_json::json!({}))
+    }
+
+    #[tool(
         description = "Fecha TODAS as pendências abertas de uma vaga (usar ao terminar uma vaga que estava em pendente_revisao). Preserva o texto de resolução que o usuário já tiver escrito."
     )]
     async fn close_pendencias_vaga(
@@ -594,7 +601,8 @@ pub fn run(cfg: McpConfig) -> Result<(), String> {
             None => Arc::new(NoSink),
         };
         let docs = Arc::new(crate::documentos::fonte::DbDocumentSource { data_dir: cfg.data_dir.clone() });
-        let browser = Arc::new(BrowserTools::new(state_file, guard, sink).with_documents(docs));
+        let site_gate = Arc::new(crate::sites::gate::DbSiteGate { data_dir: cfg.data_dir.clone() });
+        let browser = Arc::new(BrowserTools::new(state_file, guard, sink).with_documents(docs).with_site_gate(site_gate));
         let service = ClaudiaMcp { cfg: Arc::new(cfg), browser }
             .serve(rmcp::transport::stdio())
             .await

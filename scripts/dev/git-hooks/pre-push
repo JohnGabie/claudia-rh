@@ -1,0 +1,45 @@
+#!/bin/sh
+# pre-push hook (T12): thin launcher. The logic lives in pre-push.ps1 (same folder).
+# See the header of pre-push.ps1 for what is protected, how to activate the hook and the escape hatch.
+# It finds pre-push.ps1 next to itself (dirname of $0), so it works from any folder (the installer copies both files).
+#
+# git calls:  pre-push <remote-name> <remote-url>   (ref lines arrive on stdin, inherited by PowerShell)
+#
+# Exit codes of pre-push.ps1: 0 = allow, 10 = refuse (reason already printed). Anything else (PowerShell
+# missing, parse error, crash) means the logic did not run: fail CLOSED for the public repository
+# (judged here, in plain sh) and let every other remote through.
+
+dir=$(dirname "$0")
+
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$dir/pre-push.ps1" "$@"
+rc=$?
+
+case $rc in
+    0) exit 0 ;;
+    10) exit 1 ;;
+esac
+
+# --- the PowerShell logic did not run properly ---
+# Minimal normalization (T19), fail closed: an empty URL, any %xx escape or ".." / "." path segment, or anything
+# naming claudia-rh is public; only a clear claudia-rh-backup[.git] URL or a URL without "claudia" is not.
+url=$(printf '%s' "$2" | tr 'A-Z' 'a-z' | sed 's,[/\\]*$,,')
+case "$url" in
+    '') public=1 ;;
+    *%*|*..*|*/./*|*/.) public=1 ;;
+    *[/\\:]claudia-rh-backup|*[/\\:]claudia-rh-backup.git) public=0 ;;
+    *claudia*) public=1 ;;
+    *) public=0 ;;
+esac
+
+if [ "$public" = 0 ]; then
+    exit 0
+fi
+
+if [ "$CLAUDIA_ALLOW_PUBLIC_PUSH" = "1" ]; then
+    echo "pre-push: WARNING: CLAUDIA_ALLOW_PUBLIC_PUSH=1, public push allowed without checks (PowerShell logic unavailable)." >&2
+    exit 0
+fi
+
+echo "pre-push: REFUSED. The PowerShell check could not run (exit code $rc), so the push to the public repository is blocked (fail closed)." >&2
+echo "pre-push: push to the public repo only by named ref; main/dev change only by PR on GitHub (see agents/versao.md)." >&2
+exit 1
