@@ -61,7 +61,7 @@ O versionador **não corrige**. Lê o log só para ler (`gh run view --log-faile
 | Ambiente, instável ou infraestrutura | Tarefa no Linear e pergunta ao usuário |
 | Segurança | Revisor em FORTE |
 
-Conta as rodadas; na **5ª, para e pergunta ao usuário**. O `release.yml` roda em tag e **publica** (release e npm): o versionador **nunca cria tag `v*`** sem o usuário mandar.
+Conta as rodadas; na **5ª, para e pergunta ao usuário**. O `release.yml` roda em tag e **publica** (release e npm): o versionador **nunca cria tag `v*`** sem o usuário mandar. Formato aceito no repositório público: `v` seguido de dígitos e pontos, com sufixo opcional (`-algo`), por decisão do usuário em 2026-10-20.
 
 ## Backup (P12)
 
@@ -75,10 +75,10 @@ O `backup` é o espelho do `origin` mais o que ainda não foi publicado (branche
 
 Branch órfã `recovery`, **só no `backup`** (sem ancestral comum com `dev`; nunca vai ao `origin`). O conteúdo nunca vive numa pasta rastreada do repo de trabalho.
 
-- **Entra (allowlist; nada entra por padrão):** config do projeto (de `.claude/`: skills, comandos, `settings.json` e `settings.local.json` se a varredura passar; **exclui `.claude/worktrees/` explicitamente**, são cópias completas do repo; mais `.mcp.json` sem segredos); config global e memória (`CLAUDE.md` global, lista de plugins, memória deste projeto, `settings.json` global só se a varredura passar); estado de trabalho (`STATE.md`, patches do trabalho não commitado, último `.journal\` do checkout principal e também os diários que só existem no `.journal\` de alguma worktree, anteriores a 2026-10-19 ou de quando o checkout principal não pôde ser achado).
+- **Entra (allowlist; nada entra por padrão):** config do projeto (de `.claude/`: skills, comandos, `settings.json` e `settings.local.json` se a varredura passar; **exclui `.claude/worktrees/` explicitamente**, são cópias completas do repo; mais `.mcp.json` sem segredos); config global e memória (`CLAUDE.md` global, lista de plugins, memória deste projeto, `settings.json` global só se a varredura passar); estado de trabalho (`STATE.md`, patches do trabalho não commitado, todos os diários do `.journal\` do checkout principal, não só o último, e os que só existem no `.journal\` de alguma worktree).
 - **Fica sempre de fora:** `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil (`candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `disparo.json`, `notif.json`, `modo_autonomo.json`) e o banco do usuário.
 - **Limpeza por campo antes da regex:** em todo JSON de configuração, remover `env`, `headers` e qualquer chave cujo nome contenha `key`, `token`, `secret` ou `password`. A regex é a segunda camada. **Nunca ler `.credentials.json`** nem equivalentes. Achou segredo: não grava e avisa.
-- O script (`scripts/dev/recovery-pack.ps1`) gera numa worktree temporária própria e **não apaga nada**.
+- O script (`powershell -NoProfile -File scripts/dev/recovery-pack.ps1`; `-WhatIf` só lista o que entraria) monta o conteúdo numa pasta temporária e grava um commit na branch órfã `recovery` por índice temporário e plumbing do git: sem worktree, sem mexer em HEAD, no índice nem nas branches do usuário. **Não faz push** (o versionador empurra com `git push backup recovery`) e **não apaga nada**. Se a varredura de segredos achar algo, não grava e avisa que a cópia ficou na pasta temporária, para o usuário apagar à mão. A primeira execução real nos dados do usuário é decisão dele.
 - Atualização: no fim da tarefa, ao mudar a config e antes de operação arriscada. Não é automática.
 
 ## Proteção de branch (P15)

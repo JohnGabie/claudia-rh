@@ -143,6 +143,7 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 | 2026-10-19 | P7 (passo 4), P11 | esclarecida | Apontado pelo revisor da T9: quem mostra o resumo e pede o "pode fechar" é o orquestrador (um subagente não fala com o usuário); o versionador confere de novo o CI na hora do merge e recusa se não estiver verde. P11 deixa de citar `merge --no-ff`. Não muda quem decide: o merge segue do usuário. | usuário confirmou em 2026-10-19 |
 | 2026-10-19 | P12 | ampliada | Apontado pelo revisor da T10: tag do `origin` tem de apontar para o mesmo commit no `backup`; branch continua aceitando o backup à frente. | decisão do usuário em 2026-10-19: "Tag tem que ser igual" |
 | 2026-10-20 | P14, P17, P15 (hook) | ampliada | Sobras das revisões da T11 e da T12, decididas pelo usuário: o hook pre-push normaliza a URL (decodifica `%xx`, resolve `.` e `..`, tira barra final) antes de reconhecer o público; o hook recusa force push (atualização que não contém o commit anterior) em qualquer ref ao público; o formato das tags `v*` fica como está (`v` + dígitos e pontos, sufixo opcional); o pacote de recuperação passa a pegar `accessToken`/`apiKey` e parecidos em texto, a recusar junction nos níveis entre a pasta global e a memória, e a mascarar segredos também nas mensagens de erro do git. | decisões do usuário em 2026-10-20 |
+| 2026-10-20 | P14, §10.5 | esclarecida | O pacote de recuperação grava por índice temporário, sem worktree (como implementado e aprovado na T11). | não muda regra |
 
 ## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação, proteção de branch — **aprovada pelo usuário em 2026-10-19** (ver 10.8)
 
@@ -197,7 +198,7 @@ Sim, com três ressalvas que viram regra:
 **P14. Pacote de recuperação na branch órfã `recovery`, só no backup.**
 - Conteúdo (escolhido pelo usuário): (a) config do projeto: `.claude/` (skills, comandos, `settings.json`, `settings.local.json` se a varredura passar) e `.mcp.json` sem segredos; (b) config global e memória: `CLAUDE.md` global, lista de plugins instalados, a pasta de memória deste projeto, `settings.json` global só se a varredura passar; (c) estado de trabalho: `STATE.md` (branches, worktrees, o que está parado, próximo passo, ligação com o Linear), patches do trabalho não commitado e o último `.journal/`.
 - **Fora, sempre:** `.env*`, credenciais, tokens, `sandbox-lab/shared/secrets/`, dados pessoais do perfil (`candidate_base.yaml`, `search_variants.yaml`, `strategy.md`, `disparo.json`, `notif.json`, `modo_autonomo.json`) e o banco do usuário.
-- **Limpeza antes de gravar:** lista de caminhos permitidos (allowlist: nada entra por padrão) mais varredura de segredos, com os mesmos padrões usados em 2026-10-19, no que vai ser commitado; achou algo, não grava e avisa. O script só cria e sobrescreve arquivos **dentro da sua própria worktree temporária**; não apaga nada.
+- **Limpeza antes de gravar:** lista de caminhos permitidos (allowlist: nada entra por padrão) mais varredura de segredos, com os mesmos padrões usados em 2026-10-19, no que vai ser commitado; achou algo, não grava e avisa. O script só cria e sobrescreve arquivos **dentro da sua própria pasta temporária** (a gravação é por índice temporário e plumbing, sem worktree); não apaga nada.
 - **Isolamento para não contaminar o público:** a branch `recovery` é órfã (sem ancestral comum com `dev`), então não há merge acidental; o agente só empurra ao `origin` o que está na lista permitida (`main`, `dev`, `feat/*`, `fix/*` e `sync/*` com PR, tags `v*`), sempre por ref nomeada, e nunca `recovery` ou `wip/*`; um hook `pre-push` versionado recusa `recovery*` no `origin`; o conteúdo do pacote nunca vive numa pasta rastreada do repo de trabalho.
 - Atualização do pacote: pelo agente de versão, no fim da tarefa, ao mudar a config e antes de operação arriscada. Não é automática.
 - **Recomendo.**
@@ -205,7 +206,7 @@ Sim, com três ressalvas que viram regra:
 ### 10.5 Impacto
 
 - Documentos: `agents/versao.md` ampliado (P11 a P14), `CLAUDE.md` (Git, "O humano decide") e o template de PR.
-- Scripts novos, só de leitura ou que só criam: relatório de verificação do backup (`scripts/dev/verify-backup.ps1`), geração do pacote de recuperação (`scripts/dev/recovery-pack.ps1`, em worktree temporária) e o hook `pre-push` que bloqueia `recovery*` no `origin`.
+- Scripts novos, só de leitura ou que só criam: relatório de verificação do backup (`scripts/dev/verify-backup.ps1`), geração do pacote de recuperação (`scripts/dev/recovery-pack.ps1`, em pasta temporária com índice temporário e plumbing, sem worktree) e o hook `pre-push` que bloqueia `recovery*` no `origin`.
 - Configuração: nenhuma mudança no GitHub sem o usuário (proteção de branch, secrets).
 - Segurança: pacote de recuperação com varredura obrigatória; nenhuma deleção em lote.
 
