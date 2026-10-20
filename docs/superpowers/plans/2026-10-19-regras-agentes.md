@@ -183,3 +183,15 @@ Ordem daqui em diante: T18 → T19 → T20 → T13 → revisão do conjunto → 
 - A descrição da T11 neste plano ainda diz "numa worktree temporária" e "último `.journal/`": é registro histórico da tarefa; o mecanismo real está em `agents/versao.md` e na spec.
 - `agents/versao.md` ~L81-82: "primeira execução real é decisão do usuário" é ambíguo para um agente RÁPIDO; deixar explícito: se `refs/heads/recovery` não existe, perguntar ao usuário antes de rodar sem `-WhatIf`.
 - Spec P14: "só cria e sobrescreve arquivos dentro da sua pasta temporária" omite que o script grava objetos no `.git` e a ref `refs/heads/recovery`.
+
+### Revisão do conjunto, rodada 1 (2026-10-20): REJEITADO-CORRIGIR
+
+Bloqueantes: B1 camada do revisor em `CLAUDE.md:158` contradiz "FORTE sempre"; B2 sem varredura de segredos antes do PR de sincronização e sem comando concreto; B3 hook desligado em silêncio com `core.hooksPath` relativo em checkouts sem o hook; B4 primeira execução do pacote de recuperação ambígua. Decisões do usuário: sem limite de tamanho de PR; uma branch de trabalho por push ao público; testes nos dois terminais.
+
+| Tarefa | Estado | Revisor | Observação |
+|---|---|---|---|
+| T21 | nova | pendente | Varredura de segredos: `scripts/dev/lib/secret-patterns.ps1` (lista única de padrões, extraída do pacote), `scripts/dev/scan-secrets.ps1` (só leitura; varre o diff de um intervalo de commits, ex.: `origin/dev..<branch>`, e nomes de arquivos; exit 0/1/2; nunca mostra o valor) e teste; `recovery-pack.ps1` passa a usar a lista única; `test-recovery-pack.ps1` roda também pelo Git Bash. |
+| T22 | nova | pendente | Hook: no máximo uma branch de trabalho por push ao público (tags `v*` à parte); lançador com bit de execução; `scripts/dev/install-hooks.ps1` que copia o hook para a pasta de hooks comum (`git rev-parse --git-common-dir`/hooks), não sobrescreve hook diferente existente, confere a instalação com um push simulado; testes, inclusive pelo Git Bash. |
+| T23 | nova | pendente | Docs: B1, B2 (passo de varredura no runbook §9 e em `versao.md`, com o comando), B3 (instalação por `install-hooks.ps1` no runbook §7 e conferência real), B4 (primeira execução do pacote: só `-WhatIf` e perguntar), sem limite de PR, quem chama o versionador (o revisor pede ao orquestrador), `git fetch origin dev:dev` no lugar de `switch` + `pull`, integração da tarefa na branch da feature, `--tags` no backup do runbook, `INDEX.md` com o estado atual da spec, spec P13/P15 com "feature completa", nota de mecanismo real na descrição da T11, `CLAUDE.md` "Remover worktree" com os diários, `versao.md` frase de SemVer alinhada. Depende de T21 e T22. |
+
+Ordem: T21 e T22 em paralelo → T23 → revisão do conjunto, rodada 2 → T14 (só com o "pode aplicar" do usuário).
