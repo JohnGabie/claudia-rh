@@ -27,12 +27,16 @@
 #   that cannot be scanned as text (NUL bytes without a UTF-16/UTF-32 BOM: binary or BOM-less UTF-16); folders .git,
 #   .env*, *credential*, secrets, .claude/worktrees and sandbox-lab/shared/secrets; and links: a junction/symlink is
 #   never followed, neither inside a tree nor as the root of a source (.claude, .claude\skills, .claude\commands,
-#   .journal, -MemoryDir, -GlobalClaudeDir). Excluded files are never opened (except the NUL-byte probe).
+#   .journal, -MemoryDir, -GlobalClaudeDir), nor at any level in between: a link anywhere from -GlobalClaudeDir
+#   down to the memory folder keeps the memory out (reason in STATE.md), and the same from the repository root down
+#   to .claude\skills and .claude\commands. Folders ABOVE -GlobalClaudeDir or the repository root are not checked
+#   (redirected profile folders are legitimate). Excluded files are never opened (except the NUL-byte probe).
 # Every JSON is cleaned structurally before the copy (P17): keys `env` and `headers` and any key whose name matches
 #   (?i)(key|token|secret|password|passwd|credential|auth|cookie) are removed recursively; invalid JSON is not copied.
 # Second layer: a regex scan of EVERYTHING to be written, content AND relative path names (STATE.md and patches
 #   included). Any hit: no commit, no ref change, exit 1, and the output names the file and the pattern, never the
-#   value (a path that holds a secret is printed with the secret masked).
+#   value (a path that holds a secret is printed with the secret masked). Every message printed (the script's own
+#   and git's error text: add, write-tree, commit-tree, update-ref, diff) passes through Hide-Secrets.
 #
 # SECRET PATTERNS: the list $SecretPatterns below IS the project's reference list for secret scans (the
 #   "patterns of 2026-10-19" cited by docs/superpowers/specs/2026-10-19-regras-agentes-design.md). Change it here.
@@ -58,19 +62,6 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-# Early ref guard: refuse before building anything.
-if ($TargetRef -cne "refs/heads/recovery" -and -not $TestLateGuard) {
-    Write-Output "ERRO: recusado: este script so escreve refs/heads/recovery (pedido: $TargetRef). Nada foi montado."
-    exit 1
-}
-
-# Never let git or the credential manager open a prompt (this script makes no network call, but be safe).
-$env:GIT_TERMINAL_PROMPT = "0"
-$env:GCM_INTERACTIVE = "never"
-
-$MaxBytes = 5MB
-$Utf8 = New-Object System.Text.UTF8Encoding($false)
-$SecretKeyRegex = '(?i)(key|token|secret|password|passwd|credential|auth|cookie)'
 $SecretPatterns = @(
     @("anthropic-key", 'sk-ant-[A-Za-z0-9_\-]{20,}'),
     @("github-token", 'gh[opsu]_[A-Za-z0-9]{20,}'),
@@ -84,18 +75,58 @@ $SecretPatterns = @(
     @("openai-project-key", 'sk-proj-[A-Za-z0-9_\-]{20,}'),
     @("sk-key", '(?<![A-Za-z0-9])sk-[A-Za-z0-9_\-]{20,}'),
     # name = value, quoted or not; no word boundary on the left so ANTHROPIC_AUTH_TOKEN / OPENAI_API_KEY match.
-    @("generic-assignment", '(?i)(?<![A-Za-z0-9])(api[_-]?key|secret|passwd|password|token)(?:[_-][A-Za-z0-9]+)*["'']?\s*[:=]\s*["'']?[^"''\s]{16,}')
+    @("generic-assignment", '(?i)(?<![A-Za-z0-9])(api[_-]?key|secret|passwd|password|token)(?:[_-][A-Za-z0-9]+)*["'']?\s*[:=]\s*["'']?[^"''\s]{16,}'),
+    # camelCase / PascalCase names in plain text (accessToken, clientSecret, apiKey...): the generic pattern above
+    # needs a non-alphanumeric char before the word, so "accessToken" or "clientSecret" escape it.
+    @("camel-assignment", '(?i)(?<![A-Za-z0-9])(?:(?:access|refresh|auth|bearer|id|session|api|client)[_-]?token|(?:api|private|secret|client|access|signing|encryption)[_-]?key|(?:api|client|app)[_-]?secret)["'']?\s*[:=]\s*["'']?[^"''\s]{16,}')
 )
-# Masks every secret-looking substring (used for anything printed that comes from a name).
+# Masks every secret-looking substring. EVERY message this script prints (its own and git's) goes through it.
 function Hide-Secrets([string]$Text) {
     foreach ($p in $script:SecretPatterns) { $Text = [regex]::Replace($Text, $p[1], "[oculto]") }
     return $Text
 }
+function Say([string]$Text) { Write-Output (Hide-Secrets $Text) }
+function Say-Err([string]$Text) { [Console]::Error.WriteLine((Hide-Secrets $Text)) }
+# Text of a git error (stderr lines joined), masked. Used for every git failure that is printed or recorded.
+function Format-GitError($Result) { return (Hide-Secrets (($Result.Err -join ' ').Trim())) }
+
+# Early ref guard: refuse before building anything.
+if ($TargetRef -cne "refs/heads/recovery" -and -not $TestLateGuard) {
+    Say "ERRO: recusado: este script so escreve refs/heads/recovery (pedido: $TargetRef). Nada foi montado."
+    exit 1
+}
+
+# Never let git or the credential manager open a prompt (this script makes no network call, but be safe).
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:GCM_INTERACTIVE = "never"
+
+$MaxBytes = 5MB
+$Utf8 = New-Object System.Text.UTF8Encoding($false)
+$SecretKeyRegex = '(?i)(key|token|secret|password|passwd|credential|auth|cookie)'
 # True when the path exists and is a junction or symlink.
 function Test-IsLink([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return $false }
     $i = Get-Item -LiteralPath $Path -Force
     return [bool]($i.Attributes -band [IO.FileAttributes]::ReparsePoint)
+}
+# First junction/symlink on the way from $Root down to $Target, as the path relative to $Root ("." for $Root
+# itself, checked only with -IncludeRoot), or $null when there is none or $Target is not under $Root. Folders
+# ABOVE $Root are never checked (redirected profile folders are legitimate).
+function Get-LinkBetween([string]$Root, [string]$Target, [switch]$IncludeRoot) {
+    $rootN = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $targetN = [IO.Path]::GetFullPath($Target).TrimEnd('\')
+    if ($IncludeRoot -and (Test-IsLink $rootN)) { return "." }
+    if ($targetN -ieq $rootN) { return $null }
+    if (-not $targetN.StartsWith($rootN + "\", [StringComparison]::OrdinalIgnoreCase)) { return $null }
+    $cur = $rootN
+    $rel = ""
+    foreach ($seg in ($targetN.Substring($rootN.Length + 1) -split '\\')) {
+        if (-not $seg) { continue }
+        $cur = Join-Path $cur $seg
+        $rel = if ($rel) { "$rel/$seg" } else { $seg }
+        if (Test-IsLink $cur) { return $rel }
+    }
+    return $null
 }
 # False when the file holds NUL bytes without a UTF-16/UTF-32 BOM (binary or BOM-less UTF-16): it cannot be
 # scanned as text safely, so it never enters.
@@ -309,18 +340,18 @@ function Update-RecoveryRef([string]$Ref, [string]$New, [string]$ExpectedOld) {
     if (-not $ExpectedOld) { return [pscustomobject]@{ Ok = $false; Msg = "recusado: falta o valor antigo esperado" } }
     $r = Invoke-Git $script:RepoDir @("update-ref", "-m", "recovery-pack", $Ref, $New, $ExpectedOld)
     if ($r.Code -ne 0) {
-        return [pscustomobject]@{ Ok = $false; Msg = "a ref mudou durante a execucao ou nao pode ser gravada: $(($r.Err -join ' ').Trim())" }
+        return [pscustomobject]@{ Ok = $false; Msg = "a ref mudou durante a execucao ou nao pode ser gravada: $(Format-GitError $r)" }
     }
     return [pscustomobject]@{ Ok = $true; Msg = "" }
 }
 
 # ---------------------------------------------------------------- environment
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { [Console]::Error.WriteLine("ERRO: git nao encontrado no PATH"); exit 2 }
-if (-not (Test-Path -LiteralPath $RepoDir -PathType Container)) { [Console]::Error.WriteLine("ERRO: pasta nao existe: $RepoDir"); exit 2 }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Say-Err "ERRO: git nao encontrado no PATH"; exit 2 }
+if (-not (Test-Path -LiteralPath $RepoDir -PathType Container)) { Say-Err "ERRO: pasta nao existe: $RepoDir"; exit 2 }
 $RepoDir = ConvertTo-NormPath $RepoDir
 $gitDir = Get-GitLine $RepoDir @("rev-parse", "--path-format=absolute", "--git-dir")
 $top = Get-GitLine $RepoDir @("rev-parse", "--show-toplevel")
-if (-not $gitDir -or -not $top) { [Console]::Error.WriteLine("ERRO: nao e um repositorio git (com work tree): $RepoDir"); exit 2 }
+if (-not $gitDir -or -not $top) { Say-Err "ERRO: nao e um repositorio git (com work tree): $RepoDir"; exit 2 }
 $gitDir = ConvertTo-NormPath $gitDir
 $MainRoot = Get-MainRoot (ConvertTo-NormPath $top)
 
@@ -336,8 +367,14 @@ if (-not $MemoryDir -and $GlobalClaudeDir) {
 if (Test-IsLink (Join-Path $MainRoot ".claude")) {
     Add-Excluded ".claude/" "link (nao seguido)"
 } else {
-    Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\skills") "project/.claude/skills" ".claude/skills"
-    Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\commands") "project/.claude/commands" ".claude/commands"
+    # Every level between the repository root (not included, nor anything above it) and the folder is checked; a
+    # link at the folder itself is reported by Add-PlanTree as before.
+    foreach ($sub in @("skills", "commands")) {
+        $subDir = Join-Path $MainRoot ".claude\$sub"
+        $lk = Get-LinkBetween $MainRoot $subDir
+        if ($lk -and $lk -ine ".claude/$sub") { Add-Excluded ".claude/$sub/" "link num nivel entre a raiz do repositorio e a pasta ($lk) (nao seguido)"; continue }
+        Add-PlanTree "projeto" $subDir "project/.claude/$sub" ".claude/$sub"
+    }
     Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.json") "project/.claude/settings.json" ".claude/settings.json"
     Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.local.json") "project/.claude/settings.local.json" ".claude/settings.local.json"
     if (Test-Path -LiteralPath (Join-Path $MainRoot ".claude\worktrees")) { Add-Excluded ".claude/worktrees/" ".claude/worktrees (copias completas do repositorio)" }
@@ -358,7 +395,27 @@ if ($GlobalClaudeDir -and (Test-IsLink $GlobalClaudeDir)) {
 }
 if ($null -eq $pluginLines) { [void]$Notes.Add("lista de plugins: nao encontrado") }
 if ($MemoryDir -and (Test-Path -LiteralPath $MemoryDir -PathType Container)) {
-    Add-PlanTree "global" $MemoryDir "global/memory" "memory"
+    # A junction/symlink at ANY level from -GlobalClaudeDir (included) down to the memory folder keeps the memory
+    # out. Levels above -GlobalClaudeDir are not checked. The memory folder itself is checked by Add-PlanTree.
+    $memLink = $null
+    $memRel = $null
+    if ($GlobalClaudeDir) {
+        $gN = [IO.Path]::GetFullPath($GlobalClaudeDir).TrimEnd('\')
+        $mN = [IO.Path]::GetFullPath($MemoryDir).TrimEnd('\')
+        if ($mN.StartsWith($gN + "\", [StringComparison]::OrdinalIgnoreCase)) {
+            $memRel = $mN.Substring($gN.Length + 1) -replace '\\', '/'
+            $memLink = Get-LinkBetween $gN $mN -IncludeRoot
+        }
+    }
+    if ($memLink -and $memLink -ine $memRel) {
+        # Shown without the encoded project folder name (it is derived from a machine path).
+        $segs = @($memLink -split '/')
+        $shownLink = if ($memLink -eq ".") { "a propria pasta global" } elseif ($segs.Count -gt 1) { "global/$($segs[0])/..." } else { "global/$($segs[0])" }
+        Add-Excluded "memory/" "link num nivel entre a pasta global e a memoria ($shownLink) (nao seguido)"
+        [void]$Notes.Add("memoria do projeto: nao entrou, ha um link entre a pasta global e a memoria ($shownLink)")
+    } else {
+        Add-PlanTree "global" $MemoryDir "global/memory" "memory"
+    }
 } else {
     [void]$Notes.Add("memoria do projeto: nao encontrado")
 }
@@ -437,19 +494,19 @@ foreach ($wt in $worktrees) {
 # ---------------------------------------------------------------- -WhatIf: list only, write nothing
 $groups = @("projeto", "global", "estado")
 if ($WhatIf) {
-    Write-Output "Pacote de recuperacao, SIMULACAO (-WhatIf): nada sera escrito."
+    Say "Pacote de recuperacao, SIMULACAO (-WhatIf): nada sera escrito."
     foreach ($g in $groups) {
         $items = @($Plan | Where-Object { $_.Group -eq $g })
-        Write-Output "[$g] $($items.Count) arquivo(s)"
-        foreach ($i in $items) { Write-Output (Hide-Secrets "  $($i.Dest)") }
+        Say "[$g] $($items.Count) arquivo(s)"
+        foreach ($i in $items) { Say ("  $($i.Dest)") }
     }
-    if ($null -ne $pluginLines) { Write-Output "  global/plugins.txt (gerado)" }
-    Write-Output "  STATE.md (gerado)"
-    foreach ($w in $wtInfo) { if ($w.Patch) { Write-Output (Hide-Secrets "  $($w.Patch) (gerado)") } }
-    Write-Output "Fora do pacote:"
-    foreach ($e in $Excluded) { Write-Output (Hide-Secrets "  $($e.Rel): $($e.Reason)") }
-    foreach ($n in $Notes) { Write-Output (Hide-Secrets "Nota: $n") }
-    Write-Output "A varredura de segredos roda so na execucao real."
+    if ($null -ne $pluginLines) { Say "  global/plugins.txt (gerado)" }
+    Say "  STATE.md (gerado)"
+    foreach ($w in $wtInfo) { if ($w.Patch) { Say ("  $($w.Patch) (gerado)") } }
+    Say "Fora do pacote:"
+    foreach ($e in $Excluded) { Say ("  $($e.Rel): $($e.Reason)") }
+    foreach ($n in $Notes) { Say ("Nota: $n") }
+    Say "A varredura de segredos roda so na execucao real."
     exit 0
 }
 
@@ -489,7 +546,7 @@ foreach ($w in $wtInfo) {
     if (-not $w.Patch) { continue }
     $tmpPatch = Join-Path $work ([IO.Path]::GetFileName($w.Patch))
     $r = Invoke-Git $w.Wt.Path (@("diff", "--no-color", "--no-ext-diff", "--no-textconv", "HEAD", "--output=$tmpPatch", "--") + $patchExcludes)
-    if ($r.Code -ne 0 -or -not (Test-Path -LiteralPath $tmpPatch)) { [void]$Notes.Add("patch de $($w.Patch) falhou"); $w.Patch = $null; continue }
+    if ($r.Code -ne 0 -or -not (Test-Path -LiteralPath $tmpPatch)) { [void]$Notes.Add((Hide-Secrets "patch de $($w.Patch) falhou: $(Format-GitError $r)")); $w.Patch = $null; continue }
     $len = (Get-Item -LiteralPath $tmpPatch).Length
     if ($len -eq 0) { $w.Patch = $null; continue }
     if ($len -gt $MaxBytes) { Add-Excluded $w.Patch "maior que 5 MB"; $w.Patch = $null; continue }
@@ -539,13 +596,13 @@ $stateText = $sb.ToString()
 [IO.File]::WriteAllText((Get-DestPath "STATE.md"), $stateText, $Utf8)
 $written["estado"]++
 
-Write-Output "Pacote de recuperacao ($TargetRef)"
-foreach ($g in $groups) { Write-Output ("[{0}] {1} arquivo(s)" -f $g, $written[$g]) }
-Write-Output "Fora do pacote:"
-if ($Excluded.Count -eq 0) { Write-Output "  nada" }
-foreach ($e in $Excluded) { Write-Output (Hide-Secrets "  $($e.Rel): $($e.Reason)") }
-foreach ($n in $Notes) { Write-Output (Hide-Secrets "Nota: $n") }
-Write-Output "Pasta temporaria (nao e apagada por este script): $tmp"
+Say "Pacote de recuperacao ($TargetRef)"
+foreach ($g in $groups) { Say ("[{0}] {1} arquivo(s)" -f $g, $written[$g]) }
+Say "Fora do pacote:"
+if ($Excluded.Count -eq 0) { Say "  nada" }
+foreach ($e in $Excluded) { Say ("  $($e.Rel): $($e.Reason)") }
+foreach ($n in $Notes) { Say ("Nota: $n") }
+Say "Pasta temporaria (nao e apagada por este script): $tmp"
 
 # ---------------------------------------------------------------- second layer: secret scan of everything
 # Content of every file (STATE.md and patches included) and the relative path name of every file.
@@ -560,10 +617,10 @@ foreach ($f in @(Get-ChildItem -LiteralPath $tree -Recurse -File -Force)) {
     }
 }
 if ($findings.Count -gt 0) {
-    Write-Output "VARREDURA ACHOU POSSIVEL SEGREDO: nada foi gravado e a ref nao mudou."
-    foreach ($x in $findings) { Write-Output "  $x" }
-    Write-Output "Remova o segredo da origem (e rotacione a credencial) antes de gerar o pacote de novo."
-    Write-Output "ATENCAO: a pasta temporaria $tmp contem a copia com o possivel segredo. Apague-a a mao: este script nao apaga nada, por regra."
+    Say "VARREDURA ACHOU POSSIVEL SEGREDO: nada foi gravado e a ref nao mudou."
+    foreach ($x in $findings) { Say "  $x" }
+    Say "Remova o segredo da origem (e rotacione a credencial) antes de gerar o pacote de novo."
+    Say "ATENCAO: a pasta temporaria $tmp contem a copia com o possivel segredo. Apague-a a mao: este script nao apaga nada, por regra."
     exit 1
 }
 
@@ -572,9 +629,9 @@ $index = Join-Path $tmp "index"
 [Environment]::SetEnvironmentVariable("GIT_INDEX_FILE", $index, "Process")
 try {
     $r = Invoke-Git $tree @("--git-dir=$gitDir", "--work-tree=$tree", "-c", "core.untrackedCache=false", "add", "-A", "-f", "--", ".")
-    if ($r.Code -ne 0) { [Console]::Error.WriteLine("ERRO: git add falhou: $(($r.Err -join ' ').Trim())"); exit 1 }
+    if ($r.Code -ne 0) { Say-Err "ERRO: git add falhou: $(Format-GitError $r)"; exit 1 }
     $r = Invoke-Git $tree @("--git-dir=$gitDir", "--work-tree=$tree", "write-tree")
-    if ($r.Code -ne 0 -or $r.Out.Count -eq 0) { [Console]::Error.WriteLine("ERRO: git write-tree falhou: $(($r.Err -join ' ').Trim())"); exit 1 }
+    if ($r.Code -ne 0 -or $r.Out.Count -eq 0) { Say-Err "ERRO: git write-tree falhou: $(Format-GitError $r)"; exit 1 }
     $newTree = $r.Out[0].Trim()
 } finally {
     [Environment]::SetEnvironmentVariable("GIT_INDEX_FILE", $null, "Process")
@@ -596,7 +653,7 @@ if ($old) {
         }
     }
     if ($same) {
-        Write-Output "Resultado: nada mudou ($(Short $old))."
+        Say "Resultado: nada mudou ($(Short $old))."
         exit 0
     }
 }
@@ -608,16 +665,16 @@ $msg = "recovery: pack " + (Get-Date -Format "yyyy-MM-dd HH:mm")
 $ctArgs = $idArgs + @("commit-tree", $newTree, "-m", $msg)
 if ($old) { $ctArgs += @("-p", $old) }
 $r = Invoke-Git $RepoDir $ctArgs
-if ($r.Code -ne 0 -or $r.Out.Count -eq 0) { [Console]::Error.WriteLine("ERRO: git commit-tree falhou: $(($r.Err -join ' ').Trim())"); exit 1 }
+if ($r.Code -ne 0 -or $r.Out.Count -eq 0) { Say-Err "ERRO: git commit-tree falhou: $(Format-GitError $r)"; exit 1 }
 $newCommit = $r.Out[0].Trim()
 
 $expected = $old
 if (-not $expected) { $expected = "0" * $newCommit.Length }
 $u = Update-RecoveryRef $TargetRef $newCommit $expected
 if (-not $u.Ok) {
-    Write-Output "ERRO: $($u.Msg). Nenhuma ref foi alterada."
+    Say "ERRO: $($u.Msg). Nenhuma ref foi alterada."
     exit 1
 }
 $parentText = if ($old) { "pai $(Short $old)" } else { "sem pai: branch orfa" }
-Write-Output "Resultado: commit novo $(Short $newCommit) em $TargetRef ($parentText). Push so ao backup: git push backup recovery"
+Say "Resultado: commit novo $(Short $newCommit) em $TargetRef ($parentText). Push so ao backup: git push backup recovery"
 exit 0

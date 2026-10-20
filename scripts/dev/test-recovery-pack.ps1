@@ -4,7 +4,9 @@
 # a fake global Claude folder (CLAUDE.md, settings.json with env/apiKeyHelper/headers, a fake .credentials.json,
 # a plugin list), a fake memory folder, .claude/skills and .claude/worktrees, forbidden files and folders (also in
 # mixed case), and junctions that point to other folders INSIDE the same temp folder. Every secret is synthetic,
-# generated here at run time.
+# generated here at run time. T20 adds: camelCase assignments in plain text, junctions at intermediate levels
+# between a fake global folder and the memory, and masking of the script's and git's error messages (a fake repo
+# under a folder whose name is a synthetic secret, with a stale recovery.lock that makes update-ref fail).
 # Never reads or writes the user's home, ~/.claude, AppData or any real repository. Nothing is deleted: every
 # scenario that needs a different input gets a new folder (or a new fake world). Temp folders are left behind.
 # Usage: powershell -NoProfile -File scripts/dev/test-recovery-pack.ps1 [-ScriptPath <recovery-pack.ps1 copy>]
@@ -87,11 +89,13 @@ function Get-Snapshot {
 
 # ------------------------------------------------------------------ fake world builder
 # Sets $script:root, $R (main checkout), $WT (linked worktree), $G (global folder), $M (memory), $mainTip.
-function New-World([string]$Tag, [switch]$CommandsAsJunction) {
+# -RepoParent puts the repository one folder deeper (root\<RepoParent>\repo), e.g. a folder name that holds a
+# synthetic secret, so git error messages that carry the repository path can be checked for masking.
+function New-World([string]$Tag, [switch]$CommandsAsJunction, [string]$RepoParent = "") {
     $script:root = New-TempPath "rp-test-$Tag-"
     New-Item -ItemType Directory -Path $script:root | Out-Null
     $rt = $script:root
-    $script:R = Join-Path $rt "repo"
+    if ($RepoParent) { $script:R = Join-Path $rt "$RepoParent\repo" } else { $script:R = Join-Path $rt "repo" }
     $repo = $script:R
     New-Item -ItemType Directory -Path $repo | Out-Null
     Invoke-G init -q $repo | Out-Null
@@ -375,6 +379,85 @@ Assert-Exit $res "14 commands junction: exit 0" 0
 $allC = Get-PackAll
 Assert-Case "14 commands junction: not followed" (-not $allC.Contains("OUTSIDE-CMD-MARKER") -and -not ((Get-PackPaths) | Where-Object { $_ -like "*outside-cmd.md" })) "outside content entered"
 Assert-Case "14 commands junction: recorded" ((Get-PackBlob "STATE.md") -match '\.claude/commands/: link \(nao seguido\)') "STATE.md:`n$(Get-PackBlob 'STATE.md')"
+Write-Output "Temp folder (left behind): $root"
+
+# ================================================================== world D: T20 (camelCase names, links in between, masking)
+New-World "t20"
+# 15. camelCase / PascalCase assignments in plain text -> exit 1, ref unchanged, value never shown.
+$v = Get-Letters 30
+Test-SecretCase "15a accessToken: in plain text" "camel1.md" (Get-Utf8Bytes "accessToken: $v`n") "camel-assignment" $v "global/memory/camel1.md"
+$v = Get-Letters 30
+Test-SecretCase "15b clientSecret = quoted" "camel2.md" (Get-Utf8Bytes "clientSecret = `"$v`"`n") "camel-assignment" $v "global/memory/camel2.md"
+$v = Get-Letters 30
+Test-SecretCase "15c apiKey= without quotes" "camel3.md" (Get-Utf8Bytes "apiKey=$v`n") "camel-assignment" $v "global/memory/camel3.md"
+$v = Get-Letters 30
+Test-SecretCase "15d RefreshToken (PascalCase)" "camel4.md" (Get-Utf8Bytes "RefreshToken: '$v'`n") "camel-assignment" $v "global/memory/camel4.md"
+# 15e. Ordinary text with those words is not a finding.
+$benign = Join-Path $root "mem-benign"
+Write-Text (Join-Path $benign "MEMORY.md") "- note one`n"
+Write-Text (Join-Path $benign "words.md") ("the token is described in docs`napiKey: <your key here>`naccessToken: see the docs for details`n" +
+    "clientSecret = short`nThe accessToken field holds the value returned by the login call.`n")
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $benign
+Assert-Exit $res "15e ordinary text: exit 0 (no finding)" 0
+Assert-Case "15e ordinary text: entered the pack" ((Get-PackPaths) -ccontains "global/memory/words.md") "output:`n$($res.Text)"
+
+# 16. A junction at an intermediate level between the global folder and the memory keeps the memory out.
+$mainNormD = [IO.Path]::GetFullPath(((Invoke-G -C $R rev-parse --show-toplevel)[0]).Trim()).TrimEnd('\')
+$encD = $mainNormD -replace '[^A-Za-z0-9]', '-'
+# 16 control: a real (non-link) projects\<encoded>\memory under a fresh global folder enters.
+$G3 = Join-Path $root "global3"
+Write-Text (Join-Path $G3 "CLAUDE.md") "# g3`n"
+Write-Text (Join-Path $G3 "projects\$encD\memory\CONTROL.md") "control`n"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G3 -WhatIf
+Assert-Case "16 control: real folders, memory enters" ($res.Code -eq 0 -and $res.Text.Contains("global/memory/CONTROL.md")) "output:`n$($res.Text)"
+# 16a. <global>\projects is a junction.
+$G4 = Join-Path $root "global4"
+Write-Text (Join-Path $G4 "CLAUDE.md") "# g4`n"
+Write-Text (Join-Path $root "outside-projects\$encD\memory\MEMORY.md") "JUNCTION-PROJECTS-MARKER`n"
+New-Junction (Join-Path $G4 "projects") (Join-Path $root "outside-projects")
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G4
+Assert-Exit $res "16a projects junction: exit 0" 0
+$st = Get-PackBlob "STATE.md"
+Assert-Case "16a projects junction: memory not in the pack" (-not ((Get-PackPaths) | Where-Object { $_ -like "global/memory/*" }) -and -not (Get-PackAll).Contains("JUNCTION-PROJECTS-MARKER")) "paths:`n$((Get-PackPaths) -join "`n")"
+Assert-Case "16a projects junction: reason in STATE.md" ($st -match 'memory/: link num nivel entre a pasta global e a memoria \(global/projects\)') "STATE.md:`n$st"
+Assert-Case "16a projects junction: STATE.md hides the encoded project folder" (-not $st.Contains($encD)) "STATE.md:`n$st"
+# 16b. <global>\projects\<encoded> is a junction.
+$G5 = Join-Path $root "global5"
+Write-Text (Join-Path $G5 "CLAUDE.md") "# g5`n"
+Write-Text (Join-Path $root "outside-enc\memory\MEMORY.md") "JUNCTION-ENC-MARKER`n"
+New-Junction (Join-Path $G5 "projects\$encD") (Join-Path $root "outside-enc")
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G5
+Assert-Exit $res "16b encoded folder junction: exit 0" 0
+$st = Get-PackBlob "STATE.md"
+Assert-Case "16b encoded folder junction: memory not in the pack" (-not ((Get-PackPaths) | Where-Object { $_ -like "global/memory/*" }) -and -not (Get-PackAll).Contains("JUNCTION-ENC-MARKER")) "paths:`n$((Get-PackPaths) -join "`n")"
+Assert-Case "16b encoded folder junction: reason in STATE.md" ($st -match 'memory/: link num nivel entre a pasta global e a memoria \(global/projects/\.\.\.\)') "STATE.md:`n$st"
+Assert-Case "16b encoded folder junction: STATE.md hides the encoded project folder" (-not $st.Contains($encD)) "STATE.md:`n$st"
+
+# 17. The script's own messages are masked.
+$v = "sk-ant-" + (Get-Letters 30)
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TargetRef "refs/heads/$v"
+Assert-Exit $res "17a early guard message: exit 1" 1
+Assert-Case "17a early guard message: masked" ($res.Text.Contains("[oculto]") -and -not $res.Text.Contains($v)) "output:`n$($res.Text)"
+$v = "sk-ant-" + (Get-Letters 30)
+$NR2 = Join-Path $root "not-a-repo-$v"
+New-Item -ItemType Directory -Path $NR2 | Out-Null
+$res = Invoke-Pack -RepoDir $NR2 -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "17b not-a-repository message: exit 2" 2
+Assert-Case "17b not-a-repository message: masked" ($res.Text.Contains("[oculto]") -and -not $res.Text.Contains($v)) "output:`n$($res.Text)"
+Write-Output "Temp folder (left behind): $root"
+
+# ================================================================== world E: a git error that carries a secret is masked
+# The repository lives under a folder whose NAME is a synthetic secret (nothing in the pack shows that folder, so
+# the scan passes). A stale refs/heads/recovery.lock makes `git update-ref` fail with a message that holds the
+# absolute path of the .git folder, i.e. the secret.
+$vLock = "sk-ant-" + (Get-Letters 30)
+New-World "lock" -RepoParent $vLock
+Write-Text (Join-Path $R ".git\refs\heads\recovery.lock") ""
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "18 git update-ref error: exit 1" 1
+Assert-Case "18 git update-ref error: the git message is printed" ($res.Text.Contains("nao pode ser gravada") -and $res.Text.Contains("recovery.lock")) "output:`n$($res.Text)"
+Assert-Case "18 git update-ref error: secret masked" ($res.Text.Contains("[oculto]") -and -not $res.Text.Contains($vLock)) "output:`n$($res.Text)"
+Assert-Case "18 git update-ref error: recovery ref not created" (-not (Get-Recovery)) "recovery exists"
 Write-Output "Temp folder (left behind): $root"
 
 if ($fail -eq 0) { Write-Output "ALL PASSED" } else { Write-Output "SOME FAILED" }
