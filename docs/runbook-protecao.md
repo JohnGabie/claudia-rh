@@ -224,7 +224,8 @@ powershell -NoProfile -File scripts/dev/install-hooks.ps1 -WhatIf
 powershell -NoProfile -File scripts/dev/install-hooks.ps1
 ```
 
-- **Conferência = o próprio instalador.** Exit 0: instalado (ou já estava) e conferido por um push de teste a um repositório temporário. Exit 1: conflito com outro hook que ele não instalou, ou o hook NÃO está em vigor porque `core.hooksPath` aponta para outra pasta (ele mostra as duas opções: remover o `core.hooksPath` ou instalar nessa pasta; nunca mexe na configuração). Exit 2: problema de ambiente.
+- **Conferência = o próprio instalador.** Exit 0: instalado (ou já estava) e conferido por um push de teste a um repositório temporário. Exit 1: conflito com outro hook que ele não instalou, ou o hook NÃO está em vigor porque `core.hooksPath` aponta para outra pasta (ele mostra as duas opções: (1) `git config --unset core.hooksPath` ou (2) apontar o `core.hooksPath` para a pasta comum; o instalador nunca mexe na configuração, é decisão do usuário), ou a conferência real falhou (`CHECK FAILED`): não confiar no hook. Exit 2: problema de ambiente.
+- **Quando `scripts/dev/git-hooks` mudar** (merge de uma nova versão), rode o `install-hooks.ps1` de novo: as cópias instaladas não se atualizam sozinhas.
 - **Desligar é decisão do usuário:** remover à mão os dois arquivos (`pre-push` e `pre-push.ps1`) da pasta de hooks comum (`git rev-parse --git-common-dir`, subpasta `hooks`), ou ajustar o `core.hooksPath` se for ele que está em vigor. O agente não faz.
 - Vale para todas as worktrees e branches do clone, porque a pasta de hooks é comum (não depende de a branch ter `scripts/dev/git-hooks`). O hook aceita no máximo **uma branch de trabalho por push** ao público. Outro clone precisa do mesmo comando.
 - **Válvula de escape (só o usuário):** `CLAUDIA_ALLOW_PUBLIC_PUSH=1` libera o push ao repositório público **inteiro**, deleções incluídas, com um aviso. Use só de propósito, na mesma linha do comando (`$env:CLAUDIA_ALLOW_PUBLIC_PUSH = '1'; git push ...; Remove-Item Env:CLAUDIA_ALLOW_PUBLIC_PUSH`), e nunca deixe a variável definida na sessão. **Agente nenhum a usa sem pedido explícito do usuário.**
@@ -301,7 +302,7 @@ powershell -NoProfile -File scripts/dev/verify-backup.ps1
 Regras do passo a passo:
 
 - **Nunca** `--admin` (contorna a proteção) e **nunca** `--delete-branch`/`-d` (apaga a branch remota sem o usuário decidir).
-- `git fetch origin dev:dev` só avança por fast-forward e não troca de branch. Se recusar (o `dev` local divergiu do `origin/dev`), pare e avise o usuário; nunca `git pull` sem `--ff-only`, nunca `reset`.
+- `git fetch origin dev:dev` só avança por fast-forward e não troca de branch. Se recusar (o `dev` local divergiu do `origin/dev`, ou o `dev` está aberto em alguma worktree), pare e avise o usuário; nunca `git pull` sem `--ff-only`, nunca `reset`.
 - Se a varredura do passo 1.1 der exit 1 ou 2, não empurre.
 - Se o `strict` estiver ativo e o `dev` andar durante o PR, atualize a branch e espere o CI de novo antes do merge.
 - Com o `dev` à frente do `origin/dev` em muitos commits, o PR será grande (não há limite de tamanho de PR); é PR de sincronização de histórico já revisado. O `dev` também não pode ficar atrás de `main`: se `main` tiver algo que o `dev` não tem, faça antes o PR `main` → `dev` (com o OK do usuário).
