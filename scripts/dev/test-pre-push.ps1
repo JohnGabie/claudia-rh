@@ -47,6 +47,29 @@ function Invoke-Git([string]$Dir, [string[]]$GitArgs, [hashtable]$Env = @{}, [st
 }
 function G([string[]]$GitArgs) { return (Invoke-Git $script:W $GitArgs) }
 
+# Runs the sh launcher directly with a URL and simulated stdin (no real push needed). PowerShell stays available
+# unless -Path is given (then PATH holds only the Git folders: the sh fallback decides).
+function Invoke-Launcher([string]$Url, [string]$Stdin, [string]$Path = "") {
+    $sh = Join-Path $GitRoot "usr\bin\sh.exe"
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $sh
+    $psi.Arguments = (@((Join-Path $script:hooks "pre-push").Replace("\", "/"), "origin", $Url) | ForEach-Object { ConvertTo-Arg $_ }) -join " "
+    $psi.WorkingDirectory = $script:W
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    if ($Path) { $psi.EnvironmentVariables["PATH"] = $Path }
+    else { $psi.EnvironmentVariables["PATH"] = (Join-Path $GitRoot "usr\bin") + ";" + $env:PATH }
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $o = $p.StandardOutput.ReadToEndAsync()
+    $e = $p.StandardError.ReadToEndAsync()
+    $p.StandardInput.Write($Stdin)
+    $p.StandardInput.Close()
+    $p.WaitForExit()
+    return [pscustomobject]@{ Code = $p.ExitCode; Out = $o.Result; Err = $e.Result }
+}
+
 function Assert-Case([string]$name, [bool]$ok, [string]$why) {
     # Write-Host, so the helpers can also return their result object without mixing it into the report.
     if ($ok) { Write-Host "PASS    $name" }
@@ -138,6 +161,81 @@ Assert-Pass "backup: logic throws -> still passes" @("push", "backup", "feat/z")
 $cleanPath = (Join-Path $GitRoot "cmd") + ";" + (Join-Path $GitRoot "usr\bin") + ";" + (Join-Path $GitRoot "mingw64\bin")
 Assert-Refuse "origin: PowerShell not found -> refused (fail closed)" @("push", "origin", "feat/w") $pubBare @("refs/heads/feat/w") "could not run" @{ PATH = $cleanPath } | Out-Null
 Assert-Pass "backup: PowerShell not found -> still passes" @("push", "backup", "feat/w") $bkpBare @("refs/heads/feat/w") @{ PATH = $cleanPath } | Out-Null
+
+# --- URL normalization (T19): the launcher is called directly with a URL and a simulated "main" update line ---
+$zeros = "0" * 40
+$mainLine = "refs/heads/main $head refs/heads/main $zeros`n"
+$publicUrls = @(
+    "https://github.com/JohnGabie/claudia-rh/.",
+    "https://github.com/JohnGabie/claudia-rh/x/..",
+    "https://github.com/JohnGabie/claudia%2Drh",
+    "https://github.com/JohnGabie/Claudia-RH.git/",
+    "git@github.com:JohnGabie/claudia-rh.git",
+    "ssh://git@github.com/JohnGabie/claudia-rh.git",
+    "https://x:y@github.com/JohnGabie/claudia-rh",
+    "https://github.com/JohnGabie/claudia-rh.git/./",
+    "https://github.com/JohnGabie/claudia%252Drh",
+    "https://github.com/..",
+    ""
+)
+foreach ($u in $publicUrls) {
+    $r = Invoke-Launcher $u $mainLine
+    Assert-Case "url public (PowerShell logic): '$u' -> main refused" (($r.Code -eq 1) -and ($r.Err -match "REFUSED")) "exit $($r.Code) stderr: $($r.Err)"
+}
+foreach ($u in @("https://github.com/JohnGabie/claudia-rh-backup.git", "https://github.com/JohnGabie/claudia%2Drh-backup", "https://x:y@github.com/JohnGabie/claudia-rh-backup/")) {
+    $r = Invoke-Launcher $u $mainLine
+    Assert-Case "url not public (PowerShell logic): '$u' -> main passes" ($r.Code -eq 0) "exit $($r.Code) stderr: $($r.Err)"
+}
+# Same URLs with PowerShell unavailable: the sh fallback must reach the same verdict (fail closed).
+foreach ($u in $publicUrls) {
+    $r = Invoke-Launcher $u $mainLine $cleanPath
+    Assert-Case "url public (sh fallback): '$u' -> refused" (($r.Code -eq 1) -and ($r.Err -match "REFUSED")) "exit $($r.Code) stderr: $($r.Err)"
+}
+foreach ($u in @("https://github.com/JohnGabie/claudia-rh-backup.git", "https://x:y@github.com/JohnGabie/claudia-rh-backup/")) {
+    $r = Invoke-Launcher $u $mainLine $cleanPath
+    Assert-Case "url not public (sh fallback): '$u' -> passes" ($r.Code -eq 0) "exit $($r.Code) stderr: $($r.Err)"
+}
+
+# --- Force push (T19): feat/ff is created, fast-forwarded, then rewritten ---
+function Get-BareSha([string]$bare, [string]$ref) { return (Invoke-Git $bare @("rev-parse", "--verify", "-q", $ref)).Out.Trim() }
+$tree = (G @("rev-parse", "HEAD^{tree}")).Out.Trim()
+$c2 = (G @("commit-tree", $tree, "-p", $head, "-m", "c2")).Out.Trim()
+$c3 = (G @("commit-tree", $tree, "-p", $head, "-m", "c3-sibling")).Out.Trim()
+G @("update-ref", "refs/heads/feat/ff", $head) | Out-Null
+Assert-Pass "origin: creating feat/ff passes" @("push", "origin", "feat/ff") $pubBare @("refs/heads/feat/ff") | Out-Null
+G @("update-ref", "refs/heads/feat/ff", $c2) | Out-Null
+Assert-Pass "origin: fast-forward of feat/ff passes" @("push", "origin", "feat/ff") $pubBare @("refs/heads/feat/ff") | Out-Null
+Assert-Case "origin: bare feat/ff is now c2" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c2) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
+G @("update-ref", "refs/heads/feat/ff", $c3) | Out-Null
+Assert-Refuse "origin: force push to a sibling commit refused" @("push", "-f", "origin", "feat/ff") $pubBare @() "force push" | Out-Null
+Assert-Case "origin: bare feat/ff still c2 after the rewrite" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c2) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
+G @("update-ref", "refs/heads/feat/ff", $head) | Out-Null
+Assert-Refuse "origin: force push back to an older commit refused" @("push", "-f", "origin", "feat/ff") $pubBare @() "force push" | Out-Null
+Assert-Case "origin: bare feat/ff still c2 after the reset" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c2) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
+# Old remote object missing locally: a second, unrelated work repository that never fetched c2.
+$W2 = Join-Path $root "work2"
+New-Item -ItemType Directory -Path $W2 | Out-Null
+Invoke-Git $W2 @("init", "-q") | Out-Null
+Set-Content -LiteralPath (Join-Path $W2 "b.txt") -Value "other"
+Invoke-Git $W2 @("add", "b.txt") | Out-Null
+Invoke-Git $W2 @("commit", "-q", "-m", "other") | Out-Null
+Invoke-Git $W2 @("branch", "feat/ff") | Out-Null
+Invoke-Git $W2 @("config", "core.hooksPath", $hooks.Replace("\", "/")) | Out-Null
+Invoke-Git $W2 @("remote", "add", "origin", $pubBare.Replace("\", "/")) | Out-Null
+$mainWork = $script:W
+$script:W = $W2
+Assert-Refuse "origin: old remote object missing locally refused, asks for git fetch" @("push", "-f", "origin", "feat/ff") $pubBare @() "git fetch origin" | Out-Null
+Assert-Case "origin: bare feat/ff still c2 after the missing-object push" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c2) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
+$script:W = $mainWork
+# The backup takes the same force push.
+G @("update-ref", "refs/heads/feat/ff", $c2) | Out-Null
+Assert-Pass "backup: feat/ff c2 passes" @("push", "backup", "feat/ff") $bkpBare @("refs/heads/feat/ff") | Out-Null
+G @("update-ref", "refs/heads/feat/ff", $c3) | Out-Null
+Assert-Pass "backup: force push of feat/ff passes" @("push", "-f", "backup", "feat/ff") $bkpBare @("refs/heads/feat/ff") | Out-Null
+Assert-Case "backup: bare feat/ff is now c3" ((Get-BareSha $bkpBare "refs/heads/feat/ff") -eq $c3) "bare has $(Get-BareSha $bkpBare 'refs/heads/feat/ff')"
+# The escape hatch still frees the force push on the public remote.
+Assert-Pass "origin: CLAUDIA_ALLOW_PUBLIC_PUSH=1 lets the force push through" @("push", "-f", "origin", "feat/ff") $pubBare @("refs/heads/feat/ff") @{ CLAUDIA_ALLOW_PUBLIC_PUSH = "1" } | Out-Null
+Assert-Case "origin: bare feat/ff is c3 after the escape hatch" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c3) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
 
 # --- Checkout with core.autocrlf=true: the sh launcher must stay LF and the hook must still run ---
 # Source repo holds the hook files and the repository .gitattributes; the clone is made with autocrlf=true.

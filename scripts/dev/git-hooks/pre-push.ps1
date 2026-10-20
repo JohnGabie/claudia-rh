@@ -12,11 +12,19 @@
 # Server side: GitHub branch protection (T13/T14) is the other layer. This hook protects the machine; it does
 # not replace the server rules.
 #
-# PUBLIC remote = URL ending in /claudia-rh or /claudia-rh.git (https or ssh, case-insensitive). The backup
-# (claudia-rh-backup) and any other remote pass with no restriction.
+# PUBLIC remote = URL whose NORMALIZED path ends in claudia-rh (https, ssh git@host:owner/repo, ssh://; case-insensitive).
+# Normalization (T19, user decision 2026-10-20) runs before the decision: percent-escapes (%xx) are decoded, credentials
+# (user:password@) are dropped, "." and ".." path segments are resolved, trailing slashes and a final ".git" are dropped.
+# If the normalization fails, the remote is treated as public (fail closed). The backup (claudia-rh-backup) and any
+# other remote pass with no restriction.
 # For the public remote every ref must be, as REMOTE ref, one of:
 #     refs/heads/feat/*, refs/heads/fix/*, refs/heads/sync/*, refs/tags/v<digits and dots>[-suffix]
 # and must be a create/update (never a delete). main and dev change only by PR on GitHub. At most 20 refs per push.
+# The tag format accepted above (v + digits and dots, optional suffix) is a decision of the USER (2026-10-20).
+# No force push (T19): for an update (remote sha not all zeros) the old remote commit must be an ancestor of the new
+# one (git merge-base --is-ancestor). Otherwise the push is refused as force push / history rewrite. If the old commit
+# is missing from the local repository the push is refused too, and "git fetch origin" fixes it. Creating a ref
+# (old sha all zeros) stays allowed for the refs in the list.
 #
 # ESCAPE HATCH (user only): CLAUDIA_ALLOW_PUBLIC_PUSH=1 lets the push through with a warning on stderr.
 # Decision: it frees EVERYTHING, deletes included, because it is the conscious decision of the user.
@@ -31,10 +39,47 @@ $MaxRefs = 20
 
 function Write-Err([string]$Text) { [Console]::Error.WriteLine($Text) }
 
-# True when the URL names the public repository (claudia-rh or claudia-rh.git as the last path part).
+# Returns the last path segment of the URL after normalization (lower case, no final ".git"). Throws when nothing is left.
+function Get-NormalizedRepoName([string]$Url) {
+    $u = $Url.Trim() -replace '[?#].*$', ''
+    for ($i = 0; $i -lt 5; $i++) {                       # decode %xx (repeatedly: %252D must not hide a dash)
+        $d = [Uri]::UnescapeDataString($u)
+        if ($d -ceq $u) { break }
+        $u = $d
+    }
+    $u = $u.Replace('\', '/')
+    $u = $u -replace '^[A-Za-z][A-Za-z0-9+.-]*://', ''  # scheme
+    $u = $u -replace '^[^/]*@', ''                       # credentials user:password@ (also the git@ of scp form)
+    $u = $u.Replace(':', '/')                            # scp form host:owner/repo, or a port
+    $stack = New-Object System.Collections.Generic.List[string]
+    foreach ($seg in $u.Split('/')) {
+        $s = $seg.Trim()
+        if ($s -eq '' -or $s -eq '.') { continue }
+        if ($s -eq '..') { if ($stack.Count -gt 0) { $stack.RemoveAt($stack.Count - 1) }; continue }
+        $stack.Add($s)
+    }
+    if ($stack.Count -eq 0) { throw "empty path after normalization of '$Url'" }
+    return ($stack[$stack.Count - 1] -replace '(?i)\.git$', '').ToLowerInvariant()
+}
+
+# True when the URL names the public repository. Unknown URL or failed normalization: public (fail closed).
 function Test-PublicRemoteUrl([string]$Url) {
-    if (-not $Url) { return $true }   # unknown URL: treat as public (fail closed)
-    return ($Url.Trim() -imatch '[/\\:]claudia-rh(\.git)?[/\\]*$')
+    if (-not $Url) { return $true }
+    try { return ((Get-NormalizedRepoName $Url) -ceq 'claudia-rh') } catch { return $true }
+}
+
+# Returns the reason an UPDATE (old remote sha not zeros) is refused as force push, or $null when it is a fast-forward.
+function Get-ForcePushReason([string]$OldSha, [string]$NewSha) {
+    $ErrorActionPreference = "Continue"   # native git stderr must not become a terminating error
+    & git cat-file -e "$OldSha^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return "the old remote commit $OldSha is not in the local repository, so a fast-forward cannot be proven; run 'git fetch origin' and push again"
+    }
+    & git merge-base --is-ancestor $OldSha $NewSha 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return "force push / history rewrite (the remote commit $OldSha is not an ancestor of $NewSha)"
+    }
+    return $null
 }
 
 # Returns the reason a remote ref is refused, or $null when it is allowed (create/update only).
@@ -82,6 +127,7 @@ try {
                 continue
             }
             $reason = Get-RefusalReason $parts[1] $parts[2]
+            if (-not $reason -and $parts[3] -notmatch '^0+$') { $reason = Get-ForcePushReason $parts[3] $parts[1] }
             if ($reason) { [void]$problems.Add("$($parts[2]): $reason") }
         }
     }
