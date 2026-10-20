@@ -4,17 +4,22 @@
 # branch having scripts/dev/git-hooks (a branch cut before the hook existed is protected too).
 # Copies the sh launcher "pre-push" and "pre-push.ps1" (both normalized to LF, a marker comment added) from
 # scripts/dev/git-hooks. The launcher finds pre-push.ps1 next to itself, so the copies work outside the repository tree.
+# The installed files are GENERATED COPIES: never edit them in the hooks folder. Edit the source in scripts/dev/git-hooks and
+# run this script again.
 #
 # Rules (safety first):
 #   - Never overwrites or deletes a hook it did not install. A DIFFERENT pre-push / pre-push.ps1 without the marker
 #     line ("# claudia-rh-installed-by: ...") stops the install (exit 1), nothing is written, and the message says what to do.
 #   - Identical content: "already installed", exit 0. A file with the marker but older content is an older version of
 #     this script's own install: it is updated.
-#   - If core.hooksPath is set, it takes precedence over the common folder (git ignores .git/hooks then). The script
-#     only warns; it never changes the git config. The user decides.
-#   - After installing it runs a REAL check: a temporary bare repository named claudia-rh.git plus a temporary clone
-#     whose hooks folder is the installed one (git -c core.hooksPath=...). main must be refused and feat/x must pass.
-#     Everything happens in temp folders under the system temp; nothing is published or deleted.
+#   - core.hooksPath (local, global or per worktree) takes precedence over the common folder: git then ignores it. After
+#     installing, the script asks git which hooks folder this repository really uses ("git rev-parse --git-path hooks")
+#     and compares it with the common folder. If they differ it says the hook is NOT in effect (and which core.hooksPath
+#     applies, with its origin), does not say OK and exits 1. It never changes the git config; that is the user's.
+#   - It also runs a REAL check from the repository itself, with its effective config (no -c override): it pushes HEAD by
+#     path to a temporary bare repository named claudia-rh.git, as refs/heads/main (must be refused) and as
+#     refs/heads/feat/install-check (must pass). No remote, ref or config of the repository changes; the bare lives in
+#     the system temp folder and is left behind.
 #   - -WhatIf only prints what it would do (no write, no check).
 # Usage: powershell -NoProfile -File scripts/dev/install-hooks.ps1 [-WhatIf]
 #        [-RepoDir <any folder of the repository or of one of its worktrees>] [-HooksSourceDir <folder with the two files>]
@@ -129,34 +134,47 @@ try {
 }
 if (@($plan | Where-Object { $_.Action -ne "same" }).Count -eq 0) { Say "install-hooks: already installed (ja instalado), identical content." }
 
-# --- real check: temp bare claudia-rh.git + temp clone using the installed hooks folder ---
+# --- 1. is the installed folder the one git really uses in THIS repository? ---
+# "git rev-parse --git-path hooks" honors core.hooksPath from the local, global and per-worktree config.
+function Format-PathKey([string]$p) { return $p.Replace("\", "/").TrimEnd("/").ToLowerInvariant() }
+$inEffect = $false
+$eff = Invoke-Git $RepoDir @("rev-parse", "--path-format=absolute", "--git-path", "hooks")
+if ($eff.Code -eq 0 -and $eff.Out) { $inEffect = ((Format-PathKey $eff.Out) -ceq (Format-PathKey $hooksDir)) }
+$effectiveText = if ($eff.Out) { $eff.Out } else { "(unknown)" }
+Say "install-hooks: hooks folder git uses in this repository: $effectiveText -> $(if ($inEffect) { 'same as the installed folder' } else { 'DIFFERENT from the installed folder' })"
+
+# --- 2. real check, run FROM the repository itself so its effective config decides (no -c override) ---
+# Pushes HEAD by path to a temporary bare repository named claudia-rh.git (no remote is created, no ref or config of
+# the repository changes): HEAD:refs/heads/main must be refused, HEAD:refs/heads/feat/install-check must pass.
 $root = Join-Path ([IO.Path]::GetTempPath()) ("install-hooks-check-" + [guid]::NewGuid().ToString("N"))
 $bare = Join-Path $root "claudia-rh.git"
-$work = Join-Path $root "work"
 $checkOk = $false
 try {
+    if ((Invoke-Git $RepoDir @("rev-parse", "--verify", "-q", "HEAD^{commit}")).Code -ne 0) {
+        Stop-With 2 "install-hooks: the repository has no commit at HEAD, so the real check cannot run. Make a commit and run this script again."
+    }
     New-Item -ItemType Directory -Path $bare -Force | Out-Null
-    New-Item -ItemType Directory -Path $work -Force | Out-Null
     Invoke-Git $bare @("init", "-q", "--bare") | Out-Null
-    Invoke-Git $work @("init", "-q") | Out-Null
-    Set-Content -LiteralPath (Join-Path $work "a.txt") -Value "check"
-    Invoke-Git $work @("add", "a.txt") | Out-Null
-    Invoke-Git $work @("commit", "-q", "-m", "check") | Out-Null
-    Invoke-Git $work @("branch", "feat/x") | Out-Null
-    $hp2 = "core.hooksPath=" + $hooksDir.Replace("\", "/")
-    $pushMain = Invoke-Git $work @("-c", $hp2, "push", $bare.Replace("\", "/"), "main")
+    $url = $bare.Replace("\", "/")
+    $pushMain = Invoke-Git $RepoDir @("push", $url, "HEAD:refs/heads/main")
     $mainThere = (Invoke-Git $bare @("rev-parse", "--verify", "-q", "refs/heads/main")).Code -eq 0
     $mainRefused = ($pushMain.Code -ne 0) -and (-not $mainThere) -and ($pushMain.Err -match "REFUSED")
-    $pushFeat = Invoke-Git $work @("-c", $hp2, "push", $bare.Replace("\", "/"), "feat/x")
-    $featThere = (Invoke-Git $bare @("rev-parse", "--verify", "-q", "refs/heads/feat/x")).Code -eq 0
+    $pushFeat = Invoke-Git $RepoDir @("push", $url, "HEAD:refs/heads/feat/install-check")
+    $featThere = (Invoke-Git $bare @("rev-parse", "--verify", "-q", "refs/heads/feat/install-check")).Code -eq 0
     $featPassed = ($pushFeat.Code -eq 0) -and $featThere
-    Say "install-hooks: check (temp folder $root): push main -> $(if ($mainRefused) { 'refused, as expected' } else { 'NOT refused (exit ' + $pushMain.Code + ')' })"
-    Say "install-hooks: check: push feat/x -> $(if ($featPassed) { 'passed, as expected' } else { 'NOT passed (exit ' + $pushFeat.Code + ')' })"
+    Say "install-hooks: check (temp bare in $root): push HEAD:refs/heads/main -> $(if ($mainRefused) { 'refused, as expected' } else { 'NOT refused (exit ' + $pushMain.Code + ')' })"
+    Say "install-hooks: check: push HEAD:refs/heads/feat/install-check -> $(if ($featPassed) { 'passed, as expected' } else { 'NOT passed (exit ' + $pushFeat.Code + ')' })"
     if (-not $featPassed) { Say $pushFeat.Err }
     $checkOk = $mainRefused -and $featPassed
 } catch {
     Say "install-hooks: check failed to run: $($_.Exception.Message)"
 }
-if (-not $checkOk) { Stop-With 1 "install-hooks: CHECK FAILED. The installed hook did not behave as expected; do not rely on it." }
-Say "install-hooks: OK. Installed and checked for every worktree and branch of this repository (temp check folder left behind: $root)."
+
+if (-not $inEffect) {
+    $origin = Invoke-Git $RepoDir @("config", "--show-origin", "--get", "core.hooksPath")
+    $from = if ($origin.Code -eq 0 -and $origin.Out) { "core.hooksPath is in effect, from: $($origin.Out)" } else { "git uses '$effectiveText' (core.hooksPath not found by 'git config --show-origin')" }
+    Stop-With 1 "install-hooks: the hook is NOT in effect in this repository (not in effect): $from. The files were copied to $hooksDir but git does not read that folder here. This script does not change your git config; unset core.hooksPath (or copy the two files into the folder it names) and run this script again."
+}
+if (-not $checkOk) { Stop-With 1 "install-hooks: CHECK FAILED. The installed hook did not behave as expected in this repository; do not rely on it." }
+Say "install-hooks: OK. Installed, in effect in this repository and checked for every worktree and branch that uses $hooksDir (temp check folder left behind: $root)."
 exit 0

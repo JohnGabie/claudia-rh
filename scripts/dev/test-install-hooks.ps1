@@ -26,7 +26,7 @@ function ConvertTo-Arg([string]$a) {
     if ($a -notmatch '[\s"]') { return $a }
     return '"' + ($a -replace '"', '\"') + '"'
 }
-function Invoke-Native([string]$Exe, [string]$Dir, [string[]]$ArgList) {
+function Invoke-Native([string]$Exe, [string]$Dir, [string[]]$ArgList, [hashtable]$Env = @{}) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Exe
     $psi.Arguments = (($ArgList | ForEach-Object { ConvertTo-Arg $_ }) -join " ")
@@ -34,6 +34,7 @@ function Invoke-Native([string]$Exe, [string]$Dir, [string[]]$ArgList) {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    foreach ($k in $Env.Keys) { $psi.EnvironmentVariables[$k] = [string]$Env[$k] }
     $p = [System.Diagnostics.Process]::Start($psi)
     $o = $p.StandardOutput.ReadToEndAsync()
     $e = $p.StandardError.ReadToEndAsync()
@@ -43,8 +44,8 @@ function Invoke-Native([string]$Exe, [string]$Dir, [string[]]$ArgList) {
 function Invoke-Git([string]$Dir, [string[]]$GitArgs) {
     return (Invoke-Native $GitExe $Dir (@("-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main") + $GitArgs))
 }
-function Invoke-Installer([string]$Repo, [string[]]$Extra = @()) {
-    return (Invoke-Native $PsExe $Repo (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $InstallScript, "-RepoDir", $Repo, "-HooksSourceDir", $HooksSourceDir) + $Extra))
+function Invoke-Installer([string]$Repo, [string[]]$Extra = @(), [hashtable]$Env = @{}) {
+    return (Invoke-Native $PsExe $Repo (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $InstallScript, "-RepoDir", $Repo, "-HooksSourceDir", $HooksSourceDir) + $Extra) $Env)
 }
 function Assert-Case([string]$name, [bool]$ok, [string]$why) {
     if ($ok) { Write-Host "PASS    $name" }
@@ -65,6 +66,10 @@ function New-WorkRepo([string]$root, [string]$name) {
     Invoke-Git $r @("commit", "-q", "-m", "c1") | Out-Null
     return $r
 }
+# Everything the installer must NOT change in the repository it is pointed at: refs, config, remotes.
+function Get-RepoState([string]$repo) {
+    return ((Invoke-Git $repo @("for-each-ref")).Out + "|" + (Invoke-Git $repo @("config", "--local", "--list")).Out + "|" + (Invoke-Git $repo @("remote", "-v")).Out + "|" + (Invoke-Git $repo @("rev-parse", "HEAD")).Out)
+}
 function Get-CommonHooks([string]$repo) { return (Join-Path (Join-Path $repo ".git") "hooks") }
 
 $root = New-TempPath "installhooks-"
@@ -82,10 +87,12 @@ $wtAdd = Invoke-Git $R @("worktree", "add", "-q", "-b", "feat/wt", $WT)
 Assert-Case "fixture: linked worktree created" ((Test-Path -LiteralPath (Join-Path $WT ".git")) -and (-not (Test-Path -LiteralPath (Join-Path $WT "scripts")))) "exit $($wtAdd.Code) $($wtAdd.Err)"
 $common = Get-CommonHooks $R
 # Installed FROM the linked worktree on purpose: the files must still land in the common folder of the main repository.
+$stateBefore = Get-RepoState $WT
 $i1 = Invoke-Installer $WT
 Assert-Case "install: exit 0" ($i1.Code -eq 0) "exit $($i1.Code) out: $($i1.Out) err: $($i1.Err)"
 Assert-Case "install: both files in the common hooks folder" ((Test-Path -LiteralPath (Join-Path $common "pre-push")) -and (Test-Path -LiteralPath (Join-Path $common "pre-push.ps1"))) "missing in $common"
-Assert-Case "install: own check reports main refused and feat/x passed" (($i1.Out -match "push main -> refused") -and ($i1.Out -match "push feat/x -> passed")) "out: $($i1.Out)"
+Assert-Case "install: own check, run from the repository, reports main refused and feat/install-check passed" (($i1.Out -match "refs/heads/main -> refused") -and ($i1.Out -match "refs/heads/feat/install-check -> passed") -and ($i1.Out -match "OK\.") -and ($i1.Out -match "same as the installed folder")) "out: $($i1.Out)"
+Assert-Case "install: the repository is unchanged (refs, config, remotes, HEAD)" ((Get-RepoState $WT) -ceq $stateBefore) "state changed"
 $launcherBytes = [IO.File]::ReadAllBytes((Join-Path $common "pre-push"))
 Assert-Case "install: installed launcher has 0 CR bytes and the marker" ((@($launcherBytes | Where-Object { $_ -eq 13 }).Count -eq 0) -and ([Text.Encoding]::ASCII.GetString($launcherBytes) -match "claudia-rh-installed-by")) "CR or marker problem"
 $wtGitDir = (Invoke-Git $WT @("rev-parse", "--path-format=absolute", "--git-dir")).Out.Trim().Replace("/", "\")
@@ -126,13 +133,19 @@ foreach ($which in @("pre-push", "pre-push.ps1")) {
     Assert-Case "different existing $which : exit 1, file intact, nothing else written" (($i4.Code -eq 1) -and ((Get-Hash $mine) -eq $before) -and (-not (Test-Path -LiteralPath $other)) -and ($i4.Out -match "what to do")) "exit $($i4.Code) out: $($i4.Out)"
 }
 
-# --- 5. core.hooksPath set: warning, config untouched ---
+# --- 5. core.hooksPath set (local, then global): git ignores the common folder -> warn, exit 1, say "not in effect", config untouched ---
 $R5 = New-WorkRepo $root "hookspath"
 Invoke-Git $R5 @("config", "core.hooksPath", "elsewhere") | Out-Null
 $i5 = Invoke-Installer $R5
 $cfg = (Invoke-Git $R5 @("config", "--get", "core.hooksPath")).Out.Trim()
-Assert-Case "core.hooksPath set: warns about precedence, config untouched" (($i5.Out -match "core.hooksPath") -and ($i5.Out -match "precedence") -and ($cfg -eq "elsewhere")) "exit $($i5.Code) cfg=$cfg out: $($i5.Out)"
-
+Assert-Case "local core.hooksPath: exit 1, 'not in effect', no OK, warns about precedence, config untouched" (($i5.Code -eq 1) -and ($i5.Out -match "not in effect") -and ($i5.Out -notmatch "OK\.") -and ($i5.Out -match "precedence") -and ($i5.Out -match "refs/heads/main -> NOT refused") -and ($cfg -eq "elsewhere")) "exit $($i5.Code) cfg=$cfg out: $($i5.Out)"
+$R5g = New-WorkRepo $root "hookspath-global"
+$gcfg = Join-Path $root "global-gitconfig"
+[IO.File]::WriteAllText($gcfg, "[core]`n`thooksPath = C:/nowhere/hooks`n")
+$stateG = Get-RepoState $R5g
+$i5g = Invoke-Installer $R5g @() @{ GIT_CONFIG_GLOBAL = $gcfg }
+Assert-Case "global core.hooksPath: exit 1, 'not in effect' with its origin, no OK, main NOT refused" (($i5g.Code -eq 1) -and ($i5g.Out -match "not in effect") -and ($i5g.Out -match "global-gitconfig") -and ($i5g.Out -notmatch "OK\.") -and ($i5g.Out -match "refs/heads/main -> NOT refused")) "exit $($i5g.Code) out: $($i5g.Out)"
+Assert-Case "global core.hooksPath: repository unchanged" ((Get-RepoState $R5g) -ceq $stateG) "state changed"
 # --- 6. -WhatIf writes nothing ---
 $R6 = New-WorkRepo $root "whatif"
 $i6 = Invoke-Installer $R6 @("-WhatIf")
