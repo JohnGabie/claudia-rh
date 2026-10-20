@@ -25,6 +25,9 @@
 # one (git merge-base --is-ancestor). Otherwise the push is refused as force push / history rewrite. If the old commit
 # is missing from the local repository the push is refused too, and "git fetch origin" fixes it. Creating a ref
 # (old sha all zeros) stays allowed for the refs in the list.
+# Tags are stricter: ANY update of an existing tag on the public remote (moved, or recreated even on the same commit)
+# is refused without looking at ancestry, because release.yml fires on v* and would publish something else.
+# Creating a new tag stays allowed.
 #
 # ESCAPE HATCH (user only): CLAUDIA_ALLOW_PUBLIC_PUSH=1 lets the push through with a warning on stderr.
 # Decision: it frees EVERYTHING, deletes included, because it is the conscious decision of the user.
@@ -127,7 +130,10 @@ try {
                 continue
             }
             $reason = Get-RefusalReason $parts[1] $parts[2]
-            if (-not $reason -and $parts[3] -notmatch '^0+$') { $reason = Get-ForcePushReason $parts[3] $parts[1] }
+            if (-not $reason -and $parts[3] -notmatch '^0+$') {
+                if ($parts[2] -clike 'refs/tags/*') { $reason = "tag already published; tags are never moved or recreated" }
+                else { $reason = Get-ForcePushReason $parts[3] $parts[1] }
+            }
             if ($reason) { [void]$problems.Add("$($parts[2]): $reason") }
         }
     }

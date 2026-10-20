@@ -237,6 +237,29 @@ Assert-Case "backup: bare feat/ff is now c3" ((Get-BareSha $bkpBare "refs/heads/
 Assert-Pass "origin: CLAUDIA_ALLOW_PUBLIC_PUSH=1 lets the force push through" @("push", "-f", "origin", "feat/ff") $pubBare @("refs/heads/feat/ff") @{ CLAUDIA_ALLOW_PUBLIC_PUSH = "1" } | Out-Null
 Assert-Case "origin: bare feat/ff is c3 after the escape hatch" ((Get-BareSha $pubBare "refs/heads/feat/ff") -eq $c3) "bare has $(Get-BareSha $pubBare 'refs/heads/feat/ff')"
 
+# --- Published tags are never moved or recreated (T19, round 2) ---
+G @("tag", "v1.0.0", $head) | Out-Null
+Assert-Pass "origin: new lightweight tag v1.0.0 passes" @("push", "origin", "refs/tags/v1.0.0") $pubBare @("refs/tags/v1.0.0") | Out-Null
+G @("tag", "-f", "v1.0.0", $c2) | Out-Null
+$before = Get-BareSha $pubBare "refs/tags/v1.0.0"
+Assert-Refuse "origin: lightweight tag moved forward refused" @("push", "-f", "origin", "refs/tags/v1.0.0") $pubBare @() "tags are never moved or recreated" | Out-Null
+Assert-Case "origin: bare v1.0.0 object unchanged" ((Get-BareSha $pubBare "refs/tags/v1.0.0") -eq $before) "bare has $(Get-BareSha $pubBare 'refs/tags/v1.0.0')"
+G @("tag", "-a", "v2.0.0", "-m", "first", $c2) | Out-Null
+Assert-Pass "origin: new annotated tag v2.0.0 passes" @("push", "origin", "refs/tags/v2.0.0") $pubBare @("refs/tags/v2.0.0") | Out-Null
+G @("tag", "-f", "-a", "v2.0.0", "-m", "second", $c2) | Out-Null
+$before2 = Get-BareSha $pubBare "refs/tags/v2.0.0"
+Assert-Case "local v2.0.0 was really recreated (different object)" ((G @("rev-parse", "refs/tags/v2.0.0")).Out.Trim() -ne $before2) "same object"
+Assert-Refuse "origin: annotated tag recreated on the same commit refused" @("push", "-f", "origin", "refs/tags/v2.0.0") $pubBare @() "tags are never moved or recreated" | Out-Null
+Assert-Case "origin: bare v2.0.0 object unchanged" ((Get-BareSha $pubBare "refs/tags/v2.0.0") -eq $before2) "bare has $(Get-BareSha $pubBare 'refs/tags/v2.0.0')"
+G @("tag", "v9.9.9", $head) | Out-Null
+Assert-Pass "origin: brand new tag v9.9.9 passes" @("push", "origin", "refs/tags/v9.9.9") $pubBare @("refs/tags/v9.9.9") | Out-Null
+# The backup takes the same movement of a tag.
+G @("tag", "-f", "v1.0.0", $head) | Out-Null
+Assert-Pass "backup: tag v1.0.0 (old position) passes" @("push", "-f", "backup", "refs/tags/v1.0.0") $bkpBare @("refs/tags/v1.0.0") | Out-Null
+G @("tag", "-f", "v1.0.0", $c2) | Out-Null
+Assert-Pass "backup: moving tag v1.0.0 forward passes" @("push", "-f", "backup", "refs/tags/v1.0.0") $bkpBare @("refs/tags/v1.0.0") | Out-Null
+Assert-Case "backup: bare v1.0.0 is c2" ((Get-BareSha $bkpBare "refs/tags/v1.0.0") -eq $c2) "bare has $(Get-BareSha $bkpBare 'refs/tags/v1.0.0')"
+
 # --- Checkout with core.autocrlf=true: the sh launcher must stay LF and the hook must still run ---
 # Source repo holds the hook files and the repository .gitattributes; the clone is made with autocrlf=true.
 $src = Join-Path $root "crlf-src"
