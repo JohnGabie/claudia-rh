@@ -4,7 +4,16 @@ $ErrorActionPreference = "Stop"
 
 $projectDir = $env:CLAUDE_PROJECT_DIR
 if (-not $projectDir) { $projectDir = (Get-Location).Path }
-$journalDir = Join-Path $projectDir ".journal"
+# The diary is kept in the MAIN checkout (parent of the git common dir); falls back to the project folder.
+function Get-MainRoot([string]$Dir) {
+    $common = $null
+    try { $common = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null) } catch { return $Dir }
+    if ($LASTEXITCODE -ne 0 -or -not $common) { return $Dir }
+    $common = ([string]($common | Select-Object -First 1)).Trim()
+    if ((Split-Path -Leaf $common) -ne ".git") { return $Dir }
+    return [IO.Path]::GetFullPath((Split-Path -Parent $common))
+}
+$journalDir = Join-Path (Get-MainRoot $projectDir) ".journal"
 if (-not (Test-Path -LiteralPath $journalDir)) { exit 0 }
 
 $newest = Get-ChildItem -LiteralPath $journalDir -Filter "*.md" -File |

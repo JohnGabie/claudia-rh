@@ -50,6 +50,21 @@ Check "trigger manual with a complete diary passes" (Invoke-Hook $pre '{"trigger
 $out = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
 Check "session-start re-injects the newest diary" ([int](($out | Select-Object -First 1) -match "Latest context diary")) 1
 
+# Worktree cases: the diary must land in the MAIN checkout, named after the worktree branch.
+# The temp repository and worktree are left behind on purpose (nothing is removed).
+$mainRepo = New-TempRepo
+$wt = Join-Path ([IO.Path]::GetTempPath()) ("diario-teste-wt-" + [guid]::NewGuid().ToString("N"))
+git -C $mainRepo worktree add -q -b "feat/wt-teste" $wt
+$env:CLAUDE_PROJECT_DIR = $wt
+Check "worktree: manual pre-compact on an unfilled diary is blocked" (Invoke-Hook $pre '{"trigger":"manual"}') 2
+$inMain = @(Get-ChildItem (Join-Path $mainRepo ".journal") -Filter "*.md" -ErrorAction SilentlyContinue)
+Check "worktree: the diary is created in the main checkout .journal" ([int]($inMain.Count -eq 1)) 1
+Check "worktree: nothing is created in the worktree .journal" ([int](Test-Path -LiteralPath (Join-Path $wt ".journal"))) 0
+Check "worktree: the diary name contains the worktree branch" ([int]($inMain.Count -ge 1 -and $inMain[0].Name -like "*-feat-wt-teste-*")) 1
+$wtOut = @(powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts "session-start.ps1"))
+$wtFirst = [string]($wtOut | Select-Object -First 1)
+Check "worktree: session-start re-injects the main checkout diary" ([int](($wtFirst -match "Latest context diary") -and $wtFirst.Contains((Join-Path $mainRepo ".journal")))) 1
+
 $env:CLAUDE_PROJECT_DIR = New-TempPlainDir
 Check "a folder that is not a git repository does not crash or block" (Invoke-Hook $pre '{"trigger":"manual"}') 0
 

@@ -15,15 +15,29 @@ try { $root = (& git rev-parse --show-toplevel 2>$null) } catch { $root = $null 
 if (-not $root) { [Console]::Error.WriteLine("journal-skeleton: not inside a git repository"); exit 1 }
 Set-Location $root
 
+# The diary lives in the MAIN checkout (parent of the git common dir), so it survives removing a worktree.
+# Falls back to the session folder when git cannot tell. The facts below stay those of the session folder.
+function Get-MainRoot([string]$Dir) {
+    $common = $null
+    try { $common = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null) } catch { return $Dir }
+    if ($LASTEXITCODE -ne 0 -or -not $common) { return $Dir }
+    $common = ([string]($common | Select-Object -First 1)).Trim()
+    if ((Split-Path -Leaf $common) -ne ".git") { return $Dir }
+    return [IO.Path]::GetFullPath((Split-Path -Parent $common))
+}
+$mainRoot = Get-MainRoot $root
+
 $safeReason = ($Reason -replace '[^A-Za-z0-9_-]', '-')
-$dir = Join-Path $root ".journal"
+$branch = Invoke-Git @("rev-parse", "--abbrev-ref", "HEAD")
+$safeBranch = ($branch -replace '[^A-Za-z0-9_-]', '-').Trim('-')
+if (-not $safeBranch -or $branch -match "git unavailable") { $safeBranch = "nobranch" }
+$dir = Join-Path $mainRoot ".journal"
 if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
 
 $stamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
-$file = Join-Path $dir "$stamp-$safeReason.md"
+$file = Join-Path $dir "$stamp-$safeBranch-$safeReason.md"
 if (Test-Path -LiteralPath $file) { [Console]::Error.WriteLine("journal-skeleton: $file already exists"); exit 1 }
 
-$branch = Invoke-Git @("rev-parse", "--abbrev-ref", "HEAD")
 $short = Invoke-Git @("rev-parse", "--short", "HEAD")
 $status = Invoke-Git @("status", "-sb")
 $changed = @((& git status --porcelain 2>$null)).Count

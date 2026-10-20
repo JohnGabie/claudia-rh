@@ -22,7 +22,16 @@ try {
 } catch { $type = "unknown" }
 
 $latest = $null
-$journalDir = Join-Path $projectDir ".journal"
+# The diary is kept in the MAIN checkout (parent of the git common dir); falls back to the project folder.
+function Get-MainRoot([string]$Dir) {
+    $common = $null
+    try { $common = (& git -C $Dir rev-parse --path-format=absolute --git-common-dir 2>$null) } catch { return $Dir }
+    if ($LASTEXITCODE -ne 0 -or -not $common) { return $Dir }
+    $common = ([string]($common | Select-Object -First 1)).Trim()
+    if ((Split-Path -Leaf $common) -ne ".git") { return $Dir }
+    return [IO.Path]::GetFullPath((Split-Path -Parent $common))
+}
+$journalDir = Join-Path (Get-MainRoot $projectDir) ".journal"
 if (Test-Path -LiteralPath $journalDir) {
     $newest = Get-ChildItem -LiteralPath $journalDir -Filter "*.md" -File |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
