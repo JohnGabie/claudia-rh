@@ -23,7 +23,18 @@ function Get-MainRoot([string]$Dir) {
     if ($LASTEXITCODE -ne 0 -or -not $common) { return $Dir }
     $common = ([string]($common | Select-Object -First 1)).Trim()
     if ((Split-Path -Leaf $common) -ne ".git") { return $Dir }
-    return [IO.Path]::GetFullPath((Split-Path -Parent $common))
+    $parent = [IO.Path]::GetFullPath((Split-Path -Parent $common))
+    # Only accept the parent when it is itself a work tree root (rejects --separate-git-dir layouts).
+    $top = $null
+    try { $top = (& git -C $parent rev-parse --show-toplevel 2>$null) } catch { return $Dir }
+    if ($LASTEXITCODE -ne 0 -or -not $top) { return $Dir }
+    $top = [IO.Path]::GetFullPath(([string]($top | Select-Object -First 1)).Trim())
+    if ($top.TrimEnd('\') -ine $parent.TrimEnd('\')) { return $Dir }
+    # A separate git dir looks like a work tree to git but has no checked-out files: the first tracked file must exist on disk.
+    $first = $null
+    try { $first = (& git -C $parent -c core.quotepath=false ls-files 2>$null | Select-Object -First 1) } catch { return $Dir }
+    if ($first -and -not (Test-Path -LiteralPath (Join-Path $parent ([string]$first)))) { return $Dir }
+    return $parent
 }
 $mainRoot = Get-MainRoot $root
 
@@ -33,6 +44,9 @@ $safeBranch = ($branch -replace '[^A-Za-z0-9_-]', '-').Trim('-')
 if (-not $safeBranch -or $branch -match "git unavailable") { $safeBranch = "nobranch" }
 $dir = Join-Path $mainRoot ".journal"
 if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+# Keep the diary out of git status even when the repository ignore file lacks a rule. Never overwrites.
+$ignoreFile = Join-Path $dir ".gitignore"
+if (-not (Test-Path -LiteralPath $ignoreFile)) { [System.IO.File]::WriteAllText($ignoreFile, "*`n", (New-Object System.Text.UTF8Encoding($false))) }
 
 $stamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
 $file = Join-Path $dir "$stamp-$safeBranch-$safeReason.md"
