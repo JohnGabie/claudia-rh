@@ -67,7 +67,7 @@ Conta as rodadas; na **5ª, para e pergunta ao usuário**. O `release.yml` roda 
 
 O `backup` é o espelho do `origin` mais o que ainda não foi publicado (branches de trabalho e a `recovery`). Espelha também `main` e as tags `v*`.
 
-- **Invariante:** toda ponta de branch e toda tag do `origin` é igual ou **ancestral** da mesma ref no `backup`; nenhuma ref do `backup` apaga ou reescreve história do `origin`. Verificada por relatório só de leitura que compara `git ls-remote origin` com `git ls-remote backup`.
+- **Invariante:** toda ponta de branch do `origin` é igual ou **ancestral** da mesma ref no `backup`; toda **tag** do `origin` aponta para o **mesmo** commit no `backup` (tag diferente é erro, mesmo que o backup esteja à frente); nenhuma ref do `backup` apaga ou reescreve história do `origin`. Verificada por `powershell -NoProfile -File scripts/dev/verify-backup.ps1` (exit 0 se OK, exit 1 se alguma ref tem problema, exit 2 se um ls-remote falhou). O script roda **depois de cada push ao backup** e **antes de declarar o backup feito**.
 - **Quando empurrar:** fim de tarefa aprovada, depois de cada merge, antes de operação arriscada, ao encerrar a sessão e ao atualizar o pacote de recuperação.
 - **Exceção única, a desfazer na T14:** o `dev` local está 84 commits à frente do `origin/dev` (merges locais antigos). Resolve-se uma vez, por PR de sincronização (`sync/dev-AAAA-MM-DD` para `origin/dev`), nunca por push direto.
 
@@ -96,7 +96,7 @@ Ativa, ou a ativar, no `origin` (`main` e `dev`): PR obrigatório com 0 aprovaç
 - Atualizar uma branch parada com `dev` antes de retomá-la, reler a spec e rodar as rodadas de novo.
 - Tudo é recuperável: antes de remover qualquer branch, existe tag `archive/<branch>` empurrada ao `backup`.
 - **Desconfiança máxima com apagar** (ver o `CLAUDE.md` global): só `git branch -d` (nunca `-D`), só `git worktree remove` sem `--force`, nunca `rm -rf`, `Remove-Item -Recurse`, `git clean`. Olhar o alvo antes.
-- **Antes de remover uma worktree (P16):** conferir o `.journal/` dela (é ignorado pelo git e `worktree remove` não avisa) e o trabalho não commitado; copiar o que importa e avisar o usuário.
+- **Antes de remover uma worktree (P16):** conferir o `.journal/` dela (é ignorado pelo git e `worktree remove` não avisa) e o trabalho não commitado; procurar os diários desta worktree no `.journal/` do checkout principal (achados por `git rev-parse --git-common-dir`), filtrando pelo nome da branch ou, se HEAD está destacado, pela pasta da worktree (linha `- Worktree:` do diário); como volta, consultar o `.journal/` da própria worktree; copiar o que importa (especialmente os diários) e avisar o usuário.
 
 ## Convenções
 
@@ -137,7 +137,7 @@ Merge do PR (o "pode fechar"); apagar branch (local ou remota); push de tag `v*`
 ```
 Data / estado (dev @ sha, main @ sha, origin/dev, backup):
 Branches: integradas (arquivar?) | paradas (>14 dias) | sem backup | divergentes
-Worktrees: caminho, branch, trabalho não commitado, .journal/
+Worktrees: caminho, branch, trabalho não commitado, diários no checkout principal
 Backup: último push (quando), invariante vale?, o que ficou de fora
 PR / CI: link, os 5 checks, rodada de falha (n de 5)
 Segredos: varredura feita? achados
