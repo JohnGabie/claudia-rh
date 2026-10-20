@@ -138,7 +138,7 @@ $R5 = New-WorkRepo $root "hookspath"
 Invoke-Git $R5 @("config", "core.hooksPath", "elsewhere") | Out-Null
 $i5 = Invoke-Installer $R5
 $cfg = (Invoke-Git $R5 @("config", "--get", "core.hooksPath")).Out.Trim()
-Assert-Case "local core.hooksPath: exit 1, 'not in effect', no OK, warns about precedence, config untouched" (($i5.Code -eq 1) -and ($i5.Out -match "not in effect") -and ($i5.Out -notmatch "OK\.") -and ($i5.Out -match "precedence") -and ($i5.Out -match "refs/heads/main -> NOT refused") -and ($cfg -eq "elsewhere")) "exit $($i5.Code) cfg=$cfg out: $($i5.Out)"
+Assert-Case "local core.hooksPath: exit 1, 'not in effect', no OK, warns about precedence, config untouched" (($i5.Code -eq 1) -and ($i5.Out -match "not in effect") -and ($i5.Out -notmatch "OK\.") -and ($i5.Out -match "precedence") -and ($i5.Out -match "refs/heads/main -> NOT refused") -and ($cfg -eq "elsewhere") -and ($i5.Out -match "git config --unset core.hooksPath") -and ($i5.Out -match "git config core.hooksPath ") -and ($i5.Out -notmatch "copy the two files")) "exit $($i5.Code) cfg=$cfg out: $($i5.Out)"
 $R5g = New-WorkRepo $root "hookspath-global"
 $gcfg = Join-Path $root "global-gitconfig"
 [IO.File]::WriteAllText($gcfg, "[core]`n`thooksPath = C:/nowhere/hooks`n")
@@ -158,5 +158,46 @@ New-Item -ItemType Directory -Path $nr | Out-Null
 $i7 = Invoke-Installer $nr
 Assert-Case "folder that is not a repository: exit 2" ($i7.Code -eq 2) "exit $($i7.Code) out: $($i7.Out)"
 
+# --- 8. Hostile push config must not leak into the check: push.followTags + an annotated tag, push.recurseSubmodules ---
+function Get-CheckBare([string]$out) {
+    $m = [regex]::Match($out, "temp bare in ([^)]+)\)")
+    if ($m.Success) { return (Join-Path $m.Groups[1].Value "claudia-rh.git") }
+    return ""
+}
+$R8 = New-WorkRepo $root "followtags"
+Invoke-Git $R8 @("config", "push.followTags", "true") | Out-Null
+Invoke-Git $R8 @("tag", "-a", "archive/x", "-m", "archive tag") | Out-Null
+$i8 = Invoke-Installer $R8
+$b8 = Get-CheckBare $i8.Out
+Assert-Case "push.followTags=true + annotated tag archive/x: check passes (exit 0) and the tag never reaches the temp bare" (($i8.Code -eq 0) -and ($i8.Out -match "OK\.") -and $b8 -and (Test-Path -LiteralPath $b8) -and (-not (Test-BareRef $b8 "refs/tags/archive/x"))) "exit $($i8.Code) bare=$b8 out: $($i8.Out)"
+
+$subBare = Join-Path (Join-Path $root "subpub") "sub.git"
+New-Item -ItemType Directory -Path $subBare -Force | Out-Null
+Invoke-Git $subBare @("init", "-q", "--bare") | Out-Null
+$subSrc = New-WorkRepo $root "subsrc"
+Invoke-Git $subSrc @("push", $subBare.Replace("\", "/"), "HEAD:refs/heads/main") | Out-Null
+$R9 = New-WorkRepo $root "withsub"
+$sa = Invoke-Git $R9 @("-c", "protocol.file.allow=always", "submodule", "add", "-q", $subBare.Replace("\", "/"), "sub")
+Invoke-Git $R9 @("commit", "-q", "-m", "add submodule") | Out-Null
+$subDir = Join-Path $R9 "sub"
+Invoke-Git $subDir @("checkout", "-q", "-B", "main") | Out-Null
+Invoke-Git $subDir @("commit", "-q", "--allow-empty", "-m", "unpushed sub work") | Out-Null
+Invoke-Git $R9 @("add", "sub") | Out-Null
+Invoke-Git $R9 @("commit", "-q", "-m", "bump sub") | Out-Null
+Invoke-Git $R9 @("config", "push.recurseSubmodules", "on-demand") | Out-Null
+$subRefsBefore = (Invoke-Git $subBare @("for-each-ref")).Out
+Assert-Case "fixture: submodule with an unpushed commit" (($sa.Code -eq 0) -and ((Invoke-Git $subDir @("rev-parse", "HEAD")).Out.Trim() -ne (Invoke-Git $subBare @("rev-parse", "refs/heads/main")).Out.Trim())) "submodule add exit $($sa.Code) $($sa.Err)"
+$i9 = Invoke-Installer $R9
+Assert-Case "push.recurseSubmodules=on-demand + unpushed submodule commit: the submodule remote receives nothing, check passes" (($i9.Code -eq 0) -and ($i9.Out -match "OK\.") -and (((Invoke-Git $subBare @("for-each-ref")).Out) -ceq $subRefsBefore)) "exit $($i9.Code) out: $($i9.Out) err: $($i9.Err)"
+
+# --- 9. No commit at HEAD: exit 2 and the hooks folder is left exactly as it was (the check runs BEFORE any write) ---
+$R10 = Join-Path $root "nocommit"
+New-Item -ItemType Directory -Path $R10 -Force | Out-Null
+Invoke-Git $R10 @("init", "-q") | Out-Null
+$c10 = Get-CommonHooks $R10
+$listBefore = (Get-ChildItem -LiteralPath $c10 -Force | ForEach-Object { $_.Name + ":" + $_.Length }) -join "|"
+$i10 = Invoke-Installer $R10
+$listAfter = (Get-ChildItem -LiteralPath $c10 -Force | ForEach-Object { $_.Name + ":" + $_.Length }) -join "|"
+Assert-Case "repository without commit: exit 2, hooks folder intact (no pre-push written)" (($i10.Code -eq 2) -and ($i10.Out -match "no commit") -and ($listBefore -ceq $listAfter) -and (-not (Test-Path -LiteralPath (Join-Path $c10 "pre-push"))) -and (-not (Test-Path -LiteralPath (Join-Path $c10 "pre-push.ps1")))) "exit $($i10.Code) out: $($i10.Out)"
 if ($fail -eq 0) { Write-Output "ALL PASS" } else { Write-Output "SOME CASES FAILED" }
 exit $fail

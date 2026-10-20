@@ -78,6 +78,10 @@ $cd = Invoke-Git $RepoDir @("rev-parse", "--path-format=absolute", "--git-common
 if ($cd.Code -ne 0 -or -not $cd.Out) { Stop-With 2 "install-hooks: not a git repository ($RepoDir): $($cd.Err)" }
 $commonDir = $cd.Out.Replace("/", "\")
 $hooksDir = Join-Path $commonDir "hooks"
+# The real check needs a commit to push: refuse BEFORE writing anything into the hooks folder.
+if ((Invoke-Git $RepoDir @("rev-parse", "--verify", "-q", "HEAD^{commit}")).Code -ne 0) {
+    Stop-With 2 "install-hooks: the repository has no commit at HEAD, so the real check cannot run and nothing was written. Make a commit and run this script again."
+}
 Say "install-hooks: common hooks folder (all worktrees and branches): $hooksDir"
 
 $hp = Invoke-Git $RepoDir @("config", "--get", "core.hooksPath")
@@ -156,10 +160,10 @@ try {
     New-Item -ItemType Directory -Path $bare -Force | Out-Null
     Invoke-Git $bare @("init", "-q", "--bare") | Out-Null
     $url = $bare.Replace("\", "/")
-    $pushMain = Invoke-Git $RepoDir @("push", $url, "HEAD:refs/heads/main")
+    $pushMain = Invoke-Git $RepoDir @("push", "--no-follow-tags", "--recurse-submodules=no", $url, "HEAD:refs/heads/main")
     $mainThere = (Invoke-Git $bare @("rev-parse", "--verify", "-q", "refs/heads/main")).Code -eq 0
     $mainRefused = ($pushMain.Code -ne 0) -and (-not $mainThere) -and ($pushMain.Err -match "REFUSED")
-    $pushFeat = Invoke-Git $RepoDir @("push", $url, "HEAD:refs/heads/feat/install-check")
+    $pushFeat = Invoke-Git $RepoDir @("push", "--no-follow-tags", "--recurse-submodules=no", $url, "HEAD:refs/heads/feat/install-check")
     $featThere = (Invoke-Git $bare @("rev-parse", "--verify", "-q", "refs/heads/feat/install-check")).Code -eq 0
     $featPassed = ($pushFeat.Code -eq 0) -and $featThere
     Say "install-hooks: check (temp bare in $root): push HEAD:refs/heads/main -> $(if ($mainRefused) { 'refused, as expected' } else { 'NOT refused (exit ' + $pushMain.Code + ')' })"
@@ -173,7 +177,8 @@ try {
 if (-not $inEffect) {
     $origin = Invoke-Git $RepoDir @("config", "--show-origin", "--get", "core.hooksPath")
     $from = if ($origin.Code -eq 0 -and $origin.Out) { "core.hooksPath is in effect, from: $($origin.Out)" } else { "git uses '$effectiveText' (core.hooksPath not found by 'git config --show-origin')" }
-    Stop-With 1 "install-hooks: the hook is NOT in effect in this repository (not in effect): $from. The files were copied to $hooksDir but git does not read that folder here. This script does not change your git config; unset core.hooksPath (or copy the two files into the folder it names) and run this script again."
+    $optB = "git config core.hooksPath `"" + $hooksDir.Replace("\", "/") + "`""
+    Stop-With 1 "install-hooks: the hook is NOT in effect in this repository (not in effect): $from. The files were copied to $hooksDir but git does not read that folder here, because core.hooksPath points at another folder. This script does not change your git config. To activate the hook you decide between two options (commands shown as text, not run). Option 1, remove that core.hooksPath: git config --unset core.hooksPath   Option 2, point it at the common folder: $optB   Then run this script again."
 }
 if (-not $checkOk) { Stop-With 1 "install-hooks: CHECK FAILED. The installed hook did not behave as expected in this repository; do not rely on it." }
 Say "install-hooks: OK. Installed, in effect in this repository and checked for every worktree and branch that uses $hooksDir (temp check folder left behind: $root)."
