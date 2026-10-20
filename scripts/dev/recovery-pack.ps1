@@ -22,18 +22,27 @@
 #             <GlobalClaudeDir>\plugins\installed_plugins.json) and memory\ (-MemoryDir).
 #   STATE.md, patches/<branch>.patch (git diff HEAD of each worktree with changes), journal/ (diaries of the main
 #   checkout .journal\ plus the ones that exist only in some worktree .journal\).
-# Always out, wherever it shows up: .env*, *.pem, *.key, *.pfx, *.p12, id_rsa*, .credentials.json, *credential*,
-#   sandbox-lab/shared/secrets/**, the personal profile files, *.db, *.sqlite*, files over 5 MB, nested .git
-#   folders and links (junctions/symlinks are never followed). Excluded files are never opened.
+# Always out, wherever it shows up (names compared ignoring case): files .env*, *.pem, *.key, *.pfx, *.p12,
+#   id_rsa*, .credentials.json, *credential*, the personal profile files, *.db, *.sqlite*, files over 5 MB, files
+#   that cannot be scanned as text (NUL bytes without a UTF-16/UTF-32 BOM: binary or BOM-less UTF-16); folders .git,
+#   .env*, *credential*, secrets, .claude/worktrees and sandbox-lab/shared/secrets; and links: a junction/symlink is
+#   never followed, neither inside a tree nor as the root of a source (.claude, .claude\skills, .claude\commands,
+#   .journal, -MemoryDir, -GlobalClaudeDir). Excluded files are never opened (except the NUL-byte probe).
 # Every JSON is cleaned structurally before the copy (P17): keys `env` and `headers` and any key whose name matches
 #   (?i)(key|token|secret|password|passwd|credential|auth|cookie) are removed recursively; invalid JSON is not copied.
-# Second layer: a regex scan of EVERYTHING to be written (STATE.md and patches included). Any hit: no commit, no ref
-#   change, exit 1, and the output names the file and the pattern, never the value.
+# Second layer: a regex scan of EVERYTHING to be written, content AND relative path names (STATE.md and patches
+#   included). Any hit: no commit, no ref change, exit 1, and the output names the file and the pattern, never the
+#   value (a path that holds a secret is printed with the secret masked).
+#
+# SECRET PATTERNS: the list $SecretPatterns below IS the project's reference list for secret scans (the
+#   "patterns of 2026-10-19" cited by docs/superpowers/specs/2026-10-19-regras-agentes-design.md). Change it here.
 #
 # -MemoryDir default: <GlobalClaudeDir>\projects\<encoded main checkout path>\memory, where the encoding is the one
 #   Claude Code uses for its project folders: every character that is not an ASCII letter or digit becomes "-"
 #   (e.g. "C:\a\b-c" -> "C--a-b-c"). Pass -MemoryDir to override.
-# -TargetRef exists only so the ref guard can be tested: any value other than refs/heads/recovery is refused.
+# -TargetRef exists only so the ref guard can be tested: any value other than refs/heads/recovery is refused at
+#   the start, before anything is built. -TestLateGuard (tests only) skips that early check so the second guard,
+#   inside the only ref writer, can be proven too.
 # -TestPretendNoRecovery exists only for tests: behaves as if refs/heads/recovery did not exist yet (simulates a
 #   concurrent writer), so update-ref must fail on the expected old value.
 # Exit: 0 committed or nothing changed (also -WhatIf); 1 the scan found something, the ref guard refused, the ref
@@ -44,9 +53,16 @@ param(
     [string]$MemoryDir = "",
     [switch]$WhatIf,
     [string]$TargetRef = "refs/heads/recovery",
-    [switch]$TestPretendNoRecovery
+    [switch]$TestPretendNoRecovery,
+    [switch]$TestLateGuard
 )
 $ErrorActionPreference = "Stop"
+
+# Early ref guard: refuse before building anything.
+if ($TargetRef -cne "refs/heads/recovery" -and -not $TestLateGuard) {
+    Write-Output "ERRO: recusado: este script so escreve refs/heads/recovery (pedido: $TargetRef). Nada foi montado."
+    exit 1
+}
 
 # Never let git or the credential manager open a prompt (this script makes no network call, but be safe).
 $env:GIT_TERMINAL_PROMPT = "0"
@@ -65,8 +81,30 @@ $SecretPatterns = @(
     @("google-api-key", 'AIza[0-9A-Za-z_\-]{35}'),
     @("linear-key", 'lin_api_[A-Za-z0-9]{20,}'),
     @("jwt", 'eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}'),
-    @("generic-assignment", '(?i)\b(api[_-]?key|secret|password|token)\b["'']?\s*[:=]\s*["''][^"''\s]{16,}["'']')
+    @("openai-project-key", 'sk-proj-[A-Za-z0-9_\-]{20,}'),
+    @("sk-key", '(?<![A-Za-z0-9])sk-[A-Za-z0-9_\-]{20,}'),
+    # name = value, quoted or not; no word boundary on the left so ANTHROPIC_AUTH_TOKEN / OPENAI_API_KEY match.
+    @("generic-assignment", '(?i)(?<![A-Za-z0-9])(api[_-]?key|secret|passwd|password|token)(?:[_-][A-Za-z0-9]+)*["'']?\s*[:=]\s*["'']?[^"''\s]{16,}')
 )
+# Masks every secret-looking substring (used for anything printed that comes from a name).
+function Hide-Secrets([string]$Text) {
+    foreach ($p in $script:SecretPatterns) { $Text = [regex]::Replace($Text, $p[1], "[oculto]") }
+    return $Text
+}
+# True when the path exists and is a junction or symlink.
+function Test-IsLink([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $i = Get-Item -LiteralPath $Path -Force
+    return [bool]($i.Attributes -band [IO.FileAttributes]::ReparsePoint)
+}
+# False when the file holds NUL bytes without a UTF-16/UTF-32 BOM (binary or BOM-less UTF-16): it cannot be
+# scanned as text safely, so it never enters.
+function Test-Scannable([string]$Path) {
+    $b = [IO.File]::ReadAllBytes($Path)
+    if ($b.Length -ge 2 -and (($b[0] -eq 0xFF -and $b[1] -eq 0xFE) -or ($b[0] -eq 0xFE -and $b[1] -eq 0xFF))) { return $true }
+    if ($b.Length -ge 4 -and $b[0] -eq 0 -and $b[1] -eq 0 -and $b[2] -eq 0xFE -and $b[3] -eq 0xFF) { return $true }
+    return ([Array]::IndexOf($b, [byte]0) -lt 0)
+}
 
 # --- Shared diary helpers (copied from journal-skeleton.ps1 / pre-compact.ps1; keep identical) ---
 # Output lines of a git command run in $Dir; empty when git fails or is missing. Windows PowerShell 5.1
@@ -161,6 +199,9 @@ function Get-ExcludeReason([string]$Rel, [string]$Name, [bool]$IsDir, [long]$Len
     if ($Rel -match '(?i)(^|/)sandbox-lab/shared/secrets(/|$)') { return "segredos do laboratorio" }
     if ($IsDir) {
         if ($Name -ieq ".git") { return "repositorio git aninhado" }
+        if ($Name -like ".env*") { return "pasta de ambiente (.env*)" }
+        if ($Name -like "*credential*") { return "pasta de credenciais" }
+        if ($Name -ieq "secrets") { return "pasta de segredos" }
         return $null
     }
     if ($Name -like ".env*") { return "arquivo de ambiente (.env*)" }
@@ -186,6 +227,7 @@ function Add-PlanFile([string]$Group, [string]$Source, [string]$Dest, [string]$R
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Add-Excluded $Rel "link (nao seguido)"; return }
     $reason = Get-ExcludeReason $Rel $item.Name $false $item.Length
     if ($reason) { Add-Excluded $Rel $reason; return }
+    if (-not (Test-Scannable $item.FullName)) { Add-Excluded $Rel "nao varrivel como texto (binario ou UTF-16 sem BOM)"; return }
     $kind = "copy"
     if ($item.Extension -ieq ".json") {
         $kind = "json"
@@ -196,6 +238,8 @@ function Add-PlanFile([string]$Group, [string]$Source, [string]$Dest, [string]$R
 # Plans a folder recursively, never following links and never descending into an excluded folder.
 function Add-PlanTree([string]$Group, [string]$SourceDir, [string]$DestPrefix, [string]$RelPrefix) {
     if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) { return }
+    # The root of a source is checked too: a junction/symlink root is never followed.
+    if (Test-IsLink $SourceDir) { Add-Excluded "$RelPrefix/" "link (nao seguido)"; return }
     foreach ($child in @(Get-ChildItem -LiteralPath $SourceDir -Force)) {
         $rel = "$RelPrefix/$($child.Name)"
         $dest = "$DestPrefix/$($child.Name)"
@@ -289,16 +333,23 @@ if (-not $MemoryDir -and $GlobalClaudeDir) {
 }
 
 # ---------------------------------------------------------------- plan: project config
-Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\skills") "project/.claude/skills" ".claude/skills"
-Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\commands") "project/.claude/commands" ".claude/commands"
-Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.json") "project/.claude/settings.json" ".claude/settings.json"
-Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.local.json") "project/.claude/settings.local.json" ".claude/settings.local.json"
+if (Test-IsLink (Join-Path $MainRoot ".claude")) {
+    Add-Excluded ".claude/" "link (nao seguido)"
+} else {
+    Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\skills") "project/.claude/skills" ".claude/skills"
+    Add-PlanTree "projeto" (Join-Path $MainRoot ".claude\commands") "project/.claude/commands" ".claude/commands"
+    Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.json") "project/.claude/settings.json" ".claude/settings.json"
+    Add-PlanFile "projeto" (Join-Path $MainRoot ".claude\settings.local.json") "project/.claude/settings.local.json" ".claude/settings.local.json"
+    if (Test-Path -LiteralPath (Join-Path $MainRoot ".claude\worktrees")) { Add-Excluded ".claude/worktrees/" ".claude/worktrees (copias completas do repositorio)" }
+}
 Add-PlanFile "projeto" (Join-Path $MainRoot ".mcp.json") "project/.mcp.json" ".mcp.json"
-if (Test-Path -LiteralPath (Join-Path $MainRoot ".claude\worktrees")) { Add-Excluded ".claude/worktrees/" ".claude/worktrees (copias completas do repositorio)" }
 
 # ---------------------------------------------------------------- plan: global config and memory
 $pluginLines = $null
-if ($GlobalClaudeDir -and (Test-Path -LiteralPath $GlobalClaudeDir -PathType Container)) {
+if ($GlobalClaudeDir -and (Test-IsLink $GlobalClaudeDir)) {
+    Add-Excluded "global/" "link (nao seguido)"
+    [void]$Notes.Add("pasta global do Claude e um link: nao seguida")
+} elseif ($GlobalClaudeDir -and (Test-Path -LiteralPath $GlobalClaudeDir -PathType Container)) {
     Add-PlanFile "global" (Join-Path $GlobalClaudeDir "CLAUDE.md") "global/CLAUDE.md" "global/CLAUDE.md"
     Add-PlanFile "global" (Join-Path $GlobalClaudeDir "settings.json") "global/settings.json" "global/settings.json"
     $pluginLines = Get-PluginLines $GlobalClaudeDir
@@ -329,7 +380,9 @@ $worktrees = @($worktrees | Where-Object { -not $_.Bare -and (Test-Path -Literal
 # Diaries: all of the main checkout, plus the ones that only exist in some worktree .journal\.
 $journalNames = @{}
 $mainJournal = Join-Path $MainRoot ".journal"
-if (Test-Path -LiteralPath $mainJournal -PathType Container) {
+if (Test-IsLink $mainJournal) {
+    Add-Excluded ".journal/" "link (nao seguido)"
+} elseif (Test-Path -LiteralPath $mainJournal -PathType Container) {
     foreach ($f in @(Get-ChildItem -LiteralPath $mainJournal -Filter "*.md" -File -Force)) {
         $journalNames[$f.Name.ToLowerInvariant()] = $true
         Add-PlanFile "estado" $f.FullName "journal/$($f.Name)" "journal/$($f.Name)"
@@ -339,6 +392,7 @@ foreach ($wt in $worktrees) {
     if ($wt.Path -ieq $MainRoot) { continue }
     $wj = Join-Path $wt.Path ".journal"
     if (-not (Test-Path -LiteralPath $wj -PathType Container)) { continue }
+    if (Test-IsLink $wj) { Add-Excluded ((Get-ShownPath $wt.Path) + "/.journal/") "link (nao seguido)"; continue }
     foreach ($f in @(Get-ChildItem -LiteralPath $wj -Filter "*.md" -File -Force)) {
         $key = $f.Name.ToLowerInvariant()
         if ($journalNames.ContainsKey($key)) { continue }
@@ -352,7 +406,7 @@ $patchExcludes = @(".")
 foreach ($g in @("**/.env*", "**/*.pem", "**/*.key", "**/*.pfx", "**/*.p12", "**/id_rsa*", "**/.credentials.json",
         "**/*credential*", "sandbox-lab/shared/secrets/**", "**/candidate_base.yaml", "**/search_variants.yaml",
         "**/strategy.md", "**/disparo.json", "**/notif.json", "**/modo_autonomo.json", "**/*.db", "**/*.sqlite*",
-        ".claude/worktrees/**")) {
+        ".claude/worktrees/**", "**/.env*/**", "**/*credential*/**", "**/secrets/**")) {
     $patchExcludes += ":(exclude,glob,icase)$g"
 }
 
@@ -387,14 +441,14 @@ if ($WhatIf) {
     foreach ($g in $groups) {
         $items = @($Plan | Where-Object { $_.Group -eq $g })
         Write-Output "[$g] $($items.Count) arquivo(s)"
-        foreach ($i in $items) { Write-Output "  $($i.Dest)" }
+        foreach ($i in $items) { Write-Output (Hide-Secrets "  $($i.Dest)") }
     }
     if ($null -ne $pluginLines) { Write-Output "  global/plugins.txt (gerado)" }
     Write-Output "  STATE.md (gerado)"
-    foreach ($w in $wtInfo) { if ($w.Patch) { Write-Output "  $($w.Patch) (gerado)" } }
+    foreach ($w in $wtInfo) { if ($w.Patch) { Write-Output (Hide-Secrets "  $($w.Patch) (gerado)") } }
     Write-Output "Fora do pacote:"
-    foreach ($e in $Excluded) { Write-Output "  $($e.Rel): $($e.Reason)" }
-    foreach ($n in $Notes) { Write-Output "Nota: $n" }
+    foreach ($e in $Excluded) { Write-Output (Hide-Secrets "  $($e.Rel): $($e.Reason)") }
+    foreach ($n in $Notes) { Write-Output (Hide-Secrets "Nota: $n") }
     Write-Output "A varredura de segredos roda so na execucao real."
     exit 0
 }
@@ -489,23 +543,27 @@ Write-Output "Pacote de recuperacao ($TargetRef)"
 foreach ($g in $groups) { Write-Output ("[{0}] {1} arquivo(s)" -f $g, $written[$g]) }
 Write-Output "Fora do pacote:"
 if ($Excluded.Count -eq 0) { Write-Output "  nada" }
-foreach ($e in $Excluded) { Write-Output "  $($e.Rel): $($e.Reason)" }
-foreach ($n in $Notes) { Write-Output "Nota: $n" }
+foreach ($e in $Excluded) { Write-Output (Hide-Secrets "  $($e.Rel): $($e.Reason)") }
+foreach ($n in $Notes) { Write-Output (Hide-Secrets "Nota: $n") }
 Write-Output "Pasta temporaria (nao e apagada por este script): $tmp"
 
 # ---------------------------------------------------------------- second layer: secret scan of everything
+# Content of every file (STATE.md and patches included) and the relative path name of every file.
 $findings = @()
 foreach ($f in @(Get-ChildItem -LiteralPath $tree -Recurse -File -Force)) {
     $text = [IO.File]::ReadAllText($f.FullName)
     $rel = $f.FullName.Substring($tree.Length + 1) -replace '\\', '/'
+    $shown = Hide-Secrets $rel
     foreach ($p in $SecretPatterns) {
-        if ([regex]::IsMatch($text, $p[1])) { $findings += "$rel :: $($p[0])" }
+        if ([regex]::IsMatch($text, $p[1])) { $findings += "$shown :: $($p[0])" }
+        if ([regex]::IsMatch($rel, $p[1])) { $findings += "$shown (no NOME do arquivo) :: $($p[0])" }
     }
 }
 if ($findings.Count -gt 0) {
     Write-Output "VARREDURA ACHOU POSSIVEL SEGREDO: nada foi gravado e a ref nao mudou."
     foreach ($x in $findings) { Write-Output "  $x" }
     Write-Output "Remova o segredo da origem (e rotacione a credencial) antes de gerar o pacote de novo."
+    Write-Output "ATENCAO: a pasta temporaria $tmp contem a copia com o possivel segredo. Apague-a a mao: este script nao apaga nada, por regra."
     exit 1
 }
 

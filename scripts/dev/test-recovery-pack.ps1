@@ -1,10 +1,12 @@
 # Test for recovery-pack.ps1 (P14/P17 recovery pack on the orphan branch `recovery`).
-# Everything is FAKE and lives in a fresh temp folder created here ([IO.Path]::GetTempPath() + GUID): a git
-# repository with commits, a linked worktree with an uncommitted change and an untracked file, .journal diaries,
+# Everything is FAKE and lives in fresh temp folders created here ([IO.Path]::GetTempPath() + GUID): a git
+# repository with commits, a linked worktree with uncommitted changes and an untracked file, .journal diaries,
 # a fake global Claude folder (CLAUDE.md, settings.json with env/apiKeyHelper/headers, a fake .credentials.json,
-# a plugin list), a fake memory folder, .claude/skills and .claude/worktrees, and forbidden files.
+# a plugin list), a fake memory folder, .claude/skills and .claude/worktrees, forbidden files and folders (also in
+# mixed case), and junctions that point to other folders INSIDE the same temp folder. Every secret is synthetic,
+# generated here at run time.
 # Never reads or writes the user's home, ~/.claude, AppData or any real repository. Nothing is deleted: every
-# scenario that needs a different input gets a new folder. The temp folder is left behind.
+# scenario that needs a different input gets a new folder (or a new fake world). Temp folders are left behind.
 # Usage: powershell -NoProfile -File scripts/dev/test-recovery-pack.ps1 [-ScriptPath <recovery-pack.ps1 copy>]
 #   -> exit 0 when all cases pass, 1 otherwise. -ScriptPath exists so mutants can be tested.
 param([string]$ScriptPath = (Join-Path $PSScriptRoot "recovery-pack.ps1"))
@@ -28,6 +30,13 @@ function Write-Text([string]$path, [string]$text) {
     $parent = Split-Path -Parent $path
     if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
     [IO.File]::WriteAllText($path, $text, $script:Utf8)
+}
+function Get-Letters([int]$n) { return (-join (1..$n | ForEach-Object { [char](Get-Random -Minimum 97 -Maximum 123) })) }
+# Junction created only inside this test's temp folder; never removed.
+function New-Junction([string]$link, [string]$target) {
+    $parent = Split-Path -Parent $link
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
+    New-Item -ItemType Junction -Path $link -Target $target | Out-Null
 }
 # Runs git; returns stdout lines. stderr is dropped (PS 5.1 would turn it into a terminating error).
 function Invoke-G {
@@ -76,53 +85,101 @@ function Get-Snapshot {
     return ($parts -join "`n")
 }
 
-# ------------------------------------------------------------------ fake world
-$root = New-TempPath "rp-test-"
-New-Item -ItemType Directory -Path $root | Out-Null
-$R = Join-Path $root "repo"
-New-Item -ItemType Directory -Path $R | Out-Null
-Invoke-G init -q $R | Out-Null
-Write-Text (Join-Path $R ".gitignore") ".claude/worktrees/`n.journal/`n"
-Write-Text (Join-Path $R "a.txt") "base`n"
-Write-Text (Join-Path $R ".claude\skills\demo\SKILL.md") "# demo skill`n"
-Write-Text (Join-Path $R ".claude\skills\demo\config.json") '{"name":"demo","authToken":"fake-skill-value","nested":{"password":"fake-pw","keep":"keep-me"}}'
-Write-Text (Join-Path $R ".claude\skills\demo\.env") "ENV-MARKER=1`n"
-Write-Text (Join-Path $R ".claude\skills\demo\candidate_base.yaml") "name: CANDIDATE-MARKER`n"
-Write-Text (Join-Path $R ".claude\skills\demo\server.pem") "PEM-MARKER`n"
-Write-Text (Join-Path $R ".claude\skills\demo\.claude\worktrees\leak\LEAK.txt") "LEAK-MARKER`n"
-Write-Text (Join-Path $R ".claude\commands\go.md") "run it`n"
-Write-Text (Join-Path $R ".claude\commands\broken.json") "{ not json"
-Write-Text (Join-Path $R ".claude\settings.json") '{"permissions":{"allow":["Bash(ls)"]},"env":{"X":"fake-proj-env"}}'
-Write-Text (Join-Path $R ".claude\settings.local.json") '{"permissions":{"deny":["Bash(rm)"]},"apiKey":"fake-local-key"}'
-Write-Text (Join-Path $R ".mcp.json") '{"mcpServers":{"claudia":{"command":"c","headers":{"Authorization":"fake-header-value"},"env":{"X":"fake-mcp-env"}}}}'
-Invoke-G -C $R add -A | Out-Null
-Invoke-G -C $R commit -q -m "c1" | Out-Null
-Write-Text (Join-Path $R "a.txt") "base`nsecond`n"
-Invoke-G -C $R commit -q -am "c2" | Out-Null
-Invoke-G -C $R branch dev | Out-Null
-$mainTip = (Invoke-G -C $R rev-parse HEAD)[0]
+# ------------------------------------------------------------------ fake world builder
+# Sets $script:root, $R (main checkout), $WT (linked worktree), $G (global folder), $M (memory), $mainTip.
+function New-World([string]$Tag, [switch]$CommandsAsJunction) {
+    $script:root = New-TempPath "rp-test-$Tag-"
+    New-Item -ItemType Directory -Path $script:root | Out-Null
+    $rt = $script:root
+    $script:R = Join-Path $rt "repo"
+    $repo = $script:R
+    New-Item -ItemType Directory -Path $repo | Out-Null
+    Invoke-G init -q $repo | Out-Null
+    Write-Text (Join-Path $repo ".gitignore") ".claude/worktrees/`n.journal/`n"
+    Write-Text (Join-Path $repo "a.txt") "base`n"
+    # Tracked forbidden files in mixed case (their uncommitted changes must stay out of the patch).
+    Write-Text (Join-Path $repo "Candidate_Base.yaml") "name: base`n"
+    Write-Text (Join-Path $repo ".ENV.sample") "X=base`n"
+    $sk = Join-Path $repo ".claude\skills\demo"
+    Write-Text (Join-Path $sk "SKILL.md") "# demo skill`n"
+    Write-Text (Join-Path $sk "config.json") '{"name":"demo","authToken":"fake-skill-value","nested":{"password":"fake-pw","keep":"keep-me"}}'
+    Write-Text (Join-Path $sk ".env") "ENV-MARKER=1`n"
+    Write-Text (Join-Path $sk ".ENV") "MIXED-ENV-ONE=1`n"
+    Write-Text (Join-Path $sk "sub\.Env.Local") "MIXED-ENV-TWO=1`n"
+    Write-Text (Join-Path $sk "candidate_base.yaml") "name: CANDIDATE-MARKER`n"
+    Write-Text (Join-Path $sk "sub\Candidate_Base.yaml") "name: MIXED-CANDIDATE-MARKER`n"
+    Write-Text (Join-Path $sk "server.pem") "PEM-MARKER`n"
+    Write-Text (Join-Path $sk ".claude\worktrees\leak\LEAK.txt") "LEAK-MARKER`n"
+    # Under another parent: the file system ignores case, so next to .claude\worktrees it would reuse that folder.
+    Write-Text (Join-Path $sk "sub\.Claude\Worktrees\leak2\LEAK2.txt") "LEAK-TWO-MARKER`n"
+    # Folders with forbidden names.
+    Write-Text (Join-Path $sk ".env.d\inner.txt") "ENVD-MARKER`n"
+    Write-Text (Join-Path $sk "My-Credentials\x.txt") "CREDDIR-MARKER`n"
+    Write-Text (Join-Path $sk "Secrets\s.txt") "SECRETSDIR-MARKER`n"
+    if (-not $CommandsAsJunction) {
+        Write-Text (Join-Path $repo ".claude\commands\go.md") "run it`n"
+        Write-Text (Join-Path $repo ".claude\commands\broken.json") "{ not json"
+    }
+    Write-Text (Join-Path $repo ".claude\settings.json") '{"permissions":{"allow":["Bash(ls)"]},"env":{"X":"fake-proj-env"}}'
+    Write-Text (Join-Path $repo ".claude\settings.local.json") '{"permissions":{"deny":["Bash(rm)"]},"apiKey":"fake-local-key"}'
+    Write-Text (Join-Path $repo ".mcp.json") '{"mcpServers":{"claudia":{"command":"c","headers":{"Authorization":"fake-header-value"},"env":{"X":"fake-mcp-env"}}}}'
+    Invoke-G -C $repo add -A | Out-Null
+    Invoke-G -C $repo commit -q -m "c1" | Out-Null
+    Write-Text (Join-Path $repo "a.txt") "base`nsecond`n"
+    Invoke-G -C $repo commit -q -am "c2" | Out-Null
+    Invoke-G -C $repo branch dev | Out-Null
+    $script:mainTip = (Invoke-G -C $repo rev-parse HEAD)[0]
 
-# Linked worktree inside .claude/worktrees (as in the real project), with an uncommitted change and an untracked file.
-$WT = Join-Path $R ".claude\worktrees\wt1"
-Invoke-G -C $R worktree add -q -b feat/x $WT | Out-Null
-Write-Text (Join-Path $WT "a.txt") "base`nsecond`nmodified-in-wt`n"
-Write-Text (Join-Path $WT "WTMARK.txt") "UNTRACKED-CONTENT-MARKER`n"
-Write-Text (Join-Path $WT ".journal\2026-10-01-000000-feat-x-old.md") "# old diary only in the worktree`n- Branch: feat/x @ 1234567`n"
-Write-Text (Join-Path $R ".journal\2026-10-19-000000-main-aaaa-test.md") "# main diary`n- Branch: main @ 1234567`n"
-Write-Text (Join-Path $R ".journal\.gitignore") "*`n"
+    # Junctions (after the commits), pointing to folders inside this temp folder.
+    Write-Text (Join-Path $rt "outside-skill\o.txt") "OUTSIDE-SKILL-MARKER`n"
+    New-Junction (Join-Path $sk "linked") (Join-Path $rt "outside-skill")
+    if ($CommandsAsJunction) {
+        Write-Text (Join-Path $rt "outside-cmds\outside-cmd.md") "OUTSIDE-CMD-MARKER`n"
+        New-Junction (Join-Path $repo ".claude\commands") (Join-Path $rt "outside-cmds")
+    }
 
-# Fake global Claude folder and memory.
-$G = Join-Path $root "global"
-Write-Text (Join-Path $G "CLAUDE.md") "# global rules`n"
-Write-Text (Join-Path $G "settings.json") '{"env":{"ANTHROPIC_BASE_URL":"fake-env-value"},"apiKeyHelper":"fake-helper-value","model":"opus","permissions":{"allow":["Read"]},"mcpServers":{"s":{"command":"c","headers":{"X-Api":"fake-header2"}}}}'
-Write-Text (Join-Path $G ".credentials.json") '{"claudeAiOauth":{"accessToken":"CRED-MARKER"}}'
-Write-Text (Join-Path $G "plugins\installed_plugins.json") '{"version":2,"plugins":{"superpowers@mkt":[{"scope":"user","installPath":"X:/fake/install/path","version":"5.0.1"}]}}'
-$M = Join-Path $root "memory"
-Write-Text (Join-Path $M "MEMORY.md") "- note one`n"
-Write-Text (Join-Path $M "topic.md") "topic`n"
-Write-Text (Join-Path $M ".credentials.json") '{"x":"CRED-MARKER-2"}'
-Write-Text (Join-Path $M ".env") "MEM-ENV-MARKER=1`n"
+    # Linked worktree inside .claude/worktrees (as in the real project).
+    $script:WT = Join-Path $repo ".claude\worktrees\wt1"
+    $wt = $script:WT
+    Invoke-G -C $repo worktree add -q -b feat/x $wt | Out-Null
+    Write-Text (Join-Path $wt "a.txt") "base`nsecond`nmodified-in-wt`n"
+    Write-Text (Join-Path $wt "Candidate_Base.yaml") "name: PATCH-CANDIDATE-MARKER`n"
+    Write-Text (Join-Path $wt ".ENV.sample") "X=PATCH-ENV-MARKER`n"
+    Write-Text (Join-Path $wt "WTMARK.txt") "UNTRACKED-CONTENT-MARKER`n"
+    Write-Text (Join-Path $wt ".journal\2026-10-01-000000-feat-x-old.md") "# old diary only in the worktree`n- Branch: feat/x @ 1234567`n"
+    Write-Text (Join-Path $repo ".journal\2026-10-19-000000-main-aaaa-test.md") "# main diary`n- Branch: main @ 1234567`n"
+    Write-Text (Join-Path $repo ".journal\.gitignore") "*`n"
 
+    $script:G = Join-Path $rt "global"
+    Write-Text (Join-Path $script:G "CLAUDE.md") "# global rules`n"
+    Write-Text (Join-Path $script:G "settings.json") '{"env":{"ANTHROPIC_BASE_URL":"fake-env-value"},"apiKeyHelper":"fake-helper-value","model":"opus","permissions":{"allow":["Read"]},"mcpServers":{"s":{"command":"c","headers":{"X-Api":"fake-header2"}}}}'
+    Write-Text (Join-Path $script:G ".credentials.json") '{"claudeAiOauth":{"accessToken":"CRED-MARKER"}}'
+    Write-Text (Join-Path $script:G "plugins\installed_plugins.json") '{"version":2,"plugins":{"superpowers@mkt":[{"scope":"user","installPath":"X:/fake/install/path","version":"5.0.1"}]}}'
+    $script:M = Join-Path $rt "memory"
+    Write-Text (Join-Path $script:M "MEMORY.md") "- note one`n"
+    Write-Text (Join-Path $script:M "topic.md") "topic`n"
+    Write-Text (Join-Path $script:M ".credentials.json") '{"x":"CRED-MARKER-2"}'
+    Write-Text (Join-Path $script:M ".env") "MEM-ENV-MARKER=1`n"
+}
+
+# A secret case: a new memory folder with MEMORY.md plus one file; the run must exit 1 and leave the ref alone.
+function Test-SecretCase([string]$Label, [string]$FileName, [byte[]]$Bytes, [string]$Pattern, [string]$Value, [string]$Where) {
+    $dir = Join-Path $script:root ("mem-" + [guid]::NewGuid().ToString("N"))
+    Write-Text (Join-Path $dir "MEMORY.md") "- note one`n"
+    [IO.File]::WriteAllBytes((Join-Path $dir $FileName), $Bytes)
+    $before = Get-Recovery
+    $res = Invoke-Pack -RepoDir $script:R -GlobalClaudeDir $script:G -MemoryDir $dir
+    Assert-Exit $res "$Label : exit 1" 1
+    Assert-Case "$Label : recovery ref unchanged" ((Get-Recovery) -eq $before) "recovery moved to $(Get-Recovery)"
+    Assert-Case "$Label : output names the pattern $Pattern" ($res.Text.Contains(":: $Pattern")) "output:`n$($res.Text)"
+    Assert-Case "$Label : output names the place ($Where)" ($res.Text.Contains($Where)) "output:`n$($res.Text)"
+    Assert-Case "$Label : output never shows the value" (-not $res.Text.Contains($Value)) "value leaked in output"
+    Assert-Case "$Label : warns that the temp copy must be deleted by hand" ($res.Text -match 'contem a copia com o possivel segredo') "output:`n$($res.Text)"
+}
+function Get-Utf8Bytes([string]$s) { return $script:Utf8.GetBytes($s) }
+
+# ================================================================== main world
+New-World "main"
 $before = Get-Snapshot
 
 # ------------------------------------------------------------------ 1. first run
@@ -147,11 +204,14 @@ foreach ($p in @("project/.claude/skills/demo/SKILL.md", "project/.claude/skills
         "patches/feat-x.patch", "journal/2026-10-19-000000-main-aaaa-test.md", "journal/2026-10-01-000000-feat-x-old.md")) {
     Assert-Case "3 allowlist entered: $p" ($paths -ccontains $p) "missing; tree:`n$($paths -join "`n")"
 }
-Assert-Case "3 no .claude/worktrees path in the pack" (-not ($paths | Where-Object { $_ -match '(?i)\.claude/worktrees' })) "tree:`n$($paths -join "`n")"
-foreach ($bad in @(".credentials.json", ".env", "candidate_base.yaml", "server.pem", "broken.json", "WTMARK.txt", "LEAK.txt")) {
-    Assert-Case "3 not in the pack: $bad" (-not ($paths | Where-Object { $_ -like "*$bad" })) "found in tree:`n$($paths -join "`n")"
+Assert-Case "3 no .claude/worktrees path in the pack (any case)" (-not ($paths | Where-Object { $_ -match '(?i)\.claude/worktrees' })) "tree:`n$($paths -join "`n")"
+Assert-Case "3 no .env* / candidate_base path in the pack (any case)" (-not ($paths | Where-Object { $_ -match '(?i)(^|/)\.env|candidate_base' })) "tree:`n$($paths -join "`n")"
+foreach ($bad in @(".credentials.json", "server.pem", "broken.json", "WTMARK.txt", "LEAK.txt", "LEAK2.txt", "inner.txt", "x.txt", "s.txt", "o.txt")) {
+    Assert-Case "3 not in the pack: $bad" (-not ($paths | Where-Object { $_ -like "*/$bad" })) "found in tree:`n$($paths -join "`n")"
 }
-foreach ($mk in @("LEAK-MARKER", "CRED-MARKER", "ENV-MARKER", "MEM-ENV-MARKER", "CANDIDATE-MARKER", "PEM-MARKER", "UNTRACKED-CONTENT-MARKER")) {
+foreach ($mk in @("LEAK-MARKER", "LEAK-TWO-MARKER", "CRED-MARKER", "ENV-MARKER", "MEM-ENV-MARKER", "CANDIDATE-MARKER", "PEM-MARKER",
+        "UNTRACKED-CONTENT-MARKER", "MIXED-ENV-ONE", "MIXED-ENV-TWO", "MIXED-CANDIDATE-MARKER", "ENVD-MARKER", "CREDDIR-MARKER",
+        "SECRETSDIR-MARKER", "OUTSIDE-SKILL-MARKER", "PATCH-CANDIDATE-MARKER", "PATCH-ENV-MARKER")) {
     Assert-Case "3 content never in the pack: $mk" (-not $all.Contains($mk)) "marker found"
 }
 $state = Get-PackBlob "STATE.md"
@@ -159,7 +219,10 @@ Assert-Case "3 STATE.md lists the untracked file by name" ($state.Contains("WTMA
 Assert-Case "3 STATE.md names the worktree branch" ($state.Contains("feat/x")) "STATE.md:`n$state"
 Assert-Case "3 STATE.md uses relative paths (no temp root)" (-not $state.Contains($root) -and -not $state.Contains(($root -replace '\\', '/'))) "STATE.md:`n$state"
 Assert-Case "3 STATE.md records the invalid JSON" ($state -match 'broken\.json: JSON invalido') "STATE.md:`n$state"
-Assert-Case "3 patch has the uncommitted change" ((Get-PackBlob "patches/feat-x.patch").Contains("+modified-in-wt")) "patch missing the change"
+Assert-Case "3 STATE.md records the junction as not followed" ($state -match 'skills/demo/linked/: link \(nao seguido\)') "STATE.md:`n$state"
+$patch = Get-PackBlob "patches/feat-x.patch"
+Assert-Case "3 patch has the uncommitted change" ($patch.Contains("+modified-in-wt")) "patch missing the change"
+Assert-Case "3 patch leaves out Candidate_Base.yaml and .ENV.sample (mixed case)" ($patch -notmatch '(?i)candidate_base|\.env\.sample') "patch:`n$patch"
 $plug = Get-PackBlob "global/plugins.txt"
 Assert-Case "3 plugins.txt has name and version only" ($plug.Contains("superpowers@mkt 5.0.1") -and -not $plug.Contains("fake/install")) "plugins.txt:`n$plug"
 
@@ -207,16 +270,28 @@ Assert-Exit $res "5b only the date differs: exit 0" 0
 Assert-Case "5b only the date differs: no new commit" ((Get-Recovery) -eq $c5) "recovery moved to $(Get-Recovery). Output:`n$($res.Text)"
 $rec2 = Get-Recovery
 
-# ------------------------------------------------------------------ 6. synthetic secret in memory -> exit 1, ref unchanged
-$M2 = Join-Path $root "memory-secret"
-Write-Text (Join-Path $M2 "MEMORY.md") "- note one`n"
-$fake = "sk-ant-" + (-join (1..30 | ForEach-Object { [char](Get-Random -Minimum 97 -Maximum 123) }))
-Write-Text (Join-Path $M2 "leak.md") "the value is $fake here`n"
-$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M2
-Assert-Exit $res "6 secret: exit 1" 1
-Assert-Case "6 secret: recovery ref unchanged" ((Get-Recovery) -eq $rec2) "recovery moved to $(Get-Recovery)"
-Assert-Case "6 secret: output names the file and the pattern" ($res.Text.Contains("global/memory/leak.md") -and $res.Text.Contains("anthropic-key")) "output:`n$($res.Text)"
-Assert-Case "6 secret: output never shows the value" (-not $res.Text.Contains($fake) -and -not $res.Text.Contains($fake.Substring(7))) "value leaked in output"
+# ------------------------------------------------------------------ 6. synthetic secrets -> exit 1, ref unchanged
+$v = "sk-ant-" + (Get-Letters 30)
+Test-SecretCase "6a secret in memory content" "leak.md" (Get-Utf8Bytes "the value is $v here`n") "anthropic-key" $v "global/memory/leak.md"
+$v = "ghp_" + (Get-Letters 30)
+Test-SecretCase "6b secret in a file NAME" "note-$v.md" (Get-Utf8Bytes "harmless`n") "github-token" $v "(no NOME do arquivo)"
+$v = Get-Letters 40
+Test-SecretCase "6c ANTHROPIC_AUTH_TOKEN quoted" "env-note.md" (Get-Utf8Bytes "`"ANTHROPIC_AUTH_TOKEN`": `"$v`"`n") "generic-assignment" $v "global/memory/env-note.md"
+$v = Get-Letters 24
+Test-SecretCase "6d password without quotes" "pw.md" (Get-Utf8Bytes "password = $v`n") "generic-assignment" $v "global/memory/pw.md"
+$v = "sk-proj-" + (Get-Letters 30)
+Test-SecretCase "6e OPENAI_API_KEY=sk-proj-" "openai.md" (Get-Utf8Bytes "OPENAI_API_KEY=$v`n") "openai-project-key" $v "global/memory/openai.md"
+$v = "sk-ant-" + (Get-Letters 30)
+Test-SecretCase "6f UTF-16 WITH BOM is scanned" "wide-bom.md" ([byte[]](@(0xFF, 0xFE) + [Text.Encoding]::Unicode.GetBytes("value $v`n"))) "anthropic-key" $v "global/memory/wide-bom.md"
+# 6g. Secret in a tracked, uncommitted change (lands in the patch). The worktree file is put back afterwards.
+$v = "sk-ant-" + (Get-Letters 30)
+Write-Text (Join-Path $WT "a.txt") "base`nsecond`nmodified-in-wt`nkey $v`n"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "6g secret in the patch: exit 1" 1
+Assert-Case "6g secret in the patch: recovery ref unchanged" ((Get-Recovery) -eq $rec2) "recovery moved"
+Assert-Case "6g secret in the patch: names the patch and the pattern" ($res.Text.Contains("patches/feat-x.patch :: anthropic-key")) "output:`n$($res.Text)"
+Assert-Case "6g secret in the patch: value never shown" (-not $res.Text.Contains($v)) "value leaked"
+Write-Text (Join-Path $WT "a.txt") "base`nsecond`nmodified-in-wt`n"
 
 # ------------------------------------------------------------------ 7. -WhatIf writes nothing
 Write-Text (Join-Path $M "new2.md") "another memory`n"
@@ -233,18 +308,42 @@ $res = Invoke-Pack -RepoDir $WT -GlobalClaudeDir $G -WhatIf
 Assert-Exit $res "8 derived memory dir (run from the worktree): exit 0" 0
 Assert-Case "8 derived memory dir: memory found from the main checkout path" ($res.Text.Contains("global/memory/DERIVED.md")) "output:`n$($res.Text)"
 
+# ------------------------------------------------------------------ 8b. junction as the ROOT of a source is never followed
+Write-Text (Join-Path $root "outside-mem\outside-mem.md") "OUTSIDE-MEM-MARKER`n"
+New-Junction (Join-Path $root "mem-link") (Join-Path $root "outside-mem")
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir (Join-Path $root "mem-link") -WhatIf
+Assert-Exit $res "8b memory dir junction: exit 0" 0
+Assert-Case "8b memory dir junction: not followed" (-not $res.Text.Contains("outside-mem.md") -and $res.Text.Contains("memory/: link (nao seguido)")) "output:`n$($res.Text)"
+New-Junction (Join-Path $root "global-link") $G
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir (Join-Path $root "global-link") -MemoryDir $M -WhatIf
+Assert-Exit $res "8b global dir junction: exit 0" 0
+Assert-Case "8b global dir junction: not followed" (-not $res.Text.Contains("global/CLAUDE.md") -and $res.Text.Contains("global/: link (nao seguido)")) "output:`n$($res.Text)"
+
 # ------------------------------------------------------------------ 9. concurrent writer: expected old value protects the ref
 $res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TestPretendNoRecovery
 Assert-Exit $res "9 race: exit 1" 1
 Assert-Case "9 race: recovery ref unchanged" ((Get-Recovery) -eq $rec2) "recovery moved to $(Get-Recovery). Output:`n$($res.Text)"
 
-# ------------------------------------------------------------------ 10. ref guard: only refs/heads/recovery
+# ------------------------------------------------------------------ 10. ref guards: only refs/heads/recovery
 $res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TargetRef refs/heads/main
-Assert-Exit $res "10 guard (main): exit 1" 1
-Assert-Case "10 guard (main): main unchanged" (((Invoke-G -C $R rev-parse refs/heads/main)[0]) -eq $mainTip) "main moved"
-$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TargetRef refs/heads/recovery2
-Assert-Exit $res "10 guard (recovery2): exit 1" 1
-Assert-Case "10 guard (recovery2): ref not created" ((Invoke-G -C $R rev-parse -q --verify refs/heads/recovery2).Count -eq 0) "recovery2 exists"
+Assert-Exit $res "10a early guard (main): exit 1" 1
+Assert-Case "10a early guard (main): refused before building anything" (-not $res.Text.Contains("Pasta temporaria") -and $res.Text.Contains("Nada foi montado")) "output:`n$($res.Text)"
+Assert-Case "10a early guard (main): main unchanged" (((Invoke-G -C $R rev-parse refs/heads/main)[0]) -eq $mainTip) "main moved"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TargetRef refs/heads/main -TestLateGuard
+Assert-Exit $res "10b late guard (main): exit 1" 1
+Assert-Case "10b late guard (main): main unchanged" (((Invoke-G -C $R rev-parse refs/heads/main)[0]) -eq $mainTip) "main moved"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M -TargetRef refs/heads/recovery2 -TestLateGuard
+Assert-Exit $res "10c late guard (recovery2): exit 1" 1
+Assert-Case "10c late guard (recovery2): ref not created" ((Invoke-G -C $R rev-parse -q --verify refs/heads/recovery2).Count -eq 0) "recovery2 exists"
+
+# ------------------------------------------------------------------ 10d. BOM-less UTF-16 file: not scannable -> never enters
+$MU = Join-Path $root "mem-utf16"
+Write-Text (Join-Path $MU "MEMORY.md") "- note one`n"
+[IO.File]::WriteAllBytes((Join-Path $MU "wide.md"), [Text.Encoding]::Unicode.GetBytes("value sk-ant-" + (Get-Letters 30) + "`n"))
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $MU
+Assert-Exit $res "10d UTF-16 without BOM: exit 0" 0
+Assert-Case "10d UTF-16 without BOM: not in the pack" (-not ((Get-PackPaths) | Where-Object { $_ -like "*wide.md" })) "wide.md entered"
+Assert-Case "10d UTF-16 without BOM: recorded in STATE.md" ((Get-PackBlob "STATE.md") -match 'memory/wide\.md: nao varrivel') "STATE.md:`n$(Get-PackBlob 'STATE.md')"
 
 # ------------------------------------------------------------------ 11. outside a repository
 $NR = Join-Path $root "not-a-repo"
@@ -253,7 +352,30 @@ $res = Invoke-Pack -RepoDir $NR -GlobalClaudeDir $G -MemoryDir $M
 Assert-Exit $res "11 outside a repository: exit 2" 2
 
 Assert-Case "12 after all runs: HEAD, branch, index and other refs unchanged" ((Get-Snapshot) -ceq $before) "before:`n$before`nafter:`n$(Get-Snapshot)"
-
 Write-Output "Temp folder (left behind): $root"
+
+# ================================================================== world B: secret in the NAME of an untracked file
+New-World "untracked-name"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "13 setup run: exit 0" 0
+$recB = Get-Recovery
+$v = "ghp_" + (Get-Letters 30)
+Write-Text (Join-Path $WT "untracked-$v.txt") "harmless`n"
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "13 secret in an untracked name: exit 1" 1
+Assert-Case "13 secret in an untracked name: recovery ref unchanged" ($recB -and (Get-Recovery) -eq $recB) "recovery moved"
+Assert-Case "13 secret in an untracked name: STATE.md and pattern named" ($res.Text.Contains("STATE.md :: github-token")) "output:`n$($res.Text)"
+Assert-Case "13 secret in an untracked name: value never shown" (-not $res.Text.Contains($v)) "value leaked"
+Write-Output "Temp folder (left behind): $root"
+
+# ================================================================== world C: .claude\commands is a junction
+New-World "cmd-junction" -CommandsAsJunction
+$res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+Assert-Exit $res "14 commands junction: exit 0" 0
+$allC = Get-PackAll
+Assert-Case "14 commands junction: not followed" (-not $allC.Contains("OUTSIDE-CMD-MARKER") -and -not ((Get-PackPaths) | Where-Object { $_ -like "*outside-cmd.md" })) "outside content entered"
+Assert-Case "14 commands junction: recorded" ((Get-PackBlob "STATE.md") -match '\.claude/commands/: link \(nao seguido\)') "STATE.md:`n$(Get-PackBlob 'STATE.md')"
+Write-Output "Temp folder (left behind): $root"
+
 if ($fail -eq 0) { Write-Output "ALL PASSED" } else { Write-Output "SOME FAILED" }
 exit $fail
