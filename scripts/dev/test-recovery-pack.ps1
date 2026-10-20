@@ -461,6 +461,31 @@ Assert-Exit $res "17c unreadable file: exit 2 (environment error)" 2
 Assert-Case "17c unreadable file: error message printed, masked" ($res.Text.Contains("ERRO:") -and $res.Text.Contains("[oculto]")) "output:`n$($res.Text)"
 Assert-Case "17c unreadable file: value never shown" (-not $res.Text.Contains($v)) "value leaked. Output:`n$($res.Text)"
 Assert-Case "17c unreadable file: recovery ref unchanged" ((Get-Recovery) -eq $beforeDeny) "recovery moved to $(Get-Recovery)"
+# 17d. Exception AFTER the temp folder exists: the trap must warn about it (masked). The child script gets TEMP/TMP
+# pointing to a fake temp folder inside this test's temp folder, whose NAME holds a synthetic secret and whose
+# subfolders inherit "deny create file" (CI)(IO)(WD): the script creates recovery-pack-<guid>\tree and then fails
+# writing the first file. TEMP/TMP are changed only in this test process, around the child call, and restored.
+$v = "sk-ant-" + (Get-Letters 30)
+$fakeTemp = Join-Path $root "faketemp-$v"
+New-Item -ItemType Directory -Path $fakeTemp | Out-Null
+& icacls $fakeTemp /deny "${env:USERNAME}:(CI)(IO)(WD)" | Out-Null
+$probeDir = Join-Path $fakeTemp "probe"
+New-Item -ItemType Directory -Path $probeDir | Out-Null
+$denied = $false
+try { [IO.File]::WriteAllText((Join-Path $probeDir "p.txt"), "x") } catch { $denied = $true }
+Assert-Case "17d setup: subfolders of the fake temp deny file creation" $denied "file creation succeeded; the ACL was not applied"
+$beforeTmp = Get-Recovery
+$savedTemp = $env:TEMP; $savedTmp = $env:TMP
+try {
+    $env:TEMP = $fakeTemp; $env:TMP = $fakeTemp
+    $res = Invoke-Pack -RepoDir $R -GlobalClaudeDir $G -MemoryDir $M
+} finally {
+    $env:TEMP = $savedTemp; $env:TMP = $savedTmp
+}
+Assert-Exit $res "17d exception after the temp folder exists: exit 2" 2
+Assert-Case "17d exception after the temp folder exists: warns about the temp folder" ($res.Text.Contains("pode conter uma copia parcial")) "output:`n$($res.Text)"
+Assert-Case "17d exception after the temp folder exists: masked, value never shown" ($res.Text.Contains("[oculto]") -and -not $res.Text.Contains($v)) "output:`n$($res.Text)"
+Assert-Case "17d exception after the temp folder exists: recovery ref unchanged" ((Get-Recovery) -eq $beforeTmp) "recovery moved to $(Get-Recovery)"
 Write-Output "Temp folder (left behind): $root"
 
 # ================================================================== world E: a git error that carries a secret is masked
