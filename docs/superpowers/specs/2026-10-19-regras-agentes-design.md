@@ -141,6 +141,7 @@ Garantir as seções "O que mudou", "Como foi verificado" e "NÃO verificado". H
 | 2026-10-19 | P7, 10.3, P13, P14, P15, 10.10 | reescrita | Revisão 4: merge só por PR no GitHub e `dev` local só por `pull --ff-only`; o revisor chama o agente de versão, que empurra e abre o PR sem OK do usuário (resposta do usuário); push ao `origin` só por ref nomeada; `sync/*` na lista do hook; propostas P16 a P18. | usuário aprovou em 2026-10-19: revisão 4, merge com o "pode fechar" dele, P16 a P18, FORTE só na recuperação, os 5 jobs obrigatórios |
 | 2026-10-19 | P7 (passo 2) | reescrita | Resolve a contradição P7 x P11 apontada pelo revisor da T8: cada tarefa aprovada vai só ao backup; a branch vai ao `origin` e ganha PR (contra `dev`) só quando a feature inteira tiver "Looks good to me". | decisão do usuário em 2026-10-19: "Só no fim da feature" |
 | 2026-10-19 | P7 (passo 4), P11 | esclarecida | Apontado pelo revisor da T9: quem mostra o resumo e pede o "pode fechar" é o orquestrador (um subagente não fala com o usuário); o versionador confere de novo o CI na hora do merge e recusa se não estiver verde. P11 deixa de citar `merge --no-ff`. Não muda quem decide: o merge segue do usuário. | usuário confirmou em 2026-10-19 |
+| 2026-10-19 | P12 | ampliada | Apontado pelo revisor da T10: tag do `origin` tem de apontar para o mesmo commit no `backup`; branch continua aceitando o backup à frente. | decisão do usuário em 2026-10-19: "Tag tem que ser igual" |
 
 ## 10. Ampliação (revisão 3, 2026-10-19): estabilidade, backup, PR e CI, pacote de recuperação, proteção de branch — **aprovada pelo usuário em 2026-10-19** (ver 10.8)
 
@@ -181,7 +182,7 @@ Sim, com três ressalvas que viram regra:
 - **Recomendo.**
 
 **P12. Backup como espelho do público mais o que ainda não foi publicado.**
-- Invariantes, verificadas por um relatório só de leitura que compara `git ls-remote origin` com `git ls-remote backup`: toda ponta de branch e toda tag do `origin` é igual ou **ancestral** da mesma ref no `backup`; nenhuma ref do `backup` apaga ou reescreve história do `origin`.
+- Invariantes, verificadas por um relatório só de leitura que compara `git ls-remote origin` com `git ls-remote backup`: toda ponta de branch do `origin` é igual ou **ancestral** da mesma ref no `backup`; *(ampliada 2026-10-19, decisão do usuário:)* toda **tag** do `origin` aponta para o **mesmo** commit no `backup` (tag diferente é erro, mesmo que o backup esteja à frente), para que restaurar uma release pelo backup traga exatamente o código publicado; nenhuma ref do `backup` apaga ou reescreve história do `origin`.
 - Espelhar também `main` e as tags `v*` (a restauração da release fica completa). *Alternativa: dispensar o `main`, como o usuário sugeriu; perde a restauração direta da release.*
 - Push só pelo agente de versão, nos momentos descritos em `agents/versao.md` (fim de tarefa aprovada, depois de merge, antes de operação arriscada, ao encerrar a sessão). `--all` e `--tags`, nunca `--mirror`.
 - **Recomendo.**
