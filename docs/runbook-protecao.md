@@ -9,7 +9,7 @@ Este documento foi **escrito, não executado**. Os únicos comandos rodados ao e
 - **Nada que mude estado roda sem o "pode aplicar" do usuário.** Vale para as seções 2, 3, 4, 6, 7 e 9. Agente nenhum aplica, desliga ou "contorna" proteção por conta própria. A seção 1, a seção 5 (conferência) e o `-WhatIf` da seção 8 são só leitura.
 - **O administrador também fica sujeito às regras** (`enforce_admins` = true, ruleset de tag sem lista de bypass). Depois de ativar, nem o dono empurra direto em `main`/`dev` nem move tag `v*`. Emergência = desligar a regra (seção 6), agir, religar (seção 2 ou 4), tudo com aviso ao usuário.
 - **Ordem recomendada:**
-  1. PR de sincronização do `dev` (seção 9, tarefa T14): o `dev` local está muito à frente do `origin/dev` e, com a proteção ativa, esses commits só chegam por PR. Fazer antes evita ter de desligar a regra depois. O hook `pre-push` aceita `sync/*` no `origin` com o hook ativo ou não (o hook, passo 2, vem depois do PR de sincronização e não é pré-requisito dele); ativo, ele só deixa passar a branch `sync/...` por ref nomeada.
+  1. PR de sincronização do `dev` (seção 9, tarefa T14): o `dev` local está muito à frente do `origin/dev` e, com a proteção ativa, esses commits só chegam por PR. Fazer antes evita ter de desligar a regra depois. O PR de sincronização não depende do hook (o hook, passo 2, vem depois); se o hook estiver ativo, ele aceita a branch `sync/*` por ref nomeada.
   2. Hook local (seção 7) e primeiras execuções (seção 8), em qualquer ordem.
   3. Repositório só com merge commit (seção 3).
   4. Proteção de `dev`, depois de `main` (seção 2).
@@ -204,9 +204,8 @@ gh api -X DELETE repos/JohnGabie/claudia-rh/branches/main/protection
 gh api -X PATCH repos/JohnGabie/claudia-rh -F allow_squash_merge=true -F allow_rebase_merge=true -F allow_merge_commit=true
 
 # Ruleset de tags: obtém o id pelo nome e apaga
-$id = gh api repos/JohnGabie/claudia-rh/rulesets --jq '.[] | select(.name=="protect-release-tags") | .id'
-$id    # conferir: um número, não vazio
-gh api -X DELETE repos/JohnGabie/claudia-rh/rulesets/$id
+$id = (gh api repos/JohnGabie/claudia-rh/rulesets | ConvertFrom-Json) | Where-Object { $_.name -eq 'protect-release-tags' } | ForEach-Object { $_.id }
+if ("$id" -match '^\d+$') { gh api -X DELETE "repos/JohnGabie/claudia-rh/rulesets/$id" } else { "Ruleset protect-release-tags nao encontrado (ou mais de um): id=[$id]. Nada apagado." }
 ```
 
 Para afrouxar só uma regra sem derrubar a proteção inteira, a API tem sub-recursos (por exemplo `DELETE .../branches/<b>/protection/enforce_admins`), mas o caminho mais simples e menos sujeito a erro é o DELETE acima seguido de religar com o JSON da seção 2.
