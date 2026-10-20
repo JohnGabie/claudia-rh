@@ -212,3 +212,15 @@ Observações finais que não bloquearam:
 - Riscos para o Linear: a válvula `CLAUDIA_ALLOW_PUBLIC_PUSH` pode ser definida por qualquer agente (a defesa é só a regra escrita); os hooks de `.claude/settings.json` rodam com `-ExecutionPolicy Bypass`; nomes de refs fora do `-Range` não são varridos antes do push ao backup.
 
 Testes humanos pendentes: primeira instalação real do hook; push real ao público com o hook ativo; compactação real com o PreCompact; primeira execução real do pacote de recuperação; fluxo `gh pr merge` (T14).
+
+### T14, parte 1: proteção aplicada no GitHub (2026-10-20, "pode aplicar" do usuário)
+
+Decisões do usuário: um PR só (a feature leva junto os commits do `dev` local que ainda não estão no `origin`); aplicar a proteção agora; não registrar no Linear.
+
+Aplicado pelo runbook, seções 1 a 5, com conferência só leitura depois:
+- Repositório: só merge commit (`allow_squash_merge=false`, `allow_rebase_merge=false`).
+- `dev` e `main`: PR obrigatório, 0 aprovações, os 5 checks do app 15368, `strict`, `enforce_admins`, sem force push, sem apagar.
+- Ruleset `protect-release-tags` (id 25508255): `refs/tags/v*`, regras `update` e `deletion`, sem bypass.
+- O plano gratuito com repositório público aceitou tudo (a dúvida "não verificado" do runbook ficou respondida).
+
+Ainda não feito: hook local (o usuário não marcou), primeiras execuções de `verify-backup` e do pacote de recuperação (não marcadas), PR único da feature.
